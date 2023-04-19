@@ -1,0 +1,39 @@
+.debug {
+  border: solid black;
+  height: 500px;
+  padding: 16px;
+  overflow-y: scroll;
+}
+
+a{
+  font-family:Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
+  font-size: 32px;
+  font-weight: bolder;
+  border: solid black;
+  display: flex;
+  align-items: center;      /*X axis*/
+  justify-content: center;  /*Y axis*/
+  padding: 10px;
+  margin: 10px;
+}
+
+.GeneratedTable {
+  /*(text-align: center;*/
+  width:100%;
+  background-color:#FFFFFF;
+  border-collapse:collapse;border-width:1px;
+  border-color:#000000;
+  border-style:solid;
+  color:#0033FF
+  }
+  
+.GeneratedTable td, table.GeneratedTable th {
+  border-width:1px;
+  border-color:#336600;
+  border-style:solid;
+  padding:.5px;
+  }
+  
+  .GeneratedTable thead {
+  background-color:none;
+  }
