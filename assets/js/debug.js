@@ -2490,3 +2490,5 @@ console.log(workRamIdArray)
 for (let i= 0; i < 2048; i++) {
   document.getElementById(workRamIdArray[i]).innerText= systemWorkRam[i]+'h';
   }
+
+// add click on each RAM byte, when clicked, updates location ('Offset (h): xxxx')

@@ -37,3 +37,7 @@ a{
   .GeneratedTable thead {
   background-color:none;
   }
+
+  td[id^='ramByte']:hover { 
+    color: red;
+  }
