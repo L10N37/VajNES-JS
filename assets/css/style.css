@@ -93,3 +93,10 @@ a{
   byteContainer{
     color: red;
   }
+
+  .openFile{
+    display: flex;
+    float:right;
+    width: 350px;
+    color: yellow;
+  }

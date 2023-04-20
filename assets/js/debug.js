@@ -2635,3 +2635,21 @@ insertFlagRegisterTable.innerHTML = `
   for (let i = 0; i < 7; i++) {
     document.getElementById(flagBitsIDArray[i]).innerText= flag[i];
   }
+
+// read in a ROM file
+function readFile(input) {
+  let file = input.files[0];
+
+  let reader = new FileReader();
+
+  reader.readAsArrayBuffer(file);
+  
+  reader.onload = function() {
+    console.log(reader.result);
+  };
+
+  reader.onerror = function() {
+    console.log(reader.error);
+  };
+
+}
