@@ -4,7 +4,7 @@ AC:[0,0,0,0,0,0,0,0],
 X:[0,0,0,0,0,0,0,0],
 Y:[0,0,0,0,0,0,0,0],
 // default to bit 2 set (unused)
-SR:[0,0,1,0,0,0,0,0],
+SR:[0,0,0,0,0,1,0,0],
 SP:[0,0,0,0,0,0,0,0],
 flag: [0,0,0,0,0,0,0]
 };
@@ -31,8 +31,8 @@ const AND=
     absolute: 0x2D, 
     absolutex: 0x3D, 
     absolutey: 0x39, 
-    indirectx: 0x21, 
-    indirecty: 0x31 
+    indirectx: 0x21,
+    indirecty: 0x31
 };
 const ASL= 
 { 

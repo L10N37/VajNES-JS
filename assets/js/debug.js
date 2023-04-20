@@ -2505,14 +2505,14 @@ insertRegistersTable.innerHTML = `
   <thead>
   <tr>
   <th class='addressClass' >Register</th>
-  <th class='addressClass'>00</th>
-  <th class='addressClass'>01</th>
-  <th class='addressClass'>02</th>
-  <th class='addressClass'>03</th>
-  <th class='addressClass'>04</th>
-  <th class='addressClass'>05</th>
-  <th class='addressClass'>06</th>
   <th class='addressClass'>07</th>
+  <th class='addressClass'>06</th>
+  <th class='addressClass'>05</th>
+  <th class='addressClass'>04</th>
+  <th class='addressClass'>03</th>
+  <th class='addressClass'>02</th>
+  <th class='addressClass'>01</th>
+  <th class='addressClass'>00</th>
   </tr>
   </thead>
   <tbody>
@@ -2606,24 +2606,24 @@ for (let i = 0; i < 8; i++) {
 insertFlagRegisterTable.innerHTML = `
   <thead>
   <tr>
-  <th class='addressClass'>00 (Carry)</th>
-  <th class='addressClass'>01 (Zero)</th>
-  <th class='addressClass'>02 (Int. Disable)</th>
-  <th class='addressClass'>03 (Decimal)</th>
-  <th class='addressClass'>04 (B Flag)</th>
-  <th class='addressClass'>05 (Overflow)</th>
   <th class='addressClass'>06 (negative) </th>
+  <th class='addressClass'>05 (Overflow)</th>
+  <th class='addressClass'>04 (B Flag)</th>
+  <th class='addressClass'>03 (Decimal)</th>
+  <th class='addressClass'>02 (Int. Disable)</th>
+  <th class='addressClass'>01 (Zero)</th>
+  <th class='addressClass'>00 (Carry)</th>
   </tr>
   </thead>
   <tbody>
   <tr> 
-  <td id= 'flag0'></td>
-  <td id= 'flag1'></td>
-  <td id= 'flag2'></td>
-  <td id= 'flag3'></td>
-  <td id= 'flag4'></td>
-  <td id= 'flag5'></td>
   <td id= 'flag6'></td>
+  <td id= 'flag5'></td>
+  <td id= 'flag4'></td>
+  <td id= 'flag3'></td>
+  <td id= 'flag2'></td>
+  <td id= 'flag1'></td>
+  <td id= 'flag0'></td>
   </tr>
   `
   // create ID array of flag bits
