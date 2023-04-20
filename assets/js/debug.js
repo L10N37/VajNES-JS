@@ -2495,4 +2495,104 @@ for (let i= 0; i < 2048; i++) {
   })
   }
 
- // update selected address location ('Offset (h): xxxx')
+  // Registers Section, manual ID allocation
+  let insertRegistersTable= document.createElement('table');
+    insertRegistersTable.className= 'GeneratedTable';
+      let registerSection = document.querySelector('.CPU-registers');
+        registerSection.appendChild(insertRegistersTable);
+
+insertRegistersTable.innerHTML = `
+  <thead>
+  <tr>
+  <th class='addressClass' >Register</th>
+  <th class='addressClass'>01</th>
+  <th class='addressClass'>02</th>
+  <th class='addressClass'>03</th>
+  <th class='addressClass'>04</th>
+  <th class='addressClass'>05</th>
+  <th class='addressClass'>06</th>
+  <th class='addressClass'>07</th>
+  <th class='addressClass'>08</th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr> 
+  <td class = 'addressClass' >AC</td>
+  <td id= 'AC1'></td>
+  <td id= 'AC2'></td>
+  <td id= 'AC3'></td>
+  <td id= 'AC4'></td>
+  <td id= 'AC5'></td>
+  <td id= 'AC6'></td>
+  <td id= 'AC7'></td>
+  <td id= 'AC8'</td>
+  </tr>
+  <tr> 
+  <td class = 'addressClass' >X</td>
+  <td id= 'X1'></td>
+  <td id= 'X2'></td>
+  <td id= 'X3'></td>
+  <td id= 'X4'></td>
+  <td id= 'X5'></td>
+  <td id= 'X6'></td>
+  <td id= 'X7'></td>
+  <td id= 'X8'></td>
+  </tr>
+  <tr> 
+  <td class = 'addressClass' >Y</td>
+  <td id= 'Y1'></td>
+  <td id= 'Y2'></td>
+  <td id= 'Y3'></td>
+  <td id= 'Y4'></td>
+  <td id= 'Y5'></td>
+  <td id= 'Y6'></td>
+  <td id= 'Y7'></td>
+  <td id= 'Y8'></td>
+  </tr>
+  <tr> 
+  <td class = 'addressClass' >SR</td>
+  <td id= 'SR1'></td>
+  <td id= 'SR2'></td>
+  <td id= 'SR3'></td>
+  <td id= 'SR4'></td>
+  <td id= 'SR5'></td>
+  <td id= 'SR6'></td>
+  <td id= 'SR7'></td>
+  <td id= 'SR8'></td>
+  </tr>
+  <tr> 
+  <td class = 'addressClass' >SP</td>
+  <td id= 'SP1'></td>
+  <td id= 'SP2'></td>
+  <td id= 'SP3'></td>
+  <td id= 'SP4'></td>
+  <td id= 'SP5'></td>
+  <td id= 'SP6'></td>
+  <td id= 'SP7'></td>
+  <td id= 'SP8'></td>
+  </tr>
+  `
+// create array of ID's for each CPU register
+// create array of ID's for each CPU register
+let regArrayAC = [];
+  let regArrayX = [];
+    let regArrayY = [];
+      let regArraySR = [];
+        let regArraySP = [];
+
+for (let i= 1; i < 9; i++) {
+  regArrayAC.push('AC'+i);
+    regArraySP.push('SP'+i);
+      regArrayX.push('X'+i);
+        regArrayY.push('Y'+i);
+          regArraySR.push('SR'+i);
+  }
+
+// insert register bits into the corresponding cells
+for (let i = 0; i < 8; i++) {
+  document.getElementById(regArrayAC[i]).innerText= AC[i];
+  document.getElementById(regArrayX[i]).innerText= X[i];
+  document.getElementById(regArrayY[i]).innerText= Y[i];
+  document.getElementById(regArraySR[i]).innerText= SR[i];
+  document.getElementById(regArraySP[i]).innerText= SP[i];
+}
