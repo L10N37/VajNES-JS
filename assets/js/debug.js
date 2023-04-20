@@ -2505,6 +2505,7 @@ insertRegistersTable.innerHTML = `
   <thead>
   <tr>
   <th class='addressClass' >Register</th>
+  <th class='addressClass'>00</th>
   <th class='addressClass'>01</th>
   <th class='addressClass'>02</th>
   <th class='addressClass'>03</th>
@@ -2512,23 +2513,23 @@ insertRegistersTable.innerHTML = `
   <th class='addressClass'>05</th>
   <th class='addressClass'>06</th>
   <th class='addressClass'>07</th>
-  <th class='addressClass'>08</th>
   </tr>
   </thead>
   <tbody>
   <tr> 
   <td class = 'addressClass' >AC</td>
+  <td id= 'AC0'></td>
   <td id= 'AC1'></td>
   <td id= 'AC2'></td>
   <td id= 'AC3'></td>
   <td id= 'AC4'></td>
   <td id= 'AC5'></td>
   <td id= 'AC6'></td>
-  <td id= 'AC7'></td>
-  <td id= 'AC8'</td>
+  <td id= 'AC7'</td>
   </tr>
   <tr> 
   <td class = 'addressClass' >X</td>
+  <td id= 'X0'></td>
   <td id= 'X1'></td>
   <td id= 'X2'></td>
   <td id= 'X3'></td>
@@ -2536,10 +2537,10 @@ insertRegistersTable.innerHTML = `
   <td id= 'X5'></td>
   <td id= 'X6'></td>
   <td id= 'X7'></td>
-  <td id= 'X8'></td>
   </tr>
   <tr> 
   <td class = 'addressClass' >Y</td>
+  <td id= 'Y0'></td>
   <td id= 'Y1'></td>
   <td id= 'Y2'></td>
   <td id= 'Y3'></td>
@@ -2547,10 +2548,10 @@ insertRegistersTable.innerHTML = `
   <td id= 'Y5'></td>
   <td id= 'Y6'></td>
   <td id= 'Y7'></td>
-  <td id= 'Y8'></td>
   </tr>
   <tr> 
   <td class = 'addressClass' >SR</td>
+  <td id= 'SR0'></td>
   <td id= 'SR1'></td>
   <td id= 'SR2'></td>
   <td id= 'SR3'></td>
@@ -2558,10 +2559,10 @@ insertRegistersTable.innerHTML = `
   <td id= 'SR5'></td>
   <td id= 'SR6'></td>
   <td id= 'SR7'></td>
-  <td id= 'SR8'></td>
   </tr>
   <tr> 
   <td class = 'addressClass' >SP</td>
+  <td id= 'SP0'></td>
   <td id= 'SP1'></td>
   <td id= 'SP2'></td>
   <td id= 'SP3'></td>
@@ -2569,10 +2570,8 @@ insertRegistersTable.innerHTML = `
   <td id= 'SP5'></td>
   <td id= 'SP6'></td>
   <td id= 'SP7'></td>
-  <td id= 'SP8'></td>
   </tr>
   `
-// create array of ID's for each CPU register
 // create array of ID's for each CPU register
 let regArrayAC = [];
   let regArrayX = [];
@@ -2580,7 +2579,7 @@ let regArrayAC = [];
       let regArraySR = [];
         let regArraySP = [];
 
-for (let i= 1; i < 9; i++) {
+for (let i= 0; i < 8; i++) {
   regArrayAC.push('AC'+i);
     regArraySP.push('SP'+i);
       regArrayX.push('X'+i);
@@ -2596,3 +2595,43 @@ for (let i = 0; i < 8; i++) {
   document.getElementById(regArraySR[i]).innerText= SR[i];
   document.getElementById(regArraySP[i]).innerText= SP[i];
 }
+
+
+  // flag registers section, manual ID allocation
+  let insertFlagRegisterTable= document.createElement('table');
+    insertFlagRegisterTable.className= 'GeneratedTable';
+      let flagRegisterSection = document.querySelector('.flag-register');
+        flagRegisterSection.appendChild(insertFlagRegisterTable);
+
+insertFlagRegisterTable.innerHTML = `
+  <thead>
+  <tr>
+  <th class='addressClass'>00 (Carry)</th>
+  <th class='addressClass'>01 (Zero)</th>
+  <th class='addressClass'>02 (Int. Disable)</th>
+  <th class='addressClass'>03 (Decimal)</th>
+  <th class='addressClass'>04 (B Flag)</th>
+  <th class='addressClass'>05 (Overflow)</th>
+  <th class='addressClass'>06 (negative) </th>
+  </tr>
+  </thead>
+  <tbody>
+  <tr> 
+  <td id= 'flag0'></td>
+  <td id= 'flag1'></td>
+  <td id= 'flag2'></td>
+  <td id= 'flag3'></td>
+  <td id= 'flag4'></td>
+  <td id= 'flag5'></td>
+  <td id= 'flag6'></td>
+  </tr>
+  `
+  // create ID array of flag bits
+  let flagBitsIDArray = [];
+  for (let i = 0; i < 7; i++) {
+    flagBitsIDArray.push('flag'+i);
+  }
+  // populate the cells with the flag bits
+  for (let i = 0; i < 7; i++) {
+    document.getElementById(flagBitsIDArray[i]).innerText= flag[i];
+  }

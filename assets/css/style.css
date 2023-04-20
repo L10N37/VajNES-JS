@@ -1,4 +1,4 @@
-main{
+html{
   font-family:Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;font-family:Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
   background-color:blue;
 }
@@ -8,6 +8,15 @@ main{
   padding: 16px;
   overflow-y: scroll;
   overflow-x: scroll;
+}
+
+.flag-register{
+  padding: 16px;
+  float: left;
+}
+.CPU-registers{
+  padding: 16px;
+  float: left;
 }
 
 registersText{
@@ -20,10 +29,6 @@ registersText{
   border: outset aqua;
   background-color: black;
   color: white;
-}
-
-.CPU-registers{
-border: solid black;
 }
 
 a{
@@ -70,6 +75,10 @@ a{
   }
   td[id^='AC'], td[id^='X'], td[id^='Y'], td[id^='SR'], td[id^='SP']  {
     color: blue;;
+  }
+
+  td[id^='flag']{ 
+  color: blue;
   }
 
   .addressClass{
