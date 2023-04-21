@@ -4,11 +4,13 @@ A:[bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 0,bitOne= 0,b
 X:[bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 0,bitOne= 0,bitZero= 0],
 Y:[bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 0,bitOne= 0,bitZero= 0],
 // default to bit 2 set (unused)
-S:[bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 1,bitOne= 0,bitZero= 0],
+S:[bitFifteen= 0, bitFourteen= 0, bitThirteen= 0, bitTwelve= 0, bitEleven= 0, bitTen= 0, bitNine= 0, 
+bitEight= 0, bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 1,bitOne= 0,bitZero= 0],
 PC:[bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 0,bitOne= 0,bitZero= 0],
 // status register (P)
 P: [C= 0, Z = 0, I= 0, D= 0, B= 0, O= 0, N= 0 ]
 };
+
 // Destructure for easier access
 // direct access is available to flag bits with N,O,V,D,I,Z,C
 const { A, X, Y, S, PC, P } = CPUregisters;

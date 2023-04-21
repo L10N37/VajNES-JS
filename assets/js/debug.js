@@ -2550,7 +2550,7 @@ insertRegistersTable.innerHTML = `
   </tr>
   <tr> 
   <tr> 
-  <td class = 'addressClass' >S</td>
+  <td class = 'addressClass' >S [byte2]</td>
   <td id= 'S0'></td>
   <td id= 'S1'></td>
   <td id= 'S2'></td>
@@ -2559,6 +2559,17 @@ insertRegistersTable.innerHTML = `
   <td id= 'S5'></td>
   <td id= 'S6'></td>
   <td id= 'S7'></td>
+  </tr>
+  <tr> 
+  <td class = 'addressClass' >S [byte1]</td>
+  <td id= 'S8'></td>
+  <td id= 'S9'></td>
+  <td id= 'S10'></td>
+  <td id= 'S11'></td>
+  <td id= 'S12'></td>
+  <td id= 'S13'></td>
+  <td id= 'S14'></td>
+  <td id= 'S15'></td>
   </tr>
   <tr> 
   <td class = 'addressClass' >PC</td>
@@ -2579,12 +2590,15 @@ let regArrayA = [];
       let regArrayS = [];
         let regArrayPC = [];
 
-for (let i= 0; i < 8; i++) {
+        
+for (let i= 0; i < 8; i++) { 
   regArrayA.push('A'+i);
     regArrayX.push('X'+i);
       regArrayY.push('Y'+i);
-        regArrayS.push('S'+i);
-          regArrayPC.push('PC'+i);
+        regArrayPC.push('PC'+i);
+  }
+for (let i= 0; i < 16; i++) { 
+  regArrayS.push('S'+i);
   }
 
 // insert register bits into the corresponding cells
@@ -2592,8 +2606,10 @@ for (let i = 0; i < 8; i++) {
   document.getElementById(regArrayA[i]).innerText= A[i];
   document.getElementById(regArrayX[i]).innerText= X[i];
   document.getElementById(regArrayY[i]).innerText= Y[i];
-  document.getElementById(regArrayS[i]).innerText= S[i];
   document.getElementById(regArrayPC[i]).innerText= PC[i];
+}
+for (let i = 0; i < 16; i++) {
+  document.getElementById(regArrayS[i]).innerText= S[i];
 }
 
 
