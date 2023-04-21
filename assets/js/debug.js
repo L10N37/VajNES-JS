@@ -2659,18 +2659,29 @@ function readFile(input) {
   let file = input.files[0];
 
   let reader = new FileReader();
-
   reader.readAsArrayBuffer(file);
-  
   reader.onload = function() {
-    for (let i = 0; i < reader.result.byteLength; i++) {
-     console.log(reader.result[i]);
-    }
-    
+
+  const gameROM = (reader.result);
+  console.log(file.name + " loaded");
+  console.log(gameROM);
+
+  let dataview = new DataView(gameROM);
+  
+  for (let i = 0; i < dataview.byteLength; i++) {
+    loadedROM[i]=dataview.getUint8(i);
+  }
+  console.log(loadedROM);
+
   };
 
   reader.onerror = function() {
     console.log(reader.error);
   };
+}
+
+
+function step(){
+
 
 }
