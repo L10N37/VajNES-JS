@@ -19,6 +19,21 @@ html{
   float: left;
 }
 
+.instruction-step{
+width: 75px;
+padding: 16px;
+display: flex;
+}
+
+#byte{
+  display: flex;
+  font-size: 20px;
+  font-weight: bolder;
+  color: red;
+  width: 200px;
+  float: right;
+}
+
 registersText{
   margin: 6px;
   font-weight: bolder;
@@ -55,6 +70,13 @@ a{
   }
   
 .GeneratedTable td, table.GeneratedTable th {
+  border-width:1px;
+  border-color:aqua;
+  border-style:solid;
+  padding:.5px;
+  }
+
+  table.GeneratedTable tx {
   border-width:1px;
   border-color:aqua;
   border-style:solid;

@@ -2655,13 +2655,14 @@ insertFlagRegisterTable.innerHTML = `
   let ROM=[];
 
 // read in a ROM file
+// TO DO: add file extension check, throw an error if not ending with '.nes'
 function readFile(input) {
   let file = input.files[0];
 
   let reader = new FileReader();
   reader.readAsArrayBuffer(file);
   reader.onload = function() {
-
+  
   const gameROM = (reader.result);
   console.log(file.name + " loaded");
   console.log(gameROM);
@@ -2673,12 +2674,37 @@ function readFile(input) {
   }
   console.log(loadedROM);
 
+  // create instruction / step section now that a ROM is loaded
+  let insertInstructionArea= document.createElement('table');
+    insertInstructionArea.className= 'GeneratedTable';
+      let instructionSection = document.querySelector('.instruction-step');
+        instructionSection.appendChild(insertInstructionArea);
+
+        insertInstructionArea.innerHTML = `
+        <thead>
+        <tr>
+        <th class='addressClass'>Instruction</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr> 
+        <td id= 'byte'> Ox`
+        +  loadedROM[0] + 
+        `
+        </td> 
+        </tr>
+        `
+
   };
 
   reader.onerror = function() {
     console.log(reader.error);
   };
 }
+
+
+
+
 
 
 function step(){
