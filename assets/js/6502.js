@@ -1,15 +1,18 @@
 const CPUregister = 
 {
-AC:[0,0,0,0,0,0,0,0],
-X:[0,0,0,0,0,0,0,0],
-Y:[0,0,0,0,0,0,0,0],
+AC:[bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 0,bitOne= 0,bitZero= 0],
+X:[bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 0,bitOne= 0,bitZero= 0],
+Y:[bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 0,bitOne= 0,bitZero= 0],
 // default to bit 2 set (unused)
-SR:[0,0,0,0,0,1,0,0],
-SP:[0,0,0,0,0,0,0,0],
-flag: [0,0,0,0,0,0,0]
+SR:[bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 1,bitOne= 0,bitZero= 0],
+SP:[bitSeven= 0,bitSix= 0,bitFive= 0,bitFour= 0,bitThree= 0,bitTwo= 0,bitOne= 0,bitZero= 0],
+flag: [C= 0, Z = 0, I= 0, D= 0, B= 0, O= 0, N= 0 ]
 };
 // Destructure for easier access
+// direct access is available to flag bits with N,O,V,D,I,Z,C
 const { AC, X, Y, SR, SP, flag } = CPUregister;
+
+
 
 // every 6502 opcode in object, will this even be of use?!
 const ADC= 

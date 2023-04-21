@@ -2485,7 +2485,6 @@ insertDebugTable.innerHTML = `
     for (let i= 1; i < 2049; i++) {
       workRamIdArray.push('ramByte'+i)
       }
-console.log(workRamIdArray)
 // populate the cells with RAM contents, add click event to memory locations
 for (let i= 0; i < 2048; i++) {
   document.getElementById(workRamIdArray[i]).innerText= systemWorkRam[i]+'h';
@@ -2636,6 +2635,8 @@ insertFlagRegisterTable.innerHTML = `
     document.getElementById(flagBitsIDArray[i]).innerText= flag[i];
   }
 
+  let ROM=[];
+
 // read in a ROM file
 function readFile(input) {
   let file = input.files[0];
@@ -2645,7 +2646,10 @@ function readFile(input) {
   reader.readAsArrayBuffer(file);
   
   reader.onload = function() {
-    console.log(reader.result);
+    for (let i = 0; i < reader.result.byteLength; i++) {
+     console.log(reader.result[i]);
+    }
+    
   };
 
   reader.onerror = function() {
