@@ -73,11 +73,11 @@ a{
   td[id^='ramByte']{
     color: blue;;
   }
-  td[id^='AC'], td[id^='X'], td[id^='Y'], td[id^='SR'], td[id^='SP']  {
+  td[id^='A'], td[id^='X'], td[id^='Y'], td[id^='S'], td[id^='PC']  {
     color: blue;;
   }
 
-  td[id^='flag']{ 
+  td[id^='P']{ 
   color: blue;
   }
 

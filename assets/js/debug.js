@@ -2516,15 +2516,15 @@ insertRegistersTable.innerHTML = `
   </thead>
   <tbody>
   <tr> 
-  <td class = 'addressClass' >AC</td>
-  <td id= 'AC0'></td>
-  <td id= 'AC1'></td>
-  <td id= 'AC2'></td>
-  <td id= 'AC3'></td>
-  <td id= 'AC4'></td>
-  <td id= 'AC5'></td>
-  <td id= 'AC6'></td>
-  <td id= 'AC7'</td>
+  <td class = 'addressClass' >A</td>
+  <td id= 'A0'></td>
+  <td id= 'A1'></td>
+  <td id= 'A2'></td>
+  <td id= 'A3'></td>
+  <td id= 'A4'></td>
+  <td id= 'A5'></td>
+  <td id= 'A6'></td>
+  <td id= 'A7'</td>
   </tr>
   <tr> 
   <td class = 'addressClass' >X</td>
@@ -2549,50 +2549,51 @@ insertRegistersTable.innerHTML = `
   <td id= 'Y7'></td>
   </tr>
   <tr> 
-  <td class = 'addressClass' >SR</td>
-  <td id= 'SR0'></td>
-  <td id= 'SR1'></td>
-  <td id= 'SR2'></td>
-  <td id= 'SR3'></td>
-  <td id= 'SR4'></td>
-  <td id= 'SR5'></td>
-  <td id= 'SR6'></td>
-  <td id= 'SR7'></td>
+  <tr> 
+  <td class = 'addressClass' >S</td>
+  <td id= 'S0'></td>
+  <td id= 'S1'></td>
+  <td id= 'S2'></td>
+  <td id= 'S3'></td>
+  <td id= 'S4'></td>
+  <td id= 'S5'></td>
+  <td id= 'S6'></td>
+  <td id= 'S7'></td>
   </tr>
   <tr> 
-  <td class = 'addressClass' >SP</td>
-  <td id= 'SP0'></td>
-  <td id= 'SP1'></td>
-  <td id= 'SP2'></td>
-  <td id= 'SP3'></td>
-  <td id= 'SP4'></td>
-  <td id= 'SP5'></td>
-  <td id= 'SP6'></td>
-  <td id= 'SP7'></td>
+  <td class = 'addressClass' >PC</td>
+  <td id= 'PC0'></td>
+  <td id= 'PC1'></td>
+  <td id= 'PC2'></td>
+  <td id= 'PC3'></td>
+  <td id= 'PC4'></td>
+  <td id= 'PC5'></td>
+  <td id= 'PC6'></td>
+  <td id= 'PC7'></td>
   </tr>
   `
 // create array of ID's for each CPU register
-let regArrayAC = [];
+let regArrayA = [];
   let regArrayX = [];
     let regArrayY = [];
-      let regArraySR = [];
-        let regArraySP = [];
+      let regArrayS = [];
+        let regArrayPC = [];
 
 for (let i= 0; i < 8; i++) {
-  regArrayAC.push('AC'+i);
-    regArraySP.push('SP'+i);
-      regArrayX.push('X'+i);
-        regArrayY.push('Y'+i);
-          regArraySR.push('SR'+i);
+  regArrayA.push('A'+i);
+    regArrayX.push('X'+i);
+      regArrayY.push('Y'+i);
+        regArrayS.push('S'+i);
+          regArrayPC.push('PC'+i);
   }
 
 // insert register bits into the corresponding cells
 for (let i = 0; i < 8; i++) {
-  document.getElementById(regArrayAC[i]).innerText= AC[i];
+  document.getElementById(regArrayA[i]).innerText= A[i];
   document.getElementById(regArrayX[i]).innerText= X[i];
   document.getElementById(regArrayY[i]).innerText= Y[i];
-  document.getElementById(regArraySR[i]).innerText= SR[i];
-  document.getElementById(regArraySP[i]).innerText= SP[i];
+  document.getElementById(regArrayS[i]).innerText= S[i];
+  document.getElementById(regArrayPC[i]).innerText= PC[i];
 }
 
 
@@ -2616,23 +2617,23 @@ insertFlagRegisterTable.innerHTML = `
   </thead>
   <tbody>
   <tr> 
-  <td id= 'flag6'></td>
-  <td id= 'flag5'></td>
-  <td id= 'flag4'></td>
-  <td id= 'flag3'></td>
-  <td id= 'flag2'></td>
-  <td id= 'flag1'></td>
-  <td id= 'flag0'></td>
+  <td id= 'P6'></td>
+  <td id= 'P5'></td>
+  <td id= 'P4'></td>
+  <td id= 'P3'></td>
+  <td id= 'P2'></td>
+  <td id= 'P1'></td>
+  <td id= 'P0'></td>
   </tr>
   `
   // create ID array of flag bits
   let flagBitsIDArray = [];
   for (let i = 0; i < 7; i++) {
-    flagBitsIDArray.push('flag'+i);
+    flagBitsIDArray.push('P'+i);
   }
   // populate the cells with the flag bits
   for (let i = 0; i < 7; i++) {
-    document.getElementById(flagBitsIDArray[i]).innerText= flag[i];
+    document.getElementById(flagBitsIDArray[i]).innerText= P[i];
   }
 
   let ROM=[];
