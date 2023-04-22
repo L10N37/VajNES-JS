@@ -2690,7 +2690,7 @@ function readFile(input) {
         </thead>
         <tbody>
         <tr> 
-        <td id= 'byte'> ${hexPrefix} ${loadedROM[0]} </td>
+        <td id= 'byte'> ${hexPrefix}${loadedROM[0]} </td>
         </td> 
         </tr>
         <button class='stepButton' type="button" onclick="step()">STEP</button>
@@ -2704,6 +2704,20 @@ function readFile(input) {
 }
 
 function step(){
-
-window.alert("Step Clicked!");
+  let hexValue = document.getElementById('byte').innerText;
+  let numericValue = parseInt(hexValue, 16); // convert hex string to number
+  console.log(numericValue);
+  console.log(getOpcodeAndAddressingMode(numericValue));
+  
+  function getOpcodeAndAddressingMode(numericValue) {
+    for (const opcode in opcodes) {
+      const addressingModes = opcodes[opcode];
+      for (const addressingMode in addressingModes) {
+        if (addressingModes[addressingMode] === numericValue) {
+          return { opcode, addressingMode };
+        }
+      }
+    }
+    return null;
+  }
 }
