@@ -5,14 +5,14 @@ const CPUregisters = {
     S: 0x00,
     PC: 0x00,
     P: {
-        C: 0,    // Carry
-        Z: 0,    // Zero
-        I: 0,    // Interrupt Disable
-        D: 0,    // Decimal Mode
-        B: 0,    // Break Command
-        U: 'NA', // Unused
-        V: 0,    // Overflow
-        N: 0     // Negative
+        C: false,    // Carry
+        Z: false,    // Zero
+        I: false,    // Interrupt Disable
+        D: false,    // Decimal Mode
+        B: false,    // Break Command
+        U: 'NA',     // Unused
+        V: false,    // Overflow
+        N: false     // Negative
     }
 };
 
