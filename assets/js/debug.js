@@ -2688,11 +2688,10 @@ function readFile(input) {
         </thead>
         <tbody>
         <tr> 
-        <td id= 'byte'> Ox`
-        +  loadedROM[0] + 
-        `
+        <td id= 'byte'> ${hexPrefix} ${loadedROM[0]} </td>
         </td> 
         </tr>
+        <button class='stepButton' type="button" onclick="step()">STEP</button>
         `
 
   };
@@ -2701,11 +2700,6 @@ function readFile(input) {
     console.log(reader.error);
   };
 }
-
-
-
-
-
 
 function step(){
 
