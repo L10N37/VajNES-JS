@@ -2612,7 +2612,6 @@ for (let i = 0; i < 16; i++) {
   document.getElementById(regArrayS[i]).innerText= S[i];
 }
 
-
   // flag registers section, manual ID allocation
   let insertFlagRegisterTable= document.createElement('table');
     insertFlagRegisterTable.className= 'GeneratedTable';
@@ -2622,8 +2621,9 @@ for (let i = 0; i < 16; i++) {
 insertFlagRegisterTable.innerHTML = `
   <thead>
   <tr>
-  <th class='addressClass'>06 (negative) </th>
-  <th class='addressClass'>05 (Overflow)</th>
+  <th class='addressClass'>07 (negative) </th>
+  <th class='addressClass'>06 (Overflow)</th>
+  <th class='addressClass'>05 (Unused)</th>
   <th class='addressClass'>04 (B Flag)</th>
   <th class='addressClass'>03 (Decimal)</th>
   <th class='addressClass'>02 (Int. Disable)</th>
@@ -2632,7 +2632,8 @@ insertFlagRegisterTable.innerHTML = `
   </tr>
   </thead>
   <tbody>
-  <tr> 
+  <tr>
+  <td id= 'P7'></td>
   <td id= 'P6'></td>
   <td id= 'P5'></td>
   <td id= 'P4'></td>
@@ -2644,11 +2645,11 @@ insertFlagRegisterTable.innerHTML = `
   `
   // create ID array of flag bits
   let flagBitsIDArray = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 8; i++) {
     flagBitsIDArray.push('P'+i);
   }
   // populate the cells with the flag bits
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 8; i++) {
     document.getElementById(flagBitsIDArray[i]).innerText= P[i];
   }
 
@@ -2703,5 +2704,5 @@ function readFile(input) {
 
 function step(){
 
-
+window.alert("Step Clicked!");
 }
