@@ -1,41 +1,25 @@
 const CPUregisters = {
-    A: { 7: 0, 6: 0, 5: 0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0 },
-    X: { 7: 0, 6: 0, 5: 0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0 },
-    Y: { 7: 0, 6: 0, 5: 0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0 },
+    A: [0, 0, 0, 0, 0, 0, 0, 0],
+    X: [0, 0, 0, 0, 0, 0, 0, 0],
+    Y: [0, 0, 0, 0, 0, 0, 0, 0],
     // default to bit 2 set (unused)
-    S: {
-      15: 0,
-      14: 0,
-      13: 0,
-      12: 0,
-      11: 0,
-      10: 0,
-      9: 0,
-      8: 0,
-      7: 0,
-      6: 0,
-      5: 0,
-      4: 0,
-      3: 0,
-      2: 1,
-      1: 0,
-      0: 0
-    },
-    PC: { 7: 0, 6: 0, 5: 0, 4: 0, 3: 0, 2: 0, 1: 0, 0: 0 },
+    PC: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    S: [0, 0, 1, 0, 0, 0, 0, 0],
     // status register (P)
-    P: {
-        0: 0,       // C
-        1: 0,       // Z
-        2: 0,       // I
-        3: 0,       // D
-        4: 0,       // B
-        5: 'NA',    // unused
-        6: 1,       // V
-        7: 0        // N
-      }      
+    P: [
+      C= 0,    // Carry
+      Z= 0,    // Zero
+      I= 0,    // Interrupt Disable
+      D= 0,    // Decimal Mode
+      B= 0,    // Break Command
+      U= 'NA', // Unused
+      V= 1,    // Overflow
+      N= 0     // Negative
+    ]
   };
 
 // Destructure for easier access
+// P variables are accessible globally via c,z,i,d,b,u,v,n 
 const { A, X, Y, S, PC, P } = CPUregisters;
 console.log(CPUregisters)
 
