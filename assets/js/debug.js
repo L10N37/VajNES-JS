@@ -2713,11 +2713,13 @@ function step(){
     for (const opcode in opcodes) {
       const addressingModes = opcodes[opcode];
       for (const addressingMode in addressingModes) {
-        if (addressingModes[addressingMode] === numericValue) {
-          return { opcode, addressingMode };
+        const opcodeInfo = addressingModes[addressingMode];
+        if (opcodeInfo.code === numericValue) {
+          return { opcode, addressingMode, length: opcodeInfo.length, pcIncrement: opcodeInfo.pcIncrement };
         }
       }
     }
     return null;
   }
+  
 }
