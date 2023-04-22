@@ -6,23 +6,23 @@ let insertDebugTable= document.createElement('table');
 insertDebugTable.innerHTML = `
   <thead>
   <tr>
-  <th class='addressClass' >Offset(h)</th>
-  <th class='addressClass' >00</th>
-  <th class='addressClass'>01</th>
-  <th class='addressClass'>02</th>
-  <th class='addressClass'>03</th>
-  <th class='addressClass'>04</th>
-  <th class='addressClass'>05</th>
-  <th class='addressClass'>06</th>
-  <th class='addressClass'>07</th>
-  <th class='addressClass'>08</th>
-  <th class='addressClass'>09</th>
-  <th class='addressClass'>0A</th>
-  <th class='addressClass'>0B</th>
-  <th class='addressClass'>0C</th>
-  <th class='addressClass'>0D</th>
-  <th class='addressClass'>0E</th>
-  <th class='addressClass'>0F</th>
+  <th class='addressClass' id ='sticky'>Offset(h)</th>
+  <th class='addressClass' id ='sticky'>00</th>
+  <th class='addressClass' id ='sticky'>01</th>
+  <th class='addressClass' id ='sticky'>02</th>
+  <th class='addressClass' id ='sticky'>03</th>
+  <th class='addressClass' id ='sticky'>04</th>
+  <th class='addressClass' id ='sticky'>05</th>
+  <th class='addressClass' id ='sticky'>06</th>
+  <th class='addressClass' id ='sticky'>07</th>
+  <th class='addressClass' id ='sticky'>08</th>
+  <th class='addressClass' id ='sticky'>09</th>
+  <th class='addressClass' id ='sticky'>0A</th>
+  <th class='addressClass' id ='sticky'>0B</th>
+  <th class='addressClass' id ='sticky'>0C</th>
+  <th class='addressClass' id ='sticky'>0D</th>
+  <th class='addressClass' id ='sticky'>0E</th>
+  <th class='addressClass' id ='sticky'>0F</th>
   </tr>
   </thead>
   <tbody>

@@ -87,6 +87,15 @@ a{
   background-color:none;
   }
 
+  table thead th#sticky {
+    padding: 3px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    width: 25vw;
+    border: solid;
+  }
+
   td[id^='ramByte']:hover { 
     background-color: yellow;
     color: red;
