@@ -1,20 +1,22 @@
 const CPUregisters = {
-    A: new Uint8Array([0x00]),
-    X: new Uint8Array([0x00]),
-    Y: new Uint8Array([0x00]),
-    S: new Uint8Array([0x00]),
-    PC: new Uint16Array([0x00]),
-    P: [
-        C= 0,    // Carry
-        Z= 0,    // Zero
-        I= 0,    // Interrupt Disable
-        D= 0,    // Decimal Mode
-        B= 0,    // Break Command
-        U= 'NA', // Unused
-        V= 0,    // Overflow
-        N= 0     // Negative
-    ]
+    A: 0x00,
+    X: 0x00,
+    Y: 0x00,
+    S: 0x00,
+    PC: 0x00,
+    P: {
+        C: 0,    // Carry
+        Z: 0,    // Zero
+        I: 0,    // Interrupt Disable
+        D: 0,    // Decimal Mode
+        B: 0,    // Break Command
+        U: 'NA', // Unused
+        V: 0,    // Overflow
+        N: 0     // Negative
+    }
 };
+
+const P_VARIABLES = ['C', 'Z', 'I', 'D', 'B', 'U', 'V', 'N'];
 
 // Destructure for easier access
 // P variables are accessible globally via c,z,i,d,b,u,v,n 

@@ -49,10 +49,10 @@ const regArrayA = ['A7', 'A6', 'A5', 'A4', 'A3', 'A2', 'A1', 'A0'];
         const regArrayPC = Array.from({ length: 16 }, (_, i) => `PC${i}`);
 
 // the binary string always has a length of 8 characters, padded with zeroes if necessary. 
-let A_Binary = A[0].toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-  let X_Binary = X[0].toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-    let Y_Binary = Y[0].toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-      let S_Binary = S[0].toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+let A_Binary = A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+  let X_Binary = X.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+    let Y_Binary = Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+      let S_Binary = S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
 
 // insert register bits into the corresponding cells
 for (let i = 0; i < 8; i++) {
@@ -62,12 +62,12 @@ for (let i = 0; i < 8; i++) {
         document.getElementById(regArrayS[i]).innerText= S_Binary[i];
         }
 
-let PC_asBinary = PC[0].toString(2).padStart(16, '0').split('').map(bit => parseInt(bit));
+let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt(bit));
   for (let i = 0; i < 16; i++) {
     document.getElementById(regArrayPC[i]).innerText= PC_asBinary[i];
     }
 
-  // flag registers section, manual ID allocation
+  // flag registers section
   let insertFlagRegisterTable= document.createElement('table');
     insertFlagRegisterTable.className= 'GeneratedTable';
       let flagRegisterSection = document.querySelector('.flag-register');
@@ -75,14 +75,15 @@ let PC_asBinary = PC[0].toString(2).padStart(16, '0').split('').map(bit => parse
 
         insertFlagRegisterTable.innerHTML = FlagRegisterTable;
   
-  // create ID array of flag bits
+  // create ID array of flag bits (P0 to P7)
   let flagBitsIDArray = [];
   for (let i = 0; i < 8; i++) {
     flagBitsIDArray.push('P'+i);
   }
+  console.log(CPUregisters.P[4]);
   // populate the cells with the flag bits
   for (let i = 0; i < 8; i++) {
-    document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[i];
+    document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
   }
 
   let ROM=[];
@@ -126,7 +127,6 @@ function readFile(input) {
         </tr>
         <button class='stepButton' type="button" onclick="step()">STEP</button>
         `
-
   };
 
   reader.onerror = function() {
@@ -156,6 +156,10 @@ function step(){
   }
 
   function cycle(opcodeObject){
+  // destructure received opcode object
+  const { addressingMode, length, opcode, pcIncrement } = opcodeObject;
+  PC+=pcIncrement;
+  console.log(PC);
 
 
   }
