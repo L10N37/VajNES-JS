@@ -1,6 +1,6 @@
 html{
   font-family:Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;font-family:Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
-  background-color:blue;
+  background-color: #36383b;
 }
 .debug {
   
@@ -25,13 +25,20 @@ padding: 16px;
 display: flex;
 }
 
-#byte{
+#instruction{
   display: flex;
   font-size: 20px;
   font-weight: bolder;
   color: red;
   width: 200px;
   float: right;
+}
+
+#operand{
+font-size: 20px;
+color: green;
+font-weight: bolder;
+
 }
 
 registersText{
@@ -121,7 +128,7 @@ a{
     color: yellow;
   }
 
-  byteContainer{
+  InstructionContainer{
     color: red;
   }
 

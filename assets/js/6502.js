@@ -16,12 +16,10 @@ const CPUregisters = {
     }
 };
 
-const P_VARIABLES = ['C', 'Z', 'I', 'D', 'B', 'U', 'V', 'N'];
+let P_VARIABLES = ['C', 'Z', 'I', 'D', 'B', 'U', 'V', 'N'];
 
 // Destructure for easier access
-// P variables are accessible globally via c,z,i,d,b,u,v,n 
-const { A, X, Y, S, PC } = CPUregisters;
-console.log(CPUregisters);
+let { A, X, Y, S, PC } = CPUregisters;
 
 // 6502 CPU opcode object
 const opcodes = {
@@ -141,7 +139,7 @@ const opcodes = {
     implied: {code: 0x58, length: 1, pcIncrement: 1}
     },
     SEI: {
-    implied: {code: 0x78, length: 1, pcIncrement: 1}
+    implied: {code: 0x78, length: 1, pcIncrement: 1, function: 'SEI()'}
     },
     CLV: {
     implied: {code: 0xB8, length: 1, pcIncrement: 1}
@@ -161,8 +159,80 @@ const opcodes = {
     JMP: {
     absolute: {code: 0x4C, length: 3, pcIncrement: 3},
     indirect: {code: 0x6C, length: 3, pcIncrement: 3}
+    },
+    ROL: {
+    accumulator: {code: 0x2A, length: 1, pcIncrement: 1},
+    zeroPage: {code: 0x26, length: 2, pcIncrement: 2},
+    zeroPagex: {code: 0x36, length: 2, pcIncrement: 2},
+    absolute: {code: 0x2E, length: 3, pcIncrement: 3},
+    absoluteX: {code: 0x3E, length: 3, pcIncrement: 3}
+},
+
+}
+
+function opcodeSwitch(codeToProcess,opcode) {
+switch (codeToProcess) {
+    case 0x78:
+        SEI();
+        break;
+    case 0x69:
+        ADC_IMM();
+        break;
+    case 0x26:
+        ROL_ZP();
+        break;
+    default: window.alert(`Opcode ${hexPrefix}${codeToProcess} not implemented`);
+        break;
     }
 }
-      
+
+function SEI() {
+    // opcode only sets status register 'I', tested good
+    CPUregisters.P.I=true;
+    }
+
+function ADC_IMM() {
+    A = parseInt(loadedROM[PC+1], 16);
+    console.log(`Operand for 0x69 is ${loadedROM[PC+1]}`);
+    console.log (`the new value of A reg is ${A}`);
+        if (CPUregisters.P.C==true) {
+            A+=1;
+                }
+            }
+
+function ROL_ZP() {
+    zpgAddr= parseInt(loadedROM[PC+1], 16);
+    // Load the value at the specified zero-page memory location
+    let value = workRamIdArray[zpgAddr];
   
-console.log(opcodes);
+    // Rotate left and shift in the carry flag
+    const carry = (value & 0x80) >> 7;
+    value = ((value << 1) & 0xfe) | parseInt(CPUregisters.P.C);
+   
+    // Update the carry flag
+    if (carry==0) {
+    CPUregisters.P.C = false;
+    } else {
+    CPUregisters.P.C = true;
+    }
+  
+    // Store the updated value back to the same zero-page memory location
+    if (systemWorkRam[zpgAddr]!=0){
+    systemWorkRam[zpgAddr] = value;
+    }
+  
+    // Update the zero and negative flags
+    CPUregisters.P.Z = value === 0;
+    CPUregisters.P.N = (value & 0x80) !== 0;
+  }
+  
+
+/*
+Carry flag (C): The value of the carry flag is shifted into the least significant bit of the memory 
+location specified by the zero page address. The previous value of the carry flag is shifted into 
+the most significant bit of the same memory location.
+
+Zero flag (Z): The zero flag is set if the result of the rotation is zero.
+
+Negative flag (N): The negative flag is set if the most significant bit of the rotated value is 1
+*/

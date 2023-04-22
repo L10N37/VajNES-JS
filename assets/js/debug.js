@@ -1,3 +1,5 @@
+const hexPrefix=['0x'];
+
 let insertDebugTable= document.createElement('table');
   insertDebugTable.className= 'GeneratedTable';
     let debugSection = document.querySelector('.debug');
@@ -29,7 +31,7 @@ for (let i= 0; i < 2048; i++) {
   document.getElementById(workRamIdArray[i]).innerText= systemWorkRam[i]+'h';
   document.getElementById(workRamIdArray[i]).addEventListener("click", function(event) {
   // index in hex!
-  document.querySelector('byteContainer').innerHTML= '&nbsp'+ '0x'+ i.toString(16);
+  document.querySelector('instructionContainer').innerHTML= '&nbsp'+ '0x'+ i.toString(16);
   })
   }
 
@@ -80,7 +82,7 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
   for (let i = 0; i < 8; i++) {
     flagBitsIDArray.push('P'+i);
   }
-  console.log(CPUregisters.P[4]);
+  
   // populate the cells with the flag bits
   for (let i = 0; i < 8; i++) {
     document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
@@ -88,79 +90,148 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
 
   let ROM=[];
 
-// read in a ROM file
-// TO DO: add file extension check, throw an error if not ending with '.nes'
-function readFile(input) {
-  let file = input.files[0];
-
-  let reader = new FileReader();
-  reader.readAsArrayBuffer(file);
-  reader.onload = function() {
+  function readFile(input) {
+    let file = input.files[0];
+    let extension = file.name.split('.').pop().toLowerCase();
+    
+    if (extension !== 'nes') {
+      console.error('Invalid file type. Please select a NES ROM file.');
+      return;
+    }
+    
+    let reader = new FileReader();
+    reader.readAsArrayBuffer(file);
+    reader.onload = function() {
+      const gameROM = reader.result;
+      console.log(file.name + " loaded");
   
-  const gameROM = (reader.result);
-  console.log(file.name + " loaded");
-  console.log(gameROM);
-
-  let dataview = new DataView(gameROM);
+      let dataview = new DataView(gameROM);
   
-  for (let i = 0; i < dataview.byteLength; i++) {
-    loadedROM[i]=dataview.getUint8(i);
-  }
-  console.log(loadedROM);
+      // Check for NES header
+      let nesHeader = new Uint8Array(gameROM.slice(0, 16));
+      if (nesHeader[0] !== 0x4E || nesHeader[1] !== 0x45 || nesHeader[2] !== 0x53 || nesHeader[3] !== 0x1A) {
+        console.warn('ROM file does not contain a valid NES header.');
+      }
+  
+      // Extract the reset vector
+      loadedROM = new Uint8Array(gameROM);
+      console.log(loadedROM.length);
+      // last 2 bytes of the ROM, but they have a 16 byte header added, and are stored little endian
+      let resetVectorHighByte = loadedROM.length-16;
+      let resetVectorLowByte = loadedROM.length-17;
 
-  // create instruction / step section now that a ROM is loaded
-  let insertInstructionArea= document.createElement('table');
-    insertInstructionArea.className= 'GeneratedTable';
+      let resetVector = loadedROM[resetVectorHighByte] << 8 | loadedROM[resetVectorLowByte];
+      console.log(`Reset Vector Offset: ${resetVector}`);
+     
+      console.log(loadedROM);
+  
+      // Create instruction / step section now that a ROM is loaded
       let instructionSection = document.querySelector('.instruction-step');
-        instructionSection.appendChild(insertInstructionArea);
-
-        insertInstructionArea.innerHTML = `
+      // Erase the container in case of reloads of ROMS
+      instructionSection.innerHTML = ``;
+      let insertInstructionArea = document.createElement('table');
+      insertInstructionArea.className = 'GeneratedTable';
+      instructionSection.appendChild(insertInstructionArea);
+  
+      // Check ROM's first byte (only for debug)
+      console.log(hexPrefix + loadedROM[0]);
+  
+      insertInstructionArea.innerHTML = `
         <thead>
-        <tr>
-        <th class='addressClass'>Instruction</th>
-        </tr>
+          <tr>
+            <th class='addressClass'>Instruction</th>
+          </tr>
         </thead>
         <tbody>
-        <tr> 
-        <td id= 'byte'> ${hexPrefix}${loadedROM[0]} </td>
-        </td> 
-        </tr>
-        <button class='stepButton' type="button" onclick="step()">STEP</button>
-        `
-  };
+          <tr> 
+            <td id= 'instruction'></td>
+          </tr>
+          <button class='stepButton' type="button" onclick="step()">STEP</button>
+        </tbody>
+        <thead>
+          <tr>
+            <th class='addressClass'>Operand/s</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr> 
+            <td id= 'operand'></td>
+          </tr>
+        </tbody>
+      `;
+    };
+  
+    reader.onerror = function() {
+      console.log(reader.error);
+    };
+  }
 
-  reader.onerror = function() {
-    console.log(reader.error);
-  };
+function getOpcodeAndAddressingMode(numericValue) {
+  for (const opcode in opcodes) {
+    const addressingModes = opcodes[opcode];
+    for (const addressingMode in addressingModes) {
+      const opcodeInfo = addressingModes[addressingMode];
+      if (opcodeInfo.code === numericValue) {
+        return { 
+          opcode, 
+          addressingMode, 
+          length: opcodeInfo.length, 
+          pcIncrement: opcodeInfo.pcIncrement,
+          hex: "0x" + opcodeInfo.code.toString(16).toUpperCase().padStart(2, '0')
+        };
+      }
+    }
+  }
+  return null;
 }
 
 function step(){
-  
-  let hexValue = document.getElementById('byte').innerText;
-  let numericValue = parseInt(hexValue, 16); // convert hex string to number
-  console.log(numericValue);
-  cycle(getOpcodeAndAddressingMode(numericValue));
-  
-  
-  function getOpcodeAndAddressingMode(numericValue) {
-    for (const opcode in opcodes) {
-      const addressingModes = opcodes[opcode];
-      for (const addressingMode in addressingModes) {
-        const opcodeInfo = addressingModes[addressingMode];
-        if (opcodeInfo.code === numericValue) {
-          return { opcode, addressingMode, length: opcodeInfo.length, pcIncrement: opcodeInfo.pcIncrement };
-        }
-      }
-    }
-    return null;
+  // fetch instructions object
+  const currentInstruction = getOpcodeAndAddressingMode(parseInt(loadedROM[PC],16));
+  // destructure
+  const {opcode, addressingMode, length, pcIncrement, hex } = currentInstruction;
+
+  // debug info
+  console.log(currentInstruction);
+
+  // fill the instruction cell with the necessary object data
+  document.getElementById('instruction').innerText=`${hex}${':'} ${opcode} ${'/'} ${addressingMode}`;
+
+  // fill operand cell with operand/s if any
+  let operand1;
+  let operand2;
+  if (length==1) {
+   operand1= ' ';
+   document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}`;
+  }
+  else if (length==2){
+   operand1= hexPrefix+loadedROM[PC+1];
+   document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}`;
+  }
+  else if (length==3) {
+    operand1= hexPrefix+loadedROM[PC+1];
+    operand2= hexPrefix+loadedROM[PC+2];
+    document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}${','}${operand2}`;
   }
 
-  function cycle(opcodeObject){
-  // destructure received opcode object
-  const { addressingMode, length, opcode, pcIncrement } = opcodeObject;
-  PC+=pcIncrement;
-  console.log(PC);
+  //check current opcode
+  const instructionCell = document.getElementById("instruction");
+    const instructionText = instructionCell.textContent.trim();
+    // Extract the hex value from the instruction text
+      const hexValue = instructionText.split(":")[0];
+        // opcodes either store as text '0x00' in switch or convert to hex, probably best to convert for future
+        console.log(`Processed 6502 instruction: ${hexValue}`);
+          opcodeSwitch(parseInt(hexValue,16), opcode);
 
+        // update the debug table
+        updateDebugTables();
 
+        // update PC counter
+        PC+=pcIncrement;
+        console.log (`Program counter now @: ${PC}`);
+
+        // move to next instruction (handled by PC above)
+        // for debug , add missing opcodes when return 'null'
+        // add missing functions, write new ones - C++ ones used macros
+        console.log(`Next instruction ${loadedROM[PC]}`);
   }
-}
