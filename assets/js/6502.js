@@ -1,27 +1,25 @@
 const CPUregisters = {
-    A: [0, 0, 0, 0, 0, 0, 0, 0],
-    X: [0, 0, 0, 0, 0, 0, 0, 0],
-    Y: [0, 0, 0, 0, 0, 0, 0, 0],
-    // default to bit 2 set (unused)
-    PC: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    S: [0, 0, 1, 0, 0, 0, 0, 0],
-    // status register (P)
+    A: new Uint8Array([0x00]),
+    X: new Uint8Array([0x00]),
+    Y: new Uint8Array([0x00]),
+    S: new Uint8Array([0x00]),
+    PC: new Uint16Array([0x00]),
     P: [
-      C= 0,    // Carry
-      Z= 0,    // Zero
-      I= 0,    // Interrupt Disable
-      D= 0,    // Decimal Mode
-      B= 0,    // Break Command
-      U= 'NA', // Unused
-      V= 1,    // Overflow
-      N= 0     // Negative
+        C= 0,    // Carry
+        Z= 0,    // Zero
+        I= 0,    // Interrupt Disable
+        D= 0,    // Decimal Mode
+        B= 0,    // Break Command
+        U= 'NA', // Unused
+        V= 0,    // Overflow
+        N= 0     // Negative
     ]
-  };
+};
 
 // Destructure for easier access
 // P variables are accessible globally via c,z,i,d,b,u,v,n 
-const { A, X, Y, S, PC, P } = CPUregisters;
-console.log(CPUregisters)
+const { A, X, Y, S, PC } = CPUregisters;
+console.log(CPUregisters);
 
 // 6502 CPU opcode object
 const opcodes = {

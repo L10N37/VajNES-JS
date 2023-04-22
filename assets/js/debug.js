@@ -2501,118 +2501,116 @@ for (let i= 0; i < 2048; i++) {
         registerSection.appendChild(insertRegistersTable);
 
         insertRegistersTable.innerHTML = `
-        <thead>
-          <tr>
-            <th class='addressClass'>Register</th>
-            <th class='addressClass'>00</th>
-            <th class='addressClass'>01</th>
-            <th class='addressClass'>02</th>
-            <th class='addressClass'>03</th>
-            <th class='addressClass'>04</th>
-            <th class='addressClass'>05</th>
-            <th class='addressClass'>06</th>
-            <th class='addressClass'>07</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr> 
-            <td class='addressClass'>A</td>
-            <td id='A0'></td>
-            <td id='A1'></td>
-            <td id='A2'></td>
-            <td id='A3'></td>
-            <td id='A4'></td>
-            <td id='A5'></td>
-            <td id='A6'></td>
-            <td id='A7'></td>
-          </tr>
-          <tr> 
-            <td class='addressClass'>X</td>
-            <td id='X0'></td>
-            <td id='X1'></td>
-            <td id='X2'></td>
-            <td id='X3'></td>
-            <td id='X4'></td>
-            <td id='X5'></td>
-            <td id='X6'></td>
-            <td id='X7'></td>
-          </tr>
-          <tr> 
-            <td class='addressClass'>Y</td>
-            <td id='Y0'></td>
-            <td id='Y1'></td>
-            <td id='Y2'></td>
-            <td id='Y3'></td>
-            <td id='Y4'></td>
-            <td id='Y5'></td>
-            <td id='Y6'></td>
-            <td id='Y7'></td>
-          </tr>
-          <tr> 
-            <td class='addressClass'>S</td>
-            <td id='S0'></td>
-            <td id='S1'></td>
-            <td id='S2'></td>
-            <td id='S3'></td>
-            <td id='S4'></td>
-            <td id='S5'></td>
-            <td id='S6'></td>
-            <td id='S7'></td>
-          </tr>
-          <tr> 
-            <td class='addressClass'>PCL</td>
-            <td id='PC0'></td>
-            <td id='PC1'></td>
-            <td id='PC2'></td>
-            <td id='PC3'></td>
-            <td id='PC4'></td>
-            <td id='PC5'></td>
-            <td id='PC6'></td>
-            <td id='PC7'></td>
-          </tr>
-          <tr> 
-            <td class='addressClass'>PCH</td>
-            <td id='PC8'></td>
-            <td id='PC9'></td>
-            <td id='PC10'></td>
-            <td id='PC11'></td>
-            <td id='PC12'></td>
-            <td id='PC13'></td>
-            <td id='PC14'></td>
-            <td id='PC15'></td>
-          </tr>
-          <tr> 
-          <td class='addressClass'>PC</td>
-        `;
+        <table>
+  <thead>
+    <tr>
+      <th class='addressClass'>Register</th>
+      <th class='addressClass'>07</th>
+      <th class='addressClass'>06</th>
+      <th class='addressClass'>05</th>
+      <th class='addressClass'>04</th>
+      <th class='addressClass'>03</th>
+      <th class='addressClass'>02</th>
+      <th class='addressClass'>01</th>
+      <th class='addressClass'>00</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr> 
+      <td class='addressClass'>A</td>
+      <td id='A0'></td>
+      <td id='A1'></td>
+      <td id='A2'></td>
+      <td id='A3'></td>
+      <td id='A4'></td>
+      <td id='A5'></td>
+      <td id='A6'></td>
+      <td id='A7'></td>
+    </tr>
+    <tr> 
+      <td class='addressClass'>X</td>
+      <td id='X0'></td>
+      <td id='X1'></td>
+      <td id='X2'></td>
+      <td id='X3'></td>
+      <td id='X4'></td>
+      <td id='X5'></td>
+      <td id='X6'></td>
+      <td id='X7'></td>
+    </tr>
+    <tr> 
+      <td class='addressClass'>Y</td>
+      <td id='Y0'></td>
+      <td id='Y1'></td>
+      <td id='Y2'></td>
+      <td id='Y3'></td>
+      <td id='Y4'></td>
+      <td id='Y5'></td>
+      <td id='Y6'></td>
+      <td id='Y7'></td>
+    </tr>
+    <tr> 
+      <td class='addressClass'>S</td>
+      <td id='S0'></td>
+      <td id='S1'></td>
+      <td id='S2'></td>
+      <td id='S3'></td>
+      <td id='S4'></td>
+      <td id='S5'></td>
+      <td id='S6'></td>
+      <td id='S7'></td>
+    </tr>
+    <tr> 
+      <td class='addressClass'>PCH</td>
+      <td id='PC0'></td>
+      <td id='PC1'></td>
+      <td id='PC2'></td>
+      <td id='PC3'></td>
+      <td id='PC4'></td>
+      <td id='PC5'></td>
+      <td id='PC6'></td>
+      <td id='PC7'></td>
+    </tr>
+    <tr> 
+      <td class='addressClass'>PCL</td>
+      <td id='PC8'></td>
+      <td id='PC9'></td>
+      <td id='PC10'></td>
+      <td id='PC11'></td>
+      <td id='PC12'></td>
+      <td id='PC13'></td>
+      <td id='PC14'></td>
+      <td id='PC15'></td>
+    </tr>
+  </tbody>
+</table>
+`
         
 // create array of ID's for each CPU register
-let regArrayA = [];
-  let regArrayX = [];
-    let regArrayY = [];
-      let regArrayS = [];
-        let regArrayPC = [];
+const regArrayA = ['A7', 'A6', 'A5', 'A4', 'A3', 'A2', 'A1', 'A0'];
+  const regArrayX = ['X7', 'X6', 'X5', 'X4', 'X3', 'X2', 'X1', 'X0'];
+    const regArrayY = ['Y7', 'Y6', 'Y5', 'Y4', 'Y3', 'Y2', 'Y1', 'Y0'];
+      const regArrayS = ['S7', 'S6', 'S5', 'S4', 'S3', 'S2', 'S1', 'S0'];
+        const regArrayPC = Array.from({ length: 16 }, (_, i) => `PC${i}`);
 
-        
-for (let i= 0; i < 8; i++) { 
-  regArrayA.push('A'+i);
-    regArrayX.push('X'+i);
-      regArrayY.push('Y'+i);
-        regArrayS.push('S'+i);
-  }
-for (let i= 0; i < 16; i++) { 
-  regArrayPC.push('PC'+i);
-  }
+// the binary string always has a length of 8 characters, padded with zeroes if necessary. 
+let A_Binary = A[0].toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+  let X_Binary = X[0].toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+    let Y_Binary = Y[0].toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+      let S_Binary = S[0].toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
 
 // insert register bits into the corresponding cells
 for (let i = 0; i < 8; i++) {
-  document.getElementById(regArrayA[i]).innerText= A[i];
-  document.getElementById(regArrayX[i]).innerText= X[i];
-  document.getElementById(regArrayY[i]).innerText= Y[i];
-  document.getElementById(regArrayS[i]).innerText= S[i];
-}
-for (let i = 0; i < 16; i++) {
-  document.getElementById(regArrayPC[i]).innerText= PC[i];
-}
+  document.getElementById(regArrayA[i]).innerText= A_Binary[i];
+    document.getElementById(regArrayX[i]).innerText= X_Binary[i];
+      document.getElementById(regArrayY[i]).innerText= Y_Binary[i];
+        document.getElementById(regArrayS[i]).innerText= S_Binary[i];
+        }
+
+let PC_asBinary = PC[0].toString(2).padStart(16, '0').split('').map(bit => parseInt(bit));
+  for (let i = 0; i < 16; i++) {
+    document.getElementById(regArrayPC[i]).innerText= PC_asBinary[i];
+    }
 
   // flag registers section, manual ID allocation
   let insertFlagRegisterTable= document.createElement('table');
@@ -2653,7 +2651,7 @@ for (let i = 0; i < 16; i++) {
   }
   // populate the cells with the flag bits
   for (let i = 0; i < 8; i++) {
-    document.getElementById(flagBitsIDArray[i]).innerText= P[i];
+    document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[i];
   }
 
   let ROM=[];
