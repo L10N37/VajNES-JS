@@ -114,46 +114,51 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
       document.querySelector('header').innerHTML = `<button id="header-button">ROM Header Information</button>`;
       
       console.log(nesHeader);
+
+      let header = {};
+      
       if (nesHeader[0] !== 0x4E || nesHeader[1] !== 0x45 || nesHeader[2] !== 0x53 || nesHeader[3] !== 0x1A) {
         console.warn('ROM file does not contain a valid NES header.');
-        } else {
-          let header = {
-            1: nesHeader[0].toString(),
-            2: nesHeader[1].toString(),
-            3: nesHeader[2].toString(),
-            4: nesHeader[3].toString(),
-            5: nesHeader[4].toString(),
-            6: nesHeader[5].toString(),
-            7: nesHeader[6].toString(),
-            8: nesHeader[7].toString(),
-            9: nesHeader[8].toString(),
-            10: nesHeader[9].toString(),
-            11: nesHeader[10].toString(),
-            12: nesHeader[11].toString(),
-            13: nesHeader[12].toString(),
-            14: nesHeader[13].toString(),
-            15: nesHeader[14].toString(),
-            16: nesHeader[15].toString()
-    };
-}
-
-  // add click event listener to the button
-    const headerButton = document.getElementById('header-button');
-      headerButton.addEventListener('click', headerInfo);
-
-function headerInfo(header) {
-  let info = 'Byte 1 (0x4E): ' + header[1] + ' - Constant $4E ("N")\n' +
-             'Byte 2 (0x45): ' + header[2] + ' - Constant $45 ("E")\n' +
-             'Byte 3 (0x53): ' + header[3] + ' - Constant $53 ("S")\n' +
-             'Byte 4 (0x1A): ' + header[4] + ' - Constant $1A\n' +
-             'Bytes 5-6 (prgRomSize): ' + header[5] + header[6] + ' - Size of PRG ROM in 16 KB units\n' +
-             'Bytes 7-8 (chrRomSize): ' + header[7] + header[8] + ' - Size of CHR ROM in 8 KB units (0 means the board uses CHR RAM)\n' +
-             'Byte 9 (0x00): ' + header[9] + ' - Flags 6 - Mapper, mirroring, battery, trainer\n' +
-             'Byte 10 (0x00): ' + header[10] + ' - Flags 7 - Mapper, VS/PlayChoice, NES 2.0\n' +
-             'Bytes 11-15 (miscFlags): ' + header[11] + header[12] + header[13] + header[14] + header[15] + ' - Miscellaneous ROM flags';
-  window.alert(info);
-}
-
+      } else {
+        header = {
+          1: nesHeader[0].toString(),
+          2: nesHeader[1].toString(),
+          3: nesHeader[2].toString(),
+          4: nesHeader[3].toString(),
+          5: nesHeader[4].toString(),
+          6: nesHeader[5].toString(),
+          7: nesHeader[6].toString(),
+          8: nesHeader[7].toString(),
+          9: nesHeader[8].toString(),
+          10: nesHeader[9].toString(),
+          11: nesHeader[10].toString(),
+          12: nesHeader[11].toString(),
+          13: nesHeader[12].toString(),
+          14: nesHeader[13].toString(),
+          15: nesHeader[14].toString(),
+          16: nesHeader[15].toString()
+        };
+      }
+      
+      // add click event listener to the button
+      const headerButton = document.getElementById('header-button');
+      headerButton.addEventListener('click', function() {
+        headerInfo(header);
+      });
+      
+      function headerInfo(header) {
+        let info = 'Byte 1 (0x4E): ' + header[1] + ' - Constant $4E ("N")\n' +
+                   'Byte 2 (0x45): ' + header[2] + ' - Constant $45 ("E")\n' +
+                   'Byte 3 (0x53): ' + header[3] + ' - Constant $53 ("S")\n' +
+                   'Byte 4 (0x1A): ' + header[4] + ' - Constant $1A\n' +
+                   'Bytes 5-6 (prgRomSize): ' + header[5] + header[6] + ' - Size of PRG ROM in 16 KB units\n' +
+                   'Bytes 7-8 (chrRomSize): ' + header[7] + header[8] + ' - Size of CHR ROM in 8 KB units (0 means the board uses CHR RAM)\n' +
+                   'Byte 9 (0x00): ' + header[9] + ' - Flags 6 - Mapper, mirroring, battery, trainer\n' +
+                   'Byte 10 (0x00): ' + header[10] + ' - Flags 7 - Mapper, VS/PlayChoice, NES 2.0\n' +
+                   'Bytes 11-15 (miscFlags): ' + header[11] + header[12] + header[13] + header[14] + header[15] + ' - Miscellaneous ROM flags';
+        window.alert(info);
+      }
+      
       // Display the ROM as HEX values
       console.log(file.name + " data: ");
       console.log(Array.from(loadedROM, byte => hexPrefix + byte.toString(16).padStart(2, '0')).join(' '));
