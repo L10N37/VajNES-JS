@@ -170,6 +170,8 @@ const opcodes = {
 
 }
 
+// TO DO: break opcodes into even amount and ID them, make separate smaller switch cases
+// and call the ID'd switch for optimisation
 function opcodeSwitch(codeToProcess,opcode) {
 switch (codeToProcess) {
     case 0x78:
@@ -195,44 +197,21 @@ function ADC_IMM() {
     A = parseInt(loadedROM[PC+1], 16);
     console.log(`Operand for 0x69 is ${loadedROM[PC+1]}`);
     console.log (`the new value of A reg is ${A}`);
-        if (CPUregisters.P.C==true) {
-            A+=1;
-                }
-            }
+    CPUregisters.P.C == true ? A : A+=1;
+}
 
 function ROL_ZP() {
     zpgAddr= parseInt(loadedROM[PC+1], 16);
     // Load the value at the specified zero-page memory location
     let value = workRamIdArray[zpgAddr];
-  
     // Rotate left and shift in the carry flag
     const carry = (value & 0x80) >> 7;
     value = ((value << 1) & 0xfe) | parseInt(CPUregisters.P.C);
-   
     // Update the carry flag
-    if (carry==0) {
-    CPUregisters.P.C = false;
-    } else {
-    CPUregisters.P.C = true;
-    }
-  
+    CPUregisters.P.C = (carry == 0) ? false : true;
     // Store the updated value back to the same zero-page memory location
-    if (systemWorkRam[zpgAddr]!=0){
-    systemWorkRam[zpgAddr] = value;
-    }
-  
+    systemWorkRam[zpgAddr] = (systemWorkRam[zpgAddr] != 0) ? value : systemWorkRam[zpgAddr];
     // Update the zero and negative flags
     CPUregisters.P.Z = value === 0;
     CPUregisters.P.N = (value & 0x80) !== 0;
   }
-  
-
-/*
-Carry flag (C): The value of the carry flag is shifted into the least significant bit of the memory 
-location specified by the zero page address. The previous value of the carry flag is shifted into 
-the most significant bit of the same memory location.
-
-Zero flag (Z): The zero flag is set if the result of the rotation is zero.
-
-Negative flag (N): The negative flag is set if the most significant bit of the rotated value is 1
-*/

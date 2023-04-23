@@ -31,7 +31,7 @@ for (let i= 0; i < 2048; i++) {
   document.getElementById(workRamIdArray[i]).innerText= systemWorkRam[i]+'h';
   document.getElementById(workRamIdArray[i]).addEventListener("click", function(event) {
   // index in hex!
-  document.querySelector('instructionContainer').innerHTML= '&nbsp'+ '0x'+ i.toString(16);
+  document.querySelector('instructionContainer').innerHTML='&nbsp'+hexPrefix+i.toString(16);
   })
   }
 
@@ -115,7 +115,8 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
   
       // Extract the reset vector
       loadedROM = new Uint8Array(gameROM);
-      console.log(loadedROM.length);
+      console.log('ROM size(H):'+ hexPrefix+loadedROM.length.toString(16));
+
       // last 2 bytes of the ROM, but they have a 16 byte header added, and are stored little endian
       let resetVectorHighByte = loadedROM.length-16;
       let resetVectorLowByte = loadedROM.length-17;
@@ -132,9 +133,6 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
       let insertInstructionArea = document.createElement('table');
       insertInstructionArea.className = 'GeneratedTable';
       instructionSection.appendChild(insertInstructionArea);
-  
-      // Check ROM's first byte (only for debug)
-      console.log(hexPrefix + loadedROM[0]);
   
       insertInstructionArea.innerHTML = `
         <thead>
@@ -223,9 +221,6 @@ function step(){
         console.log(`Processed 6502 instruction: ${hexValue}`);
           opcodeSwitch(parseInt(hexValue,16), opcode);
 
-        // update the debug table
-        updateDebugTables();
-
         // update PC counter
         PC+=pcIncrement;
         console.log (`Program counter now @: ${PC}`);
@@ -234,4 +229,7 @@ function step(){
         // for debug , add missing opcodes when return 'null'
         // add missing functions, write new ones - C++ ones used macros
         console.log(`Next instruction ${loadedROM[PC]}`);
+
+          // update the debug table
+          updateDebugTables();
   }
