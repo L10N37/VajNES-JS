@@ -28,7 +28,7 @@ insertDebugTable.innerHTML = WRAM_Table;
       }
 // populate the cells with RAM contents, add click event to memory locations
 for (let i= 0; i < 2048; i++) {
-  document.getElementById(workRamIdArray[i]).innerText= systemWorkRam[i]+'h';
+  document.getElementById(workRamIdArray[i]).innerText= memoryMap[i]+'h';
   document.getElementById(workRamIdArray[i]).addEventListener("click", function(event) {
   // index in hex!
   document.querySelector('instructionContainer').innerHTML='&nbsp'+hexPrefix+i.toString(16);
@@ -88,8 +88,6 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
     document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
   }
 
-  let ROM=[];
-
   function readFile(input) {
     let file = input.files[0];
     let extension = file.name.split('.').pop().toLowerCase();
@@ -100,32 +98,83 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
     }
     
     let reader = new FileReader();
-    reader.readAsArrayBuffer(file);
-    reader.onload = function() {
-      const gameROM = reader.result;
-      console.log(file.name + " loaded");
-  
-      let dataview = new DataView(gameROM);
-  
+      reader.readAsArrayBuffer(file);
+        reader.onload = function() {
+          const gameROM = reader.result;
+            console.log(file.name + " loaded");
+              let dataview = new Uint8Array(gameROM);
+                loadedROM = new Uint8Array(gameROM);
       // Check for NES header
       let nesHeader = new Uint8Array(gameROM.slice(0, 16));
       if (nesHeader[0] !== 0x4E || nesHeader[1] !== 0x45 || nesHeader[2] !== 0x53 || nesHeader[3] !== 0x1A) {
         console.warn('ROM file does not contain a valid NES header.');
       }
-  
-      // Extract the reset vector
-      loadedROM = new Uint8Array(gameROM);
-      console.log('ROM size(H):'+ hexPrefix+loadedROM.length.toString(16));
 
+      // insert 'check header button' into HTML header
+      document.querySelector('header').innerHTML = `<button id="header-button">ROM Header Information</button>`;
+      
+      console.log(nesHeader);
+      if (nesHeader[0] !== 0x4E || nesHeader[1] !== 0x45 || nesHeader[2] !== 0x53 || nesHeader[3] !== 0x1A) {
+        console.warn('ROM file does not contain a valid NES header.');
+        } else {
+          let header = {
+            1: nesHeader[0].toString(),
+            2: nesHeader[1].toString(),
+            3: nesHeader[2].toString(),
+            4: nesHeader[3].toString(),
+            5: nesHeader[4].toString(),
+            6: nesHeader[5].toString(),
+            7: nesHeader[6].toString(),
+            8: nesHeader[7].toString(),
+            9: nesHeader[8].toString(),
+            10: nesHeader[9].toString(),
+            11: nesHeader[10].toString(),
+            12: nesHeader[11].toString(),
+            13: nesHeader[12].toString(),
+            14: nesHeader[13].toString(),
+            15: nesHeader[14].toString(),
+            16: nesHeader[15].toString()
+    };
+}
+
+  // add click event listener to the button
+    const headerButton = document.getElementById('header-button');
+      headerButton.addEventListener('click', headerInfo);
+
+function headerInfo(header) {
+  let info = 'Byte 1 (0x4E): ' + header[1] + ' - Constant $4E ("N")\n' +
+             'Byte 2 (0x45): ' + header[2] + ' - Constant $45 ("E")\n' +
+             'Byte 3 (0x53): ' + header[3] + ' - Constant $53 ("S")\n' +
+             'Byte 4 (0x1A): ' + header[4] + ' - Constant $1A\n' +
+             'Bytes 5-6 (prgRomSize): ' + header[5] + header[6] + ' - Size of PRG ROM in 16 KB units\n' +
+             'Bytes 7-8 (chrRomSize): ' + header[7] + header[8] + ' - Size of CHR ROM in 8 KB units (0 means the board uses CHR RAM)\n' +
+             'Byte 9 (0x00): ' + header[9] + ' - Flags 6 - Mapper, mirroring, battery, trainer\n' +
+             'Byte 10 (0x00): ' + header[10] + ' - Flags 7 - Mapper, VS/PlayChoice, NES 2.0\n' +
+             'Bytes 11-15 (miscFlags): ' + header[11] + header[12] + header[13] + header[14] + header[15] + ' - Miscellaneous ROM flags';
+  window.alert(info);
+}
+
+      // Display the ROM as HEX values
+      console.log(file.name + " data: ");
+      console.log(Array.from(loadedROM, byte => hexPrefix + byte.toString(16).padStart(2, '0')).join(' '));
+
+      /*
+      // Copy the ROM data to memory location $8000-$BFFF
+      memoryMap.set(loadedROM, 0x8000);
+
+      // Set up the reset vector to point to the start of the ROM data
+      memoryMap[0xFFFC] = 0x00; // low byte of reset vector
+      memoryMap[0xFFFD] = 0x80; // high byte of reset vector
+
+      // Extract the reset vector
       // last 2 bytes of the ROM, but they have a 16 byte header added, and are stored little endian
       let resetVectorHighByte = loadedROM.length-16;
       let resetVectorLowByte = loadedROM.length-17;
 
       let resetVector = loadedROM[resetVectorHighByte] << 8 | loadedROM[resetVectorLowByte];
       console.log(`Reset Vector Offset: ${resetVector}`);
+      */
      
-      console.log(loadedROM);
-  
       // Create instruction / step section now that a ROM is loaded
       let instructionSection = document.querySelector('.instruction-step');
       // Erase the container in case of reloads of ROMS
@@ -134,29 +183,8 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
       insertInstructionArea.className = 'GeneratedTable';
       instructionSection.appendChild(insertInstructionArea);
   
-      insertInstructionArea.innerHTML = `
-        <thead>
-          <tr>
-            <th class='addressClass'>Instruction</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr> 
-            <td id= 'instruction'></td>
-          </tr>
-          <button class='stepButton' type="button" onclick="step()">STEP</button>
-        </tbody>
-        <thead>
-          <tr>
-            <th class='addressClass'>Operand/s</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr> 
-            <td id= 'operand'></td>
-          </tr>
-        </tbody>
-      `;
+      insertInstructionArea.innerHTML = instructionStepTable;
+
     };
   
     reader.onerror = function() {
@@ -223,7 +251,6 @@ function step(){
 
         // update PC counter
         PC+=pcIncrement;
-        console.log (`Program counter now @: ${PC}`);
 
         // move to next instruction (handled by PC above)
         // for debug , add missing opcodes when return 'null'
