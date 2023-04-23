@@ -2,9 +2,9 @@ html{
   font-family:Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;font-family:Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
   background-color: #36383b;
 }
-.debug {
+.debug,.debug2 {
   
-  height: 500px;
+  height: 250px;
   padding: 16px;
   overflow-y: scroll;
   overflow-x: scroll;
@@ -53,7 +53,7 @@ registersText{
   color: white;
 }
 
-a{
+a,b{
   font-size: 32px;
   font-weight: bolder;
   border: outset aqua;
@@ -64,6 +64,7 @@ a{
   margin: 10px;
   background-color: black;
   color: white;
+  margin-top: 20px;
 }
 
 .GeneratedTable {
@@ -128,8 +129,8 @@ a{
     color: yellow;
   }
 
-  InstructionContainer{
-    color: red;
+  locContainer,locContainer2{
+    color:white;
   }
 
   .openFile{
@@ -141,4 +142,12 @@ a{
 
  .stepButton{
   width: 100%;
+  }
+
+  .zpg-cells {
+    color: pink;
+  }
+
+  .stack-cells {
+    color: greenyellow;
   }

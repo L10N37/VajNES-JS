@@ -1,5 +1,6 @@
 const hexPrefix=['0x'];
 
+// WRAM table area
 let insertDebugTable= document.createElement('table');
   insertDebugTable.className= 'GeneratedTable';
     let debugSection = document.querySelector('.debug');
@@ -7,33 +8,54 @@ let insertDebugTable= document.createElement('table');
 
 insertDebugTable.innerHTML = WRAM_Table;
 
-  // all 2048 bytes in work RAM have an ID from ramBytes1 to ramBytes2048 after this section
-  let ramBytes = document.querySelectorAll('td');
-    let y = 17;
-      let deduct = 1;
+// Memory Page 8 area
+insertDebugTable= document.createElement('table');
+  insertDebugTable.className= 'GeneratedTable';
+     debugSection = document.querySelector('.debug2');
+        debugSection.appendChild(insertDebugTable);
 
-  for (i = 0; i < ramBytes.length; i++) {
-    // dont assign the first cell or every vertical hex location cell after that an ID
-    if (i!=0 && i<17) ramBytes[i].id='ramByte'+i;
-    if (i>y && i<y+17) ramBytes[i].id='ramByte'+(i-deduct);
-    if(i%17==0 && i > 17){
-      deduct++;
-      y+=17;
-    } 
+insertDebugTable.innerHTML = pgRom_Table;
+
+// all cells for memory bytes have an ID (and PG-ROM) after this section
+let ramBytes = document.querySelectorAll('td');
+let y = 17;
+let deduct = 1;
+
+for (let i = 0; i < ramBytes.length; i++) {
+  // add background color class to cells within $0000-$00FF (zpg WRAM area)
+  if (i < 256 && i % 17 == 0 ) {
+    ramBytes[i].classList.add('zpg-cells');
   }
+  if (i >= 256 && i < 512 && i % 17 == 0 ) {
+    // add background color class to the next 256 cells (stack WRAM area)
+    ramBytes[i].classList.add('stack-cells');
+  }
+  // assign IDs to cells based on their position in the RAMBytes array
+  if (i != 0 && i < 17) {
+    ramBytes[i].id = 'ramByte' + i;
+  }
+  if (i > y && i < y + 17) {
+    ramBytes[i].id = 'ramByte' + (i - deduct);
+  }
+  if (i % 17 == 0 && i > 17) {
+    deduct++;
+    y += 17;
+  }
+}
 // create array of ID's for the RAM byte cells
   let workRamIdArray = [];
-    for (let i= 1; i < 2049; i++) {
+    for (let i= 1; i < 2305; i++) {
       workRamIdArray.push('ramByte'+i)
       }
-// populate the cells with RAM contents, add click event to memory locations
-for (let i= 0; i < 2048; i++) {
-  document.getElementById(workRamIdArray[i]).innerText= memoryMap[i]+'h';
-  document.getElementById(workRamIdArray[i]).addEventListener("click", function(event) {
-  // index in hex!
-  document.querySelector('instructionContainer').innerHTML='&nbsp'+hexPrefix+i.toString(16);
-  })
-  }
+
+      // populate the cells with RAM contents, add click event to memory locations
+      for (let i= 0; i < 2304; i++) {
+        document.getElementById(workRamIdArray[i]).innerText= memoryMap[i]+'h';
+          document.getElementById(workRamIdArray[i]).addEventListener("click", function(event) {
+            // index in hex!
+              document.querySelector('locContainer').innerHTML='&nbsp'+hexPrefix+i.toString(16);
+              })
+              }
 
   // Registers Section, manual ID allocation
   let insertRegistersTable= document.createElement('table');
