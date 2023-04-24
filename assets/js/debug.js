@@ -172,19 +172,37 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
 function headerButtonClickHandler() {
     headerInfo(header);
 }
-      function headerInfo(header) {
-        let info = 'Byte 1 (0x4E): ' + header[1] + ' - Constant $4E ("N")\n' +
-                   'Byte 2 (0x45): ' + header[2] + ' - Constant $45 ("E")\n' +
-                   'Byte 3 (0x53): ' + header[3] + ' - Constant $53 ("S")\n' +
-                   'Byte 4 (0x1A): ' + header[4] + ' - Constant $1A\n' +
-                   'Bytes 5-6 (prgRomSize): ' + header[5] + header[6] + ' - Size of PRG ROM in 16 KB units\n' +
-                   'Bytes 7-8 (chrRomSize): ' + header[7] + header[8] + ' - Size of CHR ROM in 8 KB units (0 means the board uses CHR RAM)\n' +
-                   'Byte 9 (0x00): ' + header[9] + ' - Flags 6 - Mapper, mirroring, battery, trainer\n' +
-                   'Byte 10 (0x00): ' + header[10] + ' - Flags 7 - Mapper, VS/PlayChoice, NES 2.0\n' +
-                   'Bytes 11-15 (miscFlags): ' + header[11] + header[12] + header[13] + header[14] + header[15] + ' - Miscellaneous ROM flags';
-        window.alert(info);
-      }
-      
+
+function headerInfo(header) {
+  let system = String.fromCharCode(header[0], header[1], header[2]) === 'NES' && header[3] === 0x1A ? 'Unknown' : 'NES';
+
+  let prgRomSize = header[4];
+  let chrRomSize = header[5];
+  let miscFlags = [header[11], header[12], header[13], header[15], header[15]];
+
+  let prgRomSize16KB = (prgRomSize * 16) + ' KB';
+  let chrRomSize8KB = (chrRomSize * 8) + ' KB';
+  let mapperNumber = ((header[6] >> 4) | (header[7] & 0xF0));
+  let mirroring = ((header[6] & 1) ? 'Vertical' : 'Horizontal');
+  let batteryBacked = ((header[6] & 2) ? 'Yes' : 'No');
+  let trainer = ((header[6] & 4) ? 'Yes' : 'No');
+  let vsPlaychoice = ((header[10] & 1) ? 'Yes' : 'No');
+  let nes2 = ((header[10] & 0x0C) ? 'Yes' : 'No');
+
+  let info = 'System: ' + system + '\n' +
+             'PRG ROM Size: ' + prgRomSize16KB + '\n' +
+             'CHR ROM Size: ' + chrRomSize8KB + ' - ' + (chrRomSize === 0 ? 'Uses CHR RAM' : 'Uses CHR ROM') + '\n' +
+             'Mapper Number: ' + mapperNumber + '\n' +
+             'Mirroring: ' + mirroring + '\n' +
+             'Battery-Backed: ' + batteryBacked + '\n' +
+             'Trainer: ' + trainer + '\n' +
+             'VS/Playchoice: ' + vsPlaychoice + '\n' +
+             'NES 2.0: ' + nes2 + '\n' +
+             'Misc Flags: ' + miscFlags.join(' ') + '\n';
+
+  window.alert(info);
+}
+
       // Display the ROM as HEX values
       console.log(file.name + " data: ");
       console.log(Array.from(loadedROM, byte => hexPrefix + byte.toString(16).padStart(2, '0')).join(' '));
