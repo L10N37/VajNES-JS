@@ -204,7 +204,7 @@ function ADC_IMM() {
 function ROL_ZP() {
     zpgAddr= parseInt(loadedROM[PC+1], 16);
     // Load the value at the specified zero-page memory location
-    let value = workRamIdArray[zpgAddr];
+    let value = WRAMgeneral[zpgAddr];
     // Rotate left and shift in the carry flag
     const carry = (value & 0x80) >> 7;
     value = ((value << 1) & 0xfe) | parseInt(CPUregisters.P.C);

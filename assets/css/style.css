@@ -34,6 +34,7 @@ color: blue;
   border: none;
   cursor: pointer;
   width: 100px;
+  border-radius: 20px;
 }
 
 .dropdown-content {
@@ -165,16 +166,17 @@ a,b{
     border: solid;
   }
 
-  td[id^='memoryByte']:hover { 
-    background-color: yellow;
-    color: red;
+  td[id^='wram-'],[id^='cartSpace']{
+    color: blue;
+    font-weight: bolder;
   }
 
-  td[id^='memoryByte']{
-    color: blue;;
+  td[id^='wram-']:hover,[id^='cartSpace']:hover{
+  background-color: yellow;
   }
+
   td[id^='A'], td[id^='X'], td[id^='Y'], td[id^='S'], td[id^='PC']  {
-    color: blue;;
+    color: blue;
   }
 
   td[id^='P']{ 
@@ -206,9 +208,13 @@ a,b{
   }
 
   .zpg-cells {
-    background-color: pink;
+    background-color: rgb(234, 221, 223);
   }
 
   .stack-cells {
-    background-color: greenyellow;
+    background-color: rgb(220, 243, 186);
+  }
+
+  .wramCells{
+    color: blue;
   }

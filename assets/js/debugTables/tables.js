@@ -1,67 +1,28 @@
+// This adds 16 bytes after the addresses it receives, in address order!
 function incrementAddress(address, endAddress) {
   let hexValue = parseInt(address.substring(1), 16);
-  let hexValueEnd = parseInt(address.substring(1), 16);
+  let hexValueEnd = parseInt(endAddress.substring(1), 16);
   hexValue += 16;
-  if (hexValue > 0xBFFF) {
+  if (hexValue > hexValueEnd) {
     return null;
   }
   return "$" + hexValue.toString(16).toUpperCase().padStart(4, '0');
 }
 
-function createTable(startAddress, endAddress) {
-  let rows = [];
+function createTable(startAddress, endAddress, addClass) {
+  const rows = [];
   let currentAddress = startAddress;
   while (currentAddress !== endAddress) {
-    rows.push(`
-      <tr>
-        <td class="addressClass">${currentAddress}</td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-        <td></td>
-      </tr>
-    `);
+    rows.push(`<tr><td class="addressClass">${currentAddress}</td>${`<td class="${addClass}"></td>`.repeat(15)}<td class="${addClass}"></td></tr>`);
     currentAddress = incrementAddress(currentAddress, endAddress);
     if (currentAddress === null) {
       break;
     }
   }
-  rows.push(`
-    <tr>
-      <td class="addressClass">${endAddress}</td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
-    </tr>
-  `);
-
+  rows.push(`<tr><td class="addressClass">${endAddress}</td>${`<td class="${addClass}"></td>`.repeat(15)}<td class="${addClass}"></td></tr>`);
   return `<table>${rows.join('')}</table>`;
 }
+
 
 const WRAM_Table =
 `
@@ -89,7 +50,7 @@ const WRAM_Table =
   </thead>
   <tbody>
 `
-+ createTable( "$0000", "$07F0");
++ createTable( "$0000", "$07F0", 'wramCells');
 `
   </tbody>
   </table>
@@ -121,12 +82,13 @@ let pgRom_Table = // $8000-$FFFF
   </thead>
   <tbody>
 `
-+ createTable( "$8000", "$BFFF");
++ 
+createTable( "$8000", "$BFF0", 'cartspace') 
++ 
 `
   </tbody>
   </table>
 `;
-
 
         let instructionStepTable=`
         <table>

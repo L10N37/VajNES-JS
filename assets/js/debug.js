@@ -8,7 +8,7 @@ let insertDebugTable= document.createElement('table');
 
 insertDebugTable.innerHTML = WRAM_Table;
 
-// Memory Page 8 area
+// cartridge memory area
 insertDebugTable= document.createElement('table');
   insertDebugTable.className= 'GeneratedTable';
      debugSection = document.querySelector('.debug2');
@@ -16,21 +16,54 @@ insertDebugTable= document.createElement('table');
 
 insertDebugTable.innerHTML = pgRom_Table;
 
-  let memoryByte = document.querySelectorAll('table td:not(.addressClass)');
+ // count up our displayed WRAM cells 
+ let allWramCells= document.querySelectorAll('.wramCells');
+ // Log Check - 2048 == 2Kb of cells == total WRAM size
+ console.log(`WRAM cells = ${allWramCells.length} bytes`);
 
-// work ram includes 256 bytes of zpg and 256 bytes of stack
-for (let i = 0; i < 2048; i++) {
+// count up our displayed cartridge space cells 
+ let allCartSpaceBytes= document.querySelectorAll('.cartspace');
+// Log Check - 32768 == 16Kb of cells == total CH-ROM space (2nd half often a mirror of first)
+ console.log(`Cartridge space cells = ${allCartSpaceBytes.length} bytes`);
+ 
+ // work ram area, set classes and ID + click events in this loop
+ for (let i = 0; i < 2048; i++) {
   if (i < 256) {
-    memoryByte[i].classList.add('zpg-cells');
+    allWramCells[i].classList.add('zpg-cells');
   } else if (i < 512) {
-    memoryByte[i].classList.add('stack-cells');
+    allWramCells[i].classList.add('stack-cells');
   }
-  memoryByte[i].classList.add('memoryCell');
-  memoryByte[i].setAttribute('id', `wram-${i}`);
-  memoryByte[i].addEventListener('click', function() {
+  allWramCells[i].setAttribute('id', `wram-${i}`);
+  allWramCells[i].addEventListener('click', function() {
     let indexHex = i.toString(16).toUpperCase().padStart(4, '0');
-    document.querySelector('locContainer').innerHTML = '&nbsp;' + hexPrefix + indexHex;
+    document.querySelector('locContainer').innerHTML = `&nbsp ${hexPrefix}${indexHex}`;
   });
+}
+
+// cart space area, classes already set when table created, IDs and click events assigned here
+// cart space area, classes already set when table created, IDs and click events assigned here
+for (let i = 0; i < allCartSpaceBytes.length; i++) {
+  let cartSpaceByte = allCartSpaceBytes[i];
+  
+  if (i < 16 * 1024) {
+    // first 16KB ID assignment
+    cartSpaceByte.setAttribute('id', `cartSpaceOneID-${ i + 0x8000 }`);
+
+    // 1st 16KB click event
+    cartSpaceByte.addEventListener('click', function() {
+      let indexHex1 = ( i + 0x8000 ).toString(16).toUpperCase().padStart(4, '0');
+      document.querySelector('locContainer2').innerHTML = `&nbsp ${hexPrefix}${indexHex1}`; 
+    });
+  } else {
+    // second 16KB assignment
+    cartSpaceByte.setAttribute('id', `cartSpaceTwoID-${ (i - (16 * 1024)) + 0xC000 }`);
+
+    // 2nd 16KB click event
+    cartSpaceByte.addEventListener('click', function() {
+      let indexHex2 = ((i - (16 * 1024)) + 0xC000).toString(16).toUpperCase().padStart(4, '0');
+      document.querySelector('locContainer2').innerHTML = `&nbsp ${hexPrefix}${indexHex2}`; 
+    });
+  }
 }
 
   // Registers Section, manual ID allocation
@@ -77,15 +110,16 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
   
   // create ID array of flag bits (P0 to P7)
   let flagBitsIDArray = [];
-  for (let i = 0; i < 8; i++) {
-    flagBitsIDArray.push('P'+i);
-  }
+      for (let i = 0; i < 8; i++) {
+          flagBitsIDArray.push('P'+i);
+        }
   
   // populate the cells with the flag bits
   for (let i = 0; i < 8; i++) {
     document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
   }
 
+  ////////////// READ FILE SECTION //////////////
   function readFile(input) {
     let file = input.files[0];
     let extension = file.name.split('.').pop().toLowerCase();
@@ -101,14 +135,17 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
           const gameROM = reader.result;
             console.log(file.name + " loaded");
                 loadedROM = new Uint8Array(gameROM);
-
+                      
       // Store NES header
       let nesHeader = new Uint8Array(gameROM.slice(0, 16));
       // Check NES header
       if (nesHeader[0] !== 0x4E || nesHeader[1] !== 0x45 || nesHeader[2] !== 0x53 || nesHeader[3] !== 0x1A) {
         console.warn('ROM file does not contain a valid NES header.');
       }
+      // Remove the NES header from the loaded ROM
+      loadedROM = loadedROM.slice(16);
 
+      // Rom header information button displays this information on click
       function headerInfo(nesHeader) {
         let system = String.fromCharCode(nesHeader[0], nesHeader[1], nesHeader[2]) === 'NES' && nesHeader[3] === 0x1A ? 'NES' : 'Unknown';
         let prgRomSize = nesHeader[4];
@@ -146,15 +183,18 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
   // set the data attribute to indicate that the event listener has been added
   headerButton.dataset.clickEventAdded = true;
   }
-
-// define the click event handler function
-function headerButtonClickHandler() {
-    headerInfo(nesHeader);
-}
-
+  // define the click event handler function
+  function headerButtonClickHandler() {
+      headerInfo(nesHeader);
+  }
       // Display the ROM as HEX values
-      console.log(file.name + " data: ");
-      console.log(Array.from(loadedROM, memoryByte => hexPrefix + memoryByte.toString(16).padStart(2, '0')).join(' '));
+      console.log(`${file.name }${` data:`} ${Array.from(loadedROM, allWramCells => hexPrefix + allWramCells.toString(16).padStart(2, '0')).join(' ')}`);
+
+    // Move necessary ROM data to cart space area, mirror if necessary (Will need updating per Mapper suppported)
+    for (let i = 0; i < memoryMap.prgRomLower.size; i++) {
+      systemMemory[memoryMap.prgRomLower.addr + i] = loadedROM[i];
+      }
+      updateDebugTables(allWramCells, allCartSpaceBytes);
 
       // Create instruction / step section now that a ROM is loaded
       let instructionSection = document.querySelector('.instruction-step');
@@ -165,13 +205,12 @@ function headerButtonClickHandler() {
       instructionSection.appendChild(insertInstructionArea);
   
       insertInstructionArea.innerHTML = instructionStepTable;
-
     };
   
     reader.onerror = function() {
       console.log(reader.error);
     };
-  }
+}
 
 function getOpcodeAndAddressingMode(numericValue) {
   for (const opcode in opcodes) {
@@ -192,51 +231,43 @@ function getOpcodeAndAddressingMode(numericValue) {
   return null;
 }
 
-// Find all elements with an ID that starts with "Wram" 
-const wramElements = document.querySelectorAll('[id^="wram"]');
-//for testing, SHOULD BE 2048, can hard code and leave this out, currently logs 2048   \m/   \m/
+function updateDebugTables(allWramCells, allCartSpaceBytes){
+// populate the cells with the flag bits
+for (let i = 0; i < 8; i++) {
+  document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
+  }
 
-// Create a blank array with the same length as the number of elements found
-const workRamIdArray = [wramElements.length]
-
-// Loop over the "Wram" elements and push their IDs into the array
-for (let i = 0; i < wramElements.length; i++) {
-  workRamIdArray[i] = wramElements[i].id;
+// update RAM debug cells with new data
+for (let i = 0; i < allWramCells.length; i++) {
+  allWramCells[i].innerText = `${systemMemory[i].toString(16).padStart(2, '0')}h`;
 }
 
-function updateDebugTables(){
-  // populate the cells with the flag bits
-  for (let i = 0; i < 8; i++) {
-    document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
-    }
+// update cart space area
+for (let i = memoryMap.prgRomLower.addr; i < memoryMap.prgRomLower.size + memoryMap.prgRomLower.addr; i++) {
+  allCartSpaceBytes[i - memoryMap.prgRomLower.addr].innerText = `${systemMemory[i].toString(16).padStart(2, '0')}h`;
+}
 
-  // update RAM debug cells with new data
-  for (let i= 0; i < WRAMlength; i++) {
-    document.getElementById(workRamIdArray[i]).innerText= systemMemory[i]+'h';
-    }
-  
-  
 // the binary string always has a length of 8 characters, padded with zeroes if necessary. 
 let A_Binary = A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
 let X_Binary = X.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-  let Y_Binary = Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-    let S_Binary = S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+let Y_Binary = Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+let S_Binary = S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
 
 // insert register bits into the corresponding cells
 for (let i = 0; i < 8; i++) {
 document.getElementById(regArrayA[i]).innerText= A_Binary[i];
-  document.getElementById(regArrayX[i]).innerText= X_Binary[i];
-    document.getElementById(regArrayY[i]).innerText= Y_Binary[i];
-      document.getElementById(regArrayS[i]).innerText= S_Binary[i];
-      }
+document.getElementById(regArrayX[i]).innerText= X_Binary[i];
+  document.getElementById(regArrayY[i]).innerText= Y_Binary[i];
+    document.getElementById(regArrayS[i]).innerText= S_Binary[i];
+    }
 
 let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt(bit));
-  for (let i = 0; i < 16; i++) {
-    document.getElementById(regArrayPC[i]).innerText= PC_asBinary[i];
-    }
+for (let i = 0; i < 16; i++) {
+  document.getElementById(regArrayPC[i]).innerText= PC_asBinary[i];
   }
+}
 
-function step(){
+function step() {
 
   // fetch instructions object
   const currentInstruction = getOpcodeAndAddressingMode(parseInt(loadedROM[PC],16));
