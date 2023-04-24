@@ -2,6 +2,67 @@ html{
   font-family:Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;font-family:Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
   background-color: #36383b;
 }
+
+header {
+  background-color: silver;
+  height: 40px;
+  color: #fff;
+}
+
+.fileMenuItems{
+width: 100%;
+color: blue;
+}
+
+.windows-bar {
+  display: flex;
+  justify-content: flex-start; /* changed from center to flex-start */
+  align-items: center;
+  height: 100%;
+  padding: 0 10px;
+}
+
+.file-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropbtn {
+  background-color: black;
+  color: #fff;
+  font-size: 20px;
+  border: none;
+  cursor: pointer;
+  width: 100px;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: white;
+  min-width: 200px;
+  z-index: 1;
+}
+
+.dropdown-content button {
+  color: #333;
+  padding: 12px 16px;
+  text-decoration:dotted;
+  display: block;
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+}
+
+.dropdown-content button:hover {
+  background-color: #ddd;
+}
+
+.file-dropdown:hover .dropdown-content {
+  display: block;
+}
+
 .debug,.debug2 {
   
   height: 250px;

@@ -2941,7 +2941,7 @@ let FlagRegisterTable =
           }
         
         // update RAM debug cells with new data
-        for (let i= 0; i < 2048; i++) {
+        for (let i= 0; i < 2304; i++) {
         document.getElementById(workRamIdArray[i]).innerText= memoryMap[i]+'h';
         }
       

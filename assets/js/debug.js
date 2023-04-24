@@ -124,16 +124,12 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
         reader.onload = function() {
           const gameROM = reader.result;
             console.log(file.name + " loaded");
-              let dataview = new Uint8Array(gameROM);
                 loadedROM = new Uint8Array(gameROM);
       // Check for NES header
       let nesHeader = new Uint8Array(gameROM.slice(0, 16));
       if (nesHeader[0] !== 0x4E || nesHeader[1] !== 0x45 || nesHeader[2] !== 0x53 || nesHeader[3] !== 0x1A) {
         console.warn('ROM file does not contain a valid NES header.');
       }
-
-      // insert 'check header button' into HTML header
-      document.querySelector('header').innerHTML = `<button id="header-button">ROM Header Information</button>`;
       
       console.log(nesHeader);
 
@@ -162,12 +158,20 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
         };
       }
       
-      // add click event listener to the button
-      const headerButton = document.getElementById('header-button');
-      headerButton.addEventListener('click', function() {
-        headerInfo(header);
-      });
-      
+  // Header information click event, extra code to ensure amount of files loaded != amount of times the alert pops up on a click
+  const headerButton = document.getElementById('header-button');
+  // check if click event handler has already been added
+  if (!headerButton.dataset.clickEventAdded) {
+  // add a new click event listener
+  headerButton.addEventListener('click', headerButtonClickHandler);
+  // set the data attribute to indicate that the event listener has been added
+  headerButton.dataset.clickEventAdded = true;
+  }
+
+// define the click event handler function
+function headerButtonClickHandler() {
+    headerInfo(header);
+}
       function headerInfo(header) {
         let info = 'Byte 1 (0x4E): ' + header[1] + ' - Constant $4E ("N")\n' +
                    'Byte 2 (0x45): ' + header[2] + ' - Constant $45 ("E")\n' +
@@ -185,23 +189,6 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
       console.log(file.name + " data: ");
       console.log(Array.from(loadedROM, byte => hexPrefix + byte.toString(16).padStart(2, '0')).join(' '));
 
-      /*
-      // Copy the ROM data to memory location $8000-$BFFF
-      memoryMap.set(loadedROM, 0x8000);
-
-      // Set up the reset vector to point to the start of the ROM data
-      memoryMap[0xFFFC] = 0x00; // low byte of reset vector
-      memoryMap[0xFFFD] = 0x80; // high byte of reset vector
-
-      // Extract the reset vector
-      // last 2 bytes of the ROM, but they have a 16 byte header added, and are stored little endian
-      let resetVectorHighByte = loadedROM.length-16;
-      let resetVectorLowByte = loadedROM.length-17;
-
-      let resetVector = loadedROM[resetVectorHighByte] << 8 | loadedROM[resetVectorLowByte];
-      console.log(`Reset Vector Offset: ${resetVector}`);
-      */
-     
       // Create instruction / step section now that a ROM is loaded
       let instructionSection = document.querySelector('.instruction-step');
       // Erase the container in case of reloads of ROMS
@@ -239,6 +226,8 @@ function getOpcodeAndAddressingMode(numericValue) {
 }
 
 function step(){
+
+  console.log(`memoryMap 0x8000 byte: ${memoryMap[0x8000]}`);
   // fetch instructions object
   const currentInstruction = getOpcodeAndAddressingMode(parseInt(loadedROM[PC],16));
   // destructure
