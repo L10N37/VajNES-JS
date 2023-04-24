@@ -2550,7 +2550,8 @@ const registersTable =
 </table>
 `;
 
-let pgRom_Table =`
+let pgRom_Table = // $8000-$FFFF
+`
   <thead>
   <tr>
   <th class='addressClass' id ='sticky'>Offset(h)</th>

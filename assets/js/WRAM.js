@@ -1,7 +1,7 @@
 //  TOTAL RAM 2048 BYTES: $0000 - $07FF;
 // https://www.nesdev.org/wiki/CPU_memory_map
 
-// 65536 bytes of memory, 64Kb
+// 65536 bytes of memory, 64KB
 // TOTAL WRAM 2048 BYTES: $0000 - $07FF;
 
 const  zeroPage = [ // $0000 - $00FF

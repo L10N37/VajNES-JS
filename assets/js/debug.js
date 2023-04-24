@@ -131,32 +131,48 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
         console.warn('ROM file does not contain a valid NES header.');
       }
       
-      console.log(nesHeader);
-
-      let header = {};
+      let header = [];
       
       if (nesHeader[0] !== 0x4E || nesHeader[1] !== 0x45 || nesHeader[2] !== 0x53 || nesHeader[3] !== 0x1A) {
         console.warn('ROM file does not contain a valid NES header.');
       } else {
-        header = {
-          1: nesHeader[0].toString(),
-          2: nesHeader[1].toString(),
-          3: nesHeader[2].toString(),
-          4: nesHeader[3].toString(),
-          5: nesHeader[4].toString(),
-          6: nesHeader[5].toString(),
-          7: nesHeader[6].toString(),
-          8: nesHeader[7].toString(),
-          9: nesHeader[8].toString(),
-          10: nesHeader[9].toString(),
-          11: nesHeader[10].toString(),
-          12: nesHeader[11].toString(),
-          13: nesHeader[12].toString(),
-          14: nesHeader[13].toString(),
-          15: nesHeader[14].toString(),
-          16: nesHeader[15].toString()
-        };
+        header = [
+          nesHeader[0], nesHeader[1], nesHeader[2], nesHeader[3],
+          nesHeader[4], nesHeader[5], nesHeader[6], nesHeader[7],
+          nesHeader[8], nesHeader[9], nesHeader[10], nesHeader[11],
+          nesHeader[12], nesHeader[13], nesHeader[14], nesHeader[15]
+        ]
       }
+      
+      function headerInfo(header) {
+        let system = String.fromCharCode(header[0], header[1], header[2]) === 'NES' && header[3] === 0x1A ? 'Unknown' : 'NES';
+        console.log(header);
+        let prgRomSize = header[4];
+        let chrRomSize = header[5];
+        let miscFlags = [header[11], header[12], header[13], header[14], header[15]];
+      
+        let prgRomSizeKB = (prgRomSize * 16) + ' KB';
+        let chrRomSizeKB = (chrRomSize * 8) + ' KB';
+        let mapperNumber = ((header[6] >> 4) | (header[7] & 0xF0));
+        let mirroring = ((header[6] & 0x01) ? 'Vertical' : 'Horizontal');
+        let batteryBacked = ((header[6] & 0x02) ? 'Yes' : 'No');
+        let trainer = ((header[6] & 0x04) ? 'Yes' : 'No');
+        let vsPlaychoice = ((header[10] & 0x01) ? 'Yes' : 'No');
+        let nes2 = ((header[7] & 0x0C) ? 'Yes' : 'No');
+      
+        let info = 'System: ' + system + '\n' +
+                   'PRG ROM Size: ' + prgRomSizeKB + '\n' +
+                   'CHR ROM Size: ' + chrRomSizeKB + ' - ' + (chrRomSize === 0 ? 'Uses CHR RAM' : 'Uses CHR ROM') + '\n' +
+                   'Mapper Number: ' + mapperNumber + '\n' +
+                   'Mirroring: ' + mirroring + '\n' +
+                   'Battery-Backed: ' + batteryBacked + '\n' +
+                   'Trainer: ' + trainer + '\n' +
+                   'VS/Playchoice: ' + vsPlaychoice + '\n' +
+                   'NES 2.0: ' + nes2 + '\n' +
+                   'Misc Flags: ' + miscFlags.join(' ') + '\n';
+      
+        window.alert(info);
+      }      
       
   // Header information click event, extra code to ensure amount of files loaded != amount of times the alert pops up on a click
   const headerButton = document.getElementById('header-button');
@@ -175,13 +191,13 @@ function headerButtonClickHandler() {
 
 function headerInfo(header) {
   let system = String.fromCharCode(header[0], header[1], header[2]) === 'NES' && header[3] === 0x1A ? 'Unknown' : 'NES';
-
+ console.log(header);
   let prgRomSize = header[4];
   let chrRomSize = header[5];
-  let miscFlags = [header[11], header[12], header[13], header[15], header[15]];
+  let miscFlags = [header[11], header[12], header[13], header[14], header[15]];
 
-  let prgRomSize16KB = (prgRomSize * 16) + ' KB';
-  let chrRomSize8KB = (chrRomSize * 8) + ' KB';
+  let prgRomSizeKB = (prgRomSize * 16) + ' KB';
+  let chrRomSizeKB = (chrRomSize * 8) + ' KB';
   let mapperNumber = ((header[6] >> 4) | (header[7] & 0xF0));
   let mirroring = ((header[6] & 1) ? 'Vertical' : 'Horizontal');
   let batteryBacked = ((header[6] & 2) ? 'Yes' : 'No');
@@ -190,8 +206,8 @@ function headerInfo(header) {
   let nes2 = ((header[10] & 0x0C) ? 'Yes' : 'No');
 
   let info = 'System: ' + system + '\n' +
-             'PRG ROM Size: ' + prgRomSize16KB + '\n' +
-             'CHR ROM Size: ' + chrRomSize8KB + ' - ' + (chrRomSize === 0 ? 'Uses CHR RAM' : 'Uses CHR ROM') + '\n' +
+             'PRG ROM Size: ' + prgRomSizeKB + '\n' +
+             'CHR ROM Size: ' + chrRomSizeKB + ' - ' + (chrRomSize === 0 ? 'Uses CHR RAM' : 'Uses CHR ROM') + '\n' +
              'Mapper Number: ' + mapperNumber + '\n' +
              'Mirroring: ' + mirroring + '\n' +
              'Battery-Backed: ' + batteryBacked + '\n' +
@@ -202,6 +218,7 @@ function headerInfo(header) {
 
   window.alert(info);
 }
+
 
       // Display the ROM as HEX values
       console.log(file.name + " data: ");
