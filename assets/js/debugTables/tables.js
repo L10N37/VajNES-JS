@@ -272,35 +272,3 @@ let pgRom_Table = // $8000-$FFFF
         </tbody>
         </table>
         `;
-        
-
-      function updateDebugTables(){
-        // populate the cells with the flag bits
-        for (let i = 0; i < 8; i++) {
-          document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
-          }
-        
-        // update RAM debug cells with new data
-        for (let i= 0; i < 2304; i++) {
-        document.getElementById(workRamIdArray[i]).innerText= memoryMap[i]+'h';
-        }
-      
-      // the binary string always has a length of 8 characters, padded with zeroes if necessary. 
-      let A_Binary = A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-      let X_Binary = X.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-        let Y_Binary = Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-          let S_Binary = S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-      
-      // insert register bits into the corresponding cells
-      for (let i = 0; i < 8; i++) {
-      document.getElementById(regArrayA[i]).innerText= A_Binary[i];
-        document.getElementById(regArrayX[i]).innerText= X_Binary[i];
-          document.getElementById(regArrayY[i]).innerText= Y_Binary[i];
-            document.getElementById(regArrayS[i]).innerText= S_Binary[i];
-            }
-      
-      let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt(bit));
-        for (let i = 0; i < 16; i++) {
-          document.getElementById(regArrayPC[i]).innerText= PC_asBinary[i];
-          }
-        }

@@ -33,13 +33,6 @@ for (let i = 0; i < 2048; i++) {
   });
 }
 
-
-
-/*
-    // Update the locContainer element with the index value in hexadecimal
-    
-*/
-
   // Registers Section, manual ID allocation
   let insertRegistersTable= document.createElement('table');
     insertRegistersTable.className= 'GeneratedTable';
@@ -199,9 +192,52 @@ function getOpcodeAndAddressingMode(numericValue) {
   return null;
 }
 
+// Find all elements with an ID that starts with "Wram" 
+const wramElements = document.querySelectorAll('[id^="wram"]');
+//for testing, SHOULD BE 2048, can hard code and leave this out, currently logs 2048   \m/   \m/
+
+// Create a blank array with the same length as the number of elements found
+const workRamIdArray = [wramElements.length]
+
+// Loop over the "Wram" elements and push their IDs into the array
+for (let i = 0; i < wramElements.length; i++) {
+  workRamIdArray[i] = wramElements[i].id;
+}
+
+function updateDebugTables(){
+  // populate the cells with the flag bits
+  for (let i = 0; i < 8; i++) {
+    document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
+    }
+
+  // update RAM debug cells with new data
+  for (let i= 0; i < WRAMlength; i++) {
+    document.getElementById(workRamIdArray[i]).innerText= systemMemory[i]+'h';
+    }
+  
+  
+// the binary string always has a length of 8 characters, padded with zeroes if necessary. 
+let A_Binary = A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+let X_Binary = X.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+  let Y_Binary = Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+    let S_Binary = S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+
+// insert register bits into the corresponding cells
+for (let i = 0; i < 8; i++) {
+document.getElementById(regArrayA[i]).innerText= A_Binary[i];
+  document.getElementById(regArrayX[i]).innerText= X_Binary[i];
+    document.getElementById(regArrayY[i]).innerText= Y_Binary[i];
+      document.getElementById(regArrayS[i]).innerText= S_Binary[i];
+      }
+
+let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt(bit));
+  for (let i = 0; i < 16; i++) {
+    document.getElementById(regArrayPC[i]).innerText= PC_asBinary[i];
+    }
+  }
+
 function step(){
 
-  console.log(`memory 0x8000 memoryByte: ${memory[0x8000]}`);
   // fetch instructions object
   const currentInstruction = getOpcodeAndAddressingMode(parseInt(loadedROM[PC],16));
   // destructure

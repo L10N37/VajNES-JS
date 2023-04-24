@@ -211,7 +211,7 @@ function ROL_ZP() {
     // Update the carry flag
     CPUregisters.P.C = (carry == 0) ? false : true;
     // Store the updated value back to the same zero-page memory location
-    memoryMap[zpgAddr] = (memoryMap[zpgAddr] != 0) ? value : memoryMap[zpgAddr];
+    WRAMgeneral[zpgAddr] = ((WRAMgeneral)[zpgAddr] != 0) ? value : WRAMgeneral[zpgAddr];
     // Update the zero and negative flags
     CPUregisters.P.Z = value === 0;
     CPUregisters.P.N = (value & 0x80) !== 0;
