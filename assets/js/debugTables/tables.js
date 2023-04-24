@@ -1,5 +1,6 @@
-function incrementAddress(address) {
+function incrementAddress(address, endAddress) {
   let hexValue = parseInt(address.substring(1), 16);
+  let hexValueEnd = parseInt(address.substring(1), 16);
   hexValue += 16;
   if (hexValue > 0xBFFF) {
     return null;
@@ -32,7 +33,7 @@ function createTable(startAddress, endAddress) {
         <td></td>
       </tr>
     `);
-    currentAddress = incrementAddress(currentAddress);
+    currentAddress = incrementAddress(currentAddress, endAddress);
     if (currentAddress === null) {
       break;
     }
@@ -62,7 +63,6 @@ function createTable(startAddress, endAddress) {
   return `<table>${rows.join('')}</table>`;
 }
 
-
 const WRAM_Table =
 `
 <table>
@@ -88,11 +88,11 @@ const WRAM_Table =
   </tr>
   </thead>
   <tbody>
-</table>
 `
-+ createTable( "$0000", "$07FF");
++ createTable( "$0000", "$07F0");
 `
   </tbody>
+  </table>
 `;
 
 let pgRom_Table = // $8000-$FFFF
@@ -120,11 +120,11 @@ let pgRom_Table = // $8000-$FFFF
   </tr>
   </thead>
   <tbody>
-</table>
 `
 + createTable( "$8000", "$BFFF");
 `
   </tbody>
+  </table>
 `;
 
 

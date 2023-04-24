@@ -165,12 +165,12 @@ a,b{
     border: solid;
   }
 
-  td[id^='ramByte']:hover { 
+  td[id^='memoryByte']:hover { 
     background-color: yellow;
     color: red;
   }
 
-  td[id^='ramByte']{
+  td[id^='memoryByte']{
     color: blue;;
   }
   td[id^='A'], td[id^='X'], td[id^='Y'], td[id^='S'], td[id^='PC']  {
@@ -206,9 +206,9 @@ a,b{
   }
 
   .zpg-cells {
-    color: pink;
+    background-color: pink;
   }
 
   .stack-cells {
-    color: greenyellow;
+    background-color: greenyellow;
   }
