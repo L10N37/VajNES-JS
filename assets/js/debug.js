@@ -203,14 +203,28 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
           // Display the ROM as HEX values
           console.log(`${file.name }${` data:`} ${Array.from(loadedROM, asHex => hexPrefix + asHex.toString(16).padStart(2, '0')).join(' ')}`);
 
-        // Move necessary ROM data to cart space area, mirror if necessary (Will need updating per Mapper suppported)
-        for (let i = 0; i < memoryMap.prgRomLower.size; i++) {
-          systemMemory[memoryMap.prgRomLower.addr + i] = loadedROM[i];
+        //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! MAPPER CONDITIONALS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! //
+        //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! MAPPER CONDITIONALS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! //
+        //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! MAPPER CONDITIONALS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! //
+        function mirrorCartSpace() {
+          for (let i =0; i < memoryMap.prgRomUpper.size; i++) {
+            systemMemory[memoryMap.prgRomUpper.addr + i] = systemMemory[memoryMap.prgRomLower.addr + i]
+        }
+      }
+        
+        let mapperNumber = ((nesHeader[6] >> 4) | (nesHeader[7] & 0xF0));
+        let mirroring = ((nesHeader[6] & 0x01) ? 'Vertical' : 'Horizontal');
+        console.log(`Mapper #: ${mapperNumber}`);
+
+        if (mapperNumber == 0 && mirroring == 'Horizontal') {
+          // Move necessary ROM data to cart space area, mirror if necessary
+          for (let i = 0; i < memoryMap.prgRomLower.size; i++) {
+            systemMemory[memoryMap.prgRomLower.addr + i] = loadedROM[i];
           }
+          mirrorCartSpace();
           updateDebugTables(allWramCells, allCartSpaceBytes);
-
-      
-
+        }
+        
           // Create instruction / step section now that a ROM is loaded
           let instructionSection = document.querySelector('.instruction-step');
           // Erase the container in case of reloads of ROMS
@@ -258,9 +272,11 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
       }
 
       // update cart space area
-      for (let i = memoryMap.prgRomLower.addr; i < memoryMap.prgRomLower.size + memoryMap.prgRomLower.addr; i++) {
-        allCartSpaceBytes[i - memoryMap.prgRomLower.addr].innerText = `${systemMemory[i].toString(16).padStart(2, '0')}h`;
+      for (let i = memoryMap.prgRomLower.addr; i < memoryMap.prgRomUpper.addr + memoryMap.prgRomUpper.size; i++) {
+        const index = i - memoryMap.prgRomLower.addr;
+        allCartSpaceBytes[index].innerText = `${systemMemory[i].toString(16).padStart(2, '0')}h`;
       }
+
 
       // the binary string always has a length of 8 characters, padded with zeroes if necessary. 
       let A_Binary = A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
