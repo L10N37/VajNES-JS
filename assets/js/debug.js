@@ -1,5 +1,6 @@
 const hexPrefix=['0x'];
 
+
 // WRAM table area
 let insertDebugTable= document.createElement('table');
   insertDebugTable.className= 'GeneratedTable';
@@ -152,6 +153,7 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
       }
       // Remove the NES header from the loaded ROM
       loadedROM = loadedROM.slice(16);
+      console.log(`File size (header removed): ${(loadedROM.length / 1024).toFixed(2)} KB`);
 
       function headerInfo(nesHeader) {
         let system = String.fromCharCode(nesHeader[0], nesHeader[1], nesHeader[2]) === 'NES' && nesHeader[3] === 0x1A ? 'NES' : 'Unknown';
@@ -202,11 +204,10 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
       }
           // Display the ROM as HEX values
           console.log(`${file.name }${` data:`} ${Array.from(loadedROM, asHex => hexPrefix + asHex.toString(16).padStart(2, '0')).join(' ')}`);
-
+        
         //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! MAPPER CONDITIONALS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! //
+                                                     mapper(nesHeader);
         //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! MAPPER CONDITIONALS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! //
-        //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! MAPPER CONDITIONALS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! //
-        mapper(nesHeader);
 
           // Create instruction / step section now that a ROM is loaded
           let instructionSection = document.querySelector('.instruction-step');
@@ -217,6 +218,9 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
           instructionSection.appendChild(insertInstructionArea);
       
           insertInstructionArea.innerHTML = instructionStepTable;
+
+          // finally update table with loaded roms first instruction and PC counter from the reset vector
+          updateDebugTables();
         };
       
         reader.onerror = function() {
@@ -224,33 +228,42 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
         };
     }
 
-      function getOpcodeAndAddressingMode(numericValue) {
-        for (const opcode in opcodes) {
-          const addressingModes = opcodes[opcode];
-          for (const addressingMode in addressingModes) {
-            const opcodeInfo = addressingModes[addressingMode];
-            if (opcodeInfo.code === numericValue) {
-              return { 
-                opcode, 
-                addressingMode, 
-                length: opcodeInfo.length, 
-                pcIncrement: opcodeInfo.pcIncrement,
-                hex: "0x" + opcodeInfo.code.toString(16).toUpperCase().padStart(2, '0')
-              };
-            }
-          }
-        }
-        return null;
-      }
+      function updateDebugTables(){
 
-      function updateDebugTables(allWramCells, allCartSpaceBytes){
+        // fetch instructions object
+        const currentInstruction = getOpcodeAndAddressingMode(systemMemory[PC]);
+        // debug info
+        let currentInst = hexPrefix+systemMemory[PC].toString(16);
+        console.log(`Current Instruction: ${currentInst}`);
+        let nextInst = hexPrefix+systemMemory[PC+ currentInstruction.pcIncrement].toString(16);
+        console.log(`Next Instruction: ${nextInst}`);
+        // fill the instruction cell with the necessary object data
+        document.getElementById('instruction').innerText=`${currentInstruction.hex}${':'} ${currentInstruction.opcode} ${'/'} ${currentInstruction.addressingMode}`;
+        
+        // fill operand cell with operand/s if any
+        let operand1;
+        let operand2;
+        if (currentInstruction.length==1) {
+        operand1= ' ';
+        document.getElementById('operand').innerText=`${currentInstruction.length-1}${':'} ${operand1}`;
+        }
+        else if (currentInstruction.length==2){
+        operand1= hexPrefix+systemMemory[PC+1];
+        document.getElementById('operand').innerText=`${currentInstruction.length-1}${':'} ${operand1}`;
+        }
+        else if (currentInstruction.length==3) {
+        operand1= hexPrefix+systemMemory[PC+1];
+        operand2= hexPrefix+systemMemory[PC+2];
+        document.getElementById('operand').innerText=`${currentInstruction.length-1}${':'} ${operand1}${','}${operand2}`;
+        }
+
       // populate the cells with the flag bits
       for (let i = 0; i < 8; i++) {
         document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
-        }
+      }
 
       // update RAM debug cells with new data
-      for (let i = 0; i < allWramCells.length; i++) {
+      for (let i = 0; i < memoryMap.workRAM.size; i++) {
         allWramCells[i].innerText = `${systemMemory[i].toString(16).padStart(2, '0')}h`;
       }
 
@@ -259,7 +272,6 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
         const index = i - memoryMap.prgRomLower.addr;
         allCartSpaceBytes[index].innerText = `${systemMemory[i].toString(16).padStart(2, '0')}h`;
       }
-
 
       // the binary string always has a length of 8 characters, padded with zeroes if necessary. 
       let A_Binary = A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
@@ -281,53 +293,41 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
           }
       }
 
-      function step() {
-
-        // fetch instructions object
-        const currentInstruction = getOpcodeAndAddressingMode(parseInt(loadedROM[PC],16));
-        // destructure
-        const {opcode, addressingMode, length, pcIncrement, hex } = currentInstruction;
-
-        // debug info
-        console.log(currentInstruction);
-
-        // fill the instruction cell with the necessary object data
-        document.getElementById('instruction').innerText=`${hex}${':'} ${opcode} ${'/'} ${addressingMode}`;
-
-        // fill operand cell with operand/s if any
-        let operand1;
-          let operand2;
-            if (length==1) {
-              operand1= ' ';
-                document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}`;
+      function getOpcodeAndAddressingMode(numericValue) {
+        for (const opcode in opcodes) {
+          const addressingModes = opcodes[opcode];
+          for (const addressingMode in addressingModes) {
+            const opcodeInfo = addressingModes[addressingMode];
+            if (opcodeInfo.code === numericValue) {
+              return { 
+                opcode, 
+                addressingMode, 
+                length: opcodeInfo.length, 
+                pcIncrement: opcodeInfo.pcIncrement,
+                hex: "0x" + opcodeInfo.code.toString(16).toUpperCase().padStart(2, '0')
+              };
             }
-        else if (length==2){
-          operand1= hexPrefix+loadedROM[PC+1];
-            document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}`;
-            }
-        else if (length==3) {
-          operand1= hexPrefix+loadedROM[PC+1];
-              operand2= hexPrefix+loadedROM[PC+2];
-                document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}${','}${operand2}`;
-            }
+          }
+        }
+        return null;
+      }
 
-        //check current opcode
-        const instructionCell = document.getElementById("instruction");
-          const instructionText = instructionCell.textContent.trim();
-          // Extract the hex value from the instruction text
-            const hexValue = instructionText.split(":")[0];
-              // opcodes either store as text '0x00' in switch or convert to hex, probably best to convert for future
-              console.log(`Processed 6502 instruction: ${hexValue}`);
-                opcodeSwitch(parseInt(hexValue,16), opcode);
+       // process instruction in the instruction box
+      function step(){
 
-              // update PC counter
-              PC+=pcIncrement;
+      // fetch instructions object
+      const currentInstruction = getOpcodeAndAddressingMode(systemMemory[PC]);
+      // destructure
+      const {opcode, addressingMode, length, pcIncrement, hex } = currentInstruction;
+      console.log(`Processed:`);
+      console.log (currentInstruction);
 
-              // move to next instruction (handled by PC above)
-              // for debug , add missing opcodes when return 'null'
-              // add missing functions, write new ones - C++ ones used macros
-              console.log(`Next instruction ${loadedROM[PC]}`);
+      // fill the instruction cell with the necessary object data
+      document.getElementById('instruction').innerText=`${hex}${':'} ${opcode} ${'/'} ${addressingMode}`;
 
+      // pass the opcode to the switch statement for processing
+      opcodeSwitch(systemMemory[PC]);
+         PC+=pcIncrement;
                 // update the debug table
                 updateDebugTables();
         }

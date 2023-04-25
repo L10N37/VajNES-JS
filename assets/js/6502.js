@@ -173,7 +173,7 @@ const opcodes = {
 
 // TO DO: break opcodes into even amount and ID them, make separate smaller switch cases
 // and call the ID'd switch for optimisation
-function opcodeSwitch(codeToProcess,opcode) {
+function opcodeSwitch(codeToProcess) {
 switch (codeToProcess) {
     case 0x78:
         SEI();
@@ -195,14 +195,14 @@ function SEI() {
     }
 
 function ADC_IMM() {
-    A = parseInt(loadedROM[PC+1], 16);
-    console.log(`Operand for 0x69 is ${loadedROM[PC+1]}`);
+    A = parseInt(systemMemory[PC+1], 16);
+    console.log(`Operand for 0x69 is ${systemMemory[PC+1]}`);
     console.log (`the new value of A reg is ${A}`);
     CPUregisters.P.C == true ? A : A+=1;
 }
 
 function ROL_ZP() {
-    zpgAddr= parseInt(loadedROM[PC+1], 16);
+    zpgAddr= parseInt(systemMemory[PC+1], 16);
     // Load the value at the specified zero-page memory location
     let value = WRAMgeneral[zpgAddr];
     // Rotate left and shift in the carry flag

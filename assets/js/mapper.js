@@ -20,16 +20,13 @@ function mapper(nesHeader) {
         systemMemory[memoryMap.prgRomLower.addr + i] = loadedROM[i];
       }
       mirrorCartSpace();
-      updateDebugTables(allWramCells, allCartSpaceBytes);
     }
 
     let resetVectorHighByte = systemMemory[0xFFFD];
-    let resetVectorLowByte = systemMemory[0xFFFC];
-    let resetVectorAddress = (resetVectorHighByte << 8) | resetVectorLowByte;
-    console.log(`Reset Vector Address: 0x${resetVectorAddress.toString(16).toUpperCase()}`);
-    return resetVectorAddress;
-    
-    
-  
-  }
+        let resetVectorLowByte = systemMemory[0xFFFC];
+            let resetVectorAddress = (resetVectorHighByte << 8) | resetVectorLowByte;
+                console.log(`Reset Vector Address: 0x${resetVectorAddress.toString(16).toUpperCase()}`);
+                    PC= resetVectorAddress;
+                      return resetVectorAddress;
+    }
   
