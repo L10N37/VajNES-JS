@@ -206,25 +206,8 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
         //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! MAPPER CONDITIONALS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! //
         //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! MAPPER CONDITIONALS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! //
         //  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! MAPPER CONDITIONALS !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! //
-        function mirrorCartSpace() {
-          for (let i =0; i < memoryMap.prgRomUpper.size; i++) {
-            systemMemory[memoryMap.prgRomUpper.addr + i] = systemMemory[memoryMap.prgRomLower.addr + i]
-        }
-      }
-        
-        let mapperNumber = ((nesHeader[6] >> 4) | (nesHeader[7] & 0xF0));
-        let mirroring = ((nesHeader[6] & 0x01) ? 'Vertical' : 'Horizontal');
-        console.log(`Mapper #: ${mapperNumber}`);
+        mapper(nesHeader);
 
-        if (mapperNumber == 0 && mirroring == 'Horizontal') {
-          // Move necessary ROM data to cart space area, mirror if necessary
-          for (let i = 0; i < memoryMap.prgRomLower.size; i++) {
-            systemMemory[memoryMap.prgRomLower.addr + i] = loadedROM[i];
-          }
-          mirrorCartSpace();
-          updateDebugTables(allWramCells, allCartSpaceBytes);
-        }
-        
           // Create instruction / step section now that a ROM is loaded
           let instructionSection = document.querySelector('.instruction-step');
           // Erase the container in case of reloads of ROMS
