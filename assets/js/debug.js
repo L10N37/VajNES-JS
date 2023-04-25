@@ -331,3 +331,6 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
                 // update the debug table
                 updateDebugTables();
         }
+
+      //TO DO: prevent the double fetch of the object , once for initial ROM load in updatetables function
+      // then fetching it in step, which calls updatetables function again
