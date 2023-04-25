@@ -28,7 +28,7 @@ function createTable(startAddress, endAddress, addClass) {
     ${`<td class="${addClass}"></td>`.repeat(15)}
     <td class="${addClass}"></td>
   </tr>`);
-  return `<table>${rows.join('')}</table>`;
+  return `${rows.join('')}`;
 }
 
 const WRAM_Table = `
@@ -59,7 +59,6 @@ const WRAM_Table = `
     </tbody>
   </table>
 `;
-
 
 let pgRom_Table = `
   <table>
@@ -119,7 +118,6 @@ let instructionStepTable=`
   </tbody>
 </table>
 `;
-
 
 let FlagRegisterTable =  
 `
