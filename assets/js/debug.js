@@ -20,11 +20,20 @@ insertDebugTable.innerHTML = pgRom_Table;
  let allWramCells= document.querySelectorAll('.wramCells');
  // Log Check - 2048 == 2Kb of cells == total WRAM size
  console.log(`WRAM cells = ${allWramCells.length} bytes`);
+ console.log(`WRAM cells = ${(allWramCells.length / 1024).toFixed(2)} KB`);
+
 
 // count up our displayed cartridge space cells 
- let allCartSpaceBytes= document.querySelectorAll('.cartspace');
-// Log Check - 32768 == 16Kb of cells == total CH-ROM space (2nd half often a mirror of first)
- console.log(`Cartridge space cells = ${allCartSpaceBytes.length} bytes`);
+ let allCartSpaceBytes1= document.querySelectorAll('.cartspace1'); 
+ let allCartSpaceBytes2= document.querySelectorAll('.cartspace2');
+ 
+ let allCartSpaceBytes = [...allCartSpaceBytes1, ...allCartSpaceBytes2];
+
+// Log Checks 16Kb of cells * 2 == 32768 total bytes PRG-ROM space (2nd half often a mirror of first)
+ console.log(`Cartridge1 space cells = ${allCartSpaceBytes1.length} bytes`);
+ console.log(`Cartridge2 space cells = ${allCartSpaceBytes2.length} bytes`);
+ console.log(`Total Cartridge space = ${(allCartSpaceBytes1.length+allCartSpaceBytes2.length) / 1024} KB`);
+
  
  // work ram area, set classes and ID + click events in this loop
  for (let i = 0; i < 2048; i++) {
@@ -40,7 +49,6 @@ insertDebugTable.innerHTML = pgRom_Table;
   });
 }
 
-// cart space area, classes already set when table created, IDs and click events assigned here
 // cart space area, classes already set when table created, IDs and click events assigned here
 for (let i = 0; i < allCartSpaceBytes.length; i++) {
   let cartSpaceByte = allCartSpaceBytes[i];
@@ -174,146 +182,146 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
         window.alert(info);
       }      
       
-  // Header information click event, extra code to ensure amount of files loaded != amount of times the alert pops up on a click
-  const headerButton = document.getElementById('header-button');
-  // check if click event handler has already been added
-  if (!headerButton.dataset.clickEventAdded) {
-  // add a new click event listener
-  headerButton.addEventListener('click', headerButtonClickHandler);
-  // set the data attribute to indicate that the event listener has been added
-  headerButton.dataset.clickEventAdded = true;
-  }
-  // define the click event handler function
-  function headerButtonClickHandler() {
-      headerInfo(nesHeader);
-  }
-      // Display the ROM as HEX values
-      console.log(`${file.name }${` data:`} ${Array.from(loadedROM, allWramCells => hexPrefix + allWramCells.toString(16).padStart(2, '0')).join(' ')}`);
-
-    // Move necessary ROM data to cart space area, mirror if necessary (Will need updating per Mapper suppported)
-    for (let i = 0; i < memoryMap.prgRomLower.size; i++) {
-      systemMemory[memoryMap.prgRomLower.addr + i] = loadedROM[i];
+      // Header information click event, extra code to ensure amount of files loaded != amount of times the alert pops up on a click
+      const headerButton = document.getElementById('header-button');
+      // check if click event handler has already been added
+      if (!headerButton.dataset.clickEventAdded) {
+      // add a new click event listener
+      headerButton.addEventListener('click', headerButtonClickHandler);
+      // set the data attribute to indicate that the event listener has been added
+      headerButton.dataset.clickEventAdded = true;
       }
-      updateDebugTables(allWramCells, allCartSpaceBytes);
+      // define the click event handler function
+      function headerButtonClickHandler() {
+          headerInfo(nesHeader);
+      }
+          // Display the ROM as HEX values
+          console.log(`${file.name }${` data:`} ${Array.from(loadedROM, asHex => hexPrefix + asHex.toString(16).padStart(2, '0')).join(' ')}`);
 
-      // Create instruction / step section now that a ROM is loaded
-      let instructionSection = document.querySelector('.instruction-step');
-      // Erase the container in case of reloads of ROMS
-      instructionSection.innerHTML = ``;
-      let insertInstructionArea = document.createElement('table');
-      insertInstructionArea.className = 'GeneratedTable';
-      instructionSection.appendChild(insertInstructionArea);
-  
-      insertInstructionArea.innerHTML = instructionStepTable;
-    };
-  
-    reader.onerror = function() {
-      console.log(reader.error);
-    };
-}
+        // Move necessary ROM data to cart space area, mirror if necessary (Will need updating per Mapper suppported)
+        for (let i = 0; i < memoryMap.prgRomLower.size; i++) {
+          systemMemory[memoryMap.prgRomLower.addr + i] = loadedROM[i];
+          }
+          updateDebugTables(allWramCells, allCartSpaceBytes);
 
-function getOpcodeAndAddressingMode(numericValue) {
-  for (const opcode in opcodes) {
-    const addressingModes = opcodes[opcode];
-    for (const addressingMode in addressingModes) {
-      const opcodeInfo = addressingModes[addressingMode];
-      if (opcodeInfo.code === numericValue) {
-        return { 
-          opcode, 
-          addressingMode, 
-          length: opcodeInfo.length, 
-          pcIncrement: opcodeInfo.pcIncrement,
-          hex: "0x" + opcodeInfo.code.toString(16).toUpperCase().padStart(2, '0')
+          // Create instruction / step section now that a ROM is loaded
+          let instructionSection = document.querySelector('.instruction-step');
+          // Erase the container in case of reloads of ROMS
+          instructionSection.innerHTML = ``;
+          let insertInstructionArea = document.createElement('table');
+          insertInstructionArea.className = 'GeneratedTable';
+          instructionSection.appendChild(insertInstructionArea);
+      
+          insertInstructionArea.innerHTML = instructionStepTable;
         };
+      
+        reader.onerror = function() {
+          console.log(reader.error);
+        };
+    }
+
+      function getOpcodeAndAddressingMode(numericValue) {
+        for (const opcode in opcodes) {
+          const addressingModes = opcodes[opcode];
+          for (const addressingMode in addressingModes) {
+            const opcodeInfo = addressingModes[addressingMode];
+            if (opcodeInfo.code === numericValue) {
+              return { 
+                opcode, 
+                addressingMode, 
+                length: opcodeInfo.length, 
+                pcIncrement: opcodeInfo.pcIncrement,
+                hex: "0x" + opcodeInfo.code.toString(16).toUpperCase().padStart(2, '0')
+              };
+            }
+          }
+        }
+        return null;
       }
-    }
-  }
-  return null;
-}
 
-function updateDebugTables(allWramCells, allCartSpaceBytes){
-// populate the cells with the flag bits
-for (let i = 0; i < 8; i++) {
-  document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
-  }
+      function updateDebugTables(allWramCells, allCartSpaceBytes){
+      // populate the cells with the flag bits
+      for (let i = 0; i < 8; i++) {
+        document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
+        }
 
-// update RAM debug cells with new data
-for (let i = 0; i < allWramCells.length; i++) {
-  allWramCells[i].innerText = `${systemMemory[i].toString(16).padStart(2, '0')}h`;
-}
+      // update RAM debug cells with new data
+      for (let i = 0; i < allWramCells.length; i++) {
+        allWramCells[i].innerText = `${systemMemory[i].toString(16).padStart(2, '0')}h`;
+      }
 
-// update cart space area
-for (let i = memoryMap.prgRomLower.addr; i < memoryMap.prgRomLower.size + memoryMap.prgRomLower.addr; i++) {
-  allCartSpaceBytes[i - memoryMap.prgRomLower.addr].innerText = `${systemMemory[i].toString(16).padStart(2, '0')}h`;
-}
+      // update cart space area
+      for (let i = memoryMap.prgRomLower.addr; i < memoryMap.prgRomLower.size + memoryMap.prgRomLower.addr; i++) {
+        allCartSpaceBytes[i - memoryMap.prgRomLower.addr].innerText = `${systemMemory[i].toString(16).padStart(2, '0')}h`;
+      }
 
-// the binary string always has a length of 8 characters, padded with zeroes if necessary. 
-let A_Binary = A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-let X_Binary = X.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-let Y_Binary = Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-let S_Binary = S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+      // the binary string always has a length of 8 characters, padded with zeroes if necessary. 
+      let A_Binary = A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+        let X_Binary = X.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+          let Y_Binary = Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+            let S_Binary = S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
 
-// insert register bits into the corresponding cells
-for (let i = 0; i < 8; i++) {
-document.getElementById(regArrayA[i]).innerText= A_Binary[i];
-document.getElementById(regArrayX[i]).innerText= X_Binary[i];
-  document.getElementById(regArrayY[i]).innerText= Y_Binary[i];
-    document.getElementById(regArrayS[i]).innerText= S_Binary[i];
-    }
+      // insert register bits into the corresponding cells
+      for (let i = 0; i < 8; i++) {
+        document.getElementById(regArrayA[i]).innerText= A_Binary[i];
+          document.getElementById(regArrayX[i]).innerText= X_Binary[i];
+            document.getElementById(regArrayY[i]).innerText= Y_Binary[i];
+             document.getElementById(regArrayS[i]).innerText= S_Binary[i];
+            }
 
-let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt(bit));
-for (let i = 0; i < 16; i++) {
-  document.getElementById(regArrayPC[i]).innerText= PC_asBinary[i];
-  }
-}
+      let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt(bit));
+        for (let i = 0; i < 16; i++) {
+          document.getElementById(regArrayPC[i]).innerText= PC_asBinary[i];
+          }
+      }
 
-function step() {
+      function step() {
 
-  // fetch instructions object
-  const currentInstruction = getOpcodeAndAddressingMode(parseInt(loadedROM[PC],16));
-  // destructure
-  const {opcode, addressingMode, length, pcIncrement, hex } = currentInstruction;
+        // fetch instructions object
+        const currentInstruction = getOpcodeAndAddressingMode(parseInt(loadedROM[PC],16));
+        // destructure
+        const {opcode, addressingMode, length, pcIncrement, hex } = currentInstruction;
 
-  // debug info
-  console.log(currentInstruction);
+        // debug info
+        console.log(currentInstruction);
 
-  // fill the instruction cell with the necessary object data
-  document.getElementById('instruction').innerText=`${hex}${':'} ${opcode} ${'/'} ${addressingMode}`;
+        // fill the instruction cell with the necessary object data
+        document.getElementById('instruction').innerText=`${hex}${':'} ${opcode} ${'/'} ${addressingMode}`;
 
-  // fill operand cell with operand/s if any
-  let operand1;
-  let operand2;
-  if (length==1) {
-   operand1= ' ';
-   document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}`;
-  }
-  else if (length==2){
-   operand1= hexPrefix+loadedROM[PC+1];
-   document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}`;
-  }
-  else if (length==3) {
-    operand1= hexPrefix+loadedROM[PC+1];
-    operand2= hexPrefix+loadedROM[PC+2];
-    document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}${','}${operand2}`;
-  }
+        // fill operand cell with operand/s if any
+        let operand1;
+          let operand2;
+            if (length==1) {
+              operand1= ' ';
+                document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}`;
+            }
+        else if (length==2){
+          operand1= hexPrefix+loadedROM[PC+1];
+            document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}`;
+            }
+        else if (length==3) {
+          operand1= hexPrefix+loadedROM[PC+1];
+              operand2= hexPrefix+loadedROM[PC+2];
+                document.getElementById('operand').innerText=`${length-1}${':'} ${operand1}${','}${operand2}`;
+            }
 
-  //check current opcode
-  const instructionCell = document.getElementById("instruction");
-    const instructionText = instructionCell.textContent.trim();
-    // Extract the hex value from the instruction text
-      const hexValue = instructionText.split(":")[0];
-        // opcodes either store as text '0x00' in switch or convert to hex, probably best to convert for future
-        console.log(`Processed 6502 instruction: ${hexValue}`);
-          opcodeSwitch(parseInt(hexValue,16), opcode);
+        //check current opcode
+        const instructionCell = document.getElementById("instruction");
+          const instructionText = instructionCell.textContent.trim();
+          // Extract the hex value from the instruction text
+            const hexValue = instructionText.split(":")[0];
+              // opcodes either store as text '0x00' in switch or convert to hex, probably best to convert for future
+              console.log(`Processed 6502 instruction: ${hexValue}`);
+                opcodeSwitch(parseInt(hexValue,16), opcode);
 
-        // update PC counter
-        PC+=pcIncrement;
+              // update PC counter
+              PC+=pcIncrement;
 
-        // move to next instruction (handled by PC above)
-        // for debug , add missing opcodes when return 'null'
-        // add missing functions, write new ones - C++ ones used macros
-        console.log(`Next instruction ${loadedROM[PC]}`);
+              // move to next instruction (handled by PC above)
+              // for debug , add missing opcodes when return 'null'
+              // add missing functions, write new ones - C++ ones used macros
+              console.log(`Next instruction ${loadedROM[PC]}`);
 
-          // update the debug table
-          updateDebugTables();
-  }
+                // update the debug table
+                updateDebugTables();
+        }
