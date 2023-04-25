@@ -153,21 +153,25 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
       // Remove the NES header from the loaded ROM
       loadedROM = loadedROM.slice(16);
 
-      // Rom header information button displays this information on click
       function headerInfo(nesHeader) {
         let system = String.fromCharCode(nesHeader[0], nesHeader[1], nesHeader[2]) === 'NES' && nesHeader[3] === 0x1A ? 'NES' : 'Unknown';
         let prgRomSize = nesHeader[4];
         let chrRomSize = nesHeader[5];
-        let miscFlags = [nesHeader[11], nesHeader[12], nesHeader[13], nesHeader[14], nesHeader[15]];
-        let prgRomSizeKB = (prgRomSize * 16) + ' KB';
-        let chrRomSizeKB = (chrRomSize * 8) + ' KB';
+        let miscFlags = [nesHeader[6]];
         let mapperNumber = ((nesHeader[6] >> 4) | (nesHeader[7] & 0xF0));
         let mirroring = ((nesHeader[6] & 0x01) ? 'Vertical' : 'Horizontal');
         let batteryBacked = ((nesHeader[6] & 0x02) ? 'Yes' : 'No');
         let trainer = ((nesHeader[6] & 0x04) ? 'Yes' : 'No');
+        let fourScreenVram = ((nesHeader[6] & 0x08) ? 'Yes' : 'No');
         let vsPlaychoice = ((nesHeader[10] & 0x01) ? 'Yes' : 'No');
         let nes2 = ((nesHeader[7] & 0x0C) ? 'Yes' : 'No');
-      
+        
+        if (miscFlags[0] & 0x01) miscFlags.push('VS Unisystem');
+        if (miscFlags[0] & 0x02) miscFlags.push('Playchoice-10');
+        
+        let prgRomSizeKB = (prgRomSize * 16) + ' KB';
+        let chrRomSizeKB = (chrRomSize * 8) + ' KB';
+        
         let info = 'System: ' + system + '\n' +
                    'PRG ROM Size: ' + prgRomSizeKB + '\n' +
                    'CHR ROM Size: ' + chrRomSizeKB + ' - ' + (chrRomSize === 0 ? 'Uses CHR RAM' : 'Uses CHR ROM') + '\n' +
@@ -175,13 +179,14 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
                    'Mirroring: ' + mirroring + '\n' +
                    'Battery-Backed: ' + batteryBacked + '\n' +
                    'Trainer: ' + trainer + '\n' +
-                   'VS/Playchoice: ' + vsPlaychoice + '\n' +
+                   'Four Screen VRAM: ' + fourScreenVram + '\n' +
+                   'VS/Unisystem: ' + vsPlaychoice + '\n' +
                    'NES 2.0: ' + nes2 + '\n' +
                    'Misc Flags: ' + miscFlags.join(' ') + '\n';
-      
+        
         window.alert(info);
-      }      
-      
+    }      
+    
       // Header information click event, extra code to ensure amount of files loaded != amount of times the alert pops up on a click
       const headerButton = document.getElementById('header-button');
       // check if click event handler has already been added
@@ -203,6 +208,8 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
           systemMemory[memoryMap.prgRomLower.addr + i] = loadedROM[i];
           }
           updateDebugTables(allWramCells, allCartSpaceBytes);
+
+      
 
           // Create instruction / step section now that a ROM is loaded
           let instructionSection = document.querySelector('.instruction-step');
