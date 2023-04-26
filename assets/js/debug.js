@@ -91,25 +91,6 @@ const regArrayA = ['A7', 'A6', 'A5', 'A4', 'A3', 'A2', 'A1', 'A0'];
       const regArrayS = ['S7', 'S6', 'S5', 'S4', 'S3', 'S2', 'S1', 'S0'];
         const regArrayPC = Array.from({ length: 16 }, (_, i) => `PC${i}`);
 
-// the binary string always has a length of 8 characters, padded with zeroes if necessary. 
-let A_Binary = A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-  let X_Binary = X.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-    let Y_Binary = Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-      let S_Binary = S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-
-// insert register bits into the corresponding cells
-for (let i = 0; i < 8; i++) {
-  document.getElementById(regArrayA[i]).innerText= A_Binary[i];
-    document.getElementById(regArrayX[i]).innerText= X_Binary[i];
-      document.getElementById(regArrayY[i]).innerText= Y_Binary[i];
-        document.getElementById(regArrayS[i]).innerText= S_Binary[i];
-        }
-
-let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt(bit));
-  for (let i = 0; i < 16; i++) {
-    document.getElementById(regArrayPC[i]).innerText= PC_asBinary[i];
-    }
-
   // flag registers section
   let insertFlagRegisterTable= document.createElement('table');
     insertFlagRegisterTable.className= 'GeneratedTable';
@@ -244,23 +225,23 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
         // Fill instruction cell with object data
         document.getElementById('instruction').innerText = `${hex}: ${opcode}/ ${addressingMode}`;
       
-        // Fill operand cell with operand/s if any
+        // Fill operand cell with operand/s if any, convert from binary to hex!
         let operand1;
         let operand2;
         if (length === 1) {
-          operand1 = ' ';
-          document.getElementById('operand').innerText = `${'NA'}`;
+        operand1 = ' ';
+        document.getElementById('operand').innerText = `${'NA'}`;
         } else if (length === 2) {
-          operand1 = hexPrefix + systemMemory[PC + 1];
-          document.getElementById('operand').innerText = `${'1: '}${operand1}`;
+        operand1 = hexPrefix + systemMemory[PC + 1].toString(16);
+        document.getElementById('operand').innerText = `${'1: '}${operand1}`;
         } else if (length === 3) {
-          operand1 = hexPrefix + systemMemory[PC + 1];
-          operand2 = hexPrefix + systemMemory[PC + 2];
-          document.getElementById('operand').innerText = `${'1: '}${operand1}${'\n'}${'2: '}${operand2}`;
+        operand1 = hexPrefix + systemMemory[PC + 1].toString(16);
+        operand2 = hexPrefix + systemMemory[PC + 2].toString(16);
+        document.getElementById('operand').innerText = `${'1: '}${operand1}${'\n'}${'2: '}${operand2}`;
         }
-         
-      
-      // populate the cells with the flag bits
+
+                
+        // populate the cells with the flag bits
       for (let i = 0; i < 8; i++) {
         document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
       }
@@ -277,10 +258,12 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
       }
 
       // the binary string always has a length of 8 characters, padded with zeroes if necessary. 
-      let A_Binary = A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-        let X_Binary = X.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-          let Y_Binary = Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-            let S_Binary = S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+      let A_Binary = CPUregisters.A.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+        let X_Binary = CPUregisters.X.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+          let Y_Binary = CPUregisters.Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+            let S_Binary = CPUregisters.S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
+
+    console.log(`A BINARY: ${A_Binary}`);
 
       // insert register bits into the corresponding cells
       for (let i = 0; i < 8; i++) {
