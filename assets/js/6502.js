@@ -3,8 +3,10 @@ const CPUregisters = {
     A: 0x00,
     X: 0x00,
     Y: 0x00,
-    S: 0x00,
-    PC: 0x00,
+    // initialized to 0xFF on power-up or reset?
+    // https://www.nesdev.org/wiki/Stack
+    S: 0xFF,
+    PC: 0x0000,
     P: {
         C: false,    // Carry
         Z: false,    // Zero
@@ -22,10 +24,96 @@ let P_VARIABLES = ['C', 'Z', 'I', 'D', 'B', 'U', 'V', 'N'];
 // Destructure for easier access
 let { A, X, Y, S, PC } = CPUregisters;
 
-// 6502 CPU opcode object
+////////////////////////// CPU Functions //////////////////////////
+
+function SEI_IMP() {
+    // opcode only sets status register 'I', tested good
+    CPUregisters.P.I=true;
+    }
+
+function ADC_IMM() {
+    A = parseInt(systemMemory[PC+1], 16);
+    console.log(`Operand for 0x69 is ${systemMemory[PC+1]}`);
+    console.log (`the new value of A reg is ${A}`);
+    CPUregisters.P.C = CPUregisters.P.C ? A+1 : A;
+}
+
+function ROL_ZP() {
+    zpgAddr= parseInt(systemMemory[PC+1], 16);
+    // Load the value at the specified zero-page memory location
+    let value = systemMemory[zpgAddr];
+    // Rotate left and shift in the carry flag
+    const carry = (value & 0x80) >> 7;
+    value = ((value << 1) & 0xfe) | parseInt(CPUregisters.P.C);
+    // Update the carry flag
+    CPUregisters.P.C = (carry == 0) ? false : true;
+    // Store the updated value back to the same zero-page memory location
+    systemMemory[zpgAddr] = ((systemMemory)[zpgAddr] != 0) ? value : systemMemory[zpgAddr];
+    // Update the zero and negative flags
+    CPUregisters.P.Z = value === 0;
+    CPUregisters.P.N = (value & 0x80) !== 0;
+  }
+
+  function CLD_IMP() {
+    // Clear decimal mode flag
+    CPUregisters.P.D = false;
+  }
+
+  function LDA_IMP(){
+    window.alert('not yet implemented');
+  }
+
+  function LDA_IMM(){
+    window.alert('not yet implemented');
+  }
+
+  function LDA_ZP(){
+    window.alert('not yet implemented');
+  }
+
+  function LDA_ZPX(){
+    window.alert('not yet implemented');
+  }
+
+  function LDA_ABS(){
+    window.alert('not yet implemented');
+  }
+
+  function LDA_ABSX(){
+    window.alert('not yet implemented');
+  }
+
+  function LDA_ABSY(){
+    window.alert('not yet implemented');
+  }
+
+  function LDA_INDX(){
+    window.alert('not yet implemented');
+  }
+
+  function LDA_INDY(){
+    window.alert('not yet implemented');
+  }
+
+
+
+
+
+//////////////////////// 6502 CPU opcode object //////////////////////// 
 const opcodes = {
+    LDA: {
+    implied: {code: 0xA9, length: 1, pcIncrement: 1, func: LDA_IMP},
+    immediate: {code: 0xA9, length: 2, pcIncrement: 2, func: LDA_IMM},
+    zeroPage: {code: 0xA5, length: 2, pcIncrement: 2, func: LDA_ZP},
+    zeroPageX: {code: 0xB5, length: 2, pcIncrement: 2, func: LDA_ZPX},
+    absolute: {code: 0xAD, length: 3, pcIncrement: 3, func: LDA_ABS},
+    absoluteX: {code: 0xBD, length: 3, pcIncrement: 3, func: LDA_ABSX},
+    absoluteY: {code: 0xB9, length: 3, pcIncrement: 3, func: LDA_ABSY},
+    indirectX: {code: 0xA1, length: 2, pcIncrement: 2, func: LDA_INDX},
+    indirectY: {code: 0xB1, length: 2, pcIncrement: 2, func: LDA_INDY},
+      },
     ADC: {
-    immediate: {code: 0x69, length: 2, pcIncrement: 2},
+    immediate: {code: 0x69, length: 2, pcIncrement: 2, func: ADC_IMM},
     zeroPage: {code: 0x65, length: 2, pcIncrement: 2},
     zeroPagex: {code: 0x75, length: 2, pcIncrement: 2},
     absolute: {code: 0x6D, length: 3, pcIncrement: 3},
@@ -140,13 +228,13 @@ const opcodes = {
     implied: {code: 0x58, length: 1, pcIncrement: 1}
     },
     SEI: {
-    implied: {code: 0x78, length: 1, pcIncrement: 1, function: 'SEI()'}
+    implied: {code: 0x78, length: 1, pcIncrement: 1, func: SEI_IMP}
     },
     CLV: {
     implied: {code: 0xB8, length: 1, pcIncrement: 1}
     },
     CLD: {
-    implied: {code: 0xD8, length: 1, pcIncrement: 1}
+    implied: {code: 0xD8, length: 1, pcIncrement: 1, func: CLD_IMP}
     },
     SED: {
     implied: {code: 0xF8, length: 1, pcIncrement: 1}
@@ -163,56 +251,9 @@ const opcodes = {
     },
     ROL: {
     accumulator: {code: 0x2A, length: 1, pcIncrement: 1},
-    zeroPage: {code: 0x26, length: 2, pcIncrement: 2},
+    zeroPage: {code: 0x26, length: 2, pcIncrement: 2, func: ROL_ZP},
     zeroPagex: {code: 0x36, length: 2, pcIncrement: 2},
     absolute: {code: 0x2E, length: 3, pcIncrement: 3},
     absoluteX: {code: 0x3E, length: 3, pcIncrement: 3}
-},
-
+    },
 }
-
-// TO DO: break opcodes into even amount and ID them, make separate smaller switch cases
-// and call the ID'd switch for optimisation
-function opcodeSwitch(codeToProcess) {
-switch (codeToProcess) {
-    case 0x78:
-        SEI();
-        break;
-    case 0x69:
-        ADC_IMM();
-        break;
-    case 0x26:
-        ROL_ZP();
-        break;
-    default: window.alert(`Opcode ${hexPrefix}${codeToProcess} not implemented`);
-        break;
-    }
-}
-
-function SEI() {
-    // opcode only sets status register 'I', tested good
-    CPUregisters.P.I=true;
-    }
-
-function ADC_IMM() {
-    A = parseInt(systemMemory[PC+1], 16);
-    console.log(`Operand for 0x69 is ${systemMemory[PC+1]}`);
-    console.log (`the new value of A reg is ${A}`);
-    CPUregisters.P.C == true ? A : A+=1;
-}
-
-function ROL_ZP() {
-    zpgAddr= parseInt(systemMemory[PC+1], 16);
-    // Load the value at the specified zero-page memory location
-    let value = WRAMgeneral[zpgAddr];
-    // Rotate left and shift in the carry flag
-    const carry = (value & 0x80) >> 7;
-    value = ((value << 1) & 0xfe) | parseInt(CPUregisters.P.C);
-    // Update the carry flag
-    CPUregisters.P.C = (carry == 0) ? false : true;
-    // Store the updated value back to the same zero-page memory location
-    WRAMgeneral[zpgAddr] = ((WRAMgeneral)[zpgAddr] != 0) ? value : WRAMgeneral[zpgAddr];
-    // Update the zero and negative flags
-    CPUregisters.P.Z = value === 0;
-    CPUregisters.P.N = (value & 0x80) !== 0;
-  }

@@ -1,4 +1,5 @@
 const hexPrefix=['0x'];
+let fetchedInstruction;
 
 
 // WRAM table area
@@ -228,35 +229,37 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
         };
     }
 
-      function updateDebugTables(){
+    function updateDebugTables() {
 
-        // fetch instructions object
-        const currentInstruction = getOpcodeAndAddressingMode(systemMemory[PC]);
-        // debug info
-        let currentInst = hexPrefix+systemMemory[PC].toString(16);
-        console.log(`Current Instruction: ${currentInst}`);
-        let nextInst = hexPrefix+systemMemory[PC+ currentInstruction.pcIncrement].toString(16);
-        console.log(`Next Instruction: ${nextInst}`);
-        // fill the instruction cell with the necessary object data
-        document.getElementById('instruction').innerText=`${currentInstruction.hex}${':'} ${currentInstruction.opcode} ${'/'} ${currentInstruction.addressingMode}`;
-        
-        // fill operand cell with operand/s if any
+        fetchedInstruction = getOpcodeAndAddressingMode(systemMemory[PC]);
+        // Fetch instruction object
+        const { opcode, addressingMode, length, pcIncrement, hex, func } = fetchedInstruction
+      
+        // Debug info
+        const currentInstHex = hexPrefix + systemMemory[PC].toString(16);
+        console.log(`Current Instruction: ${currentInstHex}`);
+        const nextInstHex = hexPrefix + systemMemory[PC + pcIncrement].toString(16);
+        console.log(`Next Instruction: ${nextInstHex}`);
+      
+        // Fill instruction cell with object data
+        document.getElementById('instruction').innerText = `${hex}: ${opcode}/ ${addressingMode}`;
+      
+        // Fill operand cell with operand/s if any
         let operand1;
         let operand2;
-        if (currentInstruction.length==1) {
-        operand1= ' ';
-        document.getElementById('operand').innerText=`${currentInstruction.length-1}${':'} ${operand1}`;
+        if (length === 1) {
+          operand1 = ' ';
+          document.getElementById('operand').innerText = `${'NA'}`;
+        } else if (length === 2) {
+          operand1 = hexPrefix + systemMemory[PC + 1];
+          document.getElementById('operand').innerText = `${'1: '}${operand1}`;
+        } else if (length === 3) {
+          operand1 = hexPrefix + systemMemory[PC + 1];
+          operand2 = hexPrefix + systemMemory[PC + 2];
+          document.getElementById('operand').innerText = `${'1: '}${operand1}${'\n'}${'2: '}${operand2}`;
         }
-        else if (currentInstruction.length==2){
-        operand1= hexPrefix+systemMemory[PC+1];
-        document.getElementById('operand').innerText=`${currentInstruction.length-1}${':'} ${operand1}`;
-        }
-        else if (currentInstruction.length==3) {
-        operand1= hexPrefix+systemMemory[PC+1];
-        operand2= hexPrefix+systemMemory[PC+2];
-        document.getElementById('operand').innerText=`${currentInstruction.length-1}${':'} ${operand1}${','}${operand2}`;
-        }
-
+         
+      
       // populate the cells with the flag bits
       for (let i = 0; i < 8; i++) {
         document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
@@ -299,38 +302,32 @@ let PC_asBinary = PC.toString(2).padStart(16, '0').split('').map(bit => parseInt
           for (const addressingMode in addressingModes) {
             const opcodeInfo = addressingModes[addressingMode];
             if (opcodeInfo.code === numericValue) {
-              return { 
+            return { 
                 opcode, 
                 addressingMode, 
                 length: opcodeInfo.length, 
                 pcIncrement: opcodeInfo.pcIncrement,
-                hex: "0x" + opcodeInfo.code.toString(16).toUpperCase().padStart(2, '0')
-              };
+                hex: "0x" + opcodeInfo.code.toString(16).toUpperCase().padStart(2, '0'),
+                func: opcodeInfo.func
+                };
             }
           }
         }
         return null;
       }
 
-       // process instruction in the instruction box
-      function step(){
+    // process instruction in the instruction box
+    function step() {
 
-      // fetch instructions object
-      const currentInstruction = getOpcodeAndAddressingMode(systemMemory[PC]);
-      // destructure
-      const {opcode, addressingMode, length, pcIncrement, hex } = currentInstruction;
-      console.log(`Processed:`);
-      console.log (currentInstruction);
+        const { opcode, addressingMode, length, pcIncrement, hex, func } = fetchedInstruction;
+        console.log('Processed Instruction: ');
+        console.log({ opcode, addressingMode, length, pcIncrement, hex, func });
 
-      // fill the instruction cell with the necessary object data
-      document.getElementById('instruction').innerText=`${hex}${':'} ${opcode} ${'/'} ${addressingMode}`;
-
-      // pass the opcode to the switch statement for processing
-      opcodeSwitch(systemMemory[PC]);
-         PC+=pcIncrement;
-                // update the debug table
-                updateDebugTables();
-        }
-
-      //TO DO: prevent the double fetch of the object , once for initial ROM load in updatetables function
-      // then fetching it in step, which calls updatetables function again
+        // Execute CPU function
+        func();
+        // increment PC counter
+        PC += pcIncrement;
+        // update the debug table
+        updateDebugTables();
+      }
+      
