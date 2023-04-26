@@ -1,7 +1,6 @@
 const hexPrefix=['0x'];
 let fetchedInstruction;
 
-
 // WRAM table area
 let insertDebugTable= document.createElement('table');
   insertDebugTable.className= 'GeneratedTable';
@@ -232,15 +231,14 @@ const regArrayA = ['A7', 'A6', 'A5', 'A4', 'A3', 'A2', 'A1', 'A0'];
         operand1 = ' ';
         document.getElementById('operand').innerText = `${'NA'}`;
         } else if (length === 2) {
-        operand1 = hexPrefix + systemMemory[PC + 1].toString(16);
+        operand1 = hexPrefix + systemMemory[PC + 1].toString(16).padStart(2, '0');
         document.getElementById('operand').innerText = `${'1: '}${operand1}`;
         } else if (length === 3) {
-        operand1 = hexPrefix + systemMemory[PC + 1].toString(16);
-        operand2 = hexPrefix + systemMemory[PC + 2].toString(16);
+        operand1 = hexPrefix + systemMemory[PC + 1].toString(16).padStart(2, '0');
+        operand2 = hexPrefix + systemMemory[PC + 2].toString(16).padStart(2, '0');
         document.getElementById('operand').innerText = `${'1: '}${operand1}${'\n'}${'2: '}${operand2}`;
         }
-
-                
+   
         // populate the cells with the flag bits
       for (let i = 0; i < 8; i++) {
         document.getElementById(flagBitsIDArray[i]).innerText= CPUregisters.P[P_VARIABLES[i]];
@@ -262,8 +260,6 @@ const regArrayA = ['A7', 'A6', 'A5', 'A4', 'A3', 'A2', 'A1', 'A0'];
         let X_Binary = CPUregisters.X.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
           let Y_Binary = CPUregisters.Y.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
             let S_Binary = CPUregisters.S.toString(2).padStart(8, '0').split('').map(bit => parseInt(bit));
-
-    console.log(`A BINARY: ${A_Binary}`);
 
       // insert register bits into the corresponding cells
       for (let i = 0; i < 8; i++) {

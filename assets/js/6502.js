@@ -45,7 +45,7 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
         CPUregisters.P.C = true;
     }
     // https://en.wikipedia.org/wiki/Sign_bit 
-    // check for overflow in the signed sense and set overflow flag accordingl
+    // check for overflow in the signed sense and set overflow flag accordingly
     // its confusing [https://forums.nesdev.org/viewtopic.php?t=6331]
     if ((oldA ^ CPUregisters.A) & (systemMemory[PC+1] ^ CPUregisters.A) & 0x80) {
         CPUregisters.P.V = true;
@@ -105,7 +105,10 @@ function ROL_ZP() {
   }
 
   function STA_ABS(){
-    window.alert('not yet implemented');
+    // take 2 following opcodes, concatenate into 16 bit address
+    const address = (systemMemory[PC+2] << 8) | systemMemory[PC+1];
+    // store the value of accumulator register @ this address
+    systemMemory[address] = CPUregisters.A;
   }
 
   function STA_ABSX(){
