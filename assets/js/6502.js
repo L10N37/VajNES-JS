@@ -127,7 +127,8 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
   }
 
   function LDX_IMM() {
-    window.alert('not yet implemented');
+  // load the X register with value of byte following instruction opcode
+  CPUregisters.X = systemMemory[PC+1]; 
   }
   
   function LDX_ZP() {
