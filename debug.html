@@ -7,6 +7,7 @@
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <link rel="CSS-Reset" href="assets/css/reset.css" />
   <link rel="stylesheet" href="assets/css/style.css" />
+  <link rel="stylesheet" href="assets/css/customise.css" />
 </head>
 <body>
   <header>
@@ -18,8 +19,28 @@
           <button class ='fileMenuItems' id="header-button">ROM Header Information</button>
         </div>
       </div>
+      <div class="display-dropdown">
+        <button class="dropbtn">Display</button>
+      </div>
     </div>
   </header>
+  
+  <!-- Modal window -->
+  <div id="modal" class="modal">
+    <div class="modal-content">
+      <h2>Select Background Colors</h2>
+      <label><input type="radio" name="color" value="white"> White</label>
+      <label><input type="radio" name="color" value="black"> Black</label>
+      <label><input type="radio" name="color" value="gray"> Gray</label>
+      <label><input type="radio" name="color" value="red"> Red</label>
+      <label><input type="radio" name="color" value="green"> Green</label>
+      <label><input type="radio" name="color" value="blue"> Blue</label>
+      <br>
+      <button id="modal-ok-btn">OK</button>
+      <button id="modal-cancel-btn">Cancel</button>
+    </div>
+  </div>
+  
   <main>
     <a>Work RAM<loc>&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp Offset: </loc> <locContainer> </locContainer> </a>
   <article class='debug'>
@@ -43,6 +64,7 @@
   <script src="assets/js/memory.js"></script>
   <script src="assets/js/6502.js"></script>
   <script src="assets/js/debug.js"></script>
+  <script src="assets/js/customise/display.js"></script>
 
 </body>
 <footer>
