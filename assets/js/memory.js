@@ -14,8 +14,6 @@ const WRAMstack = [256]
 // ($0200 - $07FF) - 1536 bytes
 const WRAMgeneral = [1536]
 
-const WRAMlength = 2048;
-
 // 63,488 bytes to go
 const otherMemory = [6144];
 
