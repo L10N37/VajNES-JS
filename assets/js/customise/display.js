@@ -57,4 +57,3 @@ backgroundRadios.forEach(radio => {
       localStorage.setItem('selectedImage', radio.value);
     });
   });
-
