@@ -1,6 +1,13 @@
 :root {
   --selected-color: #36383b;
-}  
+}
+
+html {
+  font-family: Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
+  background-color: var(--selected-color);
+  background-size: cover;
+}
+
   /* Modal styles */
   .modal {
     display: none;
@@ -11,7 +18,7 @@
     width: auto;
     height: auto;
     overflow: auto;
-    width: 25%
+    width: 25%;
   }
  
   .modal-content {
@@ -22,9 +29,12 @@
     margin: 10% auto;
     padding: 20px;
     border: 1px solid #888;
-    width: 25%;
+    width: 200px;
+    height: auto;
     background-color: black;
     color: white;
+    overflow: hidden;
+    border-radius: 30px;
   }
   
   /* Spacing between buttons */

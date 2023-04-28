@@ -1,17 +1,7 @@
-:root {
-  --selected-color: #36383b;
-}
-
-html {
-  font-family: Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
-  background-color: var(--selected-color);
-}
-
 header {
-  background: rgb(2,0,36);
-  background: black;
+  background-color: rgba(0, 0, 0, 0.5); /* black with 50% transparency */
   height: 40px;
-  color: black;
+  color: white; /* assuming you want white text on black background */
 }
 
 .fileMenuItems{
@@ -69,12 +59,12 @@ color: blue;
   display: block;
 }
 
-.debug,.debug2 {
-  
+.debug, .debug2 {
   height: 250px;
   padding: 16px;
   overflow-y: scroll;
   overflow-x: scroll;
+  opacity: 0.9; /* set opacity to 90% */
 }
 
 .flag-register{
@@ -129,7 +119,7 @@ a,b{
   justify-content: center;  /*Y axis*/
   padding: 10px;
   margin: 10px;
-  background-color: black;
+  background-color: rgba(0, 0, 0, 0.5); /* black with 50% transparency */
   color: white;
   margin-top: 20px;
 }

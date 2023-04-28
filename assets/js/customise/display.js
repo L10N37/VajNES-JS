@@ -1,57 +1,40 @@
-// setting image here for background of display options - instead of directly in the customer.css
-// no real reason why
-let element = document.querySelector('.image-container');
-element.style.opacity = "0.5";
-element.style.backgroundSize = "100% 100%";
+/*
+// Set opacity to Mario image in display menu
+const imageContainer = document.querySelector('.mario-container');
+imageContainer.style.opacity = '0.5';
+*/
 
-// Get modal elements
-let modal = document.getElementById("modal");
-let modalOkBtn = document.getElementById("modal-ok-btn");
-let modalCancelBtn = document.getElementById("modal-cancel-btn");
-
-// Get display button element
-let displayBtn = document.querySelector(".display-dropdown button");
-
-// Add click event to display button
-displayBtn.addEventListener("click", function() {
-  // Show modal window
-  modal.style.display = "block";
-});
-
-// Add click event to modal OK button
-modalOkBtn.addEventListener("click", function() {
-  // Get selected background colors
-  let selectedColors = [];
-  let checkboxes = document.querySelectorAll("input[name='color']");
-  for (let i = 0; i < checkboxes.length; i++) {
-    if (checkboxes[i].checked) {
-      selectedColors.push(checkboxes[i].value);
-    }
-    //console.log(selectedColors);
-  }
-  
-  // Set selected color letiable
-  if (selectedColors.length > 0) {
-    let selectedColor = selectedColors[0];
-    document.documentElement.style.setProperty('--selected-color', selectedColor);
-
-    document.documentElement.style.backgroundImage = "url('assets\images\bg\ContraGIF.gif')";
-  }
-  
-  // Hide modal window
+// event listener on display button to display the 'display' modal window on click
+const displayDropdown = document.querySelector('.display-dropdown');
+const modal = document.querySelector('.modal');
+// event listener on OK button in modal window, hides modal window
+const okButton = document.getElementById("modal-ok-btn");
+okButton.addEventListener("click", function() {
   modal.style.display = "none";
 });
 
-// Add click event to modal cancel button
-modalCancelBtn.addEventListener("click", function() {
-  // Hide modal window
-  modal.style.display = "none";
+
+displayDropdown.addEventListener('click', () => {
+  modal.style.display = 'block';
 });
 
-// Get the HTML element
-const html = document.querySelector('html');
+  const backgroundRadios = document.getElementsByName('background');
+  const imageRadios = document.getElementsByName('image');
+  const htmlElement = document.documentElement;
 
-// Set the background color of the HTML element
-function setBgColor(color) {
-  html.style.backgroundColor = color;
-}
+  // Add click event listener to background radios
+  backgroundRadios.forEach(radio => {
+    radio.addEventListener('click', () => {
+      htmlElement.style.backgroundImage = 'none';
+      htmlElement.style.backgroundColor = radio.value;
+    });
+  });
+
+  // Add click event listener to image radios
+  imageRadios.forEach(radio => {
+    radio.addEventListener('click', () => {
+      htmlElement.style.backgroundColor = '';
+      htmlElement.style.backgroundImage = `url(${radio.value})`;
+    });
+  });
+
