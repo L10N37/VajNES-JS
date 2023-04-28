@@ -82,20 +82,14 @@ padding: 16px;
 display: flex;
 }
 
-#instruction{
+#instruction, #operand{
+  background-color: black;
   display: flex;
   font-size: 20px;
   font-weight: bolder;
-  color: red;
+  color: white;
   width: 200px;
   float: right;
-}
-
-#operand{
-font-size: 20px;
-color: green;
-font-weight: bolder;
-
 }
 
 registersText{

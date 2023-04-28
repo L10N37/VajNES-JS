@@ -1,3 +1,4 @@
+// PC Counter is currently incremented in 'debug.js' according to the opcode. 
 
 const CPUregisters = {
     A: 0x00,
@@ -13,7 +14,7 @@ const CPUregisters = {
         I: false,    // Interrupt Disable
         D: false,    // Decimal Mode
         B: false,    // Break Command
-        U: 'NA',     // Unused
+        U: 'NA',     // Unused ('U' Flag, technically always set to 1)
         V: false,    // Overflow
         N: false     // Negative
     }
@@ -179,8 +180,12 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
     window.alert('not yet implemented');
   }
   
-  function AND_IMM(){
-    window.alert('not yet implemented');
+  function AND_IMM() {
+    CPUregisters.A = CPUregisters.A & systemMemory[PC+1];
+      // Set the Z flag if the result is zero
+    CPUregisters.P.Z = (CPUregisters.A === 0);
+      // Set the N flag if the result is negative
+    CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0);
   }
   
   function AND_ZP(){
@@ -322,7 +327,17 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
   }
   
   function BEQ_REL() {
-    window.alert('not yet implemented');
+    // function is bypassed if zero flag is not set
+    if (CPUregisters.P.Z == true) {
+      // test bit 7 (MSB), if set jump PC counter forward by operand amount
+      if (systemMemory[PC+1] & 0b10000000) {
+        // If the bit is set, the branch target is forwards
+        PC += systemMemory[PC+1];
+      } else {
+        // If the bit is not set, the branch target is backwards
+        PC -= (256 - systemMemory[PC+1]);
+      }
+    }
   }
   
   function BRK_IMP() {
@@ -482,6 +497,11 @@ function ROL_ABSX() {
   window.alert("function not yet implemented");
 }
 
+function TXS_IMP() {
+CPUregisters.S =  CPUregisters.X;
+}
+
+
 
   
   
@@ -541,12 +561,10 @@ function ROL_ABSX() {
           absolute: {code: 0x0E, length: 3, pcIncrement: 3, func: ASL_ABS},
           absolutex: {code: 0x1E, length: 3, pcIncrement: 3, func: ASL_ABSX}
         },
-       
-        BIT: {
+         BIT: {
           zeroPage: {code: 0x24, length: 2, pcIncrement: 2, func: BIT_ZP},
           absolute: {code: 0x2C, length: 3, pcIncrement: 3, func: BIT_ABS}
         },
-        
         LSR: {
           accumulator: {code: 0x4A, length: 1, pcIncrement: 1, func: LSR_ACC},
           zeroPage: {code: 0x46, length: 2, pcIncrement: 2, func: LSR_ZP},
@@ -554,7 +572,6 @@ function ROL_ABSX() {
           absolute: {code: 0x4E, length: 3, pcIncrement: 3, func: LSR_ABS},
           absolutex: {code: 0x5E, length: 3, pcIncrement: 3, func: LSR_ABSX}
         },
-        
         ORA: {
           immediate: { code: 0x09, length: 2, pcIncrement: 2, func: ORA_IMM },
           zeroPage: { code: 0x05, length: 2, pcIncrement: 2, func: ORA_ZP },
@@ -565,7 +582,6 @@ function ROL_ABSX() {
           indirectx: { code: 0x01, length: 2, pcIncrement: 2, func: ORA_INDX },
           indirecty: { code: 0x11, length: 2, pcIncrement: 2, func: ORA_INDY }
         },
-        
         BPL: {
           relative: {code: 0x10, length: 2, pcIncrement: 2, func: BPL_REL}
         },
@@ -589,6 +605,9 @@ function ROL_ABSX() {
         },
         BRK: {
           implied: {code: 0x00, length: 1, pcIncrement: 1, func: BRK_IMP}
+        },
+        TXS:  {
+          implied: {code: 0x9A,length: 1,pcIncrement: 1, func: TXS_IMP}
         },
         CMP: {
           immediate: { code: 0xC9, length: 2, pcIncrement: 2, func: CMP_IMM },
