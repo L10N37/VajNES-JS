@@ -1,8 +1,22 @@
-/*
-// Set opacity to Mario image in display menu
-const imageContainer = document.querySelector('.mario-container');
-imageContainer.style.opacity = '0.5';
-*/
+const backgroundRadios = document.getElementsByName('background');
+const imageRadios = document.getElementsByName('image');
+const htmlElement = document.documentElement;
+
+// Get the stored background image
+const storedImage = localStorage.getItem('selectedImage');
+
+// Set the background image if there is a stored image
+if (storedImage) {
+  htmlElement.style.backgroundImage = `url(${storedImage})`;
+}
+
+// Get the stored background color
+const storedColor = localStorage.getItem('selectedColor');
+
+// Set the background color if there is a stored color
+if (storedColor) {
+  htmlElement.style.backgroundColor = storedColor;
+}
 
 // event listener on display button to display the 'display' modal window on click
 const displayDropdown = document.querySelector('.display-dropdown');
@@ -18,23 +32,29 @@ displayDropdown.addEventListener('click', () => {
   modal.style.display = 'block';
 });
 
-  const backgroundRadios = document.getElementsByName('background');
-  const imageRadios = document.getElementsByName('image');
-  const htmlElement = document.documentElement;
-
-  // Add click event listener to background radios
-  backgroundRadios.forEach(radio => {
-    radio.addEventListener('click', () => {
-      htmlElement.style.backgroundImage = 'none';
-      htmlElement.style.backgroundColor = radio.value;
-    });
+// Add click event listener to background radios
+backgroundRadios.forEach(radio => {
+  radio.addEventListener('click', () => {
+    htmlElement.style.backgroundImage = 'none';
+    htmlElement.style.backgroundColor = radio.value;
+    localStorage.removeItem('selectedImage');
+    localStorage.setItem('selectedColor', radio.value);
   });
+
+  // If the radio button matches the stored color, select it and set the background color
+  if (radio.value === storedColor) {
+    radio.checked = true;
+    htmlElement.style.backgroundColor = storedColor;
+  }
+});
 
   // Add click event listener to image radios
   imageRadios.forEach(radio => {
     radio.addEventListener('click', () => {
       htmlElement.style.backgroundColor = '';
       htmlElement.style.backgroundImage = `url(${radio.value})`;
+      localStorage.removeItem('selectedColor');
+      localStorage.setItem('selectedImage', radio.value);
     });
   });
 
