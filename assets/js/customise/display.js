@@ -1,3 +1,9 @@
+// setting image here for background of display options - instead of directly in the customer.css
+// no real reason why
+let element = document.querySelector('.image-container');
+element.style.opacity = "0.5";
+element.style.backgroundSize = "100% 100%";
+
 // Get modal elements
 let modal = document.getElementById("modal");
 let modalOkBtn = document.getElementById("modal-ok-btn");
@@ -28,6 +34,8 @@ modalOkBtn.addEventListener("click", function() {
   if (selectedColors.length > 0) {
     let selectedColor = selectedColors[0];
     document.documentElement.style.setProperty('--selected-color', selectedColor);
+
+    document.documentElement.style.backgroundImage = "url('assets\images\bg\ContraGIF.gif')";
   }
   
   // Hide modal window

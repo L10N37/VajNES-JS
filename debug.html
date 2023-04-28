@@ -28,20 +28,23 @@
   <!-- Modal window -->
   <div id="modal" class="modal">
     <div class="modal-content">
-      <h2>Select Background Colors</h2>
-      <label><input type="radio" name="color" value='#36383b'> Default</label>
-      <label><input type="radio" name="color" value="white"> White</label>
-      <label><input type="radio" name="color" value="black"> Black</label>
-      <label><input type="radio" name="color" value="gray"> Gray</label>
-      <label><input type="radio" name="color" value="red"> Red</label>
-      <label><input type="radio" name="color" value="green"> Green</label>
-      <label><input type="radio" name="color" value="blue"> Blue</label>
+      <div class="image-container">
+        <img src="assets/images/bg/mario_pixel.png" alt="Mario Pixel Background">
+      </div>
+      <h2>Background Colour</h2>
+      <label><input type="radio" name="color" value='#36383b'> Default</label><br>
+      <label ><input type="radio" name="color" value="white"> White</label><br>
+      <label><input type="radio" name="color" value="black"> Black</label><br>
+      <label><input type="radio" name="color" value="gray"> Gray</label><br>
+      <label><input type="radio" name="color" value="red"> Red</label><br>
+      <label><input type="radio" name="color" value="green"> Green</label><br>
+      <label><input type="radio" name="color" value="blue"> Blue</label><br>
       <br>
       <button id="modal-ok-btn">OK</button>
       <button id="modal-cancel-btn">Cancel</button>
     </div>
   </div>
-  
+
   <main>
     <a>Work RAM<loc>&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp Offset: </loc> <locContainer> </locContainer> </a>
   <article class='debug'>
@@ -60,12 +63,13 @@
   </main>
   
   <!-- ORDER HERE IS IMPORTANT  -->
+  <script src="assets/js/customise/display.js"></script>
   <script src="assets/js/debugTables/tables.js"></script>
   <script src="assets/js/mapper.js"></script>
   <script src="assets/js/memory.js"></script>
   <script src="assets/js/6502.js"></script>
   <script src="assets/js/debug.js"></script>
-  <script src="assets/js/customise/display.js"></script>
+
 
 </body>
 <footer>

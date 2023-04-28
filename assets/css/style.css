@@ -1,3 +1,7 @@
+:root {
+  --selected-color: #36383b;
+}
+
 html {
   font-family: Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
   background-color: var(--selected-color);

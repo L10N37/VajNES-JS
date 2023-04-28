@@ -11,19 +11,31 @@
     width: auto;
     height: auto;
     overflow: auto;
-    background-color: rgba(0,0,0,0.5);
+    width: 25%
   }
-  
+ 
   .modal-content {
-    color: white;
-    background-color: black;;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
     margin: 10% auto;
     padding: 20px;
     border: 1px solid #888;
-    width: 50%;
+    width: 25%;
+    background-color: black;
+    color: white;
   }
   
   /* Spacing between buttons */
   .windows-bar button:not(:last-child) {
     margin-right: 10px;
+  }
+  
+  button#modal-ok-btn, button#modal-cancel-btn{
+    margin:8px;
+  }
+
+  .modal label{
+    font-weight: bolder;
   }
