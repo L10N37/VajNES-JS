@@ -70,10 +70,13 @@ color: blue;
 .flag-register{
   padding: 16px;
   float: left;
+  opacity: .9; /* set opacity to 90% */
 }
+
 .CPU-registers{
   padding: 16px;
   float: left;
+  opacity: .9; /* set opacity to 90% */
 }
 
 .instruction-step{
