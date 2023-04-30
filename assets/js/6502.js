@@ -75,7 +75,10 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
   }
 
   function LDA_ABS(){
-    window.alert('not yet implemented');
+  // the 2 operands are concat into a 16 bit address
+  const address = (systemMemory[PC+2] << 8) | systemMemory[PC+1];
+  // the value stored at this address is loaded into register A
+  CPUregisters.A = systemMemory[address];
   }
 
   function LDA_ABSX(){
@@ -107,8 +110,6 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
     const address = (systemMemory[PC+2] << 8) | systemMemory[PC+1];
     // store the value of accumulator register @ this address
     systemMemory[address] = CPUregisters.A;
-    console.log(address);
-    console.log(systemMemory[address]);
   }
 
   function STA_ABSX(){
@@ -181,11 +182,13 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
   }
   
   function AND_IMM() {
+      // value of A register is logical ANDed with the operand
+      // this result is stored back in A register
     CPUregisters.A = CPUregisters.A & systemMemory[PC+1];
       // Set the Z flag if the result is zero
     CPUregisters.P.Z = (CPUregisters.A === 0);
-      // Set the N flag if the result is negative
-    CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0);
+      // Set the N flag if the result is negative (bit 7 set)
+    CPUregisters.P.N = ((CPUregisters.A & 0b10000000) !== 0);
   }
   
   function AND_ZP(){
@@ -339,7 +342,7 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
       }
     }
   }
-  
+
   function BRK_IMP() {
     window.alert('not yet implemented');
   }
@@ -501,10 +504,6 @@ function TXS_IMP() {
 CPUregisters.S =  CPUregisters.X;
 }
 
-
-
-  
-  
 
 //////////////////////// 6502 CPU opcode object //////////////////////// 
     const opcodes = {
