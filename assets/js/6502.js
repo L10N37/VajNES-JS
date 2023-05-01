@@ -48,7 +48,7 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
     // https://en.wikipedia.org/wiki/Sign_bit 
     // check for overflow in the signed sense and set overflow flag accordingly
     // its confusing [https://forums.nesdev.org/viewtopic.php?t=6331]
-    if ((oldA ^ CPUregisters.A) & (systemMemory[PC+1] ^ CPUregisters.A) & 0x80) {
+    if ((oldA ^ CPUregisters.A) & (systemMemory[PC+1] ^ CPUregisters.A) & 0b10000000) {
         CPUregisters.P.V = true;
     } else {
         CPUregisters.P.V = false;
@@ -67,7 +67,10 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
   }
 
   function LDA_ZP(){
-    window.alert('not yet implemented');
+    // operand is the address to grab a byte from the zero page WRAM area from
+    const address = systemMemory[PC+1];
+    // and place the byte at this address into the A register
+    CPUregisters.A = systemMemory[address];
   }
 
   function LDA_ZPX(){
@@ -82,7 +85,9 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
   }
 
   function LDA_ABSX(){
-    window.alert('not yet implemented');
+    // Assembly example: LDA $3000,X   ; Load the accumulator with the value at memory location $3000 + X (3000 is 2 operands concat to 16 bit address)
+    const address = (systemMemory[PC+2] << 8) | systemMemory[PC+1] + CPUregisters.X;
+    CPUregisters.A = systemMemory[address];
   }
 
   function LDA_ABSY(){
