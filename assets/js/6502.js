@@ -91,7 +91,9 @@ function ADC_IMM() {    // [not certain, real CPU test in future]
   }
 
   function LDA_ABSY(){
-    window.alert('not yet implemented');
+    // as above, but add the value of Y register to the address instead
+    const address = (systemMemory[PC+2] << 8) | systemMemory[PC+1] + CPUregisters.Y;
+    CPUregisters.A = systemMemory[address];
   }
 
   function LDA_INDX(){
