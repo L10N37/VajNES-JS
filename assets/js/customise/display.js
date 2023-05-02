@@ -19,7 +19,7 @@ if (storedColor) {
 }
 
 // event listener on display button to display the 'display' modal window on click
-const displayDropdown = document.querySelector('.display-dropdown');
+const displayDropdown = document.getElementById('clickedDisplay');
 const modal = document.querySelector('.modal');
 // event listener on OK button in modal window, hides modal window
 const okButton = document.getElementById("modal-ok-btn");

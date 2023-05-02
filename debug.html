@@ -7,6 +7,7 @@
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <link rel="CSS-Reset" href="assets/css/reset.css" />
   <link rel="stylesheet" href="assets/css/style.css" />
+  <link rel="stylesheet" href="assets/css/screen.css" />
   <link rel="stylesheet" href="assets/css/customise.css" />
 </head>
 <body>
@@ -19,9 +20,11 @@
           <button class ='fileMenuItems' id="header-button">ROM Header Information</button>
         </div>
       </div>
-      <div class="display-dropdown">
-        <button class="dropbtn">Display</button>
+      <div>
+        <button class="dropbtn" id="clickedDisplay">Display</button>
+        <button class="dropbtn" id="clickedScreen">Screen</button>
       </div>
+
     </div>
   </header>
   
@@ -65,8 +68,14 @@
  <section class="instruction-step">
  </section>
   </main>
+
+  <!-- the 256 * 240 NTSC screen modal (PAL is 256 * 288) -->
+  <div id="system-screen-modal" class="screenModal">
+    <canvas id="screen-canvas" width="256" height="240"></canvas>
+    <span class="closeScreenCanvas">&times;</span>
+  </div>
   
-  <!-- ORDER HERE IS IMPORTANT  -->
+  <script src="assets/js/screen/screen.js"></script>
   <script src="assets/js/customise/display.js"></script>
   <script src="assets/js/debugTables/tables.js"></script>
   <script src="assets/js/mapper.js"></script>
@@ -74,15 +83,10 @@
   <script src="assets/js/6502.js"></script>
   <script src="assets/js/debug.js"></script>
 
-
 </body>
 <footer>
 </footer>
 </html>
-
-
-
-
   
   
   

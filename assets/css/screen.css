@@ -1,0 +1,29 @@
+.screenModal {
+    display: none; /* Hide the modal by default */
+    position: fixed; /* Position the modal */
+    z-index: 1; /* Set the modal to be on top of everything else */
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto; /* Enable scrolling if needed */
+    background-color: rgba(0, 0, 0, 0.8); /* Black background with opacity */
+  }
+
+  /* Style the NES screen */
+  #system-screen-modal {
+    margin: 0 auto; /* Center the screen horizontally */
+    background-color: black; /* Set the screen background color */
+  }
+
+  /* Style the close button */
+  .closeScreenCanvas {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    font-size: 30px;
+    font-weight: bold;
+    color: white;
+    cursor: pointer;
+  }
+
