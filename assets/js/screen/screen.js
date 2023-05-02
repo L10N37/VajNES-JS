@@ -54,16 +54,21 @@ canvas.style.height = `${canvas.height*scaleFactor}px`;
 systemScreen.style.width = `${canvas.width*scaleFactor}px`;
 systemScreen.style.height = `${canvas.height*scaleFactor}px`;
 
-// Click event and function on button to open the system screen modal
+// Click event and function on button to toggle the system screen modal
 const screenButton = document.getElementById("clickedScreen");
 screenButton.addEventListener("click", function() {
-  systemScreen.style.display = "block";
+  if (systemScreen.style.display === "block") {
+    systemScreen.style.display = "none";
+  } else {
+    systemScreen.style.display = "block";
+  }
 });
 
-// Click event and function on button to close the system screen modal
-const closeScreenButton = document.querySelector('.closeScreenCanvas');
-closeScreenButton.addEventListener("click", function() {
-  systemScreen.style.display = "none";
+// Add event listener to close the modal when clicking outside of it
+systemScreen.addEventListener('click', function(event) {
+  if (event.target !== systemScreen) {
+    systemScreen.style.display = 'none';
+  }
 });
 
 // Generate a random noise pattern

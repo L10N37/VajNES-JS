@@ -21,6 +21,7 @@
   
   /* Style the close button */
   .closeScreenCanvas {
+    display: none;       /* modal defaults to 'x' on top right for exiting, we are just using JS to make it close upon clicking anywhere outside the modal */
     position: absolute;
     top: 20px;
     right: 20px;
