@@ -119,6 +119,36 @@ let instructionStepTable=`
 </table>
 `;
 
+let PPURegisterTable =  
+`
+<table>
+  <thead>
+    <tr>
+      <th class='addressClass'>00</th>
+      <th class='addressClass'>01</th>
+      <th class='addressClass'>02</th>
+      <th class='addressClass'>03</th>
+      <th class='addressClass'>04</th>
+      <th class='addressClass'>05</th>
+      <th class='addressClass'>06</th>
+      <th class='addressClass'>07</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td id='P0'></td>
+      <td id='P1'></td>
+      <td id='P2'></td>
+      <td id='P3'></td>
+      <td id='P4'></td>
+      <td id='P5'></td>
+      <td id='P6'></td>
+      <td id='P7'></td>
+    </tr>
+  </tbody>
+</table>
+`;
+
 let FlagRegisterTable =  
 `
 <table>
@@ -231,6 +261,114 @@ const registersTable =
             <td id='PC13'></td>
             <td id='PC14'></td>
             <td id='PC15'></td>
+        </tr>
+    </tbody>
+</table>
+`
+const PPUregistersTable = 
+`
+<table>
+    <thead>
+        <tr>
+            <th class='addressClass'>Register</th>
+            <th class='addressClass'>07</th>
+            <th class='addressClass'>06</th>
+            <th class='addressClass'>05</th>
+            <th class='addressClass'>04</th>
+            <th class='addressClass'>03</th>
+            <th class='addressClass'>02</th>
+            <th class='addressClass'>01</th>
+            <th class='addressClass'>00</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr> 
+            <td class='addressClass'>PPU [CTRL1]</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        <tr> 
+            <td class='addressClass'>PPU [CTRL2]</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        <tr> 
+            <td class='addressClass'>PPU [SR]</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        <tr> 
+            <td class='addressClass'>SPR-RAM [ADDR]</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        <tr> 
+            <td class='addressClass'>SPR-RAM [I/O]</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        <tr> 
+            <td class='addressClass'>VRAM [ADDR1]</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        <tr> 
+            <td class='addressClass'>VRAM [ADDR2]</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+        </tr>
+        <tr> 
+            <td class='addressClass'>VRAM [I/O]</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
         </tr>
     </tbody>
 </table>

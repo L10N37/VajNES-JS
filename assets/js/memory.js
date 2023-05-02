@@ -14,10 +14,26 @@ const WRAMstack = [256]
 // ($0200 - $07FF) - 1536 bytes
 const WRAMgeneral = [1536]
 
-// 63,488 bytes to go
-const otherMemory = [6144];
+/*
+    _________________________________________
+    NES PPU registers: $2000–$2007 - 8 bytes
+    -----------------------------------------
+    
+    $2000: PPU Control Register 1
+    $2001: PPU Control Register 2
+    $2002: PPU Status Register
+    $2003: SPR-RAM Address Register
+    $2004: SPR-RAM I/O Register 
+    $2005: VRAM Address Register 1
+    $2006: VRAM Address Register 2
+    $2007: VRAM I/O Register
+*/
+const PPUregisters = [8];
 
-let systemMemory = [...WRAMzeroPage, ...WRAMstack, ...WRAMgeneral, ...otherMemory]
+// 63,488 bytes to go
+const otherMemory = [6136];
+
+let systemMemory = [...WRAMzeroPage, ...WRAMstack, ...WRAMgeneral, ...PPUregisters, ...otherMemory]
 
 // Zero init. all memory
 for (let i = 0; i < 8192; i++) {

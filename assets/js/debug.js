@@ -75,13 +75,21 @@ for (let i = 0; i < allCartSpaceBytes.length; i++) {
   }
 }
 
-  // Registers Section, manual ID allocation
+  // CPU Registers Section, manual ID allocation
   let insertRegistersTable= document.createElement('table');
     insertRegistersTable.className= 'GeneratedTable';
       let registerSection = document.querySelector('.CPU-registers');
         registerSection.appendChild(insertRegistersTable);
 
         insertRegistersTable.innerHTML = registersTable;
+
+  // PPU Registers Section
+  insertRegistersTable= document.createElement('table');
+      insertRegistersTable.className= 'GeneratedTable';
+          registerSection = document.querySelector('.PPU-registers');
+              registerSection.appendChild(insertRegistersTable);
+
+        insertRegistersTable.innerHTML = PPUregistersTable;
         
 // create array of ID's for each CPU register
 const regArrayA = ['A7', 'A6', 'A5', 'A4', 'A3', 'A2', 'A1', 'A0'];
@@ -309,4 +317,3 @@ const regArrayA = ['A7', 'A6', 'A5', 'A4', 'A3', 'A2', 'A1', 'A0'];
         // update the debug table
         updateDebugTables();
       }
-      

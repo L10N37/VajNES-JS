@@ -73,7 +73,7 @@ color: blue;
   opacity: .9; /* set opacity to 90% */
 }
 
-.CPU-registers{
+.CPU-registers, .PPU-registers{
   padding: 16px;
   float: left;
   opacity: .9; /* set opacity to 90% */

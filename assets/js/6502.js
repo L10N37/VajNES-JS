@@ -512,7 +512,8 @@ CPUregisters.S =  CPUregisters.X;
 }
 
 
-//////////////////////// 6502 CPU opcode object //////////////////////// 
+//////////////////////// 6502 CPU opcode object ////////////////////////
+// TO DO: Add cycles, work out boundary cross stuff
     const opcodes = {
         STA: {
           zeroPage: {code: 0x85, length: 2, pcIncrement: 2, func: STA_ZP},
