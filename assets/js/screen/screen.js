@@ -11,8 +11,37 @@ let ctx = canvas.getContext("2d");
 canvas.width = 256;
 canvas.height = 240;
 
-// Set the scale factor
-let scaleFactor = 4;
+// Set the default scale factor
+let scaleFactor = 2;
+
+// event listener on F2 key, adjust scale factor on press
+document.addEventListener("keydown", function(event) {
+  if (event.key === "F2") {
+    switch (scaleFactor) {
+      case 2:
+        scaleFactor = 4;
+        break;
+      case 4:
+        scaleFactor = 6;
+        break;
+      case 6:
+        scaleFactor = 1;
+        break;
+      case 1:
+        scaleFactor = 2;
+        break;
+    }
+    
+    // Update the canvas size and scale
+    canvas.width = 256 * scaleFactor;
+    canvas.height = 240 * scaleFactor;
+    ctx.scale(scaleFactor, scaleFactor);
+    canvas.style.width = `${canvas.width}px`;
+    canvas.style.height = `${canvas.height}px`;
+    systemScreen.style.width = `${canvas.width}px`;
+    systemScreen.style.height = `${canvas.height}px`;
+  }
+});
 
 // Scale the canvas context
 ctx.scale(scaleFactor, scaleFactor);
