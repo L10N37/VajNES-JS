@@ -12,10 +12,13 @@
 
   /* Style the NES screen */
   #system-screen-modal {
-    margin: 0 auto; /* Center the screen horizontally */
-    background-color: black; /* Set the screen background color */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: black;
   }
-
+  
   /* Style the close button */
   .closeScreenCanvas {
     position: absolute;
@@ -27,3 +30,13 @@
     cursor: pointer;
   }
 
+  /* stretch the screen canvas to the size of the parent div
+  whilst maintaining its pixel resolution */
+  #screen-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }

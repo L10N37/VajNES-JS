@@ -1,5 +1,4 @@
-
-// Get a reference to the canvas parent (hide and show modal
+// Get a reference to the canvas parent
 let systemScreen = document.getElementById('system-screen-modal')
 
 // Get a reference to the canvas element
@@ -11,24 +10,32 @@ let ctx = canvas.getContext("2d");
 // Set the canvas size to 256 x 240 pixels
 canvas.width = 256;
 canvas.height = 240;
-      
-    //click event and FUNCTION on button to open the system screen modal
-    const screenButton = document.getElementById("clickedScreen");
+
+// Set the scale factor
+let scaleFactor = 4;
+
+// Scale the canvas context
+ctx.scale(scaleFactor, scaleFactor);
+
+// Set the CSS width and height of the canvas to be larger than the resolution
+canvas.style.width = `${canvas.width*scaleFactor}px`;
+canvas.style.height = `${canvas.height*scaleFactor}px`;
+
+// Set the CSS width and height of the canvas parent to be the same as the scaled canvas
+systemScreen.style.width = `${canvas.width*scaleFactor}px`;
+systemScreen.style.height = `${canvas.height*scaleFactor}px`;
+
+// Click event and function on button to open the system screen modal
+const screenButton = document.getElementById("clickedScreen");
 screenButton.addEventListener("click", function() {
-
   systemScreen.style.display = "block";
-  
 });
 
-    //click event and FUNCION on button to open the system screen modal
-    const closeScreenButton = document.querySelector('.closeScreenCanvas');
+// Click event and function on button to close the system screen modal
+const closeScreenButton = document.querySelector('.closeScreenCanvas');
 closeScreenButton.addEventListener("click", function() {
-
   systemScreen.style.display = "none";
-
 });
-
-//----------  RENDER ON THE STUFF ONTO THE SCREEN ---------- //
 
 // Generate a random noise pattern
 function generateNoise() {
