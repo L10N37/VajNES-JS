@@ -19,17 +19,17 @@ document.addEventListener("keydown", function(event) {
   if (event.key === "F2") {
     switch (scaleFactor) {
       case 2:
+        scaleFactor = 3;
+        break;
+      case 3:
         scaleFactor = 4;
         break;
       case 4:
-        scaleFactor = 6;
+        scaleFactor = 5;
         break;
-      case 6:
-        scaleFactor = 1;
-        break;
-      case 1:
-        scaleFactor = 2;
-        break;
+      case 5:
+          scaleFactor = 2;
+          break;
     }
     
     // Update the canvas size and scale
