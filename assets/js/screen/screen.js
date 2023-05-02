@@ -28,8 +28,13 @@ document.addEventListener("keydown", function(event) {
         scaleFactor = 5;
         break;
       case 5:
-          scaleFactor = 2;
+          scaleFactor = 5.5;
           break;
+      case 5:
+          scaleFactor = 5.5;
+      case 5.5:
+          scaleFactor = 2;      
+      break;
     }
     
     // Update the canvas size and scale
