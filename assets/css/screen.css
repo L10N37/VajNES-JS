@@ -41,3 +41,34 @@
     height: 100%;
     image-rendering: pixelated;
   }
+
+  .optionsBar {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background-color: #f1f1f1;
+  }
+  
+  .screenModal:hover .optionsBar {
+    display: block;
+  }
+  
+  .optionsBar li:hover {
+    background-color: black;
+    color: white;
+  }
+  
+  .optionsBar ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  
+  .optionsBar li {
+    float: left;
+    padding: 10px;
+  }
+  

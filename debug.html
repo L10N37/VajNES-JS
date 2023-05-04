@@ -75,10 +75,50 @@
   <!-- the 256 * 240 NTSC screen modal, size set in js file (PAL is 256 * 288) -->
   <div id="system-screen-modal" class="screenModal">
     <canvas id="screen-canvas"></canvas>
-    <span class="closeScreenCanvas">&times;</span>
+    <div class="optionsBar">
+      <ul>
+        <li>Scale</li>
+        <li>Scanlines</li>
+        <li>Exit</li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="scale-modal" class="modal">
+    <div class="modal-content">
+      <span class="closeModal">&times;</span>
+      <form>
+        <h2>Scale Factor</h2>
+        <label>
+          <input type="radio" name="scaleFactor" value="2" checked>
+          2x
+        </label>
+        <br>
+        <label>
+          <input type="radio" name="scaleFactor" value="3">
+          3x
+        </label>
+        <br>
+        <label>
+          <input type="radio" name="scaleFactor" value="4">
+          4x
+        </label>
+        <br>
+        <label>
+          <input type="radio" name="scaleFactor" value="5">
+          5x
+        </label>
+        <br>
+        <label>
+          <input type="radio" name="scaleFactor" value="5.5">
+          5.5x
+        </label>
+      </form>
+    </div>
   </div>
   
   <script src="assets/js/screen/screen.js"></script>
+  <script src="assets/js/screen/scale.js"></script>
   <script src="assets/js/customise/display.js"></script>
   <script src="assets/js/debugTables/tables.js"></script>
   <script src="assets/js/mapper.js"></script>

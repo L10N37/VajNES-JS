@@ -14,7 +14,8 @@ canvas.height = 240;
 // Set the default scale factor
 let scaleFactor = 2;
 
-// event listener on F2 key, adjust scale factor on press
+// event listener on F2 key, adjust scale factor on press, this is a shorcut
+// it's also available to change with radio buttons in the menu on top of the screen
 document.addEventListener("keydown", function(event) {
   if (event.key === "F2") {
     switch (scaleFactor) {
@@ -30,8 +31,6 @@ document.addEventListener("keydown", function(event) {
       case 5:
           scaleFactor = 5.5;
           break;
-      case 5:
-          scaleFactor = 5.5;
       case 5.5:
           scaleFactor = 2;      
       break;
@@ -62,19 +61,14 @@ systemScreen.style.height = `${canvas.height*scaleFactor}px`;
 // Click event and function on button to toggle the system screen modal
 const screenButton = document.getElementById("clickedScreen");
 screenButton.addEventListener("click", function() {
-  if (systemScreen.style.display === "block") {
-    systemScreen.style.display = "none";
-  } else {
     systemScreen.style.display = "block";
-  }
 });
 
-// Add event listener to close the modal when clicking outside of it
-systemScreen.addEventListener('click', function(event) {
-  if (event.target !== systemScreen) {
-    systemScreen.style.display = 'none';
-  }
+const exitOption = systemScreen.querySelector(".optionsBar li:nth-child(3)");
+exitOption.addEventListener("click", function() {
+  systemScreen.style.display = "none";
 });
+
 
 // Generate a random noise pattern
 function generateNoise() {
