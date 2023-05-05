@@ -21,11 +21,32 @@ for (let i = 0; i < scaleRadioButtons.length; i++) {
     scaleFactor = parseFloat(scaleRadioButtons[i].value);
     canvas.width = 256 * scaleFactor;
     canvas.height = 240 * scaleFactor;
+    grilleCanvas.width = 256 * scaleFactor;
+    grilleCanvas.height = 240 * scaleFactor;
+
     ctx.scale(scaleFactor, scaleFactor);
+    grille_ctx.scale(scaleFactor, scaleFactor);
+
     canvas.style.width = `${canvas.width}px`;
     canvas.style.height = `${canvas.height}px`;
+    grilleCanvas.style.width = `${canvas.width}px`;
+    grilleCanvas.style.height = `${canvas.height}px`;
+
     systemScreen.style.width = `${canvas.width}px`;
     systemScreen.style.height = `${canvas.height}px`;
+    grilleScreen.style.width = `${canvas.width}px`;
+    grilleScreen.style.height = `${canvas.height}px`;
+
     scaleModal.style.display = "none";
   });
 }
+
+/*
+// Get a reference to the canvas parent
+let systemScreen = document.getElementById('system-screen-modal')
+let grilleScreen = document.getElementById('grille-screen-modal')
+
+// Get a reference to the canvas element
+let canvas = document.getElementById("screen-canvas");
+let grilleCanvas = document.getElementById("grille-canvas");
+*/
