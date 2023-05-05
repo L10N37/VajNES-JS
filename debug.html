@@ -91,27 +91,31 @@
 </div>
 
  <!-- scanline options stuff -->
-  <div class="scanlinesModal">
-    <div>
-      <label for="intensity-slider">Scanline Intensity:</label>
-      <input type="range" id="intensity-slider" min="0" max="100" value="50">
-    </div>
-    <div>
-      <label for="transparency-slider">Screen Transparency:</label>
-      <input type="range" id="transparency-slider" min="0" max="100" value="50">
-    </div>
-    <div>
-      <input type="radio" id="aperture-grille" name="grille-type" value="aperture-grille">
-      <label for="aperture-grille">Aperture Grille</label>
-      <input type="radio" id="shadow-mask" name="grille-type" value="shadow-mask">
-      <label for="shadow-mask">Shadow Mask</label>
-      <input type="radio" id="none" name="grille-type" value="none">
-      <label for="none">None</label>
-    </div>
-    <div>
-      <button id="ok-button">OK</button>
-    </div>
+ <div class="scanlinesModal">
+  <div>
+    <label for="intensity-slider">Scanline Intensity:</label>
+    <input type="range" id="intensity-slider" min="0" max="100" value="50">
   </div>
+  <div>
+    <label for="transparency-slider">Screen Transparency:</label>
+    <input type="range" id="transparency-slider" min="0" max="100" value="50">
+  </div>
+  <div>
+    <input type="radio" id="aperture-grille" name="grille-type" value="aperture-grille">
+    <label for="aperture-grille">Aperture Grille</label>
+    <input type="radio" id="shadow-mask" name="grille-type" value="shadow-mask">
+    <label for="shadow-mask">Shadow Mask</label>
+    <input type="radio" id="none" name="grille-type" value="none">
+    <label for="none">None</label>
+  </div>
+  <div>
+    <input type="checkbox" id="test-image-checkbox" name="test-image-checkbox" value="test-image">
+    <label for="test-image-checkbox">Show Test Image</label>
+  </div>
+  <div>
+    <button id="ok-button">OK</button>
+  </div>
+</div>
 
  <!-- scale options, F2 is a shortcut, this is for the mouse -->
   <div id="scale-modal" class="modal">

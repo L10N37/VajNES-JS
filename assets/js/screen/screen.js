@@ -106,10 +106,9 @@ function generateNoise() {
   return imageData;
 }
 
-// Draw the initial noise pattern
-ctx.putImageData(generateNoise(), 0, 0);
+// RF noise animation
+let requestId; // store the request ID for canceling the animation
 
-// Animate the noise pattern over time
 function animate() {
   // Generate a new noise pattern
   const imageData = generateNoise();
@@ -119,7 +118,13 @@ function animate() {
   ctx.globalCompositeOperation = 'source-over';
   ctx.putImageData(imageData, 0, 0);
   // Schedule the next animation frame
-  requestAnimationFrame(animate);
+  requestId = requestAnimationFrame(animate);
+}
+
+// Stop the animation and clear the canvas
+function stopAnimation() {
+  cancelAnimationFrame(requestId); // cancel the next animation frame
+  ctx.clearRect(0, 0, canvas.width, canvas.height); // clear the canvas
 }
 
 // Start the animation

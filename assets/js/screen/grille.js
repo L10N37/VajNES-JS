@@ -16,3 +16,14 @@ grilleOkButton.addEventListener('click', function() {
 });
 
 
+
+const testImageCheckbox = document.getElementById('test-image-checkbox');
+
+testImageCheckbox.addEventListener('click', function() {
+  if (testImageCheckbox.checked) {
+    stopAnimation();
+  }
+  else {
+    animate();
+  }
+});
