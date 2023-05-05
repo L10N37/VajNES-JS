@@ -15,8 +15,6 @@ grilleOkButton.addEventListener('click', function() {
   scanlinesModal.style.display = 'none';
 });
 
-
-
 const testImageCheckbox = document.getElementById('test-image-checkbox');
 
 testImageCheckbox.addEventListener('click', function() {
