@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="assets/css/style.css" />
   <link rel="stylesheet" href="assets/css/screen.css" />
   <link rel="stylesheet" href="assets/css/customise.css" />
+  <link rel="stylesheet" href="assets/css/grille.css" />
 </head>
 <body>
   <header>
@@ -84,6 +85,32 @@
     </div>
   </div>
 
+  <div class="scanlinesModal">
+    <div>
+      <label for="intensity-slider">Scanline Intensity:</label>
+      <input type="range" id="intensity-slider" min="0" max="100" value="50">
+    </div>
+    <div>
+      <label for="transparency-slider">Screen Transparency:</label>
+      <input type="range" id="transparency-slider" min="0" max="100" value="50">
+    </div>
+    <div>
+      <input type="radio" id="aperture-grille" name="grille-type" value="aperture-grille">
+      <label for="aperture-grille">Aperture Grille</label>
+      <input type="radio" id="shadow-mask" name="grille-type" value="shadow-mask">
+      <label for="shadow-mask">Shadow Mask</label>
+      <input type="radio" id="none" name="grille-type" value="none">
+      <label for="none">None</label>
+    </div>
+    <div>
+      <button id="ok-button">OK</button>
+    </div>
+  </div>
+
+  <div id="grille-modal" class="screenModal">
+    <canvas id="grille-canvas"></canvas>
+  </div>
+
   <div id="scale-modal" class="modal">
     <div class="modal-content">
       <span class="closeModal">&times;</span>
@@ -118,6 +145,7 @@
   </div>
   
   <script src="assets/js/screen/screen.js"></script>
+  <script src="assets/js/screen/grille.js"></script>
   <script src="assets/js/screen/scale.js"></script>
   <script src="assets/js/customise/display.js"></script>
   <script src="assets/js/debugTables/tables.js"></script>
