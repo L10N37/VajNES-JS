@@ -85,6 +85,12 @@
     </div>
   </div>
 
+   <!-- grille underlay for scanline emulation -->
+ <div id="grille-screen-modal" class="grilleScreenModal">
+  <canvas id="grille-canvas"></canvas>
+</div>
+
+ <!-- scanline options stuff -->
   <div class="scanlinesModal">
     <div>
       <label for="intensity-slider">Scanline Intensity:</label>
@@ -107,10 +113,7 @@
     </div>
   </div>
 
-  <div id="grille-modal" class="screenModal">
-    <canvas id="grille-canvas"></canvas>
-  </div>
-
+ <!-- scale options, F2 is a shortcut, this is for the mouse -->
   <div id="scale-modal" class="modal">
     <div class="modal-content">
       <span class="closeModal">&times;</span>

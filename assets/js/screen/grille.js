@@ -10,7 +10,9 @@ scanlinesLink.addEventListener('click', function() {
 });
 
 // When the 'OK' button is clicked, hide the scanlines modal
-var okButton = document.querySelector('#ok-button');
-okButton.addEventListener('click', function() {
+let grilleOkButton = document.querySelector('#ok-button');
+grilleOkButton.addEventListener('click', function() {
   scanlinesModal.style.display = 'none';
 });
+
+
