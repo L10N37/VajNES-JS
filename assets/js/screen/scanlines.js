@@ -1,3 +1,7 @@
+/* coded scanlines weren't working out, went with actual image underlays
+ credit: https://forums.libretro.com/t/some-scanline-overlays-w-fade-effect/18457 for the images
+*/
+
 const scanlineCtx = scanlineCanvas.getContext('2d');
 
 function setScanlinesImage() {
@@ -13,9 +17,6 @@ function setScanlinesImage() {
       break;
     case 'scanlines3':
       imageSrc = 'assets/images/scanlines/scanlines3.png';
-      break;
-    case 'none':
-    default:
       break;
   }
 
