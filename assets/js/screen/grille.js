@@ -58,7 +58,6 @@ testImageCheckbox.addEventListener('click', function() {
 
 function clearGrilleCanvas() {
   grille_ctx.clearRect(0, 0, grilleCanvas.width, grilleCanvas.height);
-  return 'none';
 }
 
 function drawShadowMask() {
@@ -68,15 +67,18 @@ function drawShadowMask() {
   // Draw the shadow mask
   grille_ctx.fillStyle = 'black';
   grille_ctx.fillRect(0, 0, grilleCanvas.width, grilleCanvas.height);
-  grille_ctx.fillStyle = 'white';
+  grille_ctx.fillStyle = 'rgb(30,30,30)';
   for (let i = 0; i < grilleCanvas.width; i += 8) {
     for (let j = 0; j < grilleCanvas.height; j += 8) {
       grille_ctx.fillRect(i, j, 4, 4);
     }
   }
-
-  // Return the type of the grille
-  return 'shadow-mask';
+  grille_ctx.fillStyle = 'rgb(60,60,60)';
+  for (let i = 4; i < grilleCanvas.width; i += 8) {
+    for (let j = 4; j < grilleCanvas.height; j += 8) {
+      grille_ctx.fillRect(i, j, 4, 4);
+    }
+  }
 }
 
 function drawApertureGrille() {
