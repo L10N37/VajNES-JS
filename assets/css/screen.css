@@ -1,14 +1,33 @@
-/* BLACK UNDERLAY, UTMOST REAR CANVAS */
-.blackScreenModal {
+/* SCANLINE LAYER */
+.scanlineSimulationModal {
   display: none;
   position: fixed;
-  z-index: 1;
+  z-index: 2.5;
   left: 0;
   top: 0;
   width: 100%;
   height: 100%;
   overflow: auto;
-  background-color: black;
+  background-color: red;
+}
+
+#scanline-simulation-modal {
+  position: absolute;
+  z-index: 2.5;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: transparent;
+}
+
+#scanline-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  z-index: 2.5;
 }
 
 /* GRILLE SCREEN */
@@ -20,7 +39,6 @@
   top: 0;
   width: 100%;
   height: 100%;
-  overflow: auto;
   background-color: transparent;
 }
 
@@ -106,7 +124,8 @@
   padding: 10px;
 }
 
-/* SCANLINES MODAL */
+/* the actual OPTIONS modal window to change properties of grille, intensity etc. */
+
 .scanlinesModal {
   display: none;
   position: fixed;
@@ -136,4 +155,18 @@
 .scanlinesModal button {
   display: block;
   margin: 20px auto 0;
+}
+
+
+/* BLACK UNDERLAY, UTMOST REAR, no canvas, just black backdrop modal */
+.blackScreenModal {
+  display: none;
+  position: fixed;
+  z-index: 1;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: black;
 }

@@ -1,9 +1,4 @@
 
-// Set the fill color to black and fill the entire canvas
-const blackCtx = blackCanvas.getContext('2d');
-blackCtx.fillStyle = 'black';
-blackCtx.fillRect(0, 0, blackCanvas.width, blackCanvas.height);
-
 // adjust transparency of main screen cavnas, this allows simulated scanline effect to show through
 const transparencySlider = document.getElementById('transparency-slider');
 
@@ -21,7 +16,6 @@ function handleIntensityChange() {
 }
 
 intensitySlider.addEventListener('input', handleIntensityChange);
-
 
 // Get the scanlines modal
 let scanlinesModal = document.querySelector('.scanlinesModal');
@@ -114,3 +108,27 @@ function drawApertureGrille() {
 
     });
   });
+
+  function drawScanlines(canvas, intensity) {
+    const ctx = canvas.getContext('2d');
+    const lineHeight = 2;
+    const gap = 2;
+    const alpha = intensity / 100;
+  
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+  
+    for (let y = 0; y < canvas.height; y += lineHeight + gap) {
+      ctx.fillRect(0, y, canvas.width, lineHeight);
+    }
+  }
+  
+const scanlineIntensitySlider = document.getElementById('scanlines-intensity-slider');
+
+scanlineIntensitySlider.addEventListener('input', () => {
+  const intensity = parseInt(scanlineIntensitySlider.value);
+  drawScanlines(scanlineCanvas, intensity);
+});
