@@ -1,73 +1,139 @@
+/* BLACK UNDERLAY, UTMOST REAR CANVAS */
+.blackScreenModal {
+  display: none;
+  position: fixed;
+  z-index: 1;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: black;
+}
+
+/* GRILLE SCREEN */
+.grilleScreenModal {
+  display: none;
+  position: fixed;
+  z-index: 2;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: transparent;
+}
+
+#grille-screen-modal {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: transparent;
+}
+
+#grille-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  z-index: 2;
+}
+
+/* SYSTEM SCREEN */
 .screenModal {
-    display: none; /* Hide the modal by default */
-    position: fixed; /* Position the modal */
-    z-index: 1; /* Set the modal to be on top of everything else */
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    overflow: auto; /* Enable scrolling if needed */
-    background-color: rgba(0, 0, 0, 0.8); /* Black background with opacity */
-  }
+  display: none;
+  position: fixed;
+  z-index: 3;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0, 0, 0, 0.8);
+}
 
-  /* Style the NES screen */
-  #system-screen-modal {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background-color: black;
-  }
-  
-  /* Style the close button */
-  .closeScreenCanvas {
-    display: none;
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    font-size: 30px;
-    font-weight: bold;
-    color: white;
-    cursor: pointer;
-  }
+#system-screen-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: black;
+}
 
-  /* stretch the screen canvas to the size of the parent div
-  whilst maintaining its pixel resolution */
-  #screen-canvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    image-rendering: pixelated;
-  }
+#screen-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  z-index: 4;
+}
 
-  .optionsBar {
-    display: none;
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    background-color: #f1f1f1;
-  }
-  
-  .screenModal:hover .optionsBar {
-    display: block;
-  }
-  
-  .optionsBar li:hover {
-    background-color: black;
-    color: white;
-  }
-  
-  .optionsBar ul {
-    list-style-type: none;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-  }
-  
-  .optionsBar li {
-    float: left;
-    padding: 10px;
-  }
+/* OPTIONS BAR */
+.optionsBar {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: #f1f1f1;
+  z-index: 5;
+}
+
+.screenModal:hover .optionsBar {
+  display: block;
+}
+
+.optionsBar li:hover {
+  background-color: black;
+  color: white;
+}
+
+.optionsBar ul {
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.optionsBar li {
+  float: left;
+  padding: 10px;
+}
+
+/* SCANLINES MODAL */
+.scanlinesModal {
+  display: none;
+  position: fixed;
+  z-index: 6;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  background-color: #000;
+  color: #fff;
+  border-radius: 10px;
+  border: 2px solid #ccc;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.scanlinesModal label,
+.scanlinesModal input[type=radio] {
+  color: #fff;
+}
+
+.scanlinesModal input[type=range] {
+  width: 100%;
+  margin: 10px 0;
+}
+
+.scanlinesModal button {
+  display: block;
+  margin: 20px auto 0;
+}

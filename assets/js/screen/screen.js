@@ -1,14 +1,23 @@
-// Get a reference to the canvas parent
+/*
+<!-- solid black underlay to block main page -->
+<div id="black-screen-modal" class="blackScreenModal">
+ <canvas id="blackCanvas"></canvas>
+</div>
+*/
+
+// Get a reference to all canvas elements
 let systemScreen = document.getElementById('system-screen-modal')
 let grilleScreen = document.getElementById('grille-screen-modal')
+let blackScreen = document.getElementById('black-screen-modal')
 
 // Get a reference to the canvas element
 let canvas = document.getElementById("screen-canvas");
 let grilleCanvas = document.getElementById("grille-canvas");
+let blackCanvas = document.getElementById("grille-canvas");
 
 // Get the 2D rendering context for the canvas
 let ctx = canvas.getContext("2d");
-let grille_ctx = canvas.getContext("2d");
+let grille_ctx = grilleCanvas.getContext("2d");
 
 // Set the canvas size to 256 x 240 pixels
 canvas.width = 256;
@@ -34,9 +43,9 @@ document.addEventListener("keydown", function(event) {
         scaleFactor = 5;
         break;
       case 5:
-          scaleFactor = 5.5;
+          scaleFactor = 5.4;
           break;
-      case 5.5:
+      case 5.4:
           scaleFactor = 2;      
       break;
     }
@@ -83,14 +92,25 @@ const screenButton = document.getElementById("clickedScreen");
 screenButton.addEventListener("click", function() {
     systemScreen.style.display = "block";
     grilleScreen.style.display = "block";
+    blackScreen.style.display = "block";
 });
 
 const exitOption = systemScreen.querySelector(".optionsBar li:nth-child(3)");
 exitOption.addEventListener("click", function() {
   systemScreen.style.display = "none";
   grilleScreen.style.display = "none";
+  blackScreen.style.display = 'none';
 });
 
+function handleEscapeKey(event) {
+  if (event.key === "Escape") {
+    systemScreen.style.display = "none";
+    grilleScreen.style.display = "none";
+    blackScreen.style.display = 'none';
+  }
+}
+
+document.addEventListener('keydown', handleEscapeKey);
 
 // Generate a random noise pattern
 function generateNoise() {
