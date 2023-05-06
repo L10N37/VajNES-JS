@@ -161,3 +161,16 @@ function stopAnimation() {
 
 // Start the animation
 animate();
+
+// composite blur effect
+const slider = document.getElementById('composite-blur-slider');
+
+slider.addEventListener('input', (event) => {
+  const value = event.target.value;
+  setBlur(value);
+});
+
+function setBlur(value) {
+  const blur = Math.min(Math.max(value, 0), 5).toFixed(1);
+  document.getElementById("screen-canvas").style.filter = `blur(${blur}px)`;
+}
