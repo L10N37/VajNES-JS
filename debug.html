@@ -99,6 +99,17 @@
  <!-- scanline options stuff -->
  <div class="scanlinesModal">
   <div>
+    <input type="radio" id="scanlines1" name="scanlines" value="scanlines1">
+    <label for="scanlines1">Scanlines 1</label> <br>
+    <input type="radio" id="scanlines2" name="scanlines" value="scanlines2">
+    <label for="scanlines2">Scanlines 2</label> <br>
+    <input type="radio" id="scanlines3" name="scanlines" value="scanlines3">
+    <label for="scanlines3">Scanlines 3</label> <br>
+    <input type="radio" id="no-scanlines" name="scanlines" value="none" checked>
+    <label for="no-scanlines">None</label>
+  </div>  
+  <div>
+  <br>
     <label for="scanlines-intensity-slider">Scanlines Intensity:</label>
     <input type="range" id="scanlines-intensity-slider" min="0" max="100" value="50">
   </div>  
@@ -112,13 +123,14 @@
   </div>
   <div>
     <input type="radio" id="aperture-grille" name="grille-type" value="aperture-grille">
-    <label for="aperture-grille">Aperture Grille</label>
+    <label for="aperture-grille">Aperture Grille</label> <br>
     <input type="radio" id="shadow-mask" name="grille-type" value="shadow-mask">
-    <label for="shadow-mask">Shadow Mask</label>
+    <label for="shadow-mask">Shadow Mask</label> <br>
     <input type="radio" id="none" name="grille-type" value="none">
     <label for="none">None</label>
   </div>
   <div>
+    <br>
     <input type="checkbox" id="test-image-checkbox" name="test-image-checkbox" value="test-image">
     <label for="test-image-checkbox">Show Test Image</label>
   </div>
