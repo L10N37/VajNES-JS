@@ -9,7 +9,6 @@
   <link rel="stylesheet" href="assets/css/style.css" />
   <link rel="stylesheet" href="assets/css/screen.css" />
   <link rel="stylesheet" href="assets/css/customise.css" />
-  <link rel="stylesheet" href="assets/css/grille.css" />
 </head>
 <body>
   <header>
@@ -85,15 +84,20 @@
     </div>
   </div>
 
-   <!-- grille underlay for scanline emulation -->
- <div id="grille-screen-modal" class="grilleScreenModal">
+  <!-- grille underlay for grille emulation -->
+<div id="grille-screen-modal" class="grilleScreenModal">
   <canvas id="grille-canvas"></canvas>
 </div>
 
-   <!-- solid black underlay to block main page -->
-   <div id="black-screen-modal" class="blackScreenModal">
+  <!-- solid black underlay to block main page -->
+  <div id="black-screen-modal" class="blackScreenModal">
     <canvas id="blackCanvas"></canvas>
   </div>
+
+    <!-- another underlay for scanline simulation -->
+    <div id="scanline-simulation-modal" class="scanlineSimulation">
+      <canvas id="scanlineCanvas"></canvas>
+    </div>
 
  <!-- scanline options stuff -->
  <div class="scanlinesModal">

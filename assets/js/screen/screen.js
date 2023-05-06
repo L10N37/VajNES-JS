@@ -1,29 +1,27 @@
-/*
-<!-- solid black underlay to block main page -->
-<div id="black-screen-modal" class="blackScreenModal">
- <canvas id="blackCanvas"></canvas>
-</div>
-*/
-
 // Get a reference to all canvas elements
 let systemScreen = document.getElementById('system-screen-modal')
 let grilleScreen = document.getElementById('grille-screen-modal')
 let blackScreen = document.getElementById('black-screen-modal')
+let scanlineScreen = document.getElementById('scanline-simulation-modal')
 
 // Get a reference to the canvas element
-let canvas = document.getElementById("screen-canvas");
-let grilleCanvas = document.getElementById("grille-canvas");
-let blackCanvas = document.getElementById("grille-canvas");
+const canvas = document.getElementById("screen-canvas");
+const grilleCanvas = document.getElementById("grille-canvas");
+const blackCanvas = document.getElementById("grille-canvas");
+const scanlineCanvas = document.getElementById("scanlineCanvas");
 
 // Get the 2D rendering context for the canvas
-let ctx = canvas.getContext("2d");
-let grille_ctx = grilleCanvas.getContext("2d");
+const ctx = canvas.getContext("2d");
+const grille_ctx = grilleCanvas.getContext("2d");
+const scanlineCanvas_ctx = grilleCanvas.getContext("2d");
 
 // Set the canvas size to 256 x 240 pixels
 canvas.width = 256;
 canvas.height = 240;
 grilleCanvas.width = 256;
 grilleCanvas.height = 240;
+scanlineCanvas.width = 256;
+scanlineCanvas.height = 240;
 
 // Set the default scale factor
 let scaleFactor = 2;
@@ -55,25 +53,34 @@ document.addEventListener("keydown", function(event) {
     canvas.height = 240 * scaleFactor;
     grilleCanvas.width = 256 * scaleFactor;
     grilleCanvas.height = 240 * scaleFactor;
+    scanlineCanvas.height = 240 * scaleFactor;
+    scanlineCanvas.width = 240 * scaleFactor;
 
     ctx.scale(scaleFactor, scaleFactor);
     grille_ctx.scale(scaleFactor, scaleFactor);
+    scanlineCanvas_ctx.scale(scaleFactor, scaleFactor)
 
     canvas.style.width = `${canvas.width}px`;
     canvas.style.height = `${canvas.height}px`;
     grilleCanvas.style.width = `${canvas.width}px`;
     grilleCanvas.style.height = `${canvas.height}px`;
+    scanlineCanvas.style.width = `${canvas.width}px`;
+    scanlineCanvas.style.height = `${canvas.height}px`;
 
     systemScreen.style.width = `${canvas.width}px`;
     systemScreen.style.height = `${canvas.height}px`;
     grilleScreen.style.width = `${canvas.width}px`;
     grilleScreen.style.height = `${canvas.height}px`;
+    scanlineCanvas.style.width = `${canvas.width}px`;
+    scanlineCanvas.style.height = `${canvas.height}px`;
   }
 });
 
 // Scale the canvas context
 ctx.scale(scaleFactor, scaleFactor);
 grille_ctx.scale(scaleFactor, scaleFactor);
+scanlineCanvas_ctx.scale(scaleFactor, scaleFactor);
+
 
 // Set the CSS width and height of the canvas to be larger than the resolution
 canvas.style.width = `${canvas.width*scaleFactor}px`;
@@ -81,11 +88,15 @@ canvas.style.height = `${canvas.height*scaleFactor}px`;
 grilleCanvas.style.width = `${canvas.width*scaleFactor}px`;
 grilleCanvas.style.height = `${canvas.height*scaleFactor}px`;
 
+
 // Set the CSS width and height of the canvas parent to be the same as the scaled canvas
 systemScreen.style.width = `${canvas.width*scaleFactor}px`;
 systemScreen.style.height = `${canvas.height*scaleFactor}px`;
 grilleScreen.style.width = `${canvas.width*scaleFactor}px`;
 grilleScreen.style.height = `${canvas.height*scaleFactor}px`;
+scanlineScreen.style.width = `${canvas.width*scaleFactor}px`;
+scanlineScreen.style.height = `${canvas.height*scaleFactor}px`;
+
 
 // Click event and function on button to toggle the system screen modal
 const screenButton = document.getElementById("clickedScreen");
@@ -93,6 +104,7 @@ screenButton.addEventListener("click", function() {
     systemScreen.style.display = "block";
     grilleScreen.style.display = "block";
     blackScreen.style.display = "block";
+    scanlineScreen.style.display = 'block';
 });
 
 const exitOption = systemScreen.querySelector(".optionsBar li:nth-child(3)");
@@ -100,6 +112,7 @@ exitOption.addEventListener("click", function() {
   systemScreen.style.display = "none";
   grilleScreen.style.display = "none";
   blackScreen.style.display = 'none';
+  scanlineScreen.style.display = 'none';
 });
 
 function handleEscapeKey(event) {
@@ -107,6 +120,7 @@ function handleEscapeKey(event) {
     systemScreen.style.display = "none";
     grilleScreen.style.display = "none";
     blackScreen.style.display = 'none';
+    scanlineScreen.style.display = 'none';
   }
 }
 
