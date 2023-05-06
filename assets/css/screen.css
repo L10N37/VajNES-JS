@@ -1,22 +1,83 @@
+/*  z-index on canvas is irelevant and the layering goes off the parent modals 
+These can be referenced by ID or class */
+
 /* SCANLINE LAYER */
-.scanlineSimulationModal {
+#scanline-simulation-modal {
+  position: absolute;
+  z-index: 4.5;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: transparent;
+}
+/* GRILLE SCREEN LAYER */
+#grille-screen-modal {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: transparent;
+}
+/* SYSTEM SCREEN LAYER */
+#system-screen-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: transparent;
+  z-index: 5;                           /* Layer  5  */
+}
+/* OPTIONS BAR LAYER */
+.optionsBar {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: black;
+  color: white;
+  z-index: 99;                          /* Layer  99  */
+}
+/* the actual OPTIONS modal window layer to change properties of grille, intensity etc. */
+.scanlinesModal {
   display: none;
   position: fixed;
-  z-index: 2.5;
+   z-index: 98;                         /* Layer  98   */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 300px;
+  background-color: #000;
+  color: #fff;
+  border-radius: 10px;
+  border: 2px solid #ccc;
+  padding: 20px;
+  box-sizing: border-box;
+}
+/* BLACK UNDERLAY, UTMOST REAR, no canvas, just black backdrop modal */
+.blackScreenModal {
+  display: none;
+  position: fixed;
+  z-index: -99; /* random negative utmost rear z index */
   left: 0;
   top: 0;
   width: 100%;
   height: 100%;
   overflow: auto;
-  background-color: red;
+  background-color: black;
 }
 
-#scanline-simulation-modal {
-  position: absolute;
-  z-index: 2.5;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+
+/* all other styling, z index stop put on top for layering */
+.scanlineSimulationModal {
+  display: none;
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
   background-color: transparent;
 }
 
@@ -27,27 +88,17 @@
   width: 100%;
   height: 100%;
   image-rendering: pixelated;
-  z-index: 2.5;
+  background-color: blue;
 }
 
-/* GRILLE SCREEN */
 .grilleScreenModal {
   display: none;
   position: fixed;
-  z-index: 2;
   left: 0;
   top: 0;
   width: 100%;
   height: 100%;
-  background-color: transparent;
-}
-
-#grille-screen-modal {
-  position: absolute;
-  z-index: 2;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  overflow: auto;
   background-color: transparent;
 }
 
@@ -58,28 +109,17 @@
   width: 100%;
   height: 100%;
   image-rendering: pixelated;
-  z-index: 2;
 }
 
-/* SYSTEM SCREEN */
 .screenModal {
   display: none;
   position: fixed;
-  z-index: 3;
   left: 0;
   top: 0;
   width: 100%;
   height: 100%;
   overflow: auto;
   background-color: rgba(0, 0, 0, 0.8);
-}
-
-#system-screen-modal {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background-color: black;
 }
 
 #screen-canvas {
@@ -89,18 +129,6 @@
   width: 100%;
   height: 100%;
   image-rendering: pixelated;
-  z-index: 4;
-}
-
-/* OPTIONS BAR */
-.optionsBar {
-  display: none;
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  background-color: #f1f1f1;
-  z-index: 5;
 }
 
 .screenModal:hover .optionsBar {
@@ -109,7 +137,8 @@
 
 .optionsBar li:hover {
   background-color: black;
-  color: white;
+  color: yellow;
+  cursor: pointer;
 }
 
 .optionsBar ul {
@@ -122,24 +151,6 @@
 .optionsBar li {
   float: left;
   padding: 10px;
-}
-
-/* the actual OPTIONS modal window to change properties of grille, intensity etc. */
-
-.scanlinesModal {
-  display: none;
-  position: fixed;
-  z-index: 6;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 300px;
-  background-color: #000;
-  color: #fff;
-  border-radius: 10px;
-  border: 2px solid #ccc;
-  padding: 20px;
-  box-sizing: border-box;
 }
 
 .scanlinesModal label,
@@ -155,18 +166,4 @@
 .scanlinesModal button {
   display: block;
   margin: 20px auto 0;
-}
-
-
-/* BLACK UNDERLAY, UTMOST REAR, no canvas, just black backdrop modal */
-.blackScreenModal {
-  display: none;
-  position: fixed;
-  z-index: 1;
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  background-color: black;
 }

@@ -21,10 +21,9 @@ let scaleFactor = 2;
 const canvases = [canvas, grilleCanvas, scanlineCanvas];
 
 for (let i = 0; i < canvases.length; i++) {
-  canvases[i].width = 256 * scaleFactor;
-  canvases[i].height = 240 *scaleFactor;
+  canvases[i].width = 256;
+  canvases[i].height = 240;
 }
-
 
 // event listener on F2 key, adjust scale factor on press, this is a shorcut
 // it's also available to change with radio buttons in the menu on top of the screen
