@@ -5,9 +5,10 @@
 const scanlineCtx = scanlineCanvas.getContext('2d');
 
 function setScanlinesImage() {
-  const selectedScanlines = document.querySelector('input[name="scanlines"]:checked');
-  let imageSrc = '';
-  
+    const selectedScanlines = document.querySelector('input[name="scanlines"]:checked');
+    if (!selectedScanlines) {
+      return; // exit the function if no radio button is selected
+    }
   switch (selectedScanlines.value) {
     case 'scanlines1':
       imageSrc = 'assets/images/scanlines/scanlines1.png';
@@ -34,7 +35,7 @@ function setScanlinesImage() {
 }
 
 // Add event listener to radio buttons
-const scanlineRadioButtons = document.querySelectorAll('input[name="scanlines-type"]');
+const scanlineRadioButtons = document.querySelectorAll('input[name="scanlines"]');
 scanlineRadioButtons.forEach((button) => {
   button.addEventListener('change', setScanlinesImage);
 });
