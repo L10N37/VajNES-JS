@@ -131,22 +131,33 @@ function LDA_ABSY(){
 }
 
 function LDA_INDX(){
-  window.alert('not yet implemented');
+  // Operand is the low byte, next byte is the highbyte then add value of X reg to form address
+   const address = (systemMemory[PC+2] << 8) | systemMemory[PC+1] + CPUregisters.Y;
+   // Store the data in this location into Accumulator
+   CPUregisters.A = systemMemory[address];
         // check and set or clear N & Z flags
         CPUregisters.P.Z = (CPUregisters.A === 0) ? true : false;
         CPUregisters.P.N = (CPUregisters.A & 0b10000000) ? true : false;
 }
 
+// opcode has a documented bug that is worked around
+// The workaround for this bug involves adjusting the effective address by adding the Y register after accessing the memory location, rather than before.
 function LDA_INDY(){
-  window.alert('not yet implemented');
+  // Operand is the low byte, next byte is the highbyte then add value of Y reg to form address
+   const address = (systemMemory[PC+2] << 8) | systemMemory[PC+1] + CPUregisters.Y;
+   // Store the data in this location into Accumulator
+   CPUregisters.A = systemMemory[address];
         // check and set or clear N & Z flags
         CPUregisters.P.Z = (CPUregisters.A === 0) ? true : false;
         CPUregisters.P.N = (CPUregisters.A & 0b10000000) ? true : false;
 }
 
 function STA_ZP(){
-  window.alert('not yet implemented');
-  
+    // shove the operand byte (representing half a 16 bit address) across to the left 8 bits, smash 
+    // the value stored in x register next to it forming the full 16 bit address
+    const address = (systemMemory[PC+1] << 8) | CPUregisters.X;
+    // load the data at this address into the A register
+  systemMemory[address] = CPUregisters.A;
 }
 
 function STA_ZPX(){
