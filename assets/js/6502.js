@@ -160,10 +160,11 @@ function STA_ZP(){
   systemMemory[address] = CPUregisters.A;
 }
 
-function STA_ZPX(){
-  window.alert('not yet implemented');
+function STA_ZPX() {
+  const address = (systemMemory[PC + 1] + CPUregisters.X) % 256; // ensure the address wraps around to zero page
+  systemMemory[address] = CPUregisters.A;
 }
-
+  
 function STA_ABS(){
   // take 2 following opcodes, concatenate into 16 bit address
   const address = (systemMemory[PC+2] << 8) | systemMemory[PC+1];
