@@ -172,73 +172,261 @@ function STA_ABS(){
   systemMemory[address] = CPUregisters.A;
 }
 
-function STA_ABSX(){
-  window.alert('not yet implemented');
+function STA_ABSX() {
+  // Take the two following opcodes, concatenate them into a 16-bit address, and add the value of X register to it
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.X;
+  // Store the value of the accumulator (A) at this address
+  systemMemory[address] = CPUregisters.A;
 }
 
-function STA_ABSY(){
-  window.alert('not yet implemented');
+function STA_ABSY() {
+  // Take the two following opcodes, concatenate them into a 16-bit address, and add the value of Y register to it
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.Y;
+  // Store the value of the accumulator (A) at this address
+  systemMemory[address] = CPUregisters.A;
 }
 
-function STA_INDX(){
-  window.alert('not yet implemented');
+function STA_INDX() {
+  // Operand is the low byte, next byte is the high byte, and add the value of X register to form the address
+  const operand = systemMemory[PC + 1];
+  const lowByteAddress = (operand + CPUregisters.X) & 0xFF; // Ensure the address wraps around to zero page
+  const highByteAddress = (operand + CPUregisters.X + 1) & 0xFF; // Wrap around to zero page for high byte
+  const address = (systemMemory[highByteAddress] << 8) | systemMemory[lowByteAddress];
+  // Store the value of the accumulator (A) at this address
+  systemMemory[address] = CPUregisters.A;
 }
 
-function STA_INDY(){
-  window.alert('not yet implemented');
+function STA_INDY() {
+  // Operand is the low byte, next byte is the high byte, and add the value of Y register to form the address
+  const operand = systemMemory[PC + 1];
+  const lowByteAddress = operand & 0xFF; // Zero page address
+  const highByteAddress = (operand + 1) & 0xFF; // Wrap around to zero page for high byte
+  const address = ((systemMemory[highByteAddress] << 8) | systemMemory[lowByteAddress]) + CPUregisters.Y;
+  // Store the value of the accumulator (A) at this address
+  systemMemory[address] = CPUregisters.A;
 }
+
 
 function LDX_IMM() {
-// load the X register with value of byte following instruction opcode
-CPUregisters.X = systemMemory[PC+1]; 
+  // Load the X register with the value of the byte following the instruction opcode
+  CPUregisters.X = systemMemory[PC + 1];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.X === 0) ? true : false;
+  CPUregisters.P.N = (CPUregisters.X & 0b10000000) ? true : false;
 }
 
 function LDX_ZP() {
-  window.alert('not yet implemented');
+  // Load the X register with the value stored at the zero-page address specified by the following byte
+  const address = systemMemory[PC + 1];
+  CPUregisters.X = systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.X === 0) ? true : false;
+  CPUregisters.P.N = (CPUregisters.X & 0b10000000) ? true : false;
 }
 
 function LDX_ZPY() {
-  window.alert('not yet implemented');
+  // Load the X register with the value stored at the zero-page address specified by the following byte added to the Y register
+  const address = (systemMemory[PC + 1] + CPUregisters.Y) % 256; // Ensure the address wraps around to zero page
+  CPUregisters.X = systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.X === 0) ? true : false;
+  CPUregisters.P.N = (CPUregisters.X & 0b10000000) ? true : false;
 }
 
 function LDX_ABS() {
-  window.alert('not yet implemented');
+  // Load the X register with the value stored at the absolute address specified by the two following bytes
+  const address = (systemMemory[PC + 2] << 8) | systemMemory[PC + 1];
+  CPUregisters.X = systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.X === 0) ? true : false;
+  CPUregisters.P.N = (CPUregisters.X & 0b10000000) ? true : false;
 }
 
 function LDX_ABSY() {
-  window.alert('not yet implemented');
+  // Load the X register with the value stored at the absolute address specified by the two following bytes added to the Y register
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.Y;
+  CPUregisters.X = systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.X === 0) ? true : false;
+  CPUregisters.P.N = (CPUregisters.X & 0b10000000) ? true : false;
 }
 
 function ADC_IMM() {
-  window.alert('not yet implemented');
+  const value = systemMemory[PC + 1];
+
+  // Perform the addition with the carry flag
+  const sum = CPUregisters.A + value + (CPUregisters.P.C ? 1 : 0);
+
+  // Update the carry flag
+  CPUregisters.P.C = (sum > 255);
+
+  // Update the overflow flag
+  CPUregisters.P.V = ((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0;
+
+  // Update the accumulator register
+  CPUregisters.A = sum & 0xFF;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ADC_ZP() {
-  window.alert('not yet implemented');
+  const address = systemMemory[PC + 1];
+  const value = systemMemory[address];
+
+  // Perform the addition with the carry flag
+  const sum = CPUregisters.A + value + (CPUregisters.P.C ? 1 : 0);
+
+  // Update the carry flag
+  CPUregisters.P.C = (sum > 255);
+
+  // Update the overflow flag
+  CPUregisters.P.V = ((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0;
+
+  // Update the accumulator register
+  CPUregisters.A = sum & 0xFF;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ADC_ZPX() {
-  window.alert('not yet implemented');
+  const address = (systemMemory[PC + 1] + CPUregisters.X) % 256;
+  const value = systemMemory[address];
+
+  // Perform the addition with the carry flag
+  const sum = CPUregisters.A + value + (CPUregisters.P.C ? 1 : 0);
+
+  // Update the carry flag
+  CPUregisters.P.C = (sum > 255);
+
+  // Update the overflow flag
+  CPUregisters.P.V = ((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0;
+
+  // Update the accumulator register
+  CPUregisters.A = sum & 0xFF;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ADC_ABS() {
-  window.alert('not yet implemented');
+  const address = (systemMemory[PC + 2] << 8) | systemMemory[PC + 1];
+  const value = systemMemory[address];
+
+  // Perform the addition with the carry flag
+  const sum = CPUregisters.A + value + (CPUregisters.P.C ? 1 : 0);
+
+  // Update the carry flag
+  CPUregisters.P.C = (sum > 255);
+
+  // Update the overflow flag
+  CPUregisters.P.V = ((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0;
+
+  // Update the accumulator register
+  CPUregisters.A = sum & 0xFF;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ADC_ABSX() {
-  window.alert('not yet implemented');
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.X;
+  const value = systemMemory[address];
+
+  // Perform the addition with the carry flag
+  const sum = CPUregisters.A + value + (CPUregisters.P.C ? 1 : 0);
+
+  // Update the carry flag
+  CPUregisters.P.C = (sum > 255);
+
+  // Update the overflow flag
+  CPUregisters.P.V = ((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0;
+
+  // Update the accumulator register
+  CPUregisters.A = sum & 0xFF;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ADC_ABSY() {
-  window.alert('not yet implemented');
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.Y;
+  const value = systemMemory[address];
+
+  // Perform the addition with the carry flag
+  const sum = CPUregisters.A + value + (CPUregisters.P.C ? 1 : 0);
+
+  // Update the carry flag
+  CPUregisters.P.C = (sum > 255);
+
+  // Update the overflow flag
+  CPUregisters.P.V = ((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0;
+
+  // Update the accumulator register
+  CPUregisters.A = sum & 0xFF;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ADC_INDX() {
-  window.alert('not yet implemented');
+  const operand = systemMemory[PC + 1];
+  const lowByteAddress = (operand + CPUregisters.X) & 0xFF;
+  const highByteAddress = (operand + CPUregisters.X + 1) & 0xFF;
+  const address = (systemMemory[highByteAddress] << 8) | systemMemory[lowByteAddress];
+  const value = systemMemory[address];
+
+  // Perform the addition with the carry flag
+  const sum = CPUregisters.A + value + (CPUregisters.P.C ? 1 : 0);
+
+  // Update the carry flag
+  CPUregisters.P.C = (sum > 255);
+
+  // Update the overflow flag
+  CPUregisters.P.V = ((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0;
+
+  // Update the accumulator register
+  CPUregisters.A = sum & 0xFF;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ADC_INDY() {
-  window.alert('not yet implemented');
+  const operand = systemMemory[PC + 1];
+  const lowByteAddress = operand & 0xFF;
+  const highByteAddress = (operand + 1) & 0xFF;
+  const address = ((systemMemory[highByteAddress] << 8) | systemMemory[lowByteAddress]) + CPUregisters.Y;
+  const value = systemMemory[address];
+
+  // Perform the addition with the carry flag
+  const sum = CPUregisters.A + value + (CPUregisters.P.C ? 1 : 0);
+
+  // Update the carry flag
+  CPUregisters.P.C = (sum > 255);
+
+  // Update the overflow flag
+  CPUregisters.P.V = ((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0;
+
+  // Update the accumulator register
+  CPUregisters.A = sum & 0xFF;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function AND_IMM() {
@@ -251,79 +439,197 @@ function AND_IMM() {
       CPUregisters.P.N = (CPUregisters.A & 0b10000000) ? true : false;
 }
 
-function AND_ZP(){
-  window.alert('not yet implemented');
+function AND_ZP() {
+  const address = systemMemory[PC + 1];
+  const value = systemMemory[address];
+  CPUregisters.A &= value;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
-function AND_ZPX(){
-  window.alert('not yet implemented');
+function AND_ZPX() {
+  const address = (systemMemory[PC + 1] + CPUregisters.X) % 256;
+  const value = systemMemory[address];
+  CPUregisters.A &= value;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
-function AND_ABS(){
-  window.alert('not yet implemented');
+function AND_ABS() {
+  const address = (systemMemory[PC + 2] << 8) | systemMemory[PC + 1];
+  const value = systemMemory[address];
+  CPUregisters.A &= value;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
-function AND_ABSX(){
-  window.alert('not yet implemented');
+function AND_ABSX() {
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.X;
+  const value = systemMemory[address];
+  CPUregisters.A &= value;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
-function AND_ABSY(){
-  window.alert('not yet implemented');
+function AND_ABSY() {
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.Y;
+  const value = systemMemory[address];
+  CPUregisters.A &= value;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
-function AND_INDX(){
-  window.alert('not yet implemented');
+function AND_INDX() {
+  const operand = systemMemory[PC + 1];
+  const lowByteAddress = (operand + CPUregisters.X) & 0xFF;
+  const highByteAddress = (operand + CPUregisters.X + 1) & 0xFF;
+  const address = (systemMemory[highByteAddress] << 8) | systemMemory[lowByteAddress];
+  const value = systemMemory[address];
+  CPUregisters.A &= value;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
-function AND_INDY(){
-  window.alert('not yet implemented');
+function AND_INDY() {
+  const operand = systemMemory[PC + 1];
+  const lowByteAddress = operand & 0xFF;
+  const highByteAddress = (operand + 1) & 0xFF;
+  const address = ((systemMemory[highByteAddress] << 8) | systemMemory[lowByteAddress]) + CPUregisters.Y;
+  const value = systemMemory[address];
+  CPUregisters.A &= value;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ASL_ACC() {
-  window.alert('ASL_ACC function not yet implemented');
+  CPUregisters.P.C = (CPUregisters.A & 0x80) !== 0;
+  CPUregisters.A = (CPUregisters.A << 1) & 0xFF;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ASL_ZP() {
-  window.alert('ASL_ZP function not yet implemented');
+  const address = systemMemory[PC + 1];
+  const value = systemMemory[address];
+  CPUregisters.P.C = (value & 0x80) !== 0;
+  const result = (value << 1) & 0xFF;
+  systemMemory[address] = result;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (result === 0);
+  CPUregisters.P.N = (result & 0x80) !== 0;
 }
 
 function ASL_ZPX() {
-  window.alert('ASL_ZPX function not yet implemented');
+  const address = (systemMemory[PC + 1] + CPUregisters.X) % 256;
+  const value = systemMemory[address];
+  CPUregisters.P.C = (value & 0x80) !== 0;
+  const result = (value << 1) & 0xFF;
+  systemMemory[address] = result;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (result === 0);
+  CPUregisters.P.N = (result & 0x80) !== 0;
 }
 
 function ASL_ABS() {
-  window.alert('ASL_ABS function not yet implemented');
+  const address = (systemMemory[PC + 2] << 8) | systemMemory[PC + 1];
+  const value = systemMemory[address];
+  CPUregisters.P.C = (value & 0x80) !== 0;
+  const result = (value << 1) & 0xFF;
+  systemMemory[address] = result;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (result === 0);
+  CPUregisters.P.N = (result & 0x80) !== 0;
 }
 
 function ASL_ABSX() {
-  window.alert('ASL_ABSX function not yet implemented');
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.X;
+  const value = systemMemory[address];
+  CPUregisters.P.C = (value & 0x80) !== 0;
+  const result = (value << 1) & 0xFF;
+  systemMemory[address] = result;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (result === 0);
+  CPUregisters.P.N = (result & 0x80) !== 0;
 }
 
-function BIT_ZP(){
-  window.alert('not yet implemented');
-}
-
-function BIT_ABS(){
-  window.alert('not yet implemented');
-}
 function BIT_ZP() {
-  window.alert('not yet implemented');
+  const address = systemMemory[PC + 1];
+  const value = systemMemory[address];
+
+  CPUregisters.P.Z = (value & CPUregisters.A) === 0;
+  CPUregisters.P.N = (value & 0x80) !== 0;
+  CPUregisters.P.V = (value & 0x40) !== 0;
 }
 
 function BIT_ABS() {
-  window.alert('not yet implemented');
+  const address = (systemMemory[PC + 2] << 8) | systemMemory[PC + 1];
+  const value = systemMemory[address];
+
+  CPUregisters.P.Z = (value & CPUregisters.A) === 0;
+  CPUregisters.P.N = (value & 0x80) !== 0;
+  CPUregisters.P.V = (value & 0x40) !== 0;
+}
+
+function BIT_ABS() {
+  const address = (systemMemory[PC + 2] << 8) | systemMemory[PC + 1];
+  const value = systemMemory[address];
+
+  CPUregisters.P.Z = (value & CPUregisters.A) === 0;
+  CPUregisters.P.N = (value & 0x80) !== 0;
+  CPUregisters.P.V = (value & 0x40) !== 0;
 }
 
 function LSR_ACC() {
-  window.alert('not yet implemented');
+  CPUregisters.P.C = CPUregisters.A & 0x01;
+  CPUregisters.A = CPUregisters.A >> 1;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function LSR_ZP() {
-  window.alert('not yet implemented');
+  const address = systemMemory[PC + 1];
+  const value = systemMemory[address];
+  CPUregisters.P.C = value & 0x01;
+  const result = value >> 1;
+  systemMemory[address] = result;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (result === 0);
+  CPUregisters.P.N = (result & 0x80) !== 0;
 }
 
 function LSR_ZPX() {
-  window.alert('not yet implemented');
+  const address = (systemMemory[PC + 1] + CPUregisters.X) % 256;
+  const value = systemMemory[address];
+  CPUregisters.P.C = value & 0x01;
+  const result = value >> 1;
+  systemMemory[address] = result;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (result === 0);
+  CPUregisters.P.N = (result & 0x80) !== 0;
 }
 
 function LSR_ABS() {
