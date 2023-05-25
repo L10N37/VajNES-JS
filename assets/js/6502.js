@@ -633,66 +633,146 @@ function LSR_ZPX() {
 }
 
 function LSR_ABS() {
-  window.alert('not yet implemented');
+  const address = (systemMemory[PC + 2] << 8) | systemMemory[PC + 1];
+  const value = systemMemory[address];
+  CPUregisters.P.C = value & 0x01;
+  const result = value >> 1;
+  systemMemory[address] = result;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (result === 0);
+  CPUregisters.P.N = (result & 0x80) !== 0;
 }
 
 function LSR_ABSX() {
-  window.alert('not yet implemented');
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.X;
+  const value = systemMemory[address];
+  CPUregisters.P.C = value & 0x01;
+  const result = value >> 1;
+  systemMemory[address] = result;
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (result === 0);
+  CPUregisters.P.N = (result & 0x80) !== 0;
 }
 
 function ORA_IMM() {
-  window.alert('not yet implemented');
+  CPUregisters.A |= systemMemory[PC + 1];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ORA_ZP() {
-  window.alert('not yet implemented');
+  const address = systemMemory[PC + 1];
+  CPUregisters.A |= systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ORA_ZPX() {
-  window.alert('not yet implemented');
+  const address = (systemMemory[PC + 1] + CPUregisters.X) % 256;
+  CPUregisters.A |= systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ORA_ABS() {
-  window.alert('not yet implemented');
+  const address = (systemMemory[PC + 2] << 8) | systemMemory[PC + 1];
+  CPUregisters.A |= systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ORA_ABSX() {
-  window.alert('not yet implemented');
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.X;
+  CPUregisters.A |= systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ORA_ABSY() {
-  window.alert('not yet implemented');
+  const address = ((systemMemory[PC + 2] << 8) | systemMemory[PC + 1]) + CPUregisters.Y;
+  CPUregisters.A |= systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ORA_INDX() {
-  window.alert('not yet implemented');
+  const baseAddress = systemMemory[PC + 1] + CPUregisters.X;
+  const lowByte = systemMemory[baseAddress];
+  const highByte = systemMemory[(baseAddress + 1) % 256];
+  const address = (highByte << 8) | lowByte;
+  CPUregisters.A |= systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
 
 function ORA_INDY() {
-  window.alert('not yet implemented');
+  const baseAddress = systemMemory[PC + 1];
+  const lowByte = systemMemory[baseAddress];
+  const highByte = systemMemory[(baseAddress + 1) % 256];
+  const address = ((highByte << 8) | lowByte) + CPUregisters.Y;
+  CPUregisters.A |= systemMemory[address];
+
+  // Check and set or clear N & Z flags
+  CPUregisters.P.Z = (CPUregisters.A === 0);
+  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0;
 }
+
 function BPL_REL() {
-  window.alert('not yet implemented');
+  const offset = systemMemory[PC + 1];
+  if (!CPUregisters.P.N) {
+    CPUregisters.PC = (PC + 2 + offset) & 0xFFFF;
+  }
 }
 
 function BMI_REL() {
-  window.alert('not yet implemented');
+  const offset = systemMemory[PC + 1];
+  if (CPUregisters.P.N) {
+    CPUregisters.PC = (PC + 2 + offset) & 0xFFFF;
+  }
 }
 
 function BVC_REL() {
-  window.alert('not yet implemented');
+  const offset = systemMemory[PC + 1];
+  if (!CPUregisters.P.V) {
+    CPUregisters.PC = (PC + 2 + offset) & 0xFFFF;
+  }
 }
 
 function BCC_REL() {
-  window.alert('not yet implemented');
+  const offset = systemMemory[PC + 1];
+  if (!CPUregisters.P.C) {
+    CPUregisters.PC = (PC + 2 + offset) & 0xFFFF;
+  }
 }
 
 function BCS_REL() {
-  window.alert('not yet implemented');
+  const offset = systemMemory[PC + 1];
+  if (CPUregisters.P.C) {
+    CPUregisters.PC = (PC + 2 + offset) & 0xFFFF;
+  }
 }
 
 function BNE_REL() {
-  window.alert('not yet implemented');
+  const offset = systemMemory[PC + 1];
+  if (!CPUregisters.P.Z) {
+    CPUregisters.PC = (PC + 2 + offset) & 0xFFFF;
+  }
 }
 
 function BEQ_REL() {
