@@ -1,56 +1,80 @@
-//  TOTAL RAM 2048 BYTES: $0000 - $07FF;
-// https://www.nesdev.org/wiki/CPU_memory_map
-// https://en.wikibooks.org/wiki/NES_Programming/Memory_Map -> less confusing
+// Full 64KB system memory
+window.systemMemory = new Array(0x10000).fill(0x00);
 
-// 65536 bytes of memory, 64KB
-// TOTAL WRAM 2048 BYTES: $0000 - $07FF;
-
-// $0000 - $00FF - 256 bytes
-const  WRAMzeroPage= [256]
-
-//  $0100-$01FF- 256 bytes
-const WRAMstack = [256]
-
-// ($0200 - $07FF) - 1536 bytes
-const WRAMgeneral = [1536]
-
-/*
-    _________________________________________
-    NES PPU registers: $2000–$2007 - 8 bytes
-    -----------------------------------------
-    
-    $2000: PPU Control Register 1
-    $2001: PPU Control Register 2
-    $2002: PPU Status Register
-    $2003: SPR-RAM Address Register
-    $2004: SPR-RAM I/O Register 
-    $2005: VRAM Address Register 1
-    $2006: VRAM Address Register 2
-    $2007: VRAM I/O Register
-*/
-const PPUregisters = [8];
-
-// 63,488 bytes to go
-const otherMemory = [6136];
-
-let systemMemory = [...WRAMzeroPage, ...WRAMstack, ...WRAMgeneral, ...PPUregisters, ...otherMemory]
-
-// Zero init. all memory
-for (let i = 0; i < 8192; i++) {
-    systemMemory[i] = 0x00;
-}
-
-// these convert to hex numbers when used outside the object automatically
-const memoryMap = {
-    workRAM: { addr: parseInt('0000', 16), size: parseInt('800', 16) },
-    workRAMMirror1: { addr: parseInt('0800', 16), size: parseInt('800', 16) },
-    workRAMMirror2: { addr: parseInt('1000', 16), size: parseInt('800', 16) },
-    workRAMMirror3: { addr: parseInt('1800', 16), size: parseInt('800', 16) },
-    ppuCtrlReg: { addr: parseInt('2000', 16), size: parseInt('8', 16) },
-    ppuCtrlRegMirror: { addr: parseInt('2008', 16), size: parseInt('1FF8', 16) },
-    registers: { addr: parseInt('4000', 16), size: parseInt('20', 16) },
-    expansionROM: { addr: parseInt('4020', 16), size: parseInt('1FDF', 16) },
-    sram: { addr: parseInt('6000', 16), size: parseInt('2000', 16) },
-    prgRomLower: { addr: parseInt('8000', 16), size: parseInt('4000', 16) },
-    prgRomUpper: { addr: parseInt('C000', 16), size: parseInt('4000', 16) }
+// Memory map reference (exposed for tests / GUI)
+window.memoryMap = {
+  workRAM:           { addr: 0x0000, size: 0x0800 },
+  workRAMMirror1:    { addr: 0x0800, size: 0x0800 },
+  workRAMMirror2:    { addr: 0x1000, size: 0x0800 },
+  workRAMMirror3:    { addr: 0x1800, size: 0x0800 },
+  ppuCtrlReg:        { addr: 0x2000, size: 0x0008 },
+  ppuCtrlRegMirror:  { addr: 0x2008, size: 0x1FF8 },
+  registers:         { addr: 0x4000, size: 0x0020 },
+  expansionROM:      { addr: 0x4020, size: 0x1FDF },
+  sram:              { addr: 0x6000, size: 0x2000 },
+  prgRomLower:       { addr: 0x8000, size: 0x4000 },
+  prgRomUpper:       { addr: 0xC000, size: 0x4000 }
 };
+
+//32-byte array for $4000–$401F where the APU and I/O registers live.
+window.APU_IO_Registers = new Array(0x20).fill(0x00);
+
+// CPU Read
+window.cpuRead = function(addr) {
+  addr &= 0xFFFF;
+  if (addr <= 0x1FFF) {
+    // work RAM + mirrors
+    return window.systemMemory[addr & 0x07FF];
+  } else if (addr <= 0x3FFF) {
+    // PPU registers + mirrors
+    const reg = addr & 0x0007;
+    if (typeof window.ppuRead === 'function') {
+      return window.ppuRead(reg);
+    } else {
+      return window.systemMemory[addr];
+    }
+  } else if (addr <= 0x401F) {
+    // APU / I/O
+    return window.systemMemory[addr] ?? 0x00;
+  } else if (addr <= 0x5FFF) {
+    // expansion ROM / unused
+    return window.systemMemory[addr];
+  } else if (addr <= 0x7FFF) {
+    // cartridge SRAM
+    return window.systemMemory[addr];
+  } else {
+    // PRG-ROM / test writes
+    return window.systemMemory[addr];
+  }
+};
+
+// CPU Write
+window.cpuWrite = function(addr, value) {
+  addr &= 0xFFFF;
+  value &= 0xFF;
+  if (addr <= 0x1FFF) {
+    // work RAM + mirrors
+    window.systemMemory[addr & 0x07FF] = value;
+  } else if (addr <= 0x3FFF) {
+    // PPU registers + mirrors
+    const reg = addr & 0x0007;
+    if (typeof window.ppuWrite === 'function') {
+      window.ppuWrite(reg, value);
+    } else {
+      window.systemMemory[addr] = value;
+    }
+  } else if (addr <= 0x401F) {
+    // APU / I/O
+    window.APU_IO_Registers[addr & 0x001F] = value;
+  } else if (addr <= 0x7FFF) {
+    // SRAM or expansion ROM
+    window.systemMemory[addr] = value;
+  } else {
+    // PRG-ROM area (allowed for tests)
+    window.systemMemory[addr] = value;
+  }
+};
+
+// Re-expose PPU globals for GUI/tests
+window.PPUregisters  = window.PPUregisters;
+window.PPU_VARIABLES = window.PPU_VARIABLES;

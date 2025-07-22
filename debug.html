@@ -53,24 +53,31 @@
   </div>
 
   <main>
-    <a>Work RAM<loc>&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp Offset: </loc> <locContainer> </locContainer> </a>
-  <article class='debug'>
-  </article>
-  <b>PRG-ROM<loc>&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp Offset: </loc> <locContainer2> </locContainer2> </b>
-  <article class='debug2'>
-  </article>
-  <article class='CPU-registers'>
-    <registersText>CPU Register Bits</registersText>
-  </article>
-  <article class='flag-register'>
+  <a>Work RAM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <locContainer></locContainer></a>
+  <article class="debug"></article>
+  <b>PRG-ROM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <locContainer2></locContainer2></b>
+  <article class="debug2"></article>
+
+  <!-- Wrap CPU + PPU side by side -->
+  <div class="registers-row">
+    <article class="CPU-registers">
+      <registersText>CPU Register Bits</registersText>
+      <!-- CPU table is injected here -->
+    </article>
+    <article class="PPU-registers">
+      <registersText>PPU Register Bits</registersText>
+      <!-- PPU table is injected here -->
+    </article>
+  </div>
+
+  <!-- Flags centered below -->
+  <article class="flag-register">
     <registersText>Status Register Flags (P)</registersText>
+    <!-- your Flags table is injected here -->
   </article>
- <section class="instruction-step">
- </section>
- <article class='PPU-registers'>
-  <registersText>PPU Register Bits</registersText>
-</article>
-  </main>
+
+  <section class="instruction-step"></section>
+</main>
 
   <!-- the 256 * 240 NTSC screen modal, size set in js file (PAL is 256 * 288) -->
   <div id="system-screen-modal" class="screenModal">
@@ -182,9 +189,10 @@
   <script src="assets/js/screen/scale.js"></script>
   <script src="assets/js/customise/display.js"></script>
   <script src="assets/js/debugTables/tables.js"></script>
-  <script src="assets/js/mapper.js"></script>
+  <script src="assets/js/PPU.js"></script>
   <script src="assets/js/memory.js"></script>
   <script src="assets/js/6502.js"></script>
+  <script src="assets/js/mapper.js"></script>
   <script src="assets/js/debug.js"></script>
 
 </body>

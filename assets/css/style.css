@@ -79,22 +79,6 @@ color: blue;
   opacity: .9; /* set opacity to 90% */
 }
 
-.instruction-step{
-width: 75px;
-padding: 16px;
-display: flex;
-}
-
-#instruction, #operand{
-  background-color: black;
-  display: flex;
-  font-size: 20px;
-  font-weight: bolder;
-  color: white;
-  width: 200px;
-  float: right;
-}
-
 registersText{
   margin: 6px;
   font-weight: bolder;
@@ -171,8 +155,9 @@ a,b{
     color: blue;
   }
 
-  td[id^='P']{ 
-  color: blue;
+  td[id^='P'],
+  td[id^='O'] {
+    color: blue;
   }
 
   .addressClass{
@@ -218,3 +203,94 @@ a,b{
   .cartspace1{
     color: red;
   }
+
+/* Make the parent container only as wide as its contents */
+.instruction-step {
+  text-align: center;         /* center inline-block children */
+  padding: 0;
+  margin: 0 auto;
+}
+
+/* CRT panel itself */
+.crt-panel {
+  display: inline-block;      /* shrink to content */
+  width: 330px;
+  height: 225px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid #0f0;
+  border-radius: 6px;
+  box-sizing: border-box;
+  padding: 8px;
+  font-family: 'Courier New', monospace;
+  color: #0f0;
+  text-shadow: 0 0 4px #0f0;
+  vertical-align: top;
+}
+
+/* Top display area */
+.crt-display {
+  height: 100px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  text-align: left;
+}
+
+/* Labels */
+.crt-label {
+  font-size: 13px;
+  color: #6f6;
+}
+
+/* Instruction / operand text lines */
+.crt-line {
+  background: rgba(0, 255, 0, 0.05);
+  border: 1px solid rgba(0, 255, 0, 0.2);
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Button container */
+.crt-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* Buttons */
+.crt-btn {
+  flex: none;
+  width: 100%;
+  padding: 6px 0;
+  background: rgba(0, 255, 0, 0.1);
+  border: 1px solid rgba(0, 255, 0, 0.4);
+  color: #010;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.15s ease;
+}
+
+.crt-btn:hover {
+  background: rgba(0, 255, 0, 0.2);
+}
+
+/* Target only the GeneratedTable under .instruction-step: */
+.instruction-step > .GeneratedTable {
+  width: auto !important;             /* shrink‐wrap instead of full-width */
+  max-width: none !important;         /* no content-based cap */
+  background: transparent !important; /* remove any BG color */
+  border: none !important;            /* remove table borders */
+  box-shadow: none !important;        /* remove any shadow */
+  padding: 0 !important;              /* clear internal padding */
+  margin: 0 auto !important;          /* center it if block */
+  table-layout: auto !important;      /* let widths be intrinsic */
+}
+
+
+

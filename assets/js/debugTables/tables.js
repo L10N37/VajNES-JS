@@ -91,62 +91,20 @@ let pgRom_Table = `
   <table>
 `;
 
-let instructionStepTable=`
-<table>
-  <thead>
-    <tr>
-      <th class='addressClass'>Instruction</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr> 
-      <td id='instruction'></td>
-    </tr>
-    <tr>
-      <td><button class='stepButton' type="button" onclick="step()">STEP</button></td>
-    </tr>
-  </tbody>
-  <thead>
-    <tr>
-      <th class='addressClass'>Operand/s</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr> 
-      <td id='operand'></td>
-    </tr>
-  </tbody>
-</table>
-`;
-
-let PPURegisterTable =  
-`
-<table>
-  <thead>
-    <tr>
-      <th class='addressClass'>00</th>
-      <th class='addressClass'>01</th>
-      <th class='addressClass'>02</th>
-      <th class='addressClass'>03</th>
-      <th class='addressClass'>04</th>
-      <th class='addressClass'>05</th>
-      <th class='addressClass'>06</th>
-      <th class='addressClass'>07</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td id='P0'></td>
-      <td id='P1'></td>
-      <td id='P2'></td>
-      <td id='P3'></td>
-      <td id='P4'></td>
-      <td id='P5'></td>
-      <td id='P6'></td>
-      <td id='P7'></td>
-    </tr>
-  </tbody>
-</table>
+let instructionStepTable = `
+<div class="crt-panel">
+  <div class="crt-display">
+    <div class="crt-label">Instruction</div>
+    <div id="instruction" class="crt-line"></div>
+    <div class="crt-label">Operand/s</div>
+    <div id="operand" class="crt-line"></div>
+  </div>
+  <div class="crt-controls">
+    <button class="crt-btn" onclick="step()">STEP</button>
+    <button class="crt-btn" onclick="run()">RUN</button>
+    <button class="crt-btn" onclick="pause()">PAUSE</button>
+  </div>
+</div>
 `;
 
 let FlagRegisterTable =  
@@ -284,91 +242,91 @@ const PPUregistersTable =
     <tbody>
         <tr> 
             <td class='addressClass'>PPU [CTRL1]</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td id="PPUCTRL7"></td>
+            <td id="PPUCTRL6"></td>
+            <td id="PPUCTRL5"></td>
+            <td id="PPUCTRL4"></td>
+            <td id="PPUCTRL3"></td>
+            <td id="PPUCTRL2"></td>
+            <td id="PPUCTRL1"></td>
+            <td id="PPUCTRL0"></td>
         </tr>
         <tr> 
             <td class='addressClass'>PPU [CTRL2]</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td id="PPUMASK7"></td>
+            <td id="PPUMASK6"></td>
+            <td id="PPUMASK5"></td>
+            <td id="PPUMASK4"></td>
+            <td id="PPUMASK3"></td>
+            <td id="PPUMASK2"></td>
+            <td id="PPUMASK1"></td>
+            <td id="PPUMASK0"></td>
         </tr>
         <tr> 
             <td class='addressClass'>PPU [SR]</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td id="PPUSTATUS7"></td>
+            <td id="PPUSTATUS6"></td>
+            <td id="PPUSTATUS5"></td>
+            <td id="PPUSTATUS4"></td>
+            <td id="PPUSTATUS3"></td>
+            <td id="PPUSTATUS2"></td>
+            <td id="PPUSTATUS1"></td>
+            <td id="PPUSTATUS0"></td>
         </tr>
         <tr> 
             <td class='addressClass'>SPR-RAM [ADDR]</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td id="OAMADDR7"></td>
+            <td id="OAMADDR6"></td>
+            <td id="OAMADDR5"></td>
+            <td id="OAMADDR4"></td>
+            <td id="OAMADDR3"></td>
+            <td id="OAMADDR2"></td>
+            <td id="OAMADDR1"></td>
+            <td id="OAMADDR0"></td>
         </tr>
         <tr> 
             <td class='addressClass'>SPR-RAM [I/O]</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td id="OAMDATA7"></td>
+            <td id="OAMDATA6"></td>
+            <td id="OAMDATA5"></td>
+            <td id="OAMDATA4"></td>
+            <td id="OAMDATA3"></td>
+            <td id="OAMDATA2"></td>
+            <td id="OAMDATA1"></td>
+            <td id="OAMDATA0"></td>
         </tr>
         <tr> 
             <td class='addressClass'>VRAM [ADDR1]</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td id="PPUADDR_HIGH7"></td>
+            <td id="PPUADDR_HIGH6"></td>
+            <td id="PPUADDR_HIGH5"></td>
+            <td id="PPUADDR_HIGH4"></td>
+            <td id="PPUADDR_HIGH3"></td>
+            <td id="PPUADDR_HIGH2"></td>
+            <td id="PPUADDR_HIGH1"></td>
+            <td id="PPUADDR_HIGH0"></td>
         </tr>
         <tr> 
             <td class='addressClass'>VRAM [ADDR2]</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td id="PPUADDR_LOW7"></td>
+            <td id="PPUADDR_LOW6"></td>
+            <td id="PPUADDR_LOW5"></td>
+            <td id="PPUADDR_LOW4"></td>
+            <td id="PPUADDR_LOW3"></td>
+            <td id="PPUADDR_LOW2"></td>
+            <td id="PPUADDR_LOW1"></td>
+            <td id="PPUADDR_LOW0"></td>
         </tr>
         <tr> 
             <td class='addressClass'>VRAM [I/O]</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
+            <td id="PPUDATA7"></td>
+            <td id="PPUDATA6"></td>
+            <td id="PPUDATA5"></td>
+            <td id="PPUDATA4"></td>
+            <td id="PPUDATA3"></td>
+            <td id="PPUDATA2"></td>
+            <td id="PPUDATA1"></td>
+            <td id="PPUDATA0"></td>
         </tr>
     </tbody>
 </table>
