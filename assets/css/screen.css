@@ -168,3 +168,94 @@ These can be referenced by ID or class */
   display: block;
   margin: 20px auto 0;
 }
+
+/* Tile view Modal */
+.TileViewModal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow: auto;
+}
+
+.tileView-modal-box {
+  background-color: #1a1a1a;         /* Deep CRT-style black */
+  border: 2px solid #00ffcc;         /* Aqua green glow border */
+  box-shadow: 0 0 12px #00ffcc88;    /* Soft glow effect */
+  border-radius: 12px;
+  padding: 16px;
+  width: 640px;
+  max-height: 480px;
+  overflow: auto;
+  font-family: 'Courier New', monospace;
+  color: #00ffcc;
+  
+  margin: auto;
+  top: 50%;
+
+  text-align: center;
+}
+
+/* Modal box centered and properly sized */
+.modal-box {
+  background: #1e1e1e;
+  color: white;
+  width: 650px;
+  max-width: 95vw;
+  margin: 80px auto;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 0 20px #000;
+}
+
+/* Header */
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.close-button {
+  font-size: 24px;
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+}
+
+/* Body */
+.modal-body {
+  margin-top: 20px;
+}
+
+.canvas-wrapper {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+/* Each canvas section */
+.canvas-container {
+  text-align: center;
+  width: 256px;
+}
+
+.canvas-container h3 {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: normal;
+}
+
+canvas {
+  display: block;
+  width: 256px;
+  height: 256px;
+  background: #000;
+  border: 2px solid #444;
+  image-rendering: pixelated;
+}

@@ -31,6 +31,7 @@ function createTable(startAddress, endAddress, addClass) {
   return `${rows.join('')}`;
 }
 
+// Expanded RAM/VRAM Table Generation
 const WRAM_Table = `
   <table>
     <thead>
@@ -54,9 +55,15 @@ const WRAM_Table = `
         <th class='addressClass sticky'>0F</th>
       </tr>
     </thead>
-    <tbody>
-      ${createTable("$0000", "$07F0", 'wramCells')}
-    </tbody>
+<tbody>
+  <!-- Work RAM $0000–$07FF -->
+  <tr><td colspan="17" class="subheading">Work RAM $0000–$07FF</td></tr>
+  ${createTable("$0000", "$07F0", 'wramCells')}
+
+  <!-- PPU VRAM & Palette RAM $0800–$3FFF -->
+  <tr><td colspan="17" class="subheading">PPU VRAM & Palette RAM $0800–$3FFF</td></tr>
+  ${createTable("$0800", "$3FF0", 'wramCells')}
+</tbody>
   </table>
 `;
 
@@ -331,3 +338,124 @@ const PPUregistersTable =
     </tbody>
 </table>
 `
+const label = document.querySelector('a');
+if (label) {
+  const dropdown = document.createElement("select");
+  dropdown.id = "ramJumpSelect";
+  dropdown.style.fontSize = "12px";
+  dropdown.style.marginRight = "10px";
+
+  // Expanded to include all meaningful intercepted NES offsets
+  const jumpTargets = [
+    { label: "Jump to...", offset: null, range: 0 },
+    { label: "Zero Page ($0000)", offset: 0x0000, range: 0x80 },
+    { label: "Temp Vars ($0004)", offset: 0x0004, range: 0x10 },
+    { label: "Stack ($0100)", offset: 0x0100, range: 0x100 },
+    { label: "Input ($0200)", offset: 0x0200, range: 0x20 },
+    { label: "General Use ($0300)", offset: 0x0300, range: 0x100 },
+    { label: "VRAM Buffers ($0400)", offset: 0x0400, range: 0x100 },
+    { label: "Sprite Buffers ($0500)", offset: 0x0500, range: 0x100 },
+    { label: "Scroll Vars ($0600)", offset: 0x0600, range: 0x20 },
+    { label: "RAM End ($07F0)", offset: 0x07F0, range: 0x10 },
+    { label: "NMI Vector ($07FA–$07FF)", offset: 0x07FA, range: 0x06 },
+
+    // NES PPU registers (primary and mirrors)
+    { label: "PPU Registers ($2000–$2007)", offset: 0x2000, range: 8 },
+    { label: "PPU Reg Mirror ($2008–$200F)", offset: 0x2008, range: 8 },
+    { label: "PPU Reg Mirror ($2010–$2017)", offset: 0x2010, range: 8 },
+    { label: "PPU Reg Mirror ($3FF8–$3FFF)", offset: 0x3FF8, range: 8 },
+
+    // Palette RAM
+    { label: "Palette RAM ($3F00–$3F1F)", offset: 0x3F00, range: 0x20 },
+    { label: "Palette Mirror ($3F20–$3FFF)", offset: 0x3F20, range: 0xFE0 }, // mirrors for palette RAM
+    // Individual handy palette strips, as before
+    { label: "Palette 1 ($3F01–$3F03)", offset: 0x3F01, range: 0x03 },
+    { label: "Palette 2 ($3F05–$3F07)", offset: 0x3F05, range: 0x03 },
+    { label: "Palette 3 ($3F09–$3F0B)", offset: 0x3F09, range: 0x03 },
+  ];
+
+  // Build dropdown options
+  for (const { label: text, offset, range } of jumpTargets) {
+    const option = document.createElement("option");
+    option.value = offset !== null ? `${offset}|${range}` : "";
+    option.textContent = text;
+    dropdown.appendChild(option);
+  }
+
+  // On dropdown change
+  dropdown.addEventListener("change", function () {
+    const val = this.value;
+    if (!val) return;
+
+    const [baseOffsetStr, rangeStr] = val.split("|");
+    const baseOffset = parseInt(baseOffsetStr);
+    const range = parseInt(rangeStr);
+
+    // Otherwise scroll & highlight RAM cells
+    for (let i = 0; i < range; i++) {
+      const id = `wram-${baseOffset + i}`;
+      const cell = document.getElementById(id);
+      if (cell) {
+        if (i === 0) cell.scrollIntoView({ behavior: "smooth", block: "center" });
+        cell.style.backgroundColor = "#ffd700";
+        setTimeout(() => (cell.style.backgroundColor = ""), 1000);
+      }
+    }
+    this.value = "";
+  });
+
+  // Prepend dropdown to Work RAM label
+  label.prepend(dropdown);
+}
+
+// === Handy Offset Dropdown for PRG-ROM cells ===
+const romLabel = Array.from(document.querySelectorAll("b"))
+  .find(el => el.textContent.includes("PRG-ROM"));
+
+if (romLabel) {
+  const romDropdown = document.createElement("select");
+  romDropdown.id = "romJumpSelect";
+  romDropdown.style.fontSize = "12px";
+  romDropdown.style.marginRight = "10px";
+
+  // Handy PRG-ROM locations for homebrew and hacking
+  const romOptions = [
+    { label: "Jump to...", offset: null },
+    { label: "Reset Vector ($FFFC–$FFFD)", offset: 0xFFFC, range: 2, prefix: "cartSpaceTwoID-" },
+    { label: "NMI Vector ($FFFA–$FFFB)", offset: 0xFFFA, range: 2, prefix: "cartSpaceTwoID-" },
+    { label: "IRQ/BRK Vector ($FFFE–$FFFF)", offset: 0xFFFE, range: 2, prefix: "cartSpaceTwoID-" },
+    { label: "PRG-ROM Bank 1: $8000–$BFFF (16KB)", offset: 0x8000, range: 0x4000, prefix: "cartSpaceOneID-" },
+    { label: "PRG-ROM Bank 2: $C000–$FFFF (16KB)", offset: 0xC000, range: 0x4000, prefix: "cartSpaceTwoID-" }
+  ];
+
+  romOptions.forEach(opt => {
+    const option = document.createElement("option");
+    option.value = opt.offset !== null ? JSON.stringify(opt) : "";
+    option.textContent = opt.label;
+    romDropdown.appendChild(option);
+  });
+
+  romDropdown.addEventListener("change", function () {
+    if (!this.value) return;
+    const { offset, range, prefix } = JSON.parse(this.value);
+    for (let i = 0; i < range; i++) {
+      const id = `${prefix}${offset + i}`;
+      const target = document.getElementById(id);
+      if (target) {
+        if (i === 0) target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.style.backgroundColor = "#90EE90";
+      }
+    }
+    setTimeout(() => {
+      for (let i = 0; i < range; i++) {
+        const id = `${prefix}${offset + i}`;
+        const t = document.getElementById(id);
+        if (t) t.style.backgroundColor = "";
+      }
+    }, 1000);
+    this.value = "";
+  });
+
+  // Insert the dropdown before the PRG-ROM label
+  romLabel.prepend(romDropdown);
+}

@@ -23,10 +23,50 @@
       <div>
         <button class="dropbtn" id="clickedDisplay">Display</button>
         <button class="dropbtn" id="clickedScreen">Screen</button>
+        <button class="dropbtn" id="clickedTileView">Tile View</button>
       </div>
 
     </div>
   </header>
+
+<!-- Tile Viewer Modal -->
+<div id="tileModal" class="TileViewModal">
+  <div class="tileView-modal-box">
+    <div class="modal-header">
+      <h2>NES Tile Viewer</h2>
+      <button id="closeTileModal" class="close-button">&times;</button>
+    </div>
+    <div class="">
+      <div class="canvas-wrapper">
+        <div class="canvas-container">
+          <h3>Background</h3>
+          <canvas id="bgCanvas" width="256" height="256"></canvas>
+        </div>
+        <div class="canvas-container">
+          <h3>Sprites</h3>
+          <canvas id="fgCanvas" width="256" height="256"></canvas>
+        </div>
+      </div>
+
+      <!-- palette selector -->
+      <div class="palette-selector">
+        <h3>Select Palette:</h3>
+        <label>
+          <input type="radio" name="palette" value="nesClassic" checked>
+          NES Classic
+        </label>
+        <label>
+          <input type="radio" name="palette" value="fceuxDefault">
+          FCEUX Default
+        </label>
+        <label>
+          <input type="radio" name="palette" value="smc2005">
+          SMC 2005
+        </label>
+      </div>
+    </div>
+  </div>
+</div>
   
   <!-- Modal window -->
   <div id="modal" class="modal">
@@ -51,10 +91,12 @@
       <button id="modal-ok-btn">OK</button>
     </div>
   </div>
-
+  
   <main>
-  <a>Work RAM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <locContainer></locContainer></a>
+    
+  <a>WRAM / VRAM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <locContainer></locContainer></a>
   <article class="debug"></article>
+  
   <b>PRG-ROM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <locContainer2></locContainer2></b>
   <article class="debug2"></article>
 
@@ -182,18 +224,27 @@
       </form>
     </div>
   </div>
-  
+
+
+  <script src="assets/js/screen/palettes.js"></script>
   <script src="assets/js/screen/screen.js"></script>
+  <script src="assets/js/screen/tileViewer.js"></script>
   <script src="assets/js/screen/grille.js"></script>
   <script src="assets/js/screen/scanlines.js"></script>
   <script src="assets/js/screen/scale.js"></script>
   <script src="assets/js/customise/display.js"></script>
   <script src="assets/js/debugTables/tables.js"></script>
+
   <script src="assets/js/PPU.js"></script>
   <script src="assets/js/memory.js"></script>
   <script src="assets/js/6502.js"></script>
   <script src="assets/js/mapper.js"></script>
   <script src="assets/js/debug.js"></script>
+
+  <script src="test/consoleTests.js"></script>
+
+ 
+
 
 </body>
 <footer>

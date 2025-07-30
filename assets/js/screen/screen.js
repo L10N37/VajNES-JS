@@ -1,3 +1,5 @@
+console.log("getColorForNESByte in screen.js:", typeof getColorForNESByte);
+
 // Get a reference to all canvas elements
 const systemScreen = document.getElementById('system-screen-modal')
 const grilleScreen = document.getElementById('grille-screen-modal')

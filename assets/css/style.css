@@ -1,12 +1,19 @@
 header {
   background-color: rgba(0, 0, 0, 0.5); /* black with 50% transparency */
   height: 40px;
-  color: white; /* assuming you want white text on black background */
+  color: white;
 }
 
 .fileMenuItems{
 width: 100%;
 color: blue;
+}
+
+.subheading{
+  background-color: rgba(0, 0, 0, 0.5); /* black with 50% transparency */
+  height: 40px;
+  color: white;
+  font-size: large;
 }
 
 .windows-bar {
@@ -142,11 +149,6 @@ a,b{
     border: solid;
   }
 
-  td[id^='wram-'],[id^='cartSpace']{
-    color: blue;
-    font-weight: bolder;
-  }
-
   td[id^='wram-']:hover,[id^='cartSpace']:hover{
   background-color: yellow;
   }
@@ -194,6 +196,10 @@ a,b{
 
   .wramCells{
     color: blue;
+  }
+
+  .vram-cell{
+    color:rgb(191, 45, 69);
   }
 
   .cartspace2{
@@ -292,5 +298,6 @@ a,b{
   table-layout: auto !important;      /* let widths be intrinsic */
 }
 
-
-
+.highlighted-cell {
+  background-color: rgb(217, 217, 5);
+}

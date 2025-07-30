@@ -1,11 +1,17 @@
+// fix the offset double up on click in PRG ROM, updates the RAM offset with the same
 const hexPrefix = ['0x'];
+
+// boolean tracker to stop some code execution running at launch, only execute post ROM load
+let isRomLoaded = false;
+let lastFetched = null;
+
 
 //-------- run and pause ---------//
 let runInterval = null;
 
 function run() {
   if (!runInterval) {
-    runInterval = setInterval(step, 16); // ~60Hz
+    runInterval = setInterval(step, 4); // ~60Hz (apparently an interval of 16 between opcode, debug heavy/ WIP so no)
   }
 }
 
@@ -33,11 +39,10 @@ debugSection.appendChild(insertDebugTable);
 
 insertDebugTable.innerHTML = pgRom_Table;
 
-// count up our displayed WRAM cells 
-let allWramCells = document.querySelectorAll('.wramCells');
-// Log Check - 2048 == 2Kb of cells == total WRAM size
-console.log(`WRAM cells = ${allWramCells.length} bytes`);
-console.log(`WRAM cells = ${(allWramCells.length / 1024).toFixed(2)} KB`);
+// Initialize and ID all cells across full CPU & PPU space ($0000–$3FFF)
+const allWramCells = document.querySelectorAll('.wramCells');
+console.log(`Memory cells = ${allWramCells.length} bytes`);
+console.log(`Memory cells = ${(allWramCells.length / 1024).toFixed(2)} KB`);
 
 // count up our displayed cartridge space cells 
 let allCartSpaceBytes1 = document.querySelectorAll('.cartspace1');
@@ -50,19 +55,44 @@ console.log(`Cartridge1 space cells = ${allCartSpaceBytes1.length} bytes`);
 console.log(`Cartridge2 space cells = ${allCartSpaceBytes2.length} bytes`);
 console.log(`Total Cartridge space = ${(allCartSpaceBytes1.length + allCartSpaceBytes2.length) / 1024} KB`);
 
-// work ram area, set classes and ID + click events in this loop
-for (let i = 0; i < 2048; i++) {
-  if (i < 256) {
-    allWramCells[i].classList.add('zpg-cells');
-  } else if (i < 512) {
-    allWramCells[i].classList.add('stack-cells');
+// === WRAM/VRAM Memory Cells ===
+allWramCells.forEach((cell, idx) => {
+  cell.id = `wram-${idx}`;
+  if (idx < 0x0800) {
+    cell.classList.add('workRAM-cell');
+  } else {
+    cell.classList.add('vram-cell');
   }
-  allWramCells[i].setAttribute('id', `wram-${i}`);
-  allWramCells[i].addEventListener('click', function () {
-    let indexHex = i.toString(16).toUpperCase().padStart(4, '0');
-    document.querySelector('locContainer').innerHTML = `&nbsp ${hexPrefix}${indexHex}`;
+
+  const val = memoryRead(idx);
+  cell.innerText = val.toString(16).padStart(2, '0') + 'h';
+  cell.title = `$${idx.toString(16).toUpperCase().padStart(4, '0')}`;
+
+  cell.addEventListener('click', () => {
+    const hex = idx.toString(16).toUpperCase().padStart(4, '0');
+    document.querySelector('locContainer').innerHTML = `&nbsp;$${hex}`;
+    cell.classList.toggle('highlighted-cell');
   });
-}
+});
+
+
+// === PRG-ROM Memory Cells ===
+allCartSpaceBytes.forEach((cell, idx) => {
+  const addr = 0x8000 + idx;
+  const val = systemMemory[addr];
+
+  cell.innerText = (val !== undefined)
+    ? val.toString(16).padStart(2, '0') + 'h'
+    : '--';
+
+  cell.title = `$${addr.toString(16).toUpperCase().padStart(4, '0')}`;
+
+  cell.addEventListener('click', () => {
+    const hex = addr.toString(16).toUpperCase().padStart(4, '0');
+    document.querySelector('locContainer2').innerHTML = `&nbsp;$${hex}`;
+    cell.classList.toggle('highlighted-cell');
+  });
+});
 
 // cart space area, classes already set when table created, IDs and click events assigned here
 for (let i = 0; i < allCartSpaceBytes.length; i++) {
@@ -284,145 +314,104 @@ function readFile(input) {
 }
 
 function updateDebugTables() {
-  const PC = CPUregisters.PC;
-  // Fetch opcode via cpuRead for memory-mapped mirroring logic
-  const opcodeByte = cpuRead(PC);
-  const fetched = getOpcodeAndAddressingMode(opcodeByte);
-  if (!fetched) return;
-  const { opcode, addressingMode, length, pcIncrement, hex } = fetched;
+  if (!lastFetched) return;
+  const { pc, hex, raw, length, pcIncrement, opcode, addressingMode } = lastFetched;
 
-  // Read raw bytes via cpuRead
-  const raw = [];
-  for (let i = 0; i < length; i++) {
-    raw.push(cpuRead(PC + i));
-  }
-
-  // Console debug: current and next instruction
-  const currHex = hexPrefix + raw[0].toString(16).padStart(2, '0');
-  const ops = raw.slice(1)
-    .map(b => hexPrefix + b.toString(16).padStart(2, '0'))
+  // --- Console Debugging ---
+  let ops = raw.slice(1)
+    .map(b => hexPrefix + b.toString(16).padStart(2,'0'))
     .join(', ');
-  console.log(`Current Instruction: ${currHex}` + (ops ? `  Operands <${ops}>` : `  (no operands)`));
-  const nextByte = cpuRead(PC + pcIncrement);
-  const nextHex = hexPrefix + nextByte.toString(16).padStart(2, '0');
-  console.log(`Next Instruction: ${nextHex}`);
+  console.log(
+    `Current Instruction: ${hex}` +
+    (ops ? `  Operands <${ops}>` : `  (no operands)`)
+  );
+  // preview next opcode byte
+  let nextAddr = (pc + pcIncrement) & 0xFFFF;
+  let nextByte = memoryRead(nextAddr);
+  console.log(
+    `Next Instruction: ${hexPrefix}${nextByte.toString(16).padStart(2,'0')} ` +
+    `(at $${nextAddr.toString(16).padStart(4,'0')})`
+  );
 
-  // Update instruction display
-  document.getElementById('instruction').innerText = `${hex}: ${opcode} / ${addressingMode}`;
-  // Update operand display
+  // --- UI Refresh ---
+  // 1) Instruction display
+  document.getElementById('instruction').innerText =
+    `${hex}: ${opcode} / ${addressingMode}`;
+
+  // 2) Operand display
   let opText = 'NA';
   if (length === 2) {
-    opText = `1: ${ops}`;
+    opText = `1: ${hexPrefix + raw[1].toString(16).padStart(2,'0')}`;
   } else if (length === 3) {
-    const [o1, o2] = ops.split(', ');
-    opText = `1: ${o1}\n2: ${o2}`;
+    opText = [
+      `1: ${hexPrefix + raw[1].toString(16).padStart(2,'0')}`,
+      `2: ${hexPrefix + raw[2].toString(16).padStart(2,'0')}`
+    ].join('\n');
   }
   document.getElementById('operand').innerText = opText;
 
-  // CPU flags table
+  // 3) CPU flags
   flagBitsIDArray.forEach((id, idx) => {
     document.getElementById(id).innerText = CPUregisters.P[P_VARIABLES[idx]];
   });
 
-  // PPU registers bit table (ID-driven)
-  PPU_VARIABLES.forEach(reg => {
+      
+  // --- WRAM & VRAM Cells ---
+  allWramCells.forEach((cell, i) => {
+    let val;
+    if (i < 0x2000) {
+      // CPU work RAM and mirrors ($0000–$1FFF)
+      val = memoryRead(i);
+    } else {
+      // PPU VRAM & palette RAM ($2000–$3FFF)
+      val = systemMemory[i];
+    }
+    cell.innerText = val.toString(16).padStart(2, '0') + 'h';
+  });  
+
+  // 5) PRG-ROM view
+  const prgBase = memoryMap.prgRomLower.addr;
+  allCartSpaceBytes.forEach((cell, idx) => {
+    const addr = prgBase + idx;
+    const v = systemMemory[addr];
+    cell.innerText = v != null
+      ? v.toString(16).padStart(2,'0') + 'h'
+      : '--';
+  });
+
+  // 6) CPU bit-grids (A, X, Y, S)
+  ['A','X','Y','S'].forEach((r, ri) => {
+    CPUregisters[r].toString(2).padStart(8,'0').split('').forEach((bitChar, bi) => {
+      document.getElementById([regArrayA,regArrayX,regArrayY,regArrayS][ri][bi])
+        .innerText = bitChar;
+    });
+  });
+  // PC bits
+  CPUregisters.PC.toString(2).padStart(16,'0').split('').forEach((b, i) => {
+    document.getElementById(regArrayPC[i]).innerText = b;
+  });
+
+  // 7) PPU register bits
+  const PPU_UI_BITMAP = {
+    PPUCTRL:      'CTRL',
+    PPUMASK:      'MASK',
+    PPUSTATUS:    'STATUS',
+    OAMADDR:      'OAMADDR',
+    OAMDATA:      'OAMDATA',
+    PPUADDR_HIGH: 'ADDR_HIGH',
+    PPUADDR_LOW:  'ADDR_LOW',
+    PPUDATA:      'VRAM_DATA'
+  };
+  Object.entries(PPU_UI_BITMAP).forEach(([prefix, key]) => {
+    const val = PPUregister[key];
     for (let bit = 0; bit < 8; bit++) {
-      const id = `${reg}${bit}`;
-      const el = document.getElementById(id);
-      if (el) {
-        el.innerText = ((PPUregisters[reg] || 0) >> bit) & 1;
-      }
+      const el = document.getElementById(`${prefix}${bit}`);
+      if (el) el.innerText = (typeof val === 'number')
+        ? ((val >> bit) & 1).toString()
+        : '';
     }
   });
-
-  // WRAM view
-  allWramCells.forEach((cell, i) => {
-    const val = cpuRead(i);
-    cell.innerText = val.toString(16).padStart(2, '0') + 'h';
-  });
-
-  // Cartridge PRG view
-  allCartSpaceBytes.forEach((cell, idx) => {
-    const addr = memoryMap.prgRomLower.addr + idx;
-    const val = cpuRead(addr);
-    cell.innerText = val.toString(16).padStart(2, '0') + 'h';
-  });
-
-  // CPU register bit grids
-  ['A', 'X', 'Y', 'S'].forEach((r, ri) => {
-    const bits = CPUregisters[r].toString(2).padStart(8, '0').split('').map(Number);
-    const arr = [regArrayA, regArrayX, regArrayY, regArrayS][ri];
-    bits.forEach((b, bi) => {
-      document.getElementById(arr[bi]).innerText = b;
-    });
-  });
-
-  // PC bit grid
-  CPUregisters.PC.toString(2).padStart(16, '0').split('').map(Number)
-    .forEach((b, i) => {
-      document.getElementById(regArrayPC[i]).innerText = b;
-    });
-
-  // CPU register bit grids
-  ['A', 'X', 'Y', 'S'].forEach((r, ri) => {
-    const bits = CPUregisters[r].toString(2).padStart(8, '0').split('').map(Number);
-    const arr = [regArrayA, regArrayX, regArrayY, regArrayS][ri];
-    bits.forEach((b, bi) => {
-      document.getElementById(arr[bi]).innerText = b;
-    });
-  });
-
-  // PPU register bit grids
-  PPU_VARIABLES.forEach((reg, rowIndex) => {
-    const bits = PPUregisters[reg].toString(2).padStart(8, '0').split('').map(Number);
-
-    const regArrays = {
-      PPUCTRL:       regArrayPPUCTRL,
-      PPUMASK:       regArrayPPUMASK,
-      PPUSTATUS:     regArrayPPUSTATUS,
-      OAMADDR:       regArrayOAMADDR,
-      OAMDATA:       regArrayOAMDATA,
-      PPUSCROLL_X:   regArrayPPUSCROLL_X,
-      PPUSCROLL_Y:   regArrayPPUSCROLL_Y,
-      PPUADDR_HIGH:  regArrayPPUADDR_HIGH,
-      PPUADDR_LOW:   regArrayPPUADDR_LOW,
-      PPUDATA:       regArrayPPUDATA
-    };
-
-    const arr = regArrays[reg];
-
-    bits.forEach((b, bitIndex) => {
-      const cell = document.getElementById(arr[bitIndex]);
-      if (cell) cell.innerText = b;
-    });
-  });
-
-  // PC bit grid
-  CPUregisters.PC.toString(2).padStart(16, '0').split('').map(Number)
-    .forEach((b, i) => {
-      document.getElementById(regArrayPC[i]).innerText = b;
-    });
 }
-
-      function getOpcodeAndAddressingMode(numericValue) {
-        for (const opcode in opcodes) {
-          const addressingModes = opcodes[opcode];
-          for (const addressingMode in addressingModes) {
-            const opcodeInfo = addressingModes[addressingMode];
-            if (opcodeInfo.code === numericValue) {
-            return { 
-                opcode, 
-                addressingMode, 
-                length: opcodeInfo.length, 
-                pcIncrement: opcodeInfo.pcIncrement,
-                hex: "0x" + opcodeInfo.code.toString(16).toUpperCase().padStart(2, '0'),
-                func: opcodeInfo.func
-                };
-            }
-          }
-        }
-        return null;
-      }
 
 function getOpcodeAndAddressingMode(numericValue) {
   console.log(`Looking up opcode 0x${numericValue.toString(16).toUpperCase().padStart(2, '0')}`);
@@ -447,46 +436,55 @@ function getOpcodeAndAddressingMode(numericValue) {
   return null;
 }
 
-function debugLog(){
-  console.log(`CPU Registers:`);
-  console.log(`A:  0x${CPUregisters.A.toString(16).toUpperCase().padStart(2, '0')}`);
-  console.log(`X:  0x${CPUregisters.X.toString(16).toUpperCase().padStart(2, '0')}`);
-  console.log(`Y:  0x${CPUregisters.Y.toString(16).toUpperCase().padStart(2, '0')}`);
-  console.log(`S:  0x${CPUregisters.S.toString(16).toUpperCase().padStart(2, '0')}`);
-  console.log(`PC: 0x${CPUregisters.PC.toString(16).toUpperCase().padStart(4, '0')}`);
+  // process current opcode from PC register address
+  function step() {
+    // 1) Fetch & decode
+    const opcodeByte = memoryRead(CPUregisters.PC);
+    const fetched = getOpcodeAndAddressingMode(opcodeByte);
 
-  const P = CPUregisters.P;
-}
+          // ─── marker for test table generation ───
+      if (opcodeByte === 0x02) {
+        // 0x02 is an unused byte stuck in test ROM to trigger our test table generation
+        console.log("unique test ROM byte");
+        pause();
+        runEvery6502Test();
+        CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
+        return;
+      }
+      // safe to comment out after testing is complete
 
-// process instruction in the instruction box
-function step() {
-  // 1) Fetch the raw opcode byte from the bus
-  const pc = CPUregisters.PC;
-  const opcodeByte = cpuRead(pc);
+    if (!fetched && fetched !==0x02) {
+      console.warn(
+        `Unknown opcode 0x${opcodeByte.toString(16).padStart(2,'0')} at PC=0x${CPUregisters.PC.toString(16).padStart(4,'0')}`
+      );
+      pause();
+      return;
+    }
   
-  // 2) Decode it (might be undefined for unimplemented/illegal opcodes)
-  const fetchedInstruction = getOpcodeAndAddressingMode(opcodeByte);
-  if (!fetchedInstruction) {
-    console.warn(
-      `Unknown opcode 0x${opcodeByte.toString(16).padStart(2,'0')} at PC=0x${pc.toString(16).padStart(4,'0')}`
-    );
-    // Skip it and refresh the tables
-    CPUregisters.PC = pc + 1;
+    // 2) Grab raw bytes for UI
+    const raw = [];
+    for (let i = 0; i < fetched.length; i++) {
+      raw.push(memoryRead(CPUregisters.PC + i));
+    }
+  
+    // 3) Snapshot everything UI needs before execution
+    lastFetched = {
+      pc: CPUregisters.PC,
+      opcode: fetched.opcode,
+      addressingMode: fetched.addressingMode,
+      length: fetched.length,
+      pcIncrement: fetched.pcIncrement,    // ← add this
+      hex: fetched.hex,
+      raw
+    };
+  
+    // 4) Execute & advance
+    fetched.func();
+    CPUregisters.PC = (CPUregisters.PC + fetched.pcIncrement) & 0xFFFF;
+  
+    // 5) Update the tables/UI
     updateDebugTables();
-    return;
   }
-
-  // 3) Safe to destructure now
-  const { func, pcIncrement } = fetchedInstruction;
-
-  // 4) Execute the instruction handler
-  func();
-
-  // 5) Advance PC by the declared increment
-  CPUregisters.PC = pc + pcIncrement;
-
-  // 6) Refresh all of your tables/UI
-  updateDebugTables();
-}
+  
 
 
