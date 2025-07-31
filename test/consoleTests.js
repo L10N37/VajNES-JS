@@ -2,6 +2,58 @@
 
 function runEvery6502Test() {
 
+// ─── GLOBAL TEST SETUP ─────────────────────────────────────────────────────────
+function setupTests(tests) {
+  // --- Reset CPU/PPU & clear WRAM/PPU space (preserve PRG-ROM) ---
+  for (let a = 0; a < 0x4000; a++) systemMemory[a] = 0;
+  CPUregisters.A = 0; CPUregisters.X = 0; CPUregisters.Y = 0; CPUregisters.S = 0xFF;
+  CPUregisters.P = { C:0, Z:0, I:0, D:0, B:0, V:0, N:0 };
+  if (typeof PPUregister === "object") {
+    Object.keys(PPUregister).forEach(k => PPUregister[k] = 0);
+  }
+
+  // --- Set PC to reset vector ---
+  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD] << 8);
+
+  // --- Lay out all test opcodes into PRG-ROM at $8000/$C000 ---
+  let seqOffset = 0;
+  tests.forEach(t => {
+    t.code.forEach(b => {
+      systemMemory[0x8000 + seqOffset] = b;
+      systemMemory[0xC000 + seqOffset] = b;
+      seqOffset++;
+    });
+  });
+}
+// ────────────────────────────────────────────────────────────────────────────────
+
+function hex(v, len = 2) {
+  if (v == null || typeof v.toString !== "function") return "--";
+  return "0x" + v.toString(16).toUpperCase().padStart(len, "0");
+}
+function flagsBin(P) {
+  return ((P.N<<7)|(P.V<<6)|(1<<5)|(P.B<<4)|(P.D<<3)|(P.I<<2)|(P.Z<<1)|(P.C))
+           .toString(2).padStart(8,"0");
+}
+function getMirrors(addr) {
+  if (addr <= 0x07FF) return [addr, addr+0x800, addr+0x1000, addr+0x1800];
+  if (addr >= 0x2000 && addr <= 0x3FFF) {
+    let m = [];
+    for (let a=0x2000; a<=0x3FFF; a+=8) m.push(a + (addr % 8));
+    return m;
+  }
+  return [addr];
+}
+function dropdown(label, items) {
+  return items.length > 1
+    ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">`
+      + items.map(i=>`<li>${i}</li>`).join("") + `</ul></details>`
+    : label;
+}
+
+// Then remove all the duplicate `function hex…`, `flagsBin…`, etc. from inside your IIFEs.
+
+
   (function() {
     // ===== LOADS (LDA/LDX/LDY) as a continuous PRG-ROM stream =====
   
@@ -27,40 +79,7 @@ function runEvery6502Test() {
       { name:"LDY absolute,X",   code:[0xBC,0x00,0x30], setup:()=>{ CPUregisters.X=2; systemMemory[0x3002]=0xFF; }, expect:{Y:0xFF,Z:0,N:1} }
     ];
   
-    // Helpers
-    function hex(v,len=2){return "0x"+v.toString(16).toUpperCase().padStart(len,"0");}
-    function flagsBin(P){return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0");}
-    function getMirrors(addr){
-      if(addr<=0x07FF) return [addr,addr+0x800,addr+0x1000,addr+0x1800];
-      if(addr>=0x2000&&addr<=0x3FFF){
-        let m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m;
-      }
-      return [addr];
-    }
-    function dropdown(label,items){
-      return items.length>1
-        ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">${items.map(i=>`<li>${i}</li>`).join("")}</ul></details>`
-        : label;
-    }
-  
-    // --- Reset CPU/PPU, clear only RAM/VRAM (preserve PRG-ROM) ---
-    for(let a=0;a<0x4000;a++) systemMemory[a]=0;  // clear WRAM + PPU space
-    CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-    CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-    if(typeof PPUregister==='object') Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-  
-    // --- PC = reset vector once ---
-    CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-  
-    // --- Lay out all test opcodes sequentially into PRG-ROM ---
-    let seqOffset=0;
-    tests.forEach(t=>{
-      t.code.forEach(b=>{
-        systemMemory[0x8000 + seqOffset] = b;
-        systemMemory[0xC000 + seqOffset] = b;
-        seqOffset++;
-      });
-    });
+    setupTests(tests);
   
     // --- Build table ---
     let html=`
@@ -202,22 +221,6 @@ function runEvery6502Test() {
     { name: "STY absolute",         code: [0x8C, 0xAB, 0xCD],       setup: () => { CPUregisters.Y = 0x99; },   expectMem: { addr: 0xCDAB, value: 0x99 } }
   ];
 
-  // helpers (reuse from LOADS)
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return ((P.N<<7)|(P.V<<6)|(1<<5)|(P.B<<4)|(P.D<<3)|(P.I<<2)|(P.Z<<1)|(P.C)).toString(2).padStart(8,"0"); }
-  function getMirrors(addr){
-    if (addr <= 0x07FF) return [addr,addr+0x0800,addr+0x1000,addr+0x1800];
-    if (addr >= 0x2000 && addr <= 0x3FFF){
-      const m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m;
-    }
-    return [addr];
-  }
-  function dropdown(label,items){
-    return items.length>1
-      ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">${items.map(i=>`<li>${i}</li>`).join("")}</ul></details>`
-      : label;
-  }
-
   // clear WRAM & PPU space, reset regs
   for(let a=0;a<0x4000;a++) systemMemory[a]=0;
   CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
@@ -350,33 +353,7 @@ function runEvery6502Test() {
     { name: "SED", code: [0xF8], expectP: { D: 1 } }
   ];
 
-  // Helpers
-  function hex(v, len = 2) {
-    return "0x" + v.toString(16).toUpperCase().padStart(len, "0");
-  }
-  function flagsBin(P) {
-    return ((P.N<<7)|(P.V<<6)|(1<<5)|(P.B<<4)|(P.D<<3)|(P.I<<2)|(P.Z<<1)|(P.C))
-      .toString(2).padStart(8, "0");
-  }
-
-  // Reset WRAM/PPU, registers
-  for (let a = 0; a < 0x4000; a++) systemMemory[a] = 0;
-  CPUregisters.A = 0; CPUregisters.X = 0; CPUregisters.Y = 0; CPUregisters.S = 0xFF;
-  CPUregisters.P = { C:0, Z:0, I:0, D:0, B:0, V:0, N:0 };
-  if (typeof PPUregister === "object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // Initialize PC from reset vector once
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD] << 8);
-
-  // Lay out all opcodes sequentially into PRG-ROM
-  let seqOffset = 0;
-  tests.forEach(t => {
-    t.code.forEach(b => {
-      systemMemory[0x8000 + seqOffset] = b;
-      systemMemory[0xC000 + seqOffset] = b;
-      seqOffset++;
-    });
-  });
+  setupTests(tests);
 
   // Build HTML
   let html = `
@@ -502,38 +479,7 @@ function runEvery6502Test() {
     { name:"BIT $C0 (V,N)",           code:[0x24,0x42],     setup:()=>{ systemMemory[0x42]=0xC0; CPUregisters.A=0xFF; }, expectFlags:{Z:0,V:1,N:1} }
   ];
 
-  // Helpers
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0"); }
-  function getMirrors(addr){ 
-    if(addr<=0x07FF) return [addr, addr+0x800, addr+0x1000, addr+0x1800];
-    if(addr>=0x2000&&addr<=0x3FFF){
-      let m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m;
-    }
-    return [addr];
-  }
-  function dropdown(label,items){
-    return items.length>1
-      ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">`+items.map(i=>`<li>${i}</li>`).join("")+`</ul></details>`
-      : label;
-  }
-
-  // ── reset WRAM/PPU, preserve PRG-ROM ──
-  for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==="object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // ── set PC once from reset vector ──
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-
-  // ── layout tests in PRG-ROM ──
-  let seq=0;
-  tests.forEach(t=> t.code.forEach(b=>{
-    systemMemory[0x8000+seq]=b;
-    systemMemory[0xC000+seq]=b;
-    seq++;
-  }));
+setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -729,36 +675,7 @@ function runEvery6502Test() {
     { name:"ROR $0D00,X",                 code:[0x7E,0xFF,0x0C], pre:{X:0x01,P:{C:1}}, setup:()=>{ systemMemory[0x0D00]=0x01; }, expectMem:{addr:0x0D00,value:0x80}, expect:{C:1,Z:0,N:1} }
   ];
 
-  // Helpers
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0"); }
-  function getMirrors(addr){
-    if(addr<=0x07FF) return [addr,addr+0x800,addr+0x1000,addr+0x1800];
-    if(addr>=0x2000&&addr<=0x3FFF){ let m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m; }
-    return [addr];
-  }
-  function dropdown(label,items){
-    return items.length>1
-      ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">${items.map(i=>`<li>${i}</li>`).join("")}</ul></details>`
-      : label;
-  }
-
-  // ── reset WRAM/PPU, preserve PRG-ROM ──
-  for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==="object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // ── set PC once from reset vector ──
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-
-  // ── layout tests in PRG-ROM ──
-  let seq=0;
-  tests.forEach(t=>t.code.forEach(b=>{
-    systemMemory[0x8000+seq]=b;
-    systemMemory[0xC000+seq]=b;
-    seq++;
-  }));
+setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -905,39 +822,7 @@ function runEvery6502Test() {
     { name:"LDY absolute,X",      code:[0xBC,0x00,0x02], pre:{X:0x02}, setup:()=>{ systemMemory[0x0202]=0x44; }, expect:{Y:0x44,Z:0,N:0} }
   ];
 
-  // Helpers
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0"); }
-  function getMirrors(addr){
-    if(addr<=0x07FF) return [addr,addr+0x800,addr+0x1000,addr+0x1800];
-    if(addr>=0x2000&&addr<=0x3FFF){
-      let m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m;
-    }
-    return [addr];
-  }
-  function dropdown(label,items){
-    return items.length>1
-      ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">`+
-        items.map(i=>`<li>${i}</li>`).join("")+`</ul></details>`
-      : label;
-  }
-
-  // ── reset WRAM/PPU, preserve PRG-ROM ──
-  for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==="object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // ── set PC once from reset vector ──
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-
-  // ── layout tests in PRG-ROM ──
-  let seq=0;
-  tests.forEach(t=> t.code.forEach(b=>{
-    systemMemory[0x8000+seq]=b;
-    systemMemory[0xC000+seq]=b;
-    seq++;
-  }));
+setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -1098,37 +983,7 @@ function runEvery6502Test() {
     { name:"SED",         code:[0xF8], pre:{P:{D:0}},           /* no expect */ }
   ];
 
-  // Helpers
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0"); }
-  function getMirrors(addr){
-    if(addr<=0x07FF) return [addr,addr+0x800,addr+0x1000,addr+0x1800];
-    if(addr>=0x2000&&addr<=0x3FFF){ let m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m; }
-    return [addr];
-  }
-  function dropdown(label,items){
-    return items.length>1
-      ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">`+
-        items.map(i=>`<li>${i}</li>`).join("")+`</ul></details>`
-      : label;
-  }
-
-  // ── reset WRAM/PPU, preserve PRG-ROM ──
-  for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==="object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // ── set PC once from reset vector ──
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-
-  // ── layout tests in PRG-ROM ──
-  let seq=0;
-  tests.forEach(t=> t.code.forEach(b=>{
-    systemMemory[0x8000+seq]=b;
-    systemMemory[0xC000+seq]=b;
-    seq++;
-  }));
+setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -1266,37 +1121,7 @@ function runEvery6502Test() {
     { name:"CPY absolute",        code:[0xCC,0x00,0x02], pre:{Y:0x02}, setup:()=>{ systemMemory[0x0200]=0x03; }, expect:{C:0,Z:0,N:1} }
   ];
 
-  // Helpers
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0"); }
-  function getMirrors(addr){
-    if(addr<=0x07FF) return [addr,addr+0x800,addr+0x1000,addr+0x1800];
-    if(addr>=0x2000&&addr<=0x3FFF){ let m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m; }
-    return [addr];
-  }
-  function dropdown(label,items){
-    return items.length>1
-      ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">`+
-        items.map(i=>`<li>${i}</li>`).join("")+`</ul></details>`
-      : label;
-  }
-
-  // ── reset WRAM/PPU, preserve PRG-ROM ──
-  for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==="object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // ── set PC once from reset vector ──
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-
-  // ── layout tests in PRG-ROM ──
-  let seq=0;
-  tests.forEach(t=> t.code.forEach(b=>{
-    systemMemory[0x8000+seq]=b;
-    systemMemory[0xC000+seq]=b;
-    seq++;
-  }));
+setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -1418,37 +1243,7 @@ function runEvery6502Test() {
     { name:"BVS not taken (V=0)", code:[0x70,0x02], pre:{P:{V:0}} }
   ];
 
-  // Helpers
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0"); }
-  function getMirrors(addr){
-    if(addr<=0x07FF) return [addr,addr+0x800,addr+0x1000,addr+0x1800];
-    if(addr>=0x2000&&addr<=0x3FFF){ let m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m; }
-    return [addr];
-  }
-  function dropdown(label,items){
-    return items.length>1
-      ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">`+
-        items.map(i=>`<li>${i}</li>`).join("")+`</ul></details>`
-      : label;
-  }
-
-  // ── reset WRAM/PPU ──
-  for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==="object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // ── set PC once from reset vector ──
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-
-  // ── layout tests in PRG-ROM ──
-  let seq=0;
-  tests.forEach(t=> t.code.forEach(b=>{
-    systemMemory[0x8000+seq]=b;
-    systemMemory[0xC000+seq]=b;
-    seq++;
-  }));
+setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -1535,38 +1330,7 @@ function runEvery6502Test() {
       } }
   ];
 
-  // Helpers
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0"); }
-  function getMirrors(addr){
-    if(addr<=0x07FF) return [addr,addr+0x800,addr+0x1000,addr+0x1800];
-    if(addr>=0x2000&&addr<=0x3FFF){
-      let m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m;
-    }
-    return [addr];
-  }
-  function dropdown(label,items){
-    return items.length>1
-      ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">${items.map(i=>`<li>${i}</li>`).join("")}</ul></details>`
-      : label;
-  }
-
-  // ── reset WRAM/PPU ──
-  for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==="object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // ── set PC once from reset vector ─
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-
-  // ── layout tests in PRG-ROM ─
-  let seq=0;
-  tests.forEach(t=> t.code.forEach(b=>{
-    systemMemory[0x8000+seq]=b;
-    systemMemory[0xC000+seq]=b;
-    seq++;
-  }));
+setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -1655,39 +1419,7 @@ function runEvery6502Test() {
     { name:"PLP pulls P",     code:[0x28], pre:{S:0xFE},   setup:()=>{ systemMemory[0x01FF]=0x21; }, expect:{S:0xFF,C:1} }
   ];
 
-  // Helpers
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0"); }
-  function getMirrors(addr){
-    if(addr<=0x07FF) return [addr,addr+0x800,addr+0x1000,addr+0x1800];
-    if(addr>=0x2000&&addr<=0x3FFF){
-      let m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m;
-    }
-    return [addr];
-  }
-  function dropdown(label,items){
-    return items.length>1
-      ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">`+
-        items.map(i=>`<li>${i}</li>`).join("")+`</ul></details>`
-      : label;
-  }
-
-  // ── reset WRAM/PPU ──
-  for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==="object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // ── set PC once from reset vector ──
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-
-  // ── layout tests in PRG-ROM ──
-  let seq=0;
-  tests.forEach(t=> t.code.forEach(b=>{
-    systemMemory[0x8000+seq]=b;
-    systemMemory[0xC000+seq]=b;
-    seq++;
-  }));
+setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -1835,26 +1567,7 @@ function runEvery6502Test() {
     { name:"NOP 92 (ZPY)",          code:[0x92,0x10] }
   ];
 
-  // Helpers (reuse from previous blocks)
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0"); }
-
-  // ── reset WRAM/PPU ──
-  for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==="object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // ── set PC once from reset vector ──
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-
-  // ── layout tests in PRG-ROM ──
-  let seq = 0;
-  tests.forEach(t=> t.code.forEach(b=>{
-    systemMemory[0x8000 + seq] = b;
-    systemMemory[0xC000 + seq] = b;
-    seq++;
-  }));
+setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -1999,36 +1712,7 @@ function runEvery6502Test() {
     { name:"XAA #$0F",              code:[0x8B,0x0F], pre:{A:0xFF,X:0x0F}, expect:{A:0x0F,Z:0,N:0} }
   ];
 
-  // Helpers (reuse)
-  function hex(v,len=2){ return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-  function flagsBin(P){ return (P.N<<7|P.V<<6|1<<5|P.B<<4|P.D<<3|P.I<<2|P.Z<<1|P.C).toString(2).padStart(8,"0"); }
-  function getMirrors(addr){
-    if(addr<=0x07FF) return [addr,addr+0x800,addr+0x1000,addr+0x1800];
-    if(addr>=0x2000&&addr<=0x3FFF){ let m=[]; for(let a=0x2000;a<=0x3FFF;a+=8) m.push(a+(addr%8)); return m; }
-    return [addr];
-  }
-  function dropdown(label,items){
-    return items.length>1
-      ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">${items.map(i=>`<li>${i}</li>`).join("")}</ul></details>`
-      : label;
-  }
-
-  // ── reset WRAM/PPU ──
-  for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==="object") Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // ── set PC once from reset vector ──
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
-
-  // ── layout tests in PRG-ROM ──
-  let seq=0;
-  tests.forEach(t=> t.code.forEach(b=>{
-    systemMemory[0x8000+seq]=b;
-    systemMemory[0xC000+seq]=b;
-    seq++;
-  }));
+setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -2117,6 +1801,185 @@ function runEvery6502Test() {
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
         <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
+        <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
+      </tr>`;
+  });
+
+  html += `</tbody></table>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+})();
+
+(function(){
+  // ===== EDGE CASES =====
+  const tests = [
+    // 1) JMP indirect page‐boundary bug (vector wraps at page end)
+    { name: "JMP ($02FF) page-wrap bug", code: [0x6C, 0xFF, 0x02], setup: ()=>{
+        systemMemory[0x02FF] = 0x00;
+        systemMemory[0x0300] = 0x80;
+      }, expectPC: 0x8000 },
+
+    // 2) Zero‐page,X wrap (STA $FF,X → $00)
+    { name: "STA $FF,X wraps", code: [0x95, 0xFF], pre:{A:0x42,X:0x01},
+      expectMem:{ addr: 0x0000, value: 0x42 } },
+
+    // 3) Branch extra‐cycle on page crossing (BNE 0x7E from $8000 → $807E)
+    { name: "BNE crosses page", code: [0xD0, 0x7E], pre:{P:{Z:0}},
+      expectPC: 0x807E, expectExtraCycle: true },
+
+    // 4) Decimal‐mode ADC/SBC (BCD)
+    { name: "ADC BCD half-carry", code: [0x69,0x15], pre:{A:0x27,P:{D:1,C:0}},
+      expect:{A:0x42,C:0} },
+    { name: "SBC BCD borrow",     code: [0xE9,0x15], pre:{A:0x42,P:{D:1,C:0}},
+      expect:{A:0x27,C:0} },
+
+    // 5) BIT dummy-fetch only (no extra), flags only
+    { name: "BIT $80 dummy-read", code: [0x24,0x80], setup:()=>{ systemMemory[0x0080]=0xFF; },
+      pre:{A:0x00}, expectFlags:{Z:1,V:1,N:1} },
+
+    // 6) RMW dummy-read side-effect count (ASL $10)
+    { name: "ASL $10 dummy-read", code: [0x06,0x10], setup:()=>{
+        interceptReads = 0;
+        systemMemory[0x10] = 0x01;
+      }, expectInterceptReads: 2, expectMem:{addr:0x10,value:0x02} },
+
+    // 7) Stack wrap-around (PHA at S=0x00)
+    { name: "PHA wraps SP", code: [0x48], pre:{A:0x99,S:0x00},
+      expectMem:{addr:0x0100,value:0x99}, expect:{S:0xFF} },
+
+    // 8) PHP/PLP flag-order (B-bit behavior)
+    { name: "PHP/PLP order", code: [0x08,0x28], pre:{P:{C:1,D:1,I:0,Z:1},S:0xFF},
+      setup:()=>{ systemMemory[0x01FF] = 0b00101101; /* B=0,D=1,I=0,Z=1,C=1 */ },
+      expectFlags:{C:1,Z:1,I:0,D:1,B:0,V:0,N:0} },
+
+    // 9) Self-modify next operand (overwrite immediate)
+    { name: "Self-mod IMM", code:[0xA9,0x00], pre:{A:0x00}, setup:()=>{
+        systemMemory[CPUregisters.PC+1] = 0x77;
+      }, expect:{A:0x77} },
+
+    // 10) BRK vs IRQ B-flag difference
+    { name: "BRK sets B",   code: [0x00], pre: {P:{I:0,B:0}}, expectFlags: {B:1,I:1} },
+    { name: "IRQ leaves B", code: [],     pre: {P:{I:0,B:0}}, expectFlags: {B:0,I:1} }
+  ];
+
+  // assume global helpers: hex(), flagsBin(), getMirrors(), dropdown()
+
+  // ── build HTML table ──
+  let html =
+    `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
+       EDGE CASES
+     </div>
+     <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
+       <thead>
+         <tr style="background:#222">
+           <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
+           <th>CPU<br>Before</th><th>CPU<br>After</th><th>PC<br>After</th>
+           <th>Intercepts</th><th>Cycles</th><th>Status</th>
+         </tr>
+       </thead><tbody>`;
+
+  tests.forEach(test=>{
+    // reset memory/regs
+    for(let a=0; a<0x4000; a++) systemMemory[a]=0;
+    CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
+    CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
+
+    // apply pre/setup
+    if(test.pre){
+      if(test.pre.A!=null) CPUregisters.A=test.pre.A;
+      if(test.pre.X!=null) CPUregisters.X=test.pre.X;
+      if(test.pre.Y!=null) CPUregisters.Y=test.pre.Y;
+      if(test.pre.S!=null) CPUregisters.S=test.pre.S;
+      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+    }
+    if(test.setup) test.setup();
+
+    // snapshots before
+    const fb={...CPUregisters.P},
+          cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
+
+    // prepare intercept‐read and cycle counting
+    let intercepts=0;
+    const origRead = checkReadOffset;
+    const hasCycles = typeof CPUregisters.cycles === "number";
+    const startCycles = hasCycles ? CPUregisters.cycles : 0;
+    let usedCycles = null;
+
+    // load code & run if present
+    if(test.code.length){
+      let seq = 0;
+      test.code.forEach(b=>{
+        systemMemory[0x8000+seq]=b;
+        systemMemory[0xC000+seq]=b;
+        seq++;
+      });
+      // hook reads
+      checkReadOffset = addr=>{ intercepts++; return origRead(addr); };
+      // execute
+      step(); updateDebugTables();
+      // restore
+      checkReadOffset = origRead;
+      if(hasCycles) usedCycles = CPUregisters.cycles - startCycles;
+    }
+
+    // snapshots after
+    const fa={...CPUregisters.P},
+          ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
+          endPC = CPUregisters.PC;
+
+    // evaluate pass/fail
+    let pass=true, reasons=[];
+    if(test.expectPC!=null && endPC!==test.expectPC){
+      pass=false; reasons.push(`PC=0x${endPC.toString(16)}≠0x${test.expectPC.toString(16)}`);
+    }
+    if(test.expectMem){
+      const got=systemMemory[test.expectMem.addr];
+      if(got!==test.expectMem.value){
+        pass=false; reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${hex(got)}≠${hex(test.expectMem.value)}`);
+      }
+    }
+    if(test.expectFlags){
+      Object.entries(test.expectFlags).forEach(([f,v])=>{
+        if(CPUregisters.P[f]!==v){
+          pass=false; reasons.push(`${f}=${CPUregisters.P[f]}≠${v}`);
+        }
+      });
+    }
+    if(test.expect){
+      Object.entries(test.expect).forEach(([r,v])=>{
+        const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
+        if(actual!==v){
+          pass=false; reasons.push(`${r}=${hex(actual)}≠${hex(v)}`);
+        }
+      });
+    }
+    if(test.expectInterceptReads!=null && intercepts!==test.expectInterceptReads){
+      pass=false; reasons.push(`reads=${intercepts}≠${test.expectInterceptReads}`);
+    }
+    if(test.expectExtraCycle && hasCycles){
+      const base = 2;  // adjust per-opcode if desired
+      if(usedCycles<=base){
+        pass=false; reasons.push(`cycles=${usedCycles} no extra`);
+      }
+    }
+
+    // row labels
+    const opLabel = test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ");
+    const statusCell = pass 
+      ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
+      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>` +
+        `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
+
+    html += `
+      <tr style="background:${pass?"#113311":"#331111"}">
+        <td style="border:1px solid #444;padding:6px;">${test.name}</td>
+        <td style="border:1px solid #444;padding:6px;">${opLabel}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)}</td>
+        <td style="border:1px solid #444;padding:6px;">0x${endPC.toString(16)}</td>
+        <td style="border:1px solid #444;padding:6px;">${intercepts}</td>
+        <td style="border:1px solid #444;padding:6px;">${hasCycles ? usedCycles : ""}</td>
         <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
       </tr>`;
   });
