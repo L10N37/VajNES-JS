@@ -1814,7 +1814,7 @@ setupTests(tests);
   const edgeCases = [
     { name: "JMP ($02FF) page-wrap bug", code:[0x6C,0xFF,0x02], setup:()=>{
         systemMemory[0x02FF]=0x00;
-        systemMemory[0x0300]=0x80;
+        systemMemory[0x0200]=0x80;
       }, expectPC:0x8000 },
     { name: "STA $FF,X wraps",       code:[0x95,0xFF], pre:{A:0x42,X:0x01},
       expectMem:{addr:0x0000,value:0x42} },
