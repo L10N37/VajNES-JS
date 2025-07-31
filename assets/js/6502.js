@@ -1,3 +1,4 @@
+let cpuCycles = 0;
 let CPUregisters = {
   A: 0x00,
   X: 0x00,
@@ -2414,7 +2415,6 @@ function AXA_INDY() {
 }
 
 //////////////////////// 6502 CPU opcode object ////////////////////////
-// TO DO: Add cycles, work out boundary cross stuff
 const opcodes = {
   // ======================= LEGAL OPCODES ======================= //
   ADC: {
@@ -2727,3 +2727,59 @@ const opcodes = {
   },
   XAA: { immediate: { code: 0x8B, length: 2, pcIncrement: 2, func: XAA_IMM } }
 };
+
+// Base timings per addressing mode
+const baseCycles = {
+  immediate:   2,
+  zeroPage:    3,
+  zeroPageX:   4,
+  zeroPageY:   4,
+  absolute:    4,
+  absoluteX:   4,  // +1 if page crossed
+  absoluteY:   4,  // +1 if page crossed
+  indirectX:   6,
+  indirectY:   5,  // +1 if page crossed
+  accumulator: 2,
+  implied:     2,
+  relative:    2,
+  indirect:    5   // JMP ($hhhh)
+};
+
+// patch in cycle counts for modes
+for (const opname in opcodes) {
+  const modes = opcodes[opname];
+  for (const modeName in modes) {
+    const entry = modes[modeName];
+    entry.cycles = baseCycles[modeName];
+  }
+}
+
+/*
+
+ADC
+absolute
+: 
+{code: 109, length: 3, pcIncrement: 3, cycles: 4, func: ƒ}
+absoluteX
+: 
+{code: 125, length: 3, pcIncrement: 3, cycles: 4, func: ƒ}
+absoluteY
+: 
+{code: 121, length: 3, pcIncrement: 3, cycles: 4, func: ƒ}
+immediate
+: 
+{code: 105, length: 2, pcIncrement: 2, cycles: 2, func: ƒ}
+indirectX
+: 
+{code: 97, length: 2, pcIncrement: 2, cycles: 6, func: ƒ}
+indirectY
+: 
+{code: 113, length: 2, pcIncrement: 2, cycles: 5, func: ƒ}
+zeroPage
+: 
+{code: 101, length: 2, pcIncrement: 2, cycles: 3, func: ƒ}
+zeroPageX
+: 
+{code: 117, length: 2, pcIncrement: 2, cycles: 4, func: ƒ}
+
+*/

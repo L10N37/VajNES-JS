@@ -1811,183 +1811,183 @@ setupTests(tests);
 
 (function(){
   // ===== EDGE CASES =====
-  const tests = [
-    // 1) JMP indirect page‐boundary bug (vector wraps at page end)
-    { name: "JMP ($02FF) page-wrap bug", code: [0x6C, 0xFF, 0x02], setup: ()=>{
-        systemMemory[0x02FF] = 0x00;
-        systemMemory[0x0300] = 0x80;
-      }, expectPC: 0x8000 },
-
-    // 2) Zero‐page,X wrap (STA $FF,X → $00)
-    { name: "STA $FF,X wraps", code: [0x95, 0xFF], pre:{A:0x42,X:0x01},
-      expectMem:{ addr: 0x0000, value: 0x42 } },
-
-    // 3) Branch extra‐cycle on page crossing (BNE 0x7E from $8000 → $807E)
-    { name: "BNE crosses page", code: [0xD0, 0x7E], pre:{P:{Z:0}},
-      expectPC: 0x807E, expectExtraCycle: true },
-
-    // 4) Decimal‐mode ADC/SBC (BCD)
-    { name: "ADC BCD half-carry", code: [0x69,0x15], pre:{A:0x27,P:{D:1,C:0}},
+  const edgeCases = [
+    { name: "JMP ($02FF) page-wrap bug", code:[0x6C,0xFF,0x02], setup:()=>{
+        systemMemory[0x02FF]=0x00;
+        systemMemory[0x0300]=0x80;
+      }, expectPC:0x8000 },
+    { name: "STA $FF,X wraps",       code:[0x95,0xFF], pre:{A:0x42,X:0x01},
+      expectMem:{addr:0x0000,value:0x42} },
+    { name: "BNE crosses page",      code:[0xD0,0x7E], pre:{P:{Z:0}},
+      expectPC:0x807E, expectExtraCycle:true },
+    { name: "ADC BCD half-carry",    code:[0x69,0x15], pre:{A:0x27,P:{D:1,C:0}},
       expect:{A:0x42,C:0} },
-    { name: "SBC BCD borrow",     code: [0xE9,0x15], pre:{A:0x42,P:{D:1,C:0}},
+    { name: "SBC BCD borrow",        code:[0xE9,0x15], pre:{A:0x42,P:{D:1,C:0}},
       expect:{A:0x27,C:0} },
-
-    // 5) BIT dummy-fetch only (no extra), flags only
-    { name: "BIT $80 dummy-read", code: [0x24,0x80], setup:()=>{ systemMemory[0x0080]=0xFF; },
-      pre:{A:0x00}, expectFlags:{Z:1,V:1,N:1} },
-
-    // 6) RMW dummy-read side-effect count (ASL $10)
-    { name: "ASL $10 dummy-read", code: [0x06,0x10], setup:()=>{
-        interceptReads = 0;
-        systemMemory[0x10] = 0x01;
-      }, expectInterceptReads: 2, expectMem:{addr:0x10,value:0x02} },
-
-    // 7) Stack wrap-around (PHA at S=0x00)
-    { name: "PHA wraps SP", code: [0x48], pre:{A:0x99,S:0x00},
+    { name: "BIT $80 dummy-read",    code:[0x24,0x80], setup:()=>{
+        systemMemory[0x0080]=0xFF;
+      }, pre:{A:0x00}, expectFlags:{Z:1,V:1,N:1} },
+    { name: "ASL $10 dummy-read",    code:[0x06,0x10], setup:()=>{
+        systemMemory[0x10]=0x01;
+      }, expectInterceptReads:2, expectMem:{addr:0x10,value:0x02} },
+    { name: "PHA wraps SP",          code:[0x48], pre:{A:0x99,S:0x00},
       expectMem:{addr:0x0100,value:0x99}, expect:{S:0xFF} },
-
-    // 8) PHP/PLP flag-order (B-bit behavior)
-    { name: "PHP/PLP order", code: [0x08,0x28], pre:{P:{C:1,D:1,I:0,Z:1},S:0xFF},
-      setup:()=>{ systemMemory[0x01FF] = 0b00101101; /* B=0,D=1,I=0,Z=1,C=1 */ },
-      expectFlags:{C:1,Z:1,I:0,D:1,B:0,V:0,N:0} },
-
-    // 9) Self-modify next operand (overwrite immediate)
-    { name: "Self-mod IMM", code:[0xA9,0x00], pre:{A:0x00}, setup:()=>{
-        systemMemory[CPUregisters.PC+1] = 0x77;
+    { name: "PHP/PLP order",         code:[0x08,0x28], pre:{P:{C:1,D:1,I:0,Z:1},S:0xFF},
+      setup:()=>{
+        systemMemory[0x01FF]=0b00101101;
+      }, expectFlags:{C:1,Z:1,I:0,D:1,B:0,V:0,N:0} },
+    { name: "Self-mod IMM",          code:[0xA9,0x00], pre:{A:0x00}, setup:()=>{
+        systemMemory[CPUregisters.PC+1]=0x77;
       }, expect:{A:0x77} },
-
-    // 10) BRK vs IRQ B-flag difference
-    { name: "BRK sets B",   code: [0x00], pre: {P:{I:0,B:0}}, expectFlags: {B:1,I:1} },
-    { name: "IRQ leaves B", code: [],     pre: {P:{I:0,B:0}}, expectFlags: {B:0,I:1} }
+    { name: "BRK sets B",            code:[0x00], pre:{P:{I:0,B:0}},
+      expectFlags:{B:1,I:1} },
+    { name: "IRQ leaves B",          code:[],     pre:{P:{I:0,B:0}},
+      expectFlags:{B:0,I:1} }
   ];
 
-  // assume global helpers: hex(), flagsBin(), getMirrors(), dropdown()
+  let html = `
+    <div style="background:black;color:white;padding:6px;font-weight:bold;">
+      EDGE CASES
+    </div>
+    <table style="width:98%;margin:8px auto;border-collapse:collapse;
+                  background:black;color:white;">
+      <thead><tr style="background:#222">
+        <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
+        <th>CPU<br>Before</th><th>CPU<br>After</th><th>PC</th>
+        <th>Reads</th><th>Cycles</th><th>Status</th>
+      </tr></thead><tbody>`;
 
-  // ── build HTML table ──
-  let html =
-    `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
-       EDGE CASES
-     </div>
-     <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
-       <thead>
-         <tr style="background:#222">
-           <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-           <th>CPU<br>Before</th><th>CPU<br>After</th><th>PC<br>After</th>
-           <th>Intercepts</th><th>Cycles</th><th>Status</th>
-         </tr>
-       </thead><tbody>`;
+  edgeCases.forEach(test=>{
+    // 1) clear WRAM/PPU
+    for(let a=0;a<0x4000;a++) systemMemory[a]=0;
+    // 2) reset CPU registers
+    CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
+    CPUregisters.S = 0xFF;
+    CPUregisters.P = {C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
+    // 3) set PC to start of PRG-ROM
+    CPUregisters.PC = 0x8000;
 
-  tests.forEach(test=>{
-    // reset memory/regs
-    for(let a=0; a<0x4000; a++) systemMemory[a]=0;
-    CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-    CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-
-    // apply pre/setup
+    // 4) apply pre & setup hooks
     if(test.pre){
-      if(test.pre.A!=null) CPUregisters.A=test.pre.A;
-      if(test.pre.X!=null) CPUregisters.X=test.pre.X;
-      if(test.pre.Y!=null) CPUregisters.Y=test.pre.Y;
-      if(test.pre.S!=null) CPUregisters.S=test.pre.S;
-      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+      if(test.pre.A != null) CPUregisters.A = test.pre.A;
+      if(test.pre.X != null) CPUregisters.X = test.pre.X;
+      if(test.pre.Y != null) CPUregisters.Y = test.pre.Y;
+      if(test.pre.S != null) CPUregisters.S = test.pre.S;
+      if(test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
     if(test.setup) test.setup();
 
-    // snapshots before
-    const fb={...CPUregisters.P},
-          cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
+    // 5) snapshot flags & regs before
+    const fb = {...CPUregisters.P};
+    const cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y};
 
-    // prepare intercept‐read and cycle counting
-    let intercepts=0;
+    // 6) snapshot cycles before
+    const beforeCycles = cpuCycles;
+
+    // 7) hook read intercept counting
+    let intercepts = 0;
     const origRead = checkReadOffset;
-    const hasCycles = typeof CPUregisters.cycles === "number";
-    const startCycles = hasCycles ? CPUregisters.cycles : 0;
-    let usedCycles = null;
+    checkReadOffset = addr => { intercepts++; return origRead(addr); };
 
-    // load code & run if present
+    // 8) load code bytes into PRG-ROM and execute
     if(test.code.length){
-      let seq = 0;
-      test.code.forEach(b=>{
-        systemMemory[0x8000+seq]=b;
-        systemMemory[0xC000+seq]=b;
-        seq++;
+      test.code.forEach((b,i)=>{
+        systemMemory[0x8000+i]=b;
+        systemMemory[0xC000+i]=b;
       });
-      // hook reads
-      checkReadOffset = addr=>{ intercepts++; return origRead(addr); };
-      // execute
       step(); updateDebugTables();
-      // restore
-      checkReadOffset = origRead;
-      if(hasCycles) usedCycles = CPUregisters.cycles - startCycles;
     }
 
-    // snapshots after
-    const fa={...CPUregisters.P},
-          ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          endPC = CPUregisters.PC;
+    // 9) restore read helper & snapshot cycles after
+    checkReadOffset = origRead;
+    const afterCycles = cpuCycles;
+    const usedCycles  = afterCycles - beforeCycles;
 
-    // evaluate pass/fail
-    let pass=true, reasons=[];
-    if(test.expectPC!=null && endPC!==test.expectPC){
-      pass=false; reasons.push(`PC=0x${endPC.toString(16)}≠0x${test.expectPC.toString(16)}`);
+    // 10) snapshot flags & regs after, and PC
+    const fa = {...CPUregisters.P};
+    const ca = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y};
+    const pc = CPUregisters.PC;
+
+    // 11) evaluate pass/fail
+    let pass = true, reasons = [];
+    if(test.expectPC!=null && pc!==test.expectPC){
+      pass=false; reasons.push(`PC=0x${pc.toString(16)}≠0x${test.expectPC.toString(16)}`);
     }
     if(test.expectMem){
-      const got=systemMemory[test.expectMem.addr];
-      if(got!==test.expectMem.value){
-        pass=false; reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${hex(got)}≠${hex(test.expectMem.value)}`);
+      const val = systemMemory[test.expectMem.addr];
+      if(val!==test.expectMem.value){
+        pass=false; reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${hex(val)}≠${hex(test.expectMem.value)}`);
       }
     }
     if(test.expectFlags){
-      Object.entries(test.expectFlags).forEach(([f,v])=>{
-        if(CPUregisters.P[f]!==v){
-          pass=false; reasons.push(`${f}=${CPUregisters.P[f]}≠${v}`);
+      for(const f in test.expectFlags){
+        if(CPUregisters.P[f]!==test.expectFlags[f]){
+          pass=false; reasons.push(`${f}=${CPUregisters.P[f]}≠${test.expectFlags[f]}`);
         }
-      });
+      }
     }
-    if(test.expect){
-      Object.entries(test.expect).forEach(([r,v])=>{
-        const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
-        if(actual!==v){
-          pass=false; reasons.push(`${r}=${hex(actual)}≠${hex(v)}`);
-        }
-      });
+if (test.expect) {
+  for (const r in test.expect) {
+    // r may be A, S or a flag
+    const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
+    const expectVal = test.expect[r];
+    let aStr, eStr;
+
+    if (typeof actual === "number") {
+      aStr = "0x" + actual.toString(16);
+    } else if (actual === undefined) {
+      aStr = "undefined";
+    } else {
+      aStr = String(actual);
     }
+
+    if (typeof expectVal === "number") {
+      eStr = "0x" + expectVal.toString(16);
+    } else if (expectVal === undefined) {
+      eStr = "undefined";
+    } else {
+      eStr = String(expectVal);
+    }
+
+    if (actual !== expectVal) {
+      pass = false;
+      reasons.push(`${r}=${aStr}≠${eStr}`);
+    }
+  }
+}
+
     if(test.expectInterceptReads!=null && intercepts!==test.expectInterceptReads){
       pass=false; reasons.push(`reads=${intercepts}≠${test.expectInterceptReads}`);
     }
-    if(test.expectExtraCycle && hasCycles){
-      const base = 2;  // adjust per-opcode if desired
-      if(usedCycles<=base){
-        pass=false; reasons.push(`cycles=${usedCycles} no extra`);
-      }
+    if(test.expectExtraCycle && usedCycles<=2){
+      pass=false; reasons.push(`cycles=${usedCycles} no extra`);
     }
 
-    // row labels
+    // 12) render row
     const opLabel = test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ");
-    const statusCell = pass 
-      ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
-      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>` +
-        `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
+    const status = pass
+      ? `<span style="color:#7fff7f;">✔️</span>`
+      : `<details style="color:#ff4444;"><summary>❌</summary><ul>`+
+        reasons.map(r=>`<li>${r}</li>`).join("")+"</ul></details>";
 
     html += `
       <tr style="background:${pass?"#113311":"#331111"}">
-        <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-        <td style="border:1px solid #444;padding:6px;">${opLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)}</td>
-        <td style="border:1px solid #444;padding:6px;">0x${endPC.toString(16)}</td>
-        <td style="border:1px solid #444;padding:6px;">${intercepts}</td>
-        <td style="border:1px solid #444;padding:6px;">${hasCycles ? usedCycles : ""}</td>
-        <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
+        <td>${test.name}</td>
+        <td>${opLabel}</td>
+        <td>${flagsBin(fb)}</td>
+        <td>${flagsBin(fa)}</td>
+        <td>A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)}</td>
+        <td>A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)}</td>
+        <td>0x${pc.toString(16)}</td>
+        <td>${intercepts}</td>
+        <td>${usedCycles}</td>
+        <td>${status}</td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
 })();
-
 
   })();
 

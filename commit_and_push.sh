@@ -6,6 +6,9 @@ read -r -p "Enter commit message: " commit_message
 # Stage everything
 git add .
 
+# Unstage the exclude list
+git reset HEAD -- exclude.lst 2>/dev/null
+
 # Unstage any paths listed in exclude.lst
 repo_root=$(git rev-parse --show-toplevel)
 exclude_file="$repo_root/exclude.lst"

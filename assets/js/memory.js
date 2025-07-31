@@ -1,3 +1,6 @@
+let pageCrossed = false;  // boolean for tracking boundary crosses for +1 cycle
+let _lastReadAddr = null; // track high byte of the last address for boundary cross detection
+
 // Full 64KB system memory
 window.systemMemory = new Array(0x10000).fill(0x00);
 

@@ -426,6 +426,7 @@ function getOpcodeAndAddressingMode(numericValue) {
           addressingMode,
           length: opcodeInfo.length,
           pcIncrement: opcodeInfo.pcIncrement,
+          cyclesIncrement: opcodeInfo.cycles,
           hex: "0x" + opcodeInfo.code.toString(16).toUpperCase().padStart(2, '0'),
           func: opcodeInfo.func
         };
@@ -437,54 +438,76 @@ function getOpcodeAndAddressingMode(numericValue) {
 }
 
   // process current opcode from PC register address
-  function step() {
-    // 1) Fetch & decode
-    const opcodeByte = memoryRead(CPUregisters.PC);
-    const fetched = getOpcodeAndAddressingMode(opcodeByte);
+function step() {
 
-          // ─── marker for test table generation ───
-      if (opcodeByte === 0x02) {
-        // 0x02 is an unused byte stuck in test ROM to trigger our test table generation
-        console.log("unique test ROM byte");
-        pause();
-        runEvery6502Test();
-        CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
-        return;
-      }
-      // safe to comment out after testing is complete
+  // reset page-cross detection for this instruction
+  pageCrossed = false;
+  _lastReadAddr = null;
+  
+  // 1) Fetch & decode
 
-    if (!fetched && fetched !==0x02) {
-      console.warn(
-        `Unknown opcode 0x${opcodeByte.toString(16).padStart(2,'0')} at PC=0x${CPUregisters.PC.toString(16).padStart(4,'0')}`
-      );
-      pause();
-      return;
-    }
-  
-    // 2) Grab raw bytes for UI
-    const raw = [];
-    for (let i = 0; i < fetched.length; i++) {
-      raw.push(memoryRead(CPUregisters.PC + i));
-    }
-  
-    // 3) Snapshot everything UI needs before execution
-    lastFetched = {
-      pc: CPUregisters.PC,
-      opcode: fetched.opcode,
-      addressingMode: fetched.addressingMode,
-      length: fetched.length,
-      pcIncrement: fetched.pcIncrement,    // ← add this
-      hex: fetched.hex,
-      raw
-    };
-  
-    // 4) Execute & advance
-    fetched.func();
-    CPUregisters.PC = (CPUregisters.PC + fetched.pcIncrement) & 0xFFFF;
-  
-    // 5) Update the tables/UI
-    updateDebugTables();
+  const opcodeByte = memoryRead(CPUregisters.PC);
+  const fetched    = getOpcodeAndAddressingMode(opcodeByte);
+
+  // ─── marker for test table generation ───
+  if (opcodeByte === 0x02) {
+    console.log("unique test ROM byte");
+    pause();
+    runEvery6502Test();
+    CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
+    return;
   }
+  // safe to comment out after testing is complete
+
+  if (!fetched) {
+    console.warn(
+      `Unknown opcode 0x${opcodeByte.toString(16).padStart(2,'0')} ` +
+      `at PC=0x${CPUregisters.PC.toString(16).padStart(4,'0')}`
+    );
+    pause();
+    return;
+  }
+
+  // 2) Grab raw bytes for UI
+  const raw = [];
+  for (let i = 0; i < fetched.length; i++) {
+    raw.push(memoryRead(CPUregisters.PC + i));
+  }
+
+  // 3) Snapshot everything UI needs before execution
+  const cyclesBefore = cpuCycles; // not currently logging cycles before/after, tested good though
+  lastFetched = {
+    pc:             CPUregisters.PC,
+    opcode:         fetched.opcode,
+    addressingMode: fetched.addressingMode,
+    length:         fetched.length,
+    pcIncrement:    fetched.pcIncrement,
+    hex:            fetched.hex,
+    raw,
+    cyclesBefore
+  };
+
+  // 4) Execute instruction
+  fetched.func();
+
+  // 4a) Base cycle counting, logic for +1 if/when we detecting a page‐cross or taken‐branch in memory.js
   
+  //cpuCycles += fetched.cyclesIncrement;
+  cpuCycles = (cpuCycles + fetched.cyclesIncrement) & 0xFFFF;
 
+  // 4b) Record after‐count and delta
+  lastFetched.cyclesAfter  = cpuCycles;
+  lastFetched.cyclesTaken  = cpuCycles - cyclesBefore;
 
+  // 4c) Extra‐cycle on page cross (for the 3 indexed read modes)
+  if (pageCrossed) {
+  cpuCycles++;
+  pageCrossed = false;
+  }
+
+  // 4d) Advance PC
+  CPUregisters.PC = (CPUregisters.PC + fetched.pcIncrement) & 0xFFFF;
+
+  // 5) Update the tables/UI
+  updateDebugTables();
+}
