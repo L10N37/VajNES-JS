@@ -1,7 +1,3 @@
-// load the test ROM, just run it and a test result will append to main screen
-
-function runEvery6502Test() {
-
 // ─── GLOBAL TEST SETUP ─────────────────────────────────────────────────────────
 function setupTests(tests) {
   // --- Reset CPU/PPU & clear WRAM/PPU space (preserve PRG-ROM) ---
@@ -51,10 +47,7 @@ function dropdown(label, items) {
     : label;
 }
 
-// Then remove all the duplicate `function hex…`, `flagsBin…`, etc. from inside your IIFEs.
-
-
-  (function() {
+function runLoadsTests() {
     // ===== LOADS (LDA/LDX/LDY) as a continuous PRG-ROM stream =====
   
     const tests = [
@@ -204,9 +197,13 @@ function dropdown(label, items) {
   
     html += "</tbody></table>";
     document.body.insertAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
+}
+
+function runStoresTests() {
     // ===== STORES (STA/STX/STY) =====
-(function() {
+
   const tests = [
     { name: "STA zeroPage",         code: [0x85, 0x80],              setup: () => { CPUregisters.A = 0x99; },   expectMem: { addr: 0x0080, value: 0x99 } },
     { name: "STA zeroPage,X (wrap)",code: [0x95, 0xFF],              setup: () => { CPUregisters.X = 1; CPUregisters.A = 0x42; }, expectMem: { addr: 0x0000, value: 0x42 } },
@@ -331,10 +328,11 @@ function dropdown(label, items) {
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+ }
 
+ function runRegisterTransfersAndFlagsTest() { 
 // ===== REGISTER TRANSFERS & FLAGS =====
-(function() {
   const tests = [
     // Register transfers
     { name: "TAX", code: [0xAA], pre: { A: 0x66, X: 0x11 }, expect: { X: 0x66, Z: 0, N: 0 } },
@@ -452,10 +450,11 @@ function dropdown(label, items) {
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+  }
 
-(function(){
-  // ===== ALU & LOGIC OPS (ADC, SBC, INC, DEC, AND, ORA, EOR, BIT) =====
+  function runAluAndLogicOpsTests(){
+      // ===== ALU & LOGIC OPS (ADC, SBC, INC, DEC, AND, ORA, EOR, BIT) =====
   const tests = [
     { name:"ADC #$10, C=0",           code:[0x69,0x10], pre:{A:0x20,P:{C:0}},                        expect:{A:0x30,C:0,Z:0,N:0,V:0} },
     { name:"ADC #$90, C=1 (O/N)",      code:[0x69,0x90], pre:{A:0x70,P:{C:1}},                        expect:{A:0x01,C:1,Z:0,N:0,V:1} },
@@ -632,10 +631,13 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
-(function(){
-  // ===== SHIFT OPS (ASL, LSR, ROL, ROR) =====
+  }
+
+  function runShiftOpsTests(){
+
+      // ===== SHIFT OPS (ASL, LSR, ROL, ROR) =====
   const tests = [
     // ASL accumulator
     { name:"ASL A (no carry)",            code:[0x0A],                   pre:{A:0x41,P:{C:0}}, expect:{A:0x82,C:0,Z:0,N:1} },
@@ -775,10 +777,12 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
-(function(){
-  // ===== LOADS (LDA, LDX, LDY) =====
+  }
+
+  function runLoadsOpsTests(){
+      // ===== LOADS (LDA, LDX, LDY) =====
   const tests = [
     // LDA immediate
     { name:"LDA #$10",            code:[0xA9,0x10], expect:{A:0x10,Z:0,N:0} },
@@ -940,10 +944,13 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
-(function(){
-  // ===== REGISTER TRANSFERS & FLAGS (TAX, TAY, TXA, TYA, TSX, TXS, CLC, SEC, CLV, CLI, SEI, CLD, SED) =====
+  }
+
+  function runRegisterTransfersAndFlagsTestTwo(){
+
+     // ===== REGISTER TRANSFERS & FLAGS (TAX, TAY, TXA, TYA, TSX, TXS, CLC, SEC, CLV, CLI, SEI, CLD, SED) =====
   const tests = [
     // TAX
     { name:"TAX A->X",    code:[0xAA], pre:{A:0x12},            expect:{X:0x12,Z:0,N:0} },
@@ -1084,9 +1091,13 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
-(function(){
+  }
+
+  function runCompareOpsTests(){
+
+
   // ===== COMPARE OPS (CMP, CPX, CPY) =====
   const tests = [
     // CMP
@@ -1213,9 +1224,12 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
-(function(){
+  }
+
+  function runBranchOpsTests(){
+
   // ===== BRANCH OPS (BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS) =====
   const tests = [
     { name:"BCC taken (C=0)",     code:[0x90,0x02], pre:{P:{C:0}} },
@@ -1301,9 +1315,12 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
-(function(){
+  }
+
+  function runJumpAndSubRoutinesTests(){
+
   // ===== JUMP & SUBROUTINES (JMP, JSR, RTI, RTS) =====
   const tests = [
     // JMP
@@ -1408,9 +1425,12 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
-(function(){
+  }
+
+  function runStackOpsTests(){
+
   // ===== STACK OPS (PHA, PHP, PLA, PLP) =====
   const tests = [
     { name:"PHA pushes A",    code:[0x48], pre:{A:0x37,S:0xFF},                                     expectMem:{addr:0x01FF,value:0x37}, expect:{S:0xFE} },
@@ -1519,9 +1539,12 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
-(function(){
+  }
+
+  function runBrkAndNopsTests(){
+
   // ===== BRK & NOP/SKB/DOP =====
   const tests = [
     // BRK: pushes PC+2 and flags, sets I; here we just check S decremented by 3
@@ -1641,10 +1664,13 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
-(function(){
-  // ===== UNOFFICIAL/ILLEGAL OPS =====
+  }
+
+  function runUnofficialOpcodeTests(){
+
+    // ===== UNOFFICIAL/ILLEGAL OPS =====
   const tests = [
     // LAX: load into A & X
     { name:"LAX #$33 (IMM)",        code:[0xAB,0x33],                  expect:{A:0x33,X:0x33,Z:0,N:0} },
@@ -1807,10 +1833,11 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+  }
 
-(function(){
-  // ===== EDGE CASES =====
+  function runEdgeCaseTests(){
+    // ===== EDGE CASES =====
   const edgeCases = [
     { name: "JMP ($02FF) page-wrap bug", code:[0x6C,0xFF,0x02], setup:()=>{
         systemMemory[0x02FF]=0x00;
@@ -1984,10 +2011,12 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
 
-(function(){
-  // ========= 6502 PAGE CROSS & CYCLE QUIRK SUITE =========
+  }
+
+  function runPageCrossAndQuirksTests(){
+    // ========= 6502 PAGE CROSS & CYCLE QUIRK SUITE =========
 
   const cross = (desc, test) => Object.assign(test, {desc, cross:true});
   const nocross = (desc, test) => Object.assign(test, {desc, cross:false});
@@ -2004,45 +2033,106 @@ setupTests(tests);
   // - extra:   expected cycles beyond base (page cross, quirk etc)
 
   // --- Test Definitions ---
-  const cases = [
-    // ========= LDA/LDX/LDY/LAX/LAS: Read+Cross = +1, NoCross = base =========
-    cross("LDA $12FF,X cross",    {code:[0xBD,0xFF,0x12], opcodeFn:"LDA_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x55;}, expect:{A:0x55}, baseCycles:4, extra:1}),
-    nocross("LDA $1200,X no cross",{code:[0xBD,0x00,0x12], opcodeFn:"LDA_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x66;}, expect:{A:0x66}, baseCycles:4, extra:0}),
-    cross("LDA $12FF,Y cross",    {code:[0xB9,0xFF,0x12], opcodeFn:"LDA_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0x77;}, expect:{A:0x77}, baseCycles:4, extra:1}),
-    nocross("LDA $1200,Y no cross",{code:[0xB9,0x00,0x12], opcodeFn:"LDA_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0x88;}, expect:{A:0x88}, baseCycles:4, extra:0}),
-    cross("LDX $12FF,Y cross",    {code:[0xBE,0xFF,0x12], opcodeFn:"LDX_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0x99;}, expect:{X:0x99}, baseCycles:4, extra:1}),
-    nocross("LDX $1200,Y no cross",{code:[0xBE,0x00,0x12], opcodeFn:"LDX_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0x77;}, expect:{X:0x77}, baseCycles:4, extra:0}),
-    cross("LDY $12FF,X cross",    {code:[0xBC,0xFF,0x12], opcodeFn:"LDY_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0xAB;}, expect:{Y:0xAB}, baseCycles:4, extra:1}),
-    nocross("LDY $1200,X no cross",{code:[0xBC,0x00,0x12], opcodeFn:"LDY_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0xAC;}, expect:{Y:0xAC}, baseCycles:4, extra:0}),
-    cross("LAX $12FF,Y cross",    {code:[0xBF,0xFF,0x12], opcodeFn:"LAX_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0x56;}, expect:{A:0x56,X:0x56}, baseCycles:4, extra:1}),
-    nocross("LAX $1200,Y no cross",{code:[0xBF,0x00,0x12], opcodeFn:"LAX_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0x57;}, expect:{A:0x57,X:0x57}, baseCycles:4, extra:0}),
-    cross("LAS $12FF,Y cross",    {code:[0xBB,0xFF,0x12], opcodeFn:"LAS_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0xF0;}, expect:{A:0xF0,X:0xF0,S:0xF0}, baseCycles:4, extra:1}),
-    nocross("LAS $1200,Y no cross",{code:[0xBB,0x00,0x12], opcodeFn:"LAS_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0xE0;}, expect:{A:0xE0,X:0xE0,S:0xE0}, baseCycles:4, extra:0}),
-    // ========= (Indirect),Y: Cross = +1, NoCross = base =========
-    cross("LDA ($10),Y cross",    {code:[0xB1,0x10], opcodeFn:"LDA_INDY", pre:{Y:1}, setup:()=>{systemMemory[0x10]=0xFF;systemMemory[0x11]=0x12;systemMemory[0x1300]=0x44;}, expect:{A:0x44}, baseCycles:5, extra:1}),
-    nocross("LDA ($20),Y no cross",{code:[0xB1,0x20], opcodeFn:"LDA_INDY", pre:{Y:0}, setup:()=>{systemMemory[0x20]=0x00;systemMemory[0x21]=0x14;systemMemory[0x1400]=0x33;}, expect:{A:0x33}, baseCycles:5, extra:0}),
-    // ========== RMW Absolute,X: ALWAYS +1 ==========
-    cross("ASL $12FF,X cross (RMW always +1)",{code:[0x1E,0xFF,0x12], opcodeFn:"ASL_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x80;}, expectMem:{addr:0x1300,value:0x00}, baseCycles:7, extra:0}), // 6+1
-    nocross("ASL $1200,X no cross (RMW always +1)",{code:[0x1E,0x00,0x12], opcodeFn:"ASL_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x81;}, expectMem:{addr:0x1200,value:0x02}, baseCycles:7, extra:0}), // 6+1
-    // (repeat for other RMWs: LSR, ROL, ROR, INC, DEC)
-    cross("INC $12FF,X cross (RMW always +1)",{code:[0xFE,0xFF,0x12], opcodeFn:"INC_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x04;}, expectMem:{addr:0x1300,value:0x05}, baseCycles:7, extra:0}),
-    nocross("DEC $1200,X no cross (RMW always +1)",{code:[0xDE,0x00,0x12], opcodeFn:"DEC_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x01;}, expectMem:{addr:0x1200,value:0x00}, baseCycles:7, extra:0}),
-    // ========= STA/SHY/SHX/SAX: Never +1 (quirk) =========
-    cross("STA $12FF,X cross (NO +1, store quirk)",{code:[0x9D,0xFF,0x12], opcodeFn:"STA_ABSX", pre:{A:0xAB,X:1}, expectMem:{addr:0x1300,value:0xAB}, baseCycles:5, extra:0}),
-    cross("STA ($10),Y cross (NO +1, store quirk)",{code:[0x91,0x10], opcodeFn:"STA_INDY", pre:{A:0xBA,Y:1}, setup:()=>{systemMemory[0x10]=0xFF;systemMemory[0x11]=0x12;}, expectMem:{addr:0x1300,value:0xBA}, baseCycles:6, extra:0}),
-    // ========= Branches: +1 if taken, +2 if taken AND page crossed =========
-    cross("BNE branch taken, cross",{code:[0xD0,0x7E], opcodeFn:"BNE_REL", pre:{P:{Z:0}}, setup:()=>{}, expectPC:0x807E, baseCycles:2, extra:2}),
-    nocross("BNE branch taken, no cross",{code:[0xD0,0x02], opcodeFn:"BNE_REL", pre:{P:{Z:0}}, setup:()=>{}, expectPC:0x8002, baseCycles:2, extra:1}),
-    nocross("BNE not taken",{code:[0xD0,0x02], opcodeFn:"BNE_REL", pre:{P:{Z:1}}, setup:()=>{}, expectPC:0x8002, baseCycles:2, extra:0}),
-    // ========= JMP Indirect: NEVER adds +1 =========
-    cross("JMP ($02FF) indirect, page wrap",{code:[0x6C,0xFF,0x02], opcodeFn:"JMP_IND", setup:()=>{systemMemory[0x02FF]=0x00;systemMemory[0x0200]=0x80;}, expectPC:0x8000, baseCycles:5, extra:0}),
-    // ========= Unofficial NOPs: Abs,X page cross = +1 =========
-    cross("NOP $12FF,X cross (illegal)",{code:[0x3C,0xFF,0x12], opcodeFn:"NOP_ABSX", pre:{X:1}, baseCycles:4, extra:1}),
-    nocross("NOP $1200,X no cross (illegal)",{code:[0x3C,0x00,0x12], opcodeFn:"NOP_ABSX", pre:{X:0}, baseCycles:4, extra:0}),
-    // ========= Unofficial SLO/other RMW, absoluteX always +1 =========
-    cross("SLO $12FF,X cross (RMW always +1)",{code:[0x1F,0xFF,0x12], opcodeFn:"SLO_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x01;}, expectMem:{addr:0x1300,value:0x02}, baseCycles:7, extra:0}),
-    nocross("SLO $1200,X no cross (RMW always +1)",{code:[0x1F,0x00,0x12], opcodeFn:"SLO_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x01;}, expectMem:{addr:0x1200,value:0x02}, baseCycles:7, extra:0}),
-  ];
+// Helper: [mnemonic, addressing] for each case
+const testLookup = {
+  "LDA $12FF,X cross":      ["LDA", "absoluteX"],
+  "LDA $1200,X no cross":   ["LDA", "absoluteX"],
+  "LDA $12FF,Y cross":      ["LDA", "absoluteY"],
+  "LDA $1200,Y no cross":   ["LDA", "absoluteY"],
+  "LDX $12FF,Y cross":      ["LDX", "absoluteY"],
+  "LDX $1200,Y no cross":   ["LDX", "absoluteY"],
+  "LDY $12FF,X cross":      ["LDY", "absoluteX"],
+  "LDY $1200,X no cross":   ["LDY", "absoluteX"],
+  "LAX $12FF,Y cross":      ["LAX", "absoluteY"],
+  "LAX $1200,Y no cross":   ["LAX", "absoluteY"],
+  "LAS $12FF,Y cross":      ["LAS", "absoluteY"],
+  "LAS $1200,Y no cross":   ["LAS", "absoluteY"],
+  "LDA ($10),Y cross":      ["LDA", "indirectY"],
+  "LDA ($20),Y no cross":   ["LDA", "indirectY"],
+  "ASL $12FF,X cross (RMW always +1)": ["ASL", "absoluteX"],
+  "ASL $1200,X no cross (RMW always +1)": ["ASL", "absoluteX"],
+  "INC $12FF,X cross (RMW always +1)": ["INC", "absoluteX"],
+  "DEC $1200,X no cross (RMW always +1)": ["DEC", "absoluteX"],
+  "STA $12FF,X cross (NO +1, store quirk)": ["STA", "absoluteX"],
+  "STA ($10),Y cross (NO +1, store quirk)": ["STA", "indirectY"],
+  "BNE branch taken, cross": ["BNE", "relative"],
+  "BNE branch taken, no cross": ["BNE", "relative"],
+  "BNE not taken": ["BNE", "relative"],
+  "JMP ($02FF) indirect, page wrap": ["JMP", "indirect"],
+  "NOP $12FF,X cross (illegal)": ["NOP", "absx2"], // absx2 = $3C
+  "NOP $1200,X no cross (illegal)": ["NOP", "absx2"],
+  "SLO $12FF,X cross (RMW always +1)": ["SLO", "absoluteX"],
+  "SLO $1200,X no cross (RMW always +1)": ["SLO", "absoluteX"],
+};
+
+// Helper: get base cycles from opcodes object for this test case
+function getBaseCycles(testDesc) {
+  const lookup = testLookup[testDesc];
+  if (!lookup) throw new Error(`No testLookup mapping for "${testDesc}"`);
+  const [mnemonic, addressing] = lookup;
+  return opcodes[mnemonic][addressing].cycles;
+}
+
+// Then, build cases dynamically:
+const cases = [
+  cross("LDA $12FF,X cross",    {code:[0xBD,0xFF,0x12], opcodeFn:"LDA_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x55;}, expect:{A:0x55}, baseCycles:getBaseCycles("LDA $12FF,X cross"), extra:1}),
+  nocross("LDA $1200,X no cross",{code:[0xBD,0x00,0x12], opcodeFn:"LDA_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x66;}, expect:{A:0x66}, baseCycles:getBaseCycles("LDA $1200,X no cross"), extra:0}),
+  cross("LDA $12FF,Y cross",    {code:[0xB9,0xFF,0x12], opcodeFn:"LDA_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0x77;}, expect:{A:0x77}, baseCycles:getBaseCycles("LDA $12FF,Y cross"), extra:1}),
+  nocross("LDA $1200,Y no cross",{code:[0xB9,0x00,0x12], opcodeFn:"LDA_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0x88;}, expect:{A:0x88}, baseCycles:getBaseCycles("LDA $1200,Y no cross"), extra:0}),
+  cross("LDX $12FF,Y cross",    {code:[0xBE,0xFF,0x12], opcodeFn:"LDX_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0x99;}, expect:{X:0x99}, baseCycles:getBaseCycles("LDX $12FF,Y cross"), extra:1}),
+  nocross("LDX $1200,Y no cross",{code:[0xBE,0x00,0x12], opcodeFn:"LDX_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0x77;}, expect:{X:0x77}, baseCycles:getBaseCycles("LDX $1200,Y no cross"), extra:0}),
+  cross("LDY $12FF,X cross",    {code:[0xBC,0xFF,0x12], opcodeFn:"LDY_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0xAB;}, expect:{Y:0xAB}, baseCycles:getBaseCycles("LDY $12FF,X cross"), extra:1}),
+  nocross("LDY $1200,X no cross",{code:[0xBC,0x00,0x12], opcodeFn:"LDY_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0xAC;}, expect:{Y:0xAC}, baseCycles:getBaseCycles("LDY $1200,X no cross"), extra:0}),
+  cross("LAX $12FF,Y cross",    {code:[0xBF,0xFF,0x12], opcodeFn:"LAX_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0x56;}, expect:{A:0x56,X:0x56}, baseCycles:getBaseCycles("LAX $12FF,Y cross"), extra:1}),
+  nocross("LAX $1200,Y no cross",{code:[0xBF,0x00,0x12], opcodeFn:"LAX_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0x57;}, expect:{A:0x57,X:0x57}, baseCycles:getBaseCycles("LAX $1200,Y no cross"), extra:0}),
+  cross("LAS $12FF,Y cross",    {code:[0xBB,0xFF,0x12], opcodeFn:"LAS_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0xF0;}, expect:{A:0xF0,X:0xF0,S:0xF0}, baseCycles:getBaseCycles("LAS $12FF,Y cross"), extra:0}),
+  nocross("LAS $1200,Y no cross",{code:[0xBB,0x00,0x12], opcodeFn:"LAS_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0xE0;}, expect:{A:0xE0,X:0xE0,S:0xE0}, baseCycles:getBaseCycles("LAS $1200,Y no cross"), extra:0}),
+  cross("LDA ($10),Y cross",    {code:[0xB1,0x10], opcodeFn:"LDA_INDY", pre:{Y:1}, setup:()=>{systemMemory[0x10]=0xFF;systemMemory[0x11]=0x12;systemMemory[0x1300]=0x44;}, expect:{A:0x44}, baseCycles:getBaseCycles("LDA ($10),Y cross"), extra:1}),
+  nocross("LDA ($20),Y no cross",{code:[0xB1,0x20], opcodeFn:"LDA_INDY", pre:{Y:0}, setup:()=>{systemMemory[0x20]=0x00;systemMemory[0x21]=0x14;systemMemory[0x1400]=0x33;}, expect:{A:0x33}, baseCycles:getBaseCycles("LDA ($20),Y no cross"), extra:0}),
+  cross("ASL $12FF,X cross (RMW always +1)",{code:[0x1E,0xFF,0x12], opcodeFn:"ASL_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x80;}, expectMem:{addr:0x1300,value:0x00}, baseCycles:getBaseCycles("ASL $12FF,X cross (RMW always +1)"), extra:3}),
+  nocross("ASL $1200,X no cross (RMW always +1)",{code:[0x1E,0x00,0x12], opcodeFn:"ASL_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x81;}, expectMem:{addr:0x1200,value:0x02}, baseCycles:getBaseCycles("ASL $1200,X no cross (RMW always +1)"), extra:3}),
+  cross("INC $12FF,X cross (RMW always +1)",{code:[0xFE,0xFF,0x12], opcodeFn:"INC_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x04;}, expectMem:{addr:0x1300,value:0x05}, baseCycles:getBaseCycles("INC $12FF,X cross (RMW always +1)"), extra:3}),
+  nocross("DEC $1200,X no cross (RMW always +1)",{code:[0xDE,0x00,0x12], opcodeFn:"DEC_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x01;}, expectMem:{addr:0x1200,value:0x00}, baseCycles:getBaseCycles("DEC $1200,X no cross (RMW always +1)"), extra:3}),
+  cross("STA $12FF,X cross (NO +1, store quirk)",{code:[0x9D,0xFF,0x12], opcodeFn:"STA_ABSX", pre:{A:0xAB,X:1}, expectMem:{addr:0x1300,value:0xAB}, baseCycles:getBaseCycles("STA $12FF,X cross (NO +1, store quirk)"), extra:0}),
+  cross("STA ($10),Y cross (NO +1, store quirk)",{code:[0x91,0x10], opcodeFn:"STA_INDY", pre:{A:0xBA,Y:1}, setup:()=>{systemMemory[0x10]=0xFF;systemMemory[0x11]=0x12;}, expectMem:{addr:0x1300,value:0xBA}, baseCycles:getBaseCycles("STA ($10),Y cross (NO +1, store quirk)"), extra:0}),
+  
+  
+cross("BNE branch taken, cross", {
+    code: [0xD0, 0x02],            // BNE +2
+    opcodeFn: "BNE_REL",
+    pre: { P: { Z: 0 }, PC: 0x80FE },
+    setup: ()=>{},
+    expectPC: 0x8102,
+    baseCycles: getBaseCycles("BNE branch taken, cross"),
+    extra: 2
+  }),
+  nocross("BNE branch taken, no cross", {
+    code: [0xD0, 0x02],            // BNE +2
+    opcodeFn: "BNE_REL",
+    pre: { P: { Z: 0 }, PC: 0x8000 },
+    setup: ()=>{},
+    expectPC: 0x8004,
+    baseCycles: getBaseCycles("BNE branch taken, no cross"),
+    extra: 1
+  }),
+  nocross("BNE not taken", {
+    code: [0xD0, 0x02],
+    opcodeFn: "BNE_REL",
+    pre: { P: { Z: 1 }, PC: 0x8000 },
+    setup: ()=>{},
+    expectPC: 0x8002,
+    baseCycles: getBaseCycles("BNE not taken"),
+    extra: 0
+  }),
+
+
+
+  cross("JMP ($02FF) indirect, page wrap",{code:[0x6C,0xFF,0x02], opcodeFn:"JMP_IND", setup:()=>{systemMemory[0x02FF]=0x00;systemMemory[0x0200]=0x80;}, expectPC:0x8000, baseCycles:getBaseCycles("JMP ($02FF) indirect, page wrap"), extra:0}),
+  cross("NOP $12FF,X cross (illegal)",{code:[0x3C,0xFF,0x12], opcodeFn:"NOP_ABSX", pre:{X:1}, baseCycles:getBaseCycles("NOP $12FF,X cross (illegal)"), extra:1}),
+  nocross("NOP $1200,X no cross (illegal)",{code:[0x3C,0x00,0x12], opcodeFn:"NOP_ABSX", pre:{X:0}, baseCycles:getBaseCycles("NOP $1200,X no cross (illegal)"), extra:0}),
+  cross("SLO $12FF,X cross (RMW always +1)",{code:[0x1F,0xFF,0x12], opcodeFn:"SLO_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x01;}, expectMem:{addr:0x1300,value:0x02}, baseCycles:getBaseCycles("SLO $12FF,X cross (RMW always +1)"), extra:3}),
+  nocross("SLO $1200,X no cross (RMW always +1)",{code:[0x1F,0x00,0x12], opcodeFn:"SLO_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x01;}, expectMem:{addr:0x1200,value:0x02}, baseCycles:getBaseCycles("SLO $1200,X no cross (RMW always +1)"), extra:3}),
+];
 
   let html = `
     <div style="background:darkblue;color:white;padding:7px 6px 7px 6px;font-weight:bold;">
@@ -2090,7 +2180,7 @@ setupTests(tests);
     const afterCycles = cpuCycles;
     const usedCycles = afterCycles - beforeCycles;
     const fa = {...CPUregisters.P};
-    const ca = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y};
+    const ca = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
     const pc = CPUregisters.PC;
 
     // --- Result/Check logic ---
@@ -2140,7 +2230,111 @@ setupTests(tests);
   }
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-})();
-
-})();
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
   }
+
+function runEvery6502Test() {
+runLoadsTests();
+runStoresTests();
+runRegisterTransfersAndFlagsTest();
+runAluAndLogicOpsTests();
+runShiftOpsTests();
+runLoadsOpsTests();
+runRegisterTransfersAndFlagsTestTwo();
+runCompareOpsTests();
+runJumpAndSubRoutinesTests();
+runStackOpsTests();
+runBrkAndNopsTests();
+runUnofficialOpcodeTests();
+runEdgeCaseTests();
+runPageCrossAndQuirksTests();
+runBranchOpsTests();
+}
+
+const testSuites = [
+  // Loads, both standard and alternate for extra cross-verification
+  { name: "LOADS (LDA/LDX/LDY)", run: runLoadsTests },
+  { name: "LOADS (LDA/LDX/LDY) (Alt)", run: runLoadsOpsTests }, // alternate block
+
+  // Stores
+  { name: "STORES (STA/STX/STY)", run: runStoresTests },
+
+  // Register and flag transfers
+  { name: "Register Transfers & Flags", run: runRegisterTransfersAndFlagsTest },
+  { name: "Register Transfers & Flags (Part 2)", run: runRegisterTransfersAndFlagsTestTwo },
+
+  // Arithmetic/logic and compare
+  { name: "ALU & Logic Ops", run: runAluAndLogicOpsTests },
+  { name: "COMPARE Ops", run: runCompareOpsTests },
+
+  // Shifts
+  { name: "Shift Ops", run: runShiftOpsTests },
+
+  // Control flow
+  { name: "Branch Ops", run: runBranchOpsTests },
+  { name: "JUMP & SubRoutines", run: runJumpAndSubRoutinesTests },
+  { name: "STACK Ops", run: runStackOpsTests },
+  { name: "BRK & NOPs", run: runBrkAndNopsTests },
+
+  // Unofficial, edge, and quirk tests
+  { name: "Unofficial Opcode Tests", run: runUnofficialOpcodeTests },
+  { name: "Edge Case Tests", run: runEdgeCaseTests },
+  { name: "Page Cross & Quirks Tests", run: runPageCrossAndQuirksTests }
+];
+
+function showTestModal() {
+  // Create modal background
+  let modal = document.createElement('div');
+  modal.id = 'test-modal';
+  modal.style = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:#000a; z-index:9999; display:flex; align-items:center; justify-content:center;';
+
+  // Modal content box
+  let box = document.createElement('div');
+  box.style = 'background:#fff; border-radius:12px; padding:2em; min-width:350px; box-shadow:0 0 32px #0008; display:flex; flex-direction:column; align-items:center;';
+
+  let title = document.createElement('div');
+  title.textContent = "Select test group to run";
+  title.style = "font-size:1.5em; margin-bottom:1em;";
+  box.appendChild(title);
+
+  // Test suite selector
+  let sel = document.createElement('select');
+  sel.style = 'font-size:1.1em; margin-bottom:1em; width:90%;';
+  testSuites.forEach((suite, idx) => {
+    let opt = document.createElement('option');
+    opt.value = idx;
+    opt.textContent = suite.name;
+    sel.appendChild(opt);
+  });
+  box.appendChild(sel);
+
+  // Run Selected button
+  let btnOne = document.createElement('button');
+  btnOne.textContent = "Run Selected Suite";
+  btnOne.style = "margin-bottom:0.7em; font-size:1em; padding:0.5em 1.5em;";
+  btnOne.onclick = () => {
+    modal.remove();
+    testSuites[+sel.value].run();
+  };
+  box.appendChild(btnOne);
+
+  // Run All button
+  let btnAll = document.createElement('button');
+  btnAll.textContent = "Run ALL Suites";
+  btnAll.style = "font-size:1em; padding:0.5em 1.5em;";
+  btnAll.onclick = () => {
+    modal.remove();
+    testSuites.forEach(s => s.run());
+  };
+  box.appendChild(btnAll);
+
+  // Cancel button
+  let btnCancel = document.createElement('button');
+  btnCancel.textContent = "Cancel";
+  btnCancel.style = "margin-top:1.5em; font-size:0.95em;";
+  btnCancel.onclick = () => modal.remove();
+  box.appendChild(btnCancel);
+
+  modal.appendChild(box);
+  document.body.appendChild(modal);
+}

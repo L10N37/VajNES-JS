@@ -47,6 +47,15 @@ function resetCPU() {
 // https://www.pagetable.com/c64ref/6502/?tab=2#LDA 
 // https://www.nesdev.org/obelisk-6502-guide/addressessing.html
 
+function opCodeTest(){
+  showTestModal();
+    console.log(
+    "%c🟢 TEST MODAL TRIGGERED by OPCODE 0x02 🟢",
+    "background: yellow; color: black; font-weight: bold; font-size: 20px; padding: 6px 12px; border: 2px solid black;"
+  );
+
+}
+
 function SEI_IMP() {
   CPUregisters.P.I = (1) ? 1 : 0;
 }
@@ -110,15 +119,15 @@ function LDA_ABSX() {
   const base = (hi << 8) | lo;
   const address = (base + CPUregisters.X) & 0xFFFF;
 
-  // Detect page boundary crossing ONLY for this data fetch:
-  if ((base & 0xFF00) !== (address & 0xFF00)) {
-    cpuCycles++; // Add extra cycle
-    console.log("%cPAGE BOUNDARY CROSSED! +1 cycle", "color:orange;font-weight:bold");
-  }
-
   CPUregisters.A = checkReadOffset(address); // Fetch the data
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+
+  // Detect page boundary crossing ONLY for this data fetch:
+  if ((base & 0xFF00) !== (address & 0xFF00)) {
+    cpuCycles++; // Add extra cycle
+  }
+
 }
 
 function LDA_ABSY() {
@@ -127,15 +136,15 @@ function LDA_ABSY() {
   const base = (hi << 8) | lo;
   const address = (base + CPUregisters.Y) & 0xFFFF;
 
-  // Detect page boundary crossing
-  if ((base & 0xFF00) !== (address & 0xFF00)) {
-    cpuCycles++;
-    console.log("%cPAGE BOUNDARY CROSSED! +1 cycle", "color:orange;font-weight:bold");
-  }
-
   CPUregisters.A = checkReadOffset(address);
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+
+  // Detect page boundary crossing
+  if ((base & 0xFF00) !== (address & 0xFF00)) {
+  cpuCycles++;
+  //console.log("%cPAGE BOUNDARY CROSSED! +1 cycle", "color:orange;font-weight:bold");
+  }
 }
 
 function LDA_INDX() {
@@ -152,9 +161,12 @@ function LDA_INDY() {
   const hi = checkReadOffset((zp + 1) & 0xFF);
   const base = (hi << 8) | lo;
   const address = (base + CPUregisters.Y) & 0xFFFF;
-  CPUregisters.A = checkReadOffset(address, true); // Only here!
+
+  CPUregisters.A = checkReadOffset(address, true);
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+    // Add a cycle if page boundary is crossed when adding Y
+  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles++;
 }
 
 function STA_ZP() {
@@ -261,12 +273,14 @@ function INC_ABS() {
 }
 
 function INC_ABSX() {
+  
   const addressess = ((checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1)) + CPUregisters.X;
   const value = (checkReadOffset(addressess) + 1) & 0xFF;
   checkWriteOffset(addressess, value);
 
   CPUregisters.P.Z = ((value === 0)) ? 1 : 0;
   CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
+  cpuCycles +=3 // quirk, add 3 to base cycles
 }
 
 function JMP_ABS() {
@@ -398,20 +412,16 @@ function LDX_ABS() {
 }
 
 function LDX_ABSY() {
-  // Opcode BE: LDX absolute,Y
-  const lo   = checkReadOffset(CPUregisters.PC + 1);
-  const hi   = checkReadOffset(CPUregisters.PC + 2);
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
   const base = (hi << 8) | lo;
-  const addr = (base + CPUregisters.Y) & 0xFFFF;
+  const address = (base + CPUregisters.Y) & 0xFFFF;
 
-  // Choose proper read
-  const val = (addr >= 0x2000 && addr <= 0x3FFF)
-    ? checkReadOffset(addr)
-    : checkReadOffset(addr);
-
-  CPUregisters.X   = val;
-  CPUregisters.P.Z = (val === 0) ? 1 : 0;
-  CPUregisters.P.N = (val & 0x80) ? 1 : 0;
+  CPUregisters.X = checkReadOffset(address);
+  CPUregisters.P.Z = (CPUregisters.X === 0) ? 1 : 0;
+  CPUregisters.P.N = ((CPUregisters.X & 0x80) !== 0) ? 1 : 0;
+    // Add cycle if page crossed (standard quirk)
+  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles++;
 }
 
 function ADC_IMM() {
@@ -671,17 +681,19 @@ function ASL_ABS() {
 }
 
 function ASL_ABSX() {
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
-  const baseaddressess = (high << 8) | low;
-  const addressess = (baseaddressess + CPUregisters.X) & 0xFFFF;
-  const value = checkReadOffset(addressess);
-  const carryOut = (value & 0x80) !== 0;
-  const result = (value << 1) & 0xFF;
-  systemMemory[addressess] = result;
-  CPUregisters.P.C = (carryOut) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
+  const base = (hi << 8) | lo;
+  const addr = (base + CPUregisters.X) & 0xFFFF;
+
+  let value = checkReadOffset(addr);
+  CPUregisters.P.C = (value >> 7) & 1;
+  value = (value << 1) & 0xFF;
+  CPUregisters.P.Z = value === 0 ? 1 : 0;
+  CPUregisters.P.N = (value & 0x80) !== 0 ? 1 : 0;
+  checkWriteOffset(addr, value);
+  cpuCycles += 3; // Always 7 cycles for abs,X RMW, base + 3 , POST data manipulation, PPU may need data
 }
 
 function BIT_ZP() {
@@ -917,8 +929,18 @@ function BEQ_REL() {
 function BNE_REL() {
   const offset = checkReadOffset(CPUregisters.PC + 1);
   const signed = offset < 0x80 ? offset : offset - 0x100;
+  const pcAfterInstr = (CPUregisters.PC + 2) & 0xFFFF; // after reading opcode+operand
+
   if (!CPUregisters.P.Z) {
-    CPUregisters.PC += signed;
+    const target = (pcAfterInstr + signed) & 0xFFFF;
+    if ((pcAfterInstr & 0xFF00) !== (target & 0xFF00)) {
+      cpuCycles += 2;
+      console.log(`BNE: branch + page cross (+2), 0x${pcAfterInstr.toString(16)} → 0x${target.toString(16)}`);
+    } else {
+      cpuCycles += 1;
+      console.log(`BNE: branch (+1), 0x${pcAfterInstr.toString(16)} → 0x${target.toString(16)}`);
+    }
+    CPUregisters.PC = target;
   }
 }
 
@@ -1100,6 +1122,7 @@ function DEC_ABSX() {
 
   CPUregisters.P.Z = ((value === 0)) ? 1 : 0;
   CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
+  cpuCycles +=3 // quirk, add 3 to base cycles, after data manipulation for PPU's 3:1 tick ratio
 }
 
 function EOR_IMM() {
@@ -1285,19 +1308,19 @@ function LDY_ABS() {
 }
 
 function LDY_ABSX() {
-  const lo   = checkReadOffset(CPUregisters.PC + 1);
-  const hi   = checkReadOffset(CPUregisters.PC + 2);
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
   const base = (hi << 8) | lo;
-  const addr = (base + CPUregisters.X) & 0xFFFF;
+  const address = (base + CPUregisters.X) & 0xFFFF;
 
-  const val = (addr >= 0x2000 && addr <= 0x3FFF)
-    ? checkReadOffset(addr)
-    : checkReadOffset(addr);
+  CPUregisters.Y = checkReadOffset(address);
+  CPUregisters.P.Z = (CPUregisters.Y === 0) ? 1 : 0;
+  CPUregisters.P.N = ((CPUregisters.Y & 0x80) !== 0) ? 1 : 0;
 
-  CPUregisters.Y   = val;
-  CPUregisters.P.Z = (val === 0) ? 1 : 0;
-  CPUregisters.P.N = (val & 0x80) ? 1 : 0;
+  // Add cycle if page crossed — always do cycle logic *after* memory ops!
+  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles++;
 }
+
 
 function SBC_IMM() {
   const value = checkReadOffset(CPUregisters.PC + 1) ^ 0xFF;
@@ -1867,13 +1890,17 @@ function LAX_ZPY() {
 }
 
 function LAX_ABSY() {
-  const addressess = ((checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1)) + CPUregisters.Y;
-  const value = checkReadOffset(addressess);
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
+  const base = (hi << 8) | lo;
+  const address = (base + CPUregisters.Y) & 0xFFFF;
+  const value = checkReadOffset(address);
   CPUregisters.A = value;
   CPUregisters.X = value;
-
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
   CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
+  // Add extra cycle if page boundary is crossed, post data manipulation
+  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles++;
 }
 
 function LAX_INDX() {
@@ -2433,29 +2460,18 @@ function AXA_INDY() {
 }
 
 function LAS_ABSY() {
-  // Fetch absolute base address
   const lo = checkReadOffset(CPUregisters.PC + 1);
   const hi = checkReadOffset(CPUregisters.PC + 2);
   const base = (hi << 8) | lo;
   const address = (base + CPUregisters.Y) & 0xFFFF;
 
-  // Handle page boundary cross (+1 cycle if crossed)
-  if ((base & 0xFF00) !== (address & 0xFF00)) {
-    cpuCycles++;
-  }
-
-  // Read value at address
-  const value = checkReadOffset(address);
-
-  // The tricky part: AND with stack pointer, then assign to A, X, S
-  const result = value & CPUregisters.S;
-  CPUregisters.A = result;
-  CPUregisters.X = result;
-  CPUregisters.S = result;
-
-  // Set flags as per LDA/LDX (Z/N)
-  CPUregisters.P.Z = (result === 0) ? 1 : 0;
-  CPUregisters.P.N = (result & 0x80) ? 1 : 0;
+  // DO NOT add extra cycle on page cross (quirk: always 4 cycles)
+  const value = checkReadOffset(address) & CPUregisters.S;
+  CPUregisters.A = value;
+  CPUregisters.X = value;
+  CPUregisters.S = value;
+  CPUregisters.P.Z = (value === 0) ? 1 : 0;
+  CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
 }
 
 
@@ -2773,9 +2789,11 @@ const opcodes = {
   XAA: { immediate: { code: 0x8B, length: 2, pcIncrement: 2, func: XAA_IMM } 
   },
   LAS: {
-  absoluteY: { code: 0xBB, length: 3, pcIncrement: 3, func: LAS_ABSY }
-},
-
+  absoluteY: { code: 0xBB, length: 3, pcIncrement: 3, func: LAS_ABSY },
+  },
+  Test_Trigger: {
+  implied: { code: 0x02, length: 1, pcIncrement: 1, func: opCodeTest }
+}
 };
 
 // Base timings per addressing mode

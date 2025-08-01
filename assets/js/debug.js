@@ -444,14 +444,6 @@ function getOpcodeAndAddressingMode(numericValue) {
   const opcodeByte = memoryRead(CPUregisters.PC);
   const fetched    = getOpcodeAndAddressingMode(opcodeByte);
 
-  // ─── marker for test table generation ───
-  if (opcodeByte === 0x02) {
-    console.log("unique test ROM byte");
-    pause();
-    runEvery6502Test();
-    CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
-    return;
-  }
   // safe to comment out after testing is complete
   if (!fetched) {
     console.warn(

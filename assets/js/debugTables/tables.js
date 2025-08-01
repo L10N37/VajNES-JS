@@ -107,7 +107,7 @@ let instructionStepTable = `
     <div id="operand" class="crt-line"></div>
   </div>
   <div class="crt-controls">
-    <button class="crt-btn" onclick="step()">STEP</button>
+    <button class="crt-btn" onclick="step()">STEP/ test suite</button>
     <button class="crt-btn" onclick="run()">RUN</button>
     <button class="crt-btn" onclick="pause()">PAUSE</button>
   </div>
