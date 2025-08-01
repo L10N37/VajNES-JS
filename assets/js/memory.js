@@ -1,6 +1,3 @@
-let pageCrossed = false;  // boolean for tracking boundary crosses for +1 cycle
-let _lastReadAddr = null; // track high byte of the last address for boundary cross detection
-
 // Full 64KB system memory
 window.systemMemory = new Array(0x10000).fill(0x00);
 
@@ -164,6 +161,7 @@ function checkWriteOffset(address, result) {
 }
 
 function checkReadOffset(address) {
+
   // === Mirror PPU register space ($2008–$3FFF) ===
   if (address >= memoryMap.PPU_REGISTER_SPACE_START && address <= memoryMap.PPU_REGISTER_SPACE_END) {
     address = memoryMap.PPU_REG_BASE + (address % 8); // mirror to base
@@ -222,7 +220,7 @@ function checkReadOffset(address) {
 }
 
 /*
-Intercepted write addresses, not stored in actual systemMemory (won't hurt to)
+Intercepted write addresses, not stored in actual systemMemory (won't hurt to if the offset exists in systemMemory)
 
 $2000	1	PPUCTRL	Write-only, sets internal PPU flags
 $2001	1	PPUMASK	Write-only, controls rendering

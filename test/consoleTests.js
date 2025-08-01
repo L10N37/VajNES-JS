@@ -1854,7 +1854,7 @@ setupTests(tests);
       <thead><tr style="background:#222">
         <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
         <th>CPU<br>Before</th><th>CPU<br>After</th><th>PC</th>
-        <th>Reads</th><th>Cycles</th><th>Status</th>
+        <th>Reads</th><th>Cycles<br>Before</th><th>Cycles<br>After</th><th>ΔCycles</th><th>Status</th>
       </tr></thead><tbody>`;
 
   edgeCases.forEach(test=>{
@@ -1881,7 +1881,7 @@ setupTests(tests);
     const fb = {...CPUregisters.P};
     const cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y};
 
-    // 6) snapshot cycles before
+    // 6) snapshot cycles before (NO RESET)
     const beforeCycles = cpuCycles;
 
     // 7) hook read intercept counting
@@ -1926,36 +1926,31 @@ setupTests(tests);
         }
       }
     }
-if (test.expect) {
-  for (const r in test.expect) {
-    // r may be A, S or a flag
-    const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
-    const expectVal = test.expect[r];
-    let aStr, eStr;
-
-    if (typeof actual === "number") {
-      aStr = "0x" + actual.toString(16);
-    } else if (actual === undefined) {
-      aStr = "undefined";
-    } else {
-      aStr = String(actual);
+    if (test.expect) {
+      for (const r in test.expect) {
+        const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
+        const expectVal = test.expect[r];
+        let aStr, eStr;
+        if (typeof actual === "number") {
+          aStr = "0x" + actual.toString(16);
+        } else if (actual === undefined) {
+          aStr = "undefined";
+        } else {
+          aStr = String(actual);
+        }
+        if (typeof expectVal === "number") {
+          eStr = "0x" + expectVal.toString(16);
+        } else if (expectVal === undefined) {
+          eStr = "undefined";
+        } else {
+          eStr = String(expectVal);
+        }
+        if (actual !== expectVal) {
+          pass = false;
+          reasons.push(`${r}=${aStr}≠${eStr}`);
+        }
+      }
     }
-
-    if (typeof expectVal === "number") {
-      eStr = "0x" + expectVal.toString(16);
-    } else if (expectVal === undefined) {
-      eStr = "undefined";
-    } else {
-      eStr = String(expectVal);
-    }
-
-    if (actual !== expectVal) {
-      pass = false;
-      reasons.push(`${r}=${aStr}≠${eStr}`);
-    }
-  }
-}
-
     if(test.expectInterceptReads!=null && intercepts!==test.expectInterceptReads){
       pass=false; reasons.push(`reads=${intercepts}≠${test.expectInterceptReads}`);
     }
@@ -1980,6 +1975,8 @@ if (test.expect) {
         <td>A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)}</td>
         <td>0x${pc.toString(16)}</td>
         <td>${intercepts}</td>
+        <td>${beforeCycles}</td>
+        <td>${afterCycles}</td>
         <td>${usedCycles}</td>
         <td>${status}</td>
       </tr>`;
@@ -1989,6 +1986,161 @@ if (test.expect) {
   document.body.insertAdjacentHTML("beforeend", html);
 })();
 
-  })();
+(function(){
+  // ========= 6502 PAGE CROSS & CYCLE QUIRK SUITE =========
 
-}
+  const cross = (desc, test) => Object.assign(test, {desc, cross:true});
+  const nocross = (desc, test) => Object.assign(test, {desc, cross:false});
+
+  // Each test can specify:
+  // - code:    code bytes to execute
+  // - desc:    human-readable desc
+  // - opcodeFn: opcode function name (for debug row)
+  // - pre:     CPU state before
+  // - setup:   memory setup
+  // - expect:  expected CPU reg/flag
+  // - expectMem: expected memory state (for writes)
+  // - baseCycles: minimum cycles (from your main table)
+  // - extra:   expected cycles beyond base (page cross, quirk etc)
+
+  // --- Test Definitions ---
+  const cases = [
+    // ========= LDA/LDX/LDY/LAX/LAS: Read+Cross = +1, NoCross = base =========
+    cross("LDA $12FF,X cross",    {code:[0xBD,0xFF,0x12], opcodeFn:"LDA_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x55;}, expect:{A:0x55}, baseCycles:4, extra:1}),
+    nocross("LDA $1200,X no cross",{code:[0xBD,0x00,0x12], opcodeFn:"LDA_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x66;}, expect:{A:0x66}, baseCycles:4, extra:0}),
+    cross("LDA $12FF,Y cross",    {code:[0xB9,0xFF,0x12], opcodeFn:"LDA_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0x77;}, expect:{A:0x77}, baseCycles:4, extra:1}),
+    nocross("LDA $1200,Y no cross",{code:[0xB9,0x00,0x12], opcodeFn:"LDA_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0x88;}, expect:{A:0x88}, baseCycles:4, extra:0}),
+    cross("LDX $12FF,Y cross",    {code:[0xBE,0xFF,0x12], opcodeFn:"LDX_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0x99;}, expect:{X:0x99}, baseCycles:4, extra:1}),
+    nocross("LDX $1200,Y no cross",{code:[0xBE,0x00,0x12], opcodeFn:"LDX_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0x77;}, expect:{X:0x77}, baseCycles:4, extra:0}),
+    cross("LDY $12FF,X cross",    {code:[0xBC,0xFF,0x12], opcodeFn:"LDY_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0xAB;}, expect:{Y:0xAB}, baseCycles:4, extra:1}),
+    nocross("LDY $1200,X no cross",{code:[0xBC,0x00,0x12], opcodeFn:"LDY_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0xAC;}, expect:{Y:0xAC}, baseCycles:4, extra:0}),
+    cross("LAX $12FF,Y cross",    {code:[0xBF,0xFF,0x12], opcodeFn:"LAX_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0x56;}, expect:{A:0x56,X:0x56}, baseCycles:4, extra:1}),
+    nocross("LAX $1200,Y no cross",{code:[0xBF,0x00,0x12], opcodeFn:"LAX_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0x57;}, expect:{A:0x57,X:0x57}, baseCycles:4, extra:0}),
+    cross("LAS $12FF,Y cross",    {code:[0xBB,0xFF,0x12], opcodeFn:"LAS_ABSY", pre:{Y:1}, setup:()=>{systemMemory[0x1300]=0xF0;}, expect:{A:0xF0,X:0xF0,S:0xF0}, baseCycles:4, extra:1}),
+    nocross("LAS $1200,Y no cross",{code:[0xBB,0x00,0x12], opcodeFn:"LAS_ABSY", pre:{Y:0}, setup:()=>{systemMemory[0x1200]=0xE0;}, expect:{A:0xE0,X:0xE0,S:0xE0}, baseCycles:4, extra:0}),
+    // ========= (Indirect),Y: Cross = +1, NoCross = base =========
+    cross("LDA ($10),Y cross",    {code:[0xB1,0x10], opcodeFn:"LDA_INDY", pre:{Y:1}, setup:()=>{systemMemory[0x10]=0xFF;systemMemory[0x11]=0x12;systemMemory[0x1300]=0x44;}, expect:{A:0x44}, baseCycles:5, extra:1}),
+    nocross("LDA ($20),Y no cross",{code:[0xB1,0x20], opcodeFn:"LDA_INDY", pre:{Y:0}, setup:()=>{systemMemory[0x20]=0x00;systemMemory[0x21]=0x14;systemMemory[0x1400]=0x33;}, expect:{A:0x33}, baseCycles:5, extra:0}),
+    // ========== RMW Absolute,X: ALWAYS +1 ==========
+    cross("ASL $12FF,X cross (RMW always +1)",{code:[0x1E,0xFF,0x12], opcodeFn:"ASL_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x80;}, expectMem:{addr:0x1300,value:0x00}, baseCycles:7, extra:0}), // 6+1
+    nocross("ASL $1200,X no cross (RMW always +1)",{code:[0x1E,0x00,0x12], opcodeFn:"ASL_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x81;}, expectMem:{addr:0x1200,value:0x02}, baseCycles:7, extra:0}), // 6+1
+    // (repeat for other RMWs: LSR, ROL, ROR, INC, DEC)
+    cross("INC $12FF,X cross (RMW always +1)",{code:[0xFE,0xFF,0x12], opcodeFn:"INC_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x04;}, expectMem:{addr:0x1300,value:0x05}, baseCycles:7, extra:0}),
+    nocross("DEC $1200,X no cross (RMW always +1)",{code:[0xDE,0x00,0x12], opcodeFn:"DEC_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x01;}, expectMem:{addr:0x1200,value:0x00}, baseCycles:7, extra:0}),
+    // ========= STA/SHY/SHX/SAX: Never +1 (quirk) =========
+    cross("STA $12FF,X cross (NO +1, store quirk)",{code:[0x9D,0xFF,0x12], opcodeFn:"STA_ABSX", pre:{A:0xAB,X:1}, expectMem:{addr:0x1300,value:0xAB}, baseCycles:5, extra:0}),
+    cross("STA ($10),Y cross (NO +1, store quirk)",{code:[0x91,0x10], opcodeFn:"STA_INDY", pre:{A:0xBA,Y:1}, setup:()=>{systemMemory[0x10]=0xFF;systemMemory[0x11]=0x12;}, expectMem:{addr:0x1300,value:0xBA}, baseCycles:6, extra:0}),
+    // ========= Branches: +1 if taken, +2 if taken AND page crossed =========
+    cross("BNE branch taken, cross",{code:[0xD0,0x7E], opcodeFn:"BNE_REL", pre:{P:{Z:0}}, setup:()=>{}, expectPC:0x807E, baseCycles:2, extra:2}),
+    nocross("BNE branch taken, no cross",{code:[0xD0,0x02], opcodeFn:"BNE_REL", pre:{P:{Z:0}}, setup:()=>{}, expectPC:0x8002, baseCycles:2, extra:1}),
+    nocross("BNE not taken",{code:[0xD0,0x02], opcodeFn:"BNE_REL", pre:{P:{Z:1}}, setup:()=>{}, expectPC:0x8002, baseCycles:2, extra:0}),
+    // ========= JMP Indirect: NEVER adds +1 =========
+    cross("JMP ($02FF) indirect, page wrap",{code:[0x6C,0xFF,0x02], opcodeFn:"JMP_IND", setup:()=>{systemMemory[0x02FF]=0x00;systemMemory[0x0200]=0x80;}, expectPC:0x8000, baseCycles:5, extra:0}),
+    // ========= Unofficial NOPs: Abs,X page cross = +1 =========
+    cross("NOP $12FF,X cross (illegal)",{code:[0x3C,0xFF,0x12], opcodeFn:"NOP_ABSX", pre:{X:1}, baseCycles:4, extra:1}),
+    nocross("NOP $1200,X no cross (illegal)",{code:[0x3C,0x00,0x12], opcodeFn:"NOP_ABSX", pre:{X:0}, baseCycles:4, extra:0}),
+    // ========= Unofficial SLO/other RMW, absoluteX always +1 =========
+    cross("SLO $12FF,X cross (RMW always +1)",{code:[0x1F,0xFF,0x12], opcodeFn:"SLO_ABSX", pre:{X:1}, setup:()=>{systemMemory[0x1300]=0x01;}, expectMem:{addr:0x1300,value:0x02}, baseCycles:7, extra:0}),
+    nocross("SLO $1200,X no cross (RMW always +1)",{code:[0x1F,0x00,0x12], opcodeFn:"SLO_ABSX", pre:{X:0}, setup:()=>{systemMemory[0x1200]=0x01;}, expectMem:{addr:0x1200,value:0x02}, baseCycles:7, extra:0}),
+  ];
+
+  let html = `
+    <div style="background:darkblue;color:white;padding:7px 6px 7px 6px;font-weight:bold;">
+      6502 PAGE CROSSING & CYCLE QUIRKS TEST SUITE
+    </div>
+    <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
+      <thead>
+      <tr style="background:#223366;">
+        <th>Test</th><th>Op</th><th>Opcode Fn</th>
+        <th>Flags<br>Before</th><th>Flags<br>After</th>
+        <th>CPU<br>Before</th><th>CPU<br>After</th>
+        <th>PC</th>
+        <th>Cycles<br>Before</th><th>Cycles<br>After</th><th>ΔCycles</th>
+        <th>Status</th>
+      </tr></thead><tbody>`;
+
+  for (const test of cases) {
+    // --- Setup ---
+    for(let a=0;a<0x4000;a++) systemMemory[a]=0;
+    CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
+    CPUregisters.S = 0xFF;
+    CPUregisters.P = {C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
+    CPUregisters.PC = 0x8000;
+    if(test.pre){
+      if(test.pre.A!=null) CPUregisters.A = test.pre.A;
+      if(test.pre.X!=null) CPUregisters.X = test.pre.X;
+      if(test.pre.Y!=null) CPUregisters.Y = test.pre.Y;
+      if(test.pre.S!=null) CPUregisters.S = test.pre.S;
+      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+    }
+    if(test.setup) test.setup();
+
+    // --- State snapshot ---
+    const fb = {...CPUregisters.P};
+    const cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y};
+    const beforeCycles = cpuCycles;
+
+    // --- Load code into PRG-ROM ---
+    if(test.code && test.code.length){
+      test.code.forEach((b,i)=>{ systemMemory[0x8000+i]=b; systemMemory[0xC000+i]=b; });
+      step(); // one instruction
+      if (typeof updateDebugTables==="function") updateDebugTables();
+    }
+
+    const afterCycles = cpuCycles;
+    const usedCycles = afterCycles - beforeCycles;
+    const fa = {...CPUregisters.P};
+    const ca = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y};
+    const pc = CPUregisters.PC;
+
+    // --- Result/Check logic ---
+    let pass = true, reasons = [];
+    if(test.expect){
+      for(const r in test.expect) {
+        const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
+        if(actual!==test.expect[r]){ pass=false; reasons.push(`${r}=${actual}≠${test.expect[r]}`); }
+      }
+    }
+    if(test.expectMem){
+      const val = systemMemory[test.expectMem.addr];
+      if(val!==test.expectMem.value){
+        pass=false; reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${val}≠${test.expectMem.value}`);
+      }
+    }
+    if(test.expectPC!==undefined && pc!==test.expectPC){
+      pass=false; reasons.push(`PC=0x${pc.toString(16)}≠0x${test.expectPC.toString(16)}`);
+    }
+    // Must exactly match: base + extra
+    const cycleTarget = test.baseCycles + test.extra;
+    if(usedCycles!==cycleTarget){
+      pass=false; reasons.push(`cycles=${usedCycles}≠${cycleTarget}`);
+    }
+
+    // --- Render row ---
+    const opLabel = (test.code||[]).map(b=>b.toString(16).padStart(2,'0')).join(" ");
+    const status = pass
+      ? `<span style="color:#7fff7f;">✔️</span>`
+      : `<details style="color:#ff4444;"><summary>❌</summary><ul>${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
+
+    html += `
+      <tr style="background:${pass?"#113311":"#331111"}">
+        <td>${test.desc}</td>
+        <td>${opLabel}</td>
+        <td>${test.opcodeFn||""}</td>
+        <td>${flagsBin(fb)}</td>
+        <td>${flagsBin(fa)}</td>
+        <td>A=${cb.A} X=${cb.X} Y=${cb.Y}</td>
+        <td>A=${ca.A} X=${ca.X} Y=${ca.Y}</td>
+        <td>0x${pc.toString(16)}</td>
+        <td>${beforeCycles}</td>
+        <td>${afterCycles}</td>
+        <td>${usedCycles}</td>
+        <td>${status}</td>
+      </tr>`;
+  }
+  html += `</tbody></table>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+})();
+
+})();
+  }

@@ -103,18 +103,36 @@ function AND_IMM() {
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
 }
 
-
 function LDA_ABSX() {
-  const base = (checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1);
+  // Fetch base address from instruction
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
+  const base = (hi << 8) | lo;
   const address = (base + CPUregisters.X) & 0xFFFF;
-  CPUregisters.A = checkReadOffset(address);
+
+  // Detect page boundary crossing ONLY for this data fetch:
+  if ((base & 0xFF00) !== (address & 0xFF00)) {
+    cpuCycles++; // Add extra cycle
+    console.log("%cPAGE BOUNDARY CROSSED! +1 cycle", "color:orange;font-weight:bold");
+  }
+
+  CPUregisters.A = checkReadOffset(address); // Fetch the data
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
 }
 
 function LDA_ABSY() {
-  const base = (checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1);
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
+  const base = (hi << 8) | lo;
   const address = (base + CPUregisters.Y) & 0xFFFF;
+
+  // Detect page boundary crossing
+  if ((base & 0xFF00) !== (address & 0xFF00)) {
+    cpuCycles++;
+    console.log("%cPAGE BOUNDARY CROSSED! +1 cycle", "color:orange;font-weight:bold");
+  }
+
   CPUregisters.A = checkReadOffset(address);
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
@@ -132,11 +150,11 @@ function LDA_INDY() {
   const zp = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
   const lo = checkReadOffset(zp);
   const hi = checkReadOffset((zp + 1) & 0xFF);
-  const addr = ((hi<<8)|lo) + CPUregisters.Y & 0xFFFF;
-  const val  = checkReadOffset(addr);
-  CPUregisters.A   = val;
-  CPUregisters.P.Z = (val === 0) ? 1 : 0;
-  CPUregisters.P.N = (val & 0x80) ? 1 : 0;
+  const base = (hi << 8) | lo;
+  const address = (base + CPUregisters.Y) & 0xFFFF;
+  CPUregisters.A = checkReadOffset(address, true); // Only here!
+  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
+  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
 }
 
 function STA_ZP() {
@@ -2414,6 +2432,33 @@ function AXA_INDY() {
   checkWriteOffset(addressess, value & (addressess >> 8) + 1);
 }
 
+function LAS_ABSY() {
+  // Fetch absolute base address
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
+  const base = (hi << 8) | lo;
+  const address = (base + CPUregisters.Y) & 0xFFFF;
+
+  // Handle page boundary cross (+1 cycle if crossed)
+  if ((base & 0xFF00) !== (address & 0xFF00)) {
+    cpuCycles++;
+  }
+
+  // Read value at address
+  const value = checkReadOffset(address);
+
+  // The tricky part: AND with stack pointer, then assign to A, X, S
+  const result = value & CPUregisters.S;
+  CPUregisters.A = result;
+  CPUregisters.X = result;
+  CPUregisters.S = result;
+
+  // Set flags as per LDA/LDX (Z/N)
+  CPUregisters.P.Z = (result === 0) ? 1 : 0;
+  CPUregisters.P.N = (result & 0x80) ? 1 : 0;
+}
+
+
 //////////////////////// 6502 CPU opcode object ////////////////////////
 const opcodes = {
   // ======================= LEGAL OPCODES ======================= //
@@ -2725,7 +2770,12 @@ const opcodes = {
     absoluteY:  { code: 0x9F, length: 3, pcIncrement: 3, func: AXA_ABSY },
     indirectY:  { code: 0x93, length: 2, pcIncrement: 2, func: AXA_INDY }
   },
-  XAA: { immediate: { code: 0x8B, length: 2, pcIncrement: 2, func: XAA_IMM } }
+  XAA: { immediate: { code: 0x8B, length: 2, pcIncrement: 2, func: XAA_IMM } 
+  },
+  LAS: {
+  absoluteY: { code: 0xBB, length: 3, pcIncrement: 3, func: LAS_ABSY }
+},
+
 };
 
 // Base timings per addressing mode
@@ -2753,33 +2803,47 @@ for (const opname in opcodes) {
     entry.cycles = baseCycles[modeName];
   }
 }
-
-/*
-
-ADC
-absolute
-: 
-{code: 109, length: 3, pcIncrement: 3, cycles: 4, func: ƒ}
-absoluteX
-: 
-{code: 125, length: 3, pcIncrement: 3, cycles: 4, func: ƒ}
-absoluteY
-: 
-{code: 121, length: 3, pcIncrement: 3, cycles: 4, func: ƒ}
-immediate
-: 
-{code: 105, length: 2, pcIncrement: 2, cycles: 2, func: ƒ}
-indirectX
-: 
-{code: 97, length: 2, pcIncrement: 2, cycles: 6, func: ƒ}
-indirectY
-: 
-{code: 113, length: 2, pcIncrement: 2, cycles: 5, func: ƒ}
-zeroPage
-: 
-{code: 101, length: 2, pcIncrement: 2, cycles: 3, func: ƒ}
-zeroPageX
-: 
-{code: 117, length: 2, pcIncrement: 2, cycles: 4, func: ƒ}
-
-*/
+// 6502/NES Addressing Mode Cycle Table + Known Quirks
+//
+// * "RMW" = Read-Modify-Write (ASL, LSR, ROL, ROR, INC, DEC, SLO, RLA, etc.)
+// * "Branch" = Bxx (BNE, BEQ, BPL, BMI, BVC, BVS, BCC, BCS)
+// * "Unofficial" = see nesdev.org for oddities
+//
+// +1 = Add one cycle for page boundary cross (see quirk notes)
+//
+// ┌──────────────────┬────────┬─────────────┬───────────────────────────────────────────────────────────────┐
+// │ Addressing Mode  │ Cycles │ Page Cross? │           Quirk Notes (for accurate emulation)                │
+// ├──────────────────┼────────┼─────────────┼───────────────────────────────────────────────────────────────┤
+// │ immediate        │   2    │    No       │                                                               │
+// │ zeroPage         │   3    │    No       │                                                               │
+// │ zeroPage,X       │   4    │    No       │                                                               │
+// │ zeroPage,Y       │   4    │    No       │                                                               │
+// │ absolute         │   4    │    No       │                                                               │
+// │ absolute,X       │   4    │  Yes (+1)   │ *For RMW: always +1, regardless of page cross                 │
+// │ absolute,Y       │   4    │  Yes (+1)   │                                                               │
+// │ indirect,X       │   6    │    No       │                                                               │
+// │ indirect,Y       │   5    │  Yes (+1)   │                                                               │
+// │ accumulator      │   2    │    No       │                                                               │
+// │ implied          │   2    │    No       │                                                               │
+// │ relative (branch)│   2    │ +1 if branch│ +1 if branch taken, +2 if branch taken AND page crossed       │
+// │ indirect (JMP)   │   5    │    No       │                                                               │
+// └──────────────────┴────────┴─────────────┴───────────────────────────────────────────────────────────────┘
+//
+// === QUIRKS EXPLAINED ===
+//  - RMW (Read-Modify-Write) opcodes with absolute,X addressing (ASL $nnnn,X etc):
+//      * ALWAYS add 1 cycle, regardless of whether a page boundary is crossed!
+//      * i.e., 7 cycles, not 6 or 7
+//
+//  - Branch (Bxx) instructions:
+//      * If branch not taken: 2 cycles
+//      * If branch taken:     3 cycles
+//      * If branch taken AND page crossed: 4 cycles (add 2)
+//
+//  - Unofficial opcodes:
+//      * Some have cycle counts and page-cross behaviors that differ from above!
+//      * See: https://www.nesdev.org/wiki/CPU_unofficial_opcodes
+//
+//  - STA/STX/STY/SHY/SHX/SAX do NOT add cycles for page cross (quirk vs. LDA etc)
+//
+//  - JMP (indirect) is always 5 cycles, never adds a cycle for page wrap bug
+//

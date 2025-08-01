@@ -438,14 +438,9 @@ function getOpcodeAndAddressingMode(numericValue) {
 }
 
   // process current opcode from PC register address
-function step() {
-
-  // reset page-cross detection for this instruction
-  pageCrossed = false;
-  _lastReadAddr = null;
+  function step() {
   
-  // 1) Fetch & decode
-
+  // Fetch & decode
   const opcodeByte = memoryRead(CPUregisters.PC);
   const fetched    = getOpcodeAndAddressingMode(opcodeByte);
 
@@ -458,7 +453,6 @@ function step() {
     return;
   }
   // safe to comment out after testing is complete
-
   if (!fetched) {
     console.warn(
       `Unknown opcode 0x${opcodeByte.toString(16).padStart(2,'0')} ` +
@@ -468,14 +462,14 @@ function step() {
     return;
   }
 
-  // 2) Grab raw bytes for UI
+  // Grab raw bytes for UI
   const raw = [];
   for (let i = 0; i < fetched.length; i++) {
     raw.push(memoryRead(CPUregisters.PC + i));
   }
 
-  // 3) Snapshot everything UI needs before execution
-  const cyclesBefore = cpuCycles; // not currently logging cycles before/after, tested good though
+  // Snapshot everything UI needs before execution for console log debug
+  const cyclesBefore = cpuCycles; // not currently logging cycles before/after, tested in test suite
   lastFetched = {
     pc:             CPUregisters.PC,
     opcode:         fetched.opcode,
@@ -487,27 +481,15 @@ function step() {
     cyclesBefore
   };
 
-  // 4) Execute instruction
+  // Execute instruction
   fetched.func();
-
-  // 4a) Base cycle counting, logic for +1 if/when we detecting a page‐cross or taken‐branch in memory.js
   
-  //cpuCycles += fetched.cyclesIncrement;
+  // increment PC cycles as per standard from object (special cases for +1 +2 additional cycles handled elswhere)
   cpuCycles = (cpuCycles + fetched.cyclesIncrement) & 0xFFFF;
 
-  // 4b) Record after‐count and delta
-  lastFetched.cyclesAfter  = cpuCycles;
-  lastFetched.cyclesTaken  = cpuCycles - cyclesBefore;
-
-  // 4c) Extra‐cycle on page cross (for the 3 indexed read modes)
-  if (pageCrossed) {
-  cpuCycles++;
-  pageCrossed = false;
-  }
-
-  // 4d) Advance PC
+  // Advance PC
   CPUregisters.PC = (CPUregisters.PC + fetched.pcIncrement) & 0xFFFF;
 
-  // 5) Update the tables/UI
+  // Update the tables/UI
   updateDebugTables();
 }
