@@ -1530,6 +1530,42 @@ function NOP_ZPY() {
 
 function NOP() {}
 
+// Zero Page NOP (0x04, 0x44, 0x64)
+// Reads zp operand, does nothing else
+function NOP_ZP() {
+  const zp = checkReadOffset(CPUregisters.PC + 1);
+  checkReadOffset(zp & 0xFF);
+  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
+}
+
+// Zero Page,X NOP (0x14, 0x34, 0x54, 0x74, 0xD4, 0xF4)
+// Reads zp+X operand, does nothing else
+function NOP_ZPX() {
+  const zp = checkReadOffset(CPUregisters.PC + 1);
+  checkReadOffset((zp + CPUregisters.X) & 0xFF);
+  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
+}
+
+// Absolute NOP (0x0C)
+// Reads absolute operand, does nothing else
+function NOP_ABS() {
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
+  const addr = lo | (hi << 8);
+  checkReadOffset(addr);
+  CPUregisters.PC = (CPUregisters.PC + 3) & 0xFFFF;
+}
+
+function NOP_ABSX() {
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
+  const base = lo | (hi << 8);
+  const eff = (base + CPUregisters.X) & 0xFFFF;
+  checkReadOffset(eff);
+  if ((base & 0xFF00) !== (eff & 0xFF00)) cpuCycles += 1; // Add cycle if page crossed
+  CPUregisters.PC = (CPUregisters.PC + 3) & 0xFFFF;
+}
+
 function SKB_IMM() {
   // dummy‐read the immediate operand (2‑byte instruction)
   checkReadOffset(CPUregisters.PC + 1);
@@ -2153,6 +2189,7 @@ function SLO_ABSX() {
   CPUregisters.A |= value;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  cpuCycles += 3; // add 3 to the base, this opcode always chews 7 cycles
 }
 
 function SLO_ABSY() {
@@ -2775,37 +2812,48 @@ const opcodes = {
 
   // ======================= NOPs (OFFICIAL AND UNOFFICIAL) ======================= //
   NOP: {
+    // Official and implied (1-byte, just do nothing, let pcIncrement advance)
     implied:   { code: 0xEA, length: 1, pcIncrement: 1, func: NOP },
-    // Unofficial single-byte NOPs
     implied1:  { code: 0x1A, length: 1, pcIncrement: 1, func: NOP },
     implied2:  { code: 0x3A, length: 1, pcIncrement: 1, func: NOP },
     implied3:  { code: 0x5A, length: 1, pcIncrement: 1, func: NOP },
     implied4:  { code: 0x7A, length: 1, pcIncrement: 1, func: NOP },
     implied5:  { code: 0xDA, length: 1, pcIncrement: 1, func: NOP },
     implied6:  { code: 0xFA, length: 1, pcIncrement: 1, func: NOP },
-    // NOPs with operands (illegal "SKB"/"DOP" NOPs)
-    imm1:      { code: 0x80, length: 2, pcIncrement: 0, func: BRA_REL }, // Alias: BRA (0x80)
-    imm2:      { code: 0x82, length: 2, pcIncrement: 2, func: NOP },
-    imm3:      { code: 0x89, length: 2, pcIncrement: 2, func: NOP },
-    imm4:      { code: 0xC2, length: 2, pcIncrement: 2, func: NOP },
-    imm5:      { code: 0xE2, length: 2, pcIncrement: 2, func: NOP },
-    zp1:       { code: 0x04, length: 2, pcIncrement: 2, func: NOP },
-    zp2:       { code: 0x44, length: 2, pcIncrement: 2, func: NOP },
-    zp3:       { code: 0x64, length: 2, pcIncrement: 2, func: NOP },
-    zpx1:      { code: 0x14, length: 2, pcIncrement: 2, func: NOP },
-    zpx2:      { code: 0x34, length: 2, pcIncrement: 2, func: NOP },
-    zpx3:      { code: 0x54, length: 2, pcIncrement: 2, func: NOP },
-    zpx4:      { code: 0x74, length: 2, pcIncrement: 2, func: NOP },
-    zpx5:      { code: 0xD4, length: 2, pcIncrement: 2, func: NOP },
-    zpx6:      { code: 0xF4, length: 2, pcIncrement: 2, func: NOP },
-    abs1:      { code: 0x0C, length: 3, pcIncrement: 3, func: NOP },
-    absx1:     { code: 0x1C, length: 3, pcIncrement: 3, func: NOP },
-    absx2:     { code: 0x3C, length: 3, pcIncrement: 3, func: NOP },
-    absx3:     { code: 0x5C, length: 3, pcIncrement: 3, func: NOP },
-    absx4:     { code: 0x7C, length: 3, pcIncrement: 3, func: NOP },
-    absx5:     { code: 0xDC, length: 3, pcIncrement: 3, func: NOP },
-    absx6:     { code: 0xFC, length: 3, pcIncrement: 3, func: NOP },
-    zpY:       { code: 0x92, length: 2, pcIncrement: 2, func: NOP }
+
+    // "SKB"/"DOP" NOPs - 2-byte, just skip operand (NO memory access), so plain NOP and pcIncrement=2 is fine
+    // imm1:      { code: 0x80, length: 2, pcIncrement: 0, func: BRA_REL }, // (alias for BRA, quirk, in branches group)
+    immediate:      { code: 0x82, length: 2, pcIncrement: 2, func: NOP },    // plain NOP
+    immediate1:      { code: 0x89, length: 2, pcIncrement: 2, func: NOP },    // plain NOP
+    immmediate2:      { code: 0xC2, length: 2, pcIncrement: 2, func: NOP },    // plain NOP
+    immediate3:      { code: 0xE2, length: 2, pcIncrement: 2, func: NOP },    // plain NOP
+
+    // Zero page NOPs: read from ZP (quirk!), so must do PC manually, set pcIncrement=0
+    zeroPage:       { code: 0x04, length: 2, pcIncrement: 0, func: NOP_ZP },    // quirk: does memory read
+    zeroPage1:       { code: 0x44, length: 2, pcIncrement: 0, func: NOP_ZP },    // "
+    zeroPage2:       { code: 0x64, length: 2, pcIncrement: 0, func: NOP_ZP },    // "
+
+    // Zero page,X NOPs: read from ZP+X (quirk!), must do PC manually, pcIncrement=0
+    zeroPageX:      { code: 0x14, length: 2, pcIncrement: 0, func: NOP_ZPX },   // quirk: does memory read
+    zeroPageX1:      { code: 0x34, length: 2, pcIncrement: 0, func: NOP_ZPX },   // "
+    zeroPageX2:      { code: 0x54, length: 2, pcIncrement: 0, func: NOP_ZPX },   // "
+    zeroPageX3:      { code: 0x74, length: 2, pcIncrement: 0, func: NOP_ZPX },   // "
+    zeroPageX4:      { code: 0xD4, length: 2, pcIncrement: 0, func: NOP_ZPX },   // "
+    zeroPageX5:      { code: 0xF4, length: 2, pcIncrement: 0, func: NOP_ZPX },   // "
+
+    // Absolute NOP: read from $nnnn (quirk!), must do PC manually, pcIncrement=0
+    absolute:      { code: 0x0C, length: 3, pcIncrement: 0, func: NOP_ABS },   // quirk: does memory read
+
+    // Absolute,X NOPs: read from $nnnn+X, add page cross cycle (quirk!), must do PC manually, pcIncrement=0
+    absoluteX:     { code: 0x1C, length: 3, pcIncrement: 0, func: NOP_ABSX }, // quirk: memory read + possible extra cycle
+    absoluteX1:     { code: 0x3C, length: 3, pcIncrement: 0, func: NOP_ABSX }, // "
+    absoluteX2:     { code: 0x5C, length: 3, pcIncrement: 0, func: NOP_ABSX }, // "
+    absoluteX3:     { code: 0x7C, length: 3, pcIncrement: 0, func: NOP_ABSX }, // "
+    absoluteX4:     { code: 0xDC, length: 3, pcIncrement: 0, func: NOP_ABSX }, // "
+    absoluteX5:     { code: 0xFC, length: 3, pcIncrement: 0, func: NOP_ABSX }, // "
+
+    // Zero page,Y NOP: rare (quirk), must do PC manually, pcIncrement=0
+    zeroPageY:       { code: 0x92, length: 2, pcIncrement: 0, func: NOP_ZPY },  // quirk: does memory read
   },
 
   // ======================== UNOFFICIAL/ILLEGAL OPCODES ======================== //
@@ -2919,13 +2967,11 @@ const baseCycles = {
 };
 
 // patch in cycle counts for modes
-for (const opname in opcodes) {
-  const modes = opcodes[opname];
-  for (const modeName in modes) {
-    const entry = modes[modeName];
-    entry.cycles = baseCycles[modeName];
-  }
+for (const opname in opcodes) for (const variant in opcodes[opname]) {
+  let mode = variant.replace(/[0-9]+$/, '');
+  opcodes[opname][variant].cycles = baseCycles[mode] || 2;
 }
+
 // 6502/NES Addressing Mode Cycle Table + Known Quirks
 //
 // * "RMW" = Read-Modify-Write (ASL, LSR, ROL, ROR, INC, DEC, SLO, RLA, etc.)
