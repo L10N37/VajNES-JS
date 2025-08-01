@@ -935,10 +935,10 @@ function BNE_REL() {
     const target = (pcAfterInstr + signed) & 0xFFFF;
     if ((pcAfterInstr & 0xFF00) !== (target & 0xFF00)) {
       cpuCycles += 2;
-      console.log(`BNE: branch + page cross (+2), 0x${pcAfterInstr.toString(16)} → 0x${target.toString(16)}`);
+      window.alert(`BNE: branch + page cross (+2), 0x${pcAfterInstr.toString(16)} → 0x${target.toString(16)}`);
     } else {
       cpuCycles += 1;
-      console.log(`BNE: branch (+1), 0x${pcAfterInstr.toString(16)} → 0x${target.toString(16)}`);
+      window.alert(`BNE: branch (+1), 0x${pcAfterInstr.toString(16)} → 0x${target.toString(16)}`);
     }
     CPUregisters.PC = target;
   }
