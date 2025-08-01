@@ -1759,77 +1759,96 @@ CPUregisters.PC = 0x8000;
 
   }
 
-  function runUnofficialOpcodeTests(){
-
-    // ===== UNOFFICIAL/ILLEGAL OPS =====
+function runUnofficialOpcodeTests() {
+  // ===== UNOFFICIAL/ILLEGAL OPS =====
   const tests = [
     // LAX: load into A & X
-    { name:"LAX #$33 (IMM)",        code:[0xAB,0x33],                  expect:{A:0x33,X:0x33,Z:0,N:0} },
-    { name:"LAX $10 (ZP)",          code:[0xA7,0x10], setup:()=>{ systemMemory[0x10]=0x44; }, expect:{A:0x44,X:0x44,Z:0,N:0} },
-    { name:"LAX $10,Y (ZP,Y)",      code:[0xB7,0x0F], pre:{Y:0x01}, setup:()=>{ systemMemory[0x10]=0x00; }, expect:{A:0x00,X:0x00,Z:1,N:0} },
-    { name:"LAX $1234 (ABS)",       code:[0xAF,0x34,0x12], setup:()=>{ systemMemory[0x1234]=0x99; }, expect:{A:0x99,X:0x99,Z:0,N:1} },
-    { name:"LAX $1234,Y (ABS,Y)",   code:[0xBF,0x33,0x12], pre:{Y:0x01}, setup:()=>{ systemMemory[0x1234+1]=0x00; }, expect:{A:0x00,X:0x00,Z:1,N:0} },
-    { name:"LAX ($10,X) (IND,X)",   code:[0xA3,0x0F], pre:{X:0x01}, setup:()=>{
-        systemMemory[0x10]=0x00; systemMemory[0x11]=0x40; systemMemory[0x4001]=0x77;
-      }, expect:{A:0x77,X:0x77,Z:0,N:0} },
-    { name:"LAX ($20),Y (IND),Y)",   code:[0xB3,0x20], pre:{Y:0x02}, setup:()=>{
-        systemMemory[0x20]=0x00; systemMemory[0x21]=0x80; systemMemory[0x0202]=0x88;
-      }, expect:{A:0x88,X:0x88,Z:0,N:1} },
+    { name:"LAX #$33 (IMM)", code:[0xAB,0x33], expect:{A:0x33,X:0x33,Z:0,N:0}, expectCycles: baseCycles.immediate },
+    { name:"LAX $10 (ZP)", code:[0xA7,0x10], setup:()=>{systemMemory[0x10]=0x44;}, expect:{A:0x44,X:0x44,Z:0,N:0}, expectCycles: baseCycles.zeroPage },
+    { name:"LAX $10,Y (ZP,Y)", code:[0xB7,0x0F], pre:{Y:0x01}, setup:()=>{systemMemory[0x10]=0x00;}, expect:{A:0x00,X:0x00,Z:1,N:0}, expectCycles: baseCycles.zeroPageY },
+    { name:"LAX $1234 (ABS)", code:[0xAF,0x34,0x12], setup:()=>{systemMemory[0x1234]=0x99;}, expect:{A:0x99,X:0x99,Z:0,N:1}, expectCycles: baseCycles.absolute },
+    { name:"LAX $1234,Y (ABS,Y)", code:[0xBF,0x33,0x12], pre:{Y:0x01}, setup:()=>{systemMemory[0x1234+1]=0x00;}, expect:{A:0x00,X:0x00,Z:1,N:0}, expectCycles: baseCycles.absoluteY },
+    { name:"LAX ($10,X) (IND,X)", code:[0xA3,0x0F], pre:{X:0x01}, setup:()=>{
+      systemMemory[0x10]=0x00; systemMemory[0x11]=0x40; systemMemory[0x4001]=0x77;
+    }, expect:{A:0x77,X:0x77,Z:0,N:0}, expectCycles: baseCycles.indirectX },
+    { name:"LAX ($20),Y (IND),Y)", code:[0xB3,0x20], pre:{Y:0x02}, setup:()=>{
+      systemMemory[0x20]=0x00; systemMemory[0x21]=0x80; systemMemory[0x0202]=0x88;
+    }, expect:{A:0x88,X:0x88,Z:0,N:1}, expectCycles: baseCycles.indirectY },
 
     // SAX: store A & X AND memory
-    { name:"SAX $20 (ZP)",          code:[0x87,0x20], pre:{A:0x55,X:0x55}, expectMem:{addr:0x20,value:0x55} },
-    { name:"SAX $20,Y (ZP,Y)",      code:[0x97,0x1F], pre:{A:0xAA,X:0xAA,Y:0x01}, expectMem:{addr:0x20,value:0xAA} },
-    { name:"SAX $1234 (ABS)",       code:[0x8F,0x34,0x12], pre:{A:0x77,X:0x77}, expectMem:{addr:0x1234,value:0x77} },
-    { name:"SAX ($10,X) (IND,X)",   code:[0x83,0x0F], pre:{A:0x99,X:0x01}, setup:()=>{
-        systemMemory[0x10]=0x00; systemMemory[0x11]=0x30;
-      }, expectMem:{addr:(0x3001&0xFFFF),value:0x99} },
+    { name:"SAX $20 (ZP)", code:[0x87,0x20], pre:{A:0x55,X:0x55}, expectMem:{addr:0x20,value:0x55}, expectCycles: baseCycles.zeroPage },
+    { name:"SAX $20,Y (ZP,Y)", code:[0x97,0x1F], pre:{A:0xAA,X:0xAA,Y:0x01}, expectMem:{addr:0x20,value:0xAA}, expectCycles: baseCycles.zeroPageY },
+    { name:"SAX $1234 (ABS)", code:[0x8F,0x34,0x12], pre:{A:0x77,X:0x77}, expectMem:{addr:0x1234,value:0x77}, expectCycles: baseCycles.absolute },
+    { name:"SAX ($10,X) (IND,X)", code:[0x83,0x0F], pre:{A:0x99,X:0x01}, setup:()=>{
+      systemMemory[0x10]=0x00; systemMemory[0x11]=0x30;
+    }, expectMem:{addr:(0x3001&0xFFFF),value:0x99}, expectCycles: baseCycles.indirectX },
 
     // DCP: DEC then CMP
-    { name:"DCP $30 (ZP)",          code:[0xC7,0x30], pre:{A:0x06}, setup:()=>{ systemMemory[0x30]=0x07; },
-                                     expectMem:{addr:0x30,value:0x06}, expect:{C:1,Z:1,N:0} },
-    { name:"DCP $30,X (ZP,X)",      code:[0xD7,0x2F], pre:{A:0x05,X:0x01}, setup:()=>{ systemMemory[0x30]=0x05; },
-                                     expectMem:{addr:0x30,value:0x04}, expect:{C:1,Z:0,N:1} },
-    { name:"DCP $1234 (ABS)",       code:[0xCF,0x34,0x12], pre:{A:0x10}, setup:()=>{ systemMemory[0x1234]=0x11; },
-                                     expectMem:{addr:0x1234,value:0x10}, expect:{C:1,Z:1,N:0} },
+    { name:"DCP $30 (ZP)", code:[0xC7,0x30], pre:{A:0x06}, setup:()=>{systemMemory[0x30]=0x07;},
+      expectMem:{addr:0x30,value:0x06}, expect:{C:1,Z:1,N:0}, expectCycles: baseCycles.zeroPage },
+    { name:"DCP $30,X (ZP,X)", code:[0xD7,0x2F], pre:{A:0x05,X:0x01}, setup:()=>{systemMemory[0x30]=0x05;},
+      expectMem:{addr:0x30,value:0x04}, expect:{C:1,Z:0,N:1}, expectCycles: baseCycles.zeroPageX },
+    { name:"DCP $1234 (ABS)", code:[0xCF,0x34,0x12], pre:{A:0x10}, setup:()=>{systemMemory[0x1234]=0x11;},
+      expectMem:{addr:0x1234,value:0x10}, expect:{C:1,Z:1,N:0}, expectCycles: baseCycles.absolute },
 
     // ISC: INC then SBC
-    { name:"ISC $40 (ZP)",          code:[0xE7,0x40], pre:{A:0x10,P:{C:1}}, setup:()=>{ systemMemory[0x40]=0x0F; },
-                                     expectMem:{addr:0x40,value:0x10}, expect:{A:0x00,C:1,Z:1,N:0} },
+    { name:"ISC $40 (ZP)", code:[0xE7,0x40], pre:{A:0x10,P:{C:1}}, setup:()=>{systemMemory[0x40]=0x0F;},
+      expectMem:{addr:0x40,value:0x10}, expect:{A:0x00,C:1,Z:1,N:0}, expectCycles: baseCycles.zeroPage },
 
     // SLO: ASL then ORA
-    { name:"SLO $50 (ZP)",          code:[0x07,0x50], pre:{A:0x01,P:{C:0}}, setup:()=>{ systemMemory[0x50]=0x02; },
-                                     expectMem:{addr:0x50,value:0x04}, expect:{A:0x05,C:0,Z:0,N:0} },
+    { name:"SLO $50 (ZP)", code:[0x07,0x50], pre:{A:0x01,P:{C:0}}, setup:()=>{systemMemory[0x50]=0x02;},
+      expectMem:{addr:0x50,value:0x04}, expect:{A:0x05,C:0,Z:0,N:0}, expectCycles: baseCycles.zeroPage },
 
     // RLA: ROL then AND
-    { name:"RLA $60 (ZP)",          code:[0x27,0x60], pre:{A:0xF0,P:{C:1}}, setup:()=>{ systemMemory[0x60]=0x10; },
-                                     expectMem:{addr:0x60,value:0x21}, expect:{A:0x20,C:0,Z:0,N:0} },
+    { name:"RLA $60 (ZP)", code:[0x27,0x60], pre:{A:0xF0,P:{C:1}}, setup:()=>{systemMemory[0x60]=0x10;},
+      expectMem:{addr:0x60,value:0x21}, expect:{A:0x20,C:0,Z:0,N:0}, expectCycles: baseCycles.zeroPage },
 
     // SRE: LSR then EOR
-    { name:"SRE $70 (ZP)",          code:[0x47,0x70], pre:{A:0xFF,P:{C:0}}, setup:()=>{ systemMemory[0x70]=0x02; },
-                                     expectMem:{addr:0x70,value:0x01}, expect:{A:0xFE,C:0,Z:0,N:1} },
+    { name:"SRE $70 (ZP)", code:[0x47,0x70], pre:{A:0xFF,P:{C:0}}, setup:()=>{systemMemory[0x70]=0x02;},
+      expectMem:{addr:0x70,value:0x01}, expect:{A:0xFE,C:0,Z:0,N:1}, expectCycles: baseCycles.zeroPage },
 
     // RRA: ROR then ADC
-    { name:"RRA $80 (ZP)",          code:[0x67,0x80], pre:{A:0x05,P:{C:1}}, setup:()=>{ systemMemory[0x80]=0x02; },
-                                     expectMem:{addr:0x80,value:0x81}, expect:{A:0x07,C:0,Z:0,N:0} },
+    { name:"RRA $80 (ZP)", code:[0x67,0x80], pre:{A:0x05,P:{C:1}}, setup:()=>{systemMemory[0x80]=0x02;},
+      expectMem:{addr:0x80,value:0x81}, expect:{A:0x07,C:0,Z:0,N:0}, expectCycles: baseCycles.zeroPage },
 
     // ANC: AND then C = A
-    { name:"ANC #$80",              code:[0x0B,0x80],                  pre:{A:0x80}, expect:{A:0x00,C:0,Z:1,N:0} },
+    { name:"ANC #$80", code:[0x0B,0x80], pre:{A:0x80}, expect:{A:0x00,C:0,Z:1,N:0}, expectCycles: baseCycles.immediate },
 
     // ALR: AND then LSR
-    { name:"ALR #$03",              code:[0x4B,0x03],                  pre:{A:0x07}, expect:{A:0x01,C:1,Z:0,N:0} },
+    { name:"ALR #$03", code:[0x4B,0x03], pre:{A:0x07}, expect:{A:0x01,C:1,Z:0,N:0}, expectCycles: baseCycles.immediate },
 
     // ARR: AND then ROR
-    { name:"ARR #$01",              code:[0x6B,0x01], pre:{A:0x03,P:{C:1}}, expect:{A:0x81,C:0,Z:0,N:1} },
+    { name:"ARR #$01", code:[0x6B,0x01], pre:{A:0x03,P:{C:1}}, expect:{A:0x81,C:0,Z:0,N:1}, expectCycles: baseCycles.immediate },
 
     // AXA: X AND A AND high-byte of address+Y (illegal store)
-    { name:"AXA $2000,Y (ABS,Y)",   code:[0x9F,0x00,0x20], pre:{A:0xFF,X:0x0F,Y:0x00},
-                                     expectMem:{addr:0x2000,value:0x0F} },
+    { name:"AXA $2000,Y (ABS,Y)", code:[0x9F,0x00,0x20], pre:{A:0xFF,X:0x0F,Y:0x00},
+      expectMem:{addr:0x2000,value:0x0F}, expectCycles: baseCycles.absoluteY },
 
     // XAA: X AND A then LDA-like
-    { name:"XAA #$0F",              code:[0x8B,0x0F], pre:{A:0xFF,X:0x0F}, expect:{A:0x0F,Z:0,N:0} }
-  ];
+    { name:"XAA #$0F", code:[0x8B,0x0F], pre:{A:0xFF,X:0x0F}, expect:{A:0x0F,Z:0,N:0}, expectCycles: baseCycles.immediate },
 
-setupTests(tests);
+    // =================== NEW UNOFFICIALS =================== //
+
+    // SBX/AXS (IMM)
+    { name: "SBX #$10 (IMM)", code: [0xCB, 0x10], pre: {A: 0x22, X: 0x33},
+      expect: {X: 0x22, Z: 0, N: 0}, expectCycles: baseCycles.immediate },
+
+    // TAS/SHS (ABS,Y)
+    { name: "TAS $1234,Y (ABS,Y)", code: [0x9B, 0x34, 0x12], pre: {A: 0xAA, X: 0xBB, Y: 0x01},
+      expect: {S: 0xAA & 0xBB},
+      expectMem: { addr: 0x1235, value: (0xAA & 0xBB) & (((0x12 + ((0x34 + 1) >> 8)) & 0xFF)) },
+      expectCycles: baseCycles.absoluteY },
+
+    // SHY (ABS,X)
+    { name: "SHY $1234,X (ABS,X)", code: [0x9C, 0x34, 0x12], pre: {Y: 0x77, X: 0x01},
+      expectMem: { addr: 0x1235, value: 0x77 & (((0x12 + ((0x34 + 1) >> 8)) & 0xFF)) },
+      expectCycles: baseCycles.absoluteX },
+
+    // SHX (ABS,Y)
+    { name: "SHX $1234,Y (ABS,Y)", code: [0x9E, 0x34, 0x12], pre: {X: 0x99, Y: 0x01},
+      expectMem: { addr: 0x1235, value: 0x99 & (((0x12 + ((0x34 + 1) >> 8)) & 0xFF)) },
+      expectCycles: baseCycles.absoluteY }
+  ];
 
   // ── build HTML table ──
   let html =
@@ -1840,7 +1859,7 @@ setupTests(tests);
        <thead><tr style="background:#222">
          <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
          <th>CPU<br>Before</th><th>CPU<br>After</th><th>PPU<br>Before</th><th>PPU<br>After</th>
-         <th>Eff Addr</th><th>Expected</th><th>Result</th><th>Intercept</th><th>Status</th>
+         <th>Eff Addr</th><th>Expected</th><th>Result</th><th>ΔCycles</th><th>Intercept</th><th>Status</th>
        </tr></thead><tbody>`;
 
   tests.forEach(test=>{
@@ -1859,7 +1878,9 @@ setupTests(tests);
     }
     if(test.setup) test.setup();
 
+    const cyclesBefore = cpuCycles;
     step(); updateDebugTables();
+    const cyclesAfter = cpuCycles;
     checkReadOffset=orig;
 
     const fa={...CPUregisters.P},
@@ -1873,6 +1894,9 @@ setupTests(tests);
       case"zeroPage":   ea=r[1]&0xFF; break;
       case"zeroPageY":  ea=(r[1]+CPUregisters.Y)&0xFF; break;
       case"absolute":   ea=(r[2]<<8)|r[1]; break;
+      case"absoluteY":  ea=((r[2]<<8)|r[1])+CPUregisters.Y; break;
+      case"absoluteX":  ea=((r[2]<<8)|r[1])+CPUregisters.X; break;
+      // Add more modes as needed
     }
     const mirrors=getMirrors(ea).filter(a=>a<0x10000),
           eaLabel=`$${ea.toString(16).padStart(4,"0")}`;
@@ -1884,6 +1908,13 @@ setupTests(tests);
     ["C","Z","N","V"].forEach(fn=>{ if(exp[fn]!=null && CPUregisters.P[fn]!==exp[fn]){ reasons.push(`${fn}=${CPUregisters.P[fn]}≠${exp[fn]}`); pass=false; } });
     if(test.expectMem){
       mirrors.forEach(a=>{ const got=systemMemory[a]; if(got!==test.expectMem.value){ reasons.push(`$${a.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`); pass=false; } });
+    }
+
+    // Cycle check
+    const deltaCycles = cyclesAfter - cyclesBefore;
+    if (test.expectCycles !== undefined && deltaCycles !== test.expectCycles) {
+      reasons.push(`cycles=${deltaCycles}≠${test.expectCycles}`);
+      pass = false;
     }
 
     const interceptCell = intr.flag
@@ -1917,6 +1948,7 @@ setupTests(tests);
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(eaLabel,mirrors)}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
+        <td style="border:1px solid #444;padding:6px;">${deltaCycles}</td>
         <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
         <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
       </tr>`;
@@ -1924,9 +1956,9 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
-CPUregisters.PC = 0x8000;
-  }
+  systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
+  CPUregisters.PC = 0x8000;
+}
 
   function runEdgeCaseTests(){
     // ===== EDGE CASES =====
