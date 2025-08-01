@@ -197,7 +197,8 @@ function runLoadsTests() {
   
     html += "</tbody></table>";
     document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;
 
 }
 
@@ -328,7 +329,8 @@ function runStoresTests() {
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep testing
+CPUregisters.PC = 0x8000;
  }
 
  function runRegisterTransfersAndFlagsTest() { 
@@ -450,7 +452,8 @@ systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdj
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep testing
+CPUregisters.PC = 0x8000;
   }
 
   function runAluAndLogicOpsTests(){
@@ -631,7 +634,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep testing
+CPUregisters.PC = 0x8000;
 
   }
 
@@ -777,7 +781,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;
 
   }
 
@@ -944,7 +949,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;
 
   }
 
@@ -1091,7 +1097,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep testing
+CPUregisters.PC = 0x8000;
 
   }
 
@@ -1224,58 +1231,47 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;
 
   }
 
-  function runBranchOpsTests() {
+function runBranchOpsTests() {
   const startPC = 0x8000;
-  const originalCycles = cpuCycles;
   // Offsets for testing
   const smallOffset = 0x02;           // stays on page ($8000 + 2 + 2 = $8004)
   const pageCrossOffset = 0x82;       // -0x7E = jump back and cross to $7F80
 
   // Each entry: { name, code, pre, taken, offset, pageCross }
   const cases = [
-    // ----- BCC (Carry Clear) -----
-    // Taken, no page cross
     { name: "BCC taken (C=0, no page cross)", code: [0x90, smallOffset], pre: {P:{C:0}}, taken: true, offset: smallOffset, pageCross: false },
-    // Taken, page cross
     { name: "BCC taken (C=0, page cross)", code: [0x90, pageCrossOffset], pre: {P:{C:0}}, taken: true, offset: pageCrossOffset, pageCross: true },
-    // Not taken
     { name: "BCC not taken (C=1)", code: [0x90, smallOffset], pre: {P:{C:1}}, taken: false, offset: smallOffset, pageCross: false },
 
-    // ----- BCS (Carry Set) -----
     { name: "BCS taken (C=1, no page cross)", code: [0xB0, smallOffset], pre: {P:{C:1}}, taken: true, offset: smallOffset, pageCross: false },
     { name: "BCS taken (C=1, page cross)", code: [0xB0, pageCrossOffset], pre: {P:{C:1}}, taken: true, offset: pageCrossOffset, pageCross: true },
     { name: "BCS not taken (C=0)", code: [0xB0, smallOffset], pre: {P:{C:0}}, taken: false, offset: smallOffset, pageCross: false },
 
-    // ----- BEQ (Zero Set) -----
     { name: "BEQ taken (Z=1, no page cross)", code: [0xF0, smallOffset], pre: {P:{Z:1}}, taken: true, offset: smallOffset, pageCross: false },
     { name: "BEQ taken (Z=1, page cross)", code: [0xF0, pageCrossOffset], pre: {P:{Z:1}}, taken: true, offset: pageCrossOffset, pageCross: true },
     { name: "BEQ not taken (Z=0)", code: [0xF0, smallOffset], pre: {P:{Z:0}}, taken: false, offset: smallOffset, pageCross: false },
 
-    // ----- BMI (Negative Set) -----
     { name: "BMI taken (N=1, no page cross)", code: [0x30, smallOffset], pre: {P:{N:1}}, taken: true, offset: smallOffset, pageCross: false },
     { name: "BMI taken (N=1, page cross)", code: [0x30, pageCrossOffset], pre: {P:{N:1}}, taken: true, offset: pageCrossOffset, pageCross: true },
     { name: "BMI not taken (N=0)", code: [0x30, smallOffset], pre: {P:{N:0}}, taken: false, offset: smallOffset, pageCross: false },
 
-    // ----- BNE (Zero Clear) -----
     { name: "BNE taken (Z=0, no page cross)", code: [0xD0, smallOffset], pre: {P:{Z:0}}, taken: true, offset: smallOffset, pageCross: false },
     { name: "BNE taken (Z=0, page cross)", code: [0xD0, pageCrossOffset], pre: {P:{Z:0}}, taken: true, offset: pageCrossOffset, pageCross: true },
     { name: "BNE not taken (Z=1)", code: [0xD0, smallOffset], pre: {P:{Z:1}}, taken: false, offset: smallOffset, pageCross: false },
 
-    // ----- BPL (Negative Clear) -----
     { name: "BPL taken (N=0, no page cross)", code: [0x10, smallOffset], pre: {P:{N:0}}, taken: true, offset: smallOffset, pageCross: false },
     { name: "BPL taken (N=0, page cross)", code: [0x10, pageCrossOffset], pre: {P:{N:0}}, taken: true, offset: pageCrossOffset, pageCross: true },
     { name: "BPL not taken (N=1)", code: [0x10, smallOffset], pre: {P:{N:1}}, taken: false, offset: smallOffset, pageCross: false },
 
-    // ----- BVC (Overflow Clear) -----
     { name: "BVC taken (V=0, no page cross)", code: [0x50, smallOffset], pre: {P:{V:0}}, taken: true, offset: smallOffset, pageCross: false },
     { name: "BVC taken (V=0, page cross)", code: [0x50, pageCrossOffset], pre: {P:{V:0}}, taken: true, offset: pageCrossOffset, pageCross: true },
     { name: "BVC not taken (V=1)", code: [0x50, smallOffset], pre: {P:{V:1}}, taken: false, offset: smallOffset, pageCross: false },
 
-    // ----- BVS (Overflow Set) -----
     { name: "BVS taken (V=1, no page cross)", code: [0x70, smallOffset], pre: {P:{V:1}}, taken: true, offset: smallOffset, pageCross: false },
     { name: "BVS taken (V=1, page cross)", code: [0x70, pageCrossOffset], pre: {P:{V:1}}, taken: true, offset: pageCrossOffset, pageCross: true },
     { name: "BVS not taken (V=0)", code: [0x70, smallOffset], pre: {P:{V:0}}, taken: false, offset: smallOffset, pageCross: false }
@@ -1287,11 +1283,19 @@ systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdj
     </div>
     <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
       <thead><tr style="background:#222">
-        <th>Test</th><th>Op</th>
-        <th>Flags<br>Before</th><th>Flags<br>After</th>
-        <th>PC<br>Before</th><th>PC<br>After</th><th>Expected PC</th>
-        <th>ΔCycles</th><th>Expected</th>
+        <th>Test</th>
+        <th>Op</th>
+        <th>Registers<br>Before</th>
+        <th>Flags<br>Before</th>
+        <th>PC<br>Before</th>
+        <th>Registers<br>After</th>
+        <th>Flags<br>After</th>
+        <th>PC<br>After</th>
+        <th>Expected PC</th>
+        <th>ΔCycles</th>
+        <th>Expected Cycles</th>
         <th>Status</th>
+        <th>Details</th>
       </tr></thead><tbody>`;
 
   cases.forEach(test => {
@@ -1303,6 +1307,7 @@ systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdj
     // Set registers/flags clean
     CPUregisters.A = 0x12; CPUregisters.X = 0x34; CPUregisters.Y = 0x56; CPUregisters.S = 0xFD;
     // Set only the tested flags (leave others alone)
+    Object.assign(CPUregisters.P, {N:0,V:0,B:0,D:0,I:0,Z:0,C:0}); // clear all, so each test is isolated
     if(test.pre && test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
 
     // Save before-state
@@ -1333,42 +1338,60 @@ systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdj
     if(test.taken && test.pageCross) expectedCycles += 1;
     let deltaCycles = cyclesAfter - cyclesBefore;
 
-    // ---- Check pass/fail ----
-    let pass = (
-      pcAfter === expectedPC &&
-      deltaCycles === expectedCycles &&
-      flagsEqual(flagsBefore, flagsAfter) &&
-      JSON.stringify(regsBefore) === JSON.stringify(regsAfter)
-    );
+    // ---- Check pass/fail and build fail reasons ----
+    let failReasons = [];
+    let pass = true;
+    if (pcAfter !== expectedPC) { failReasons.push(`PC=${hex(pcAfter)}≠${hex(expectedPC)}`); pass = false; }
+    if (deltaCycles !== expectedCycles) { failReasons.push(`cycles=${deltaCycles}≠${expectedCycles}`); pass = false; }
+    // Register check: for branches, A/X/Y/S shouldn't change
+    for (let r of ["A","X","Y","S"]) {
+      if (regsAfter[r] !== regsBefore[r]) { failReasons.push(`${r}=${hex(regsAfter[r])}≠${hex(regsBefore[r])}`); pass = false; }
+    }
+    // Flags: for branches, only Z/N/V/C may affect branch, all others should be untouched unless opcode is broken
+    if (!flagsEqual(flagsBefore, flagsAfter)) {
+      failReasons.push(`flags changed`);
+      pass = false;
+    }
+    let status = pass
+      ? "<span style='color:#7fff7f;font-weight:bold;'>✔️ Pass</span>"
+      : "<span style='color:#ff7777;font-weight:bold;'>❌ Fail</span>";
+
+    let details = pass ? "" : failReasons.join("; ");
 
     html += `
       <tr style="background:${pass ? "#113311" : "#331111"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
         <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(' ')}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hex(regsBefore.A)} X=${hex(regsBefore.X)} Y=${hex(regsBefore.Y)} S=${hex(regsBefore.S)}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(flagsBefore)}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(flagsAfter)}</td>
         <td style="border:1px solid #444;padding:6px;">${hex(pcBefore)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hex(regsAfter.A)} X=${hex(regsAfter.X)} Y=${hex(regsAfter.Y)} S=${hex(regsAfter.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsBin(flagsAfter)}</td>
         <td style="border:1px solid #444;padding:6px;">${hex(pcAfter)}</td>
         <td style="border:1px solid #444;padding:6px;">${hex(expectedPC)}</td>
-        <td style="border:1px solid #444;padding:6px;">${deltaCycles}</td>
-        <td style="border:1px solid #444;padding:6px;">${expectedCycles}</td>
-        <td style="border:1px solid #444;padding:6px;">
-          ${pass ? "<span style='color:#7fff7f;font-weight:bold;'>✔️</span>" : "<span style='color:#ff7777;font-weight:bold;'>❌</span>"}
-        </td>
+        <td style="border:1px solid #444;padding:6px;${(deltaCycles!==expectedCycles)?'color:#FFD700;font-weight:bold;':''}">${deltaCycles}</td>
+        <td style="border:1px solid #444;padding:6px;${(deltaCycles!==expectedCycles)?'color:#FFD700;font-weight:bold;':''}">${expectedCycles}</td>
+        <td style="border:1px solid #444;padding:6px;">${status}</td>
+        <td style="border:1px solid #444;padding:6px;color:#FF7777;">${details}</td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-  systemMemory[0x8000] = 0x02; // so test trigger works for next run
+  systemMemory[0x8000] = 0x02; // for next run
+  CPUregisters.PC = 0x8000;
+
 }
 
-// helpers you need:
+// helpers
 function flagsEqual(a, b) {
-  return a.C === b.C && a.Z === b.Z && a.I === b.I && a.D === b.D && a.B === b.B && a.V === b.V && a.N === b.N;
+  return a.N === b.N && a.V === b.V && a.B === b.B && a.D === b.D &&
+         a.I === b.I && a.Z === b.Z && a.C === b.C;
 }
 function hex(v) {
-  return "0x" + (v != null ? v.toString(16).toUpperCase().padStart(4, '0') : "----");
+  if (v == null) return "--";
+  let n = Number(v);
+  return "0x" + n.toString(16).toUpperCase().padStart(4, '0');
 }
 function flagsBin(f) {
   return [
@@ -1380,7 +1403,8 @@ function flagsBin(f) {
     f.Z ? "Z" : ".",
     f.C ? "C" : "."
   ].join('');
-}
+}  
+
 
 
   function runJumpAndSubRoutinesTests(){
@@ -1489,7 +1513,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep testing
+CPUregisters.PC = 0x8000;
 
   }
 
@@ -1604,6 +1629,7 @@ setupTests(tests);
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
 systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;
 
   }
 
@@ -1729,6 +1755,7 @@ setupTests(tests);
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
 systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;
 
   }
 
@@ -1898,6 +1925,7 @@ setupTests(tests);
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
 systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;
   }
 
   function runEdgeCaseTests(){
@@ -2075,7 +2103,8 @@ systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;
 
   }
 
@@ -2294,7 +2323,8 @@ cross("BNE branch taken, cross", {
   }
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep testing
+CPUregisters.PC = 0x8000;
   }
 
 function runEvery6502Test() {
