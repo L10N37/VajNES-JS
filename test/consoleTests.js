@@ -1228,96 +1228,160 @@ systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdj
 
   }
 
-  function runBranchOpsTests(){
+  function runBranchOpsTests() {
+  const startPC = 0x8000;
+  const originalCycles = cpuCycles;
+  // Offsets for testing
+  const smallOffset = 0x02;           // stays on page ($8000 + 2 + 2 = $8004)
+  const pageCrossOffset = 0x82;       // -0x7E = jump back and cross to $7F80
 
-  // ===== BRANCH OPS (BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS) =====
-  const tests = [
-    { name:"BCC taken (C=0)",     code:[0x90,0x02], pre:{P:{C:0}} },
-    { name:"BCC not taken (C=1)", code:[0x90,0x02], pre:{P:{C:1}} },
+  // Each entry: { name, code, pre, taken, offset, pageCross }
+  const cases = [
+    // ----- BCC (Carry Clear) -----
+    // Taken, no page cross
+    { name: "BCC taken (C=0, no page cross)", code: [0x90, smallOffset], pre: {P:{C:0}}, taken: true, offset: smallOffset, pageCross: false },
+    // Taken, page cross
+    { name: "BCC taken (C=0, page cross)", code: [0x90, pageCrossOffset], pre: {P:{C:0}}, taken: true, offset: pageCrossOffset, pageCross: true },
+    // Not taken
+    { name: "BCC not taken (C=1)", code: [0x90, smallOffset], pre: {P:{C:1}}, taken: false, offset: smallOffset, pageCross: false },
 
-    { name:"BCS taken (C=1)",     code:[0xB0,0x02], pre:{P:{C:1}} },
-    { name:"BCS not taken (C=0)", code:[0xB0,0x02], pre:{P:{C:0}} },
+    // ----- BCS (Carry Set) -----
+    { name: "BCS taken (C=1, no page cross)", code: [0xB0, smallOffset], pre: {P:{C:1}}, taken: true, offset: smallOffset, pageCross: false },
+    { name: "BCS taken (C=1, page cross)", code: [0xB0, pageCrossOffset], pre: {P:{C:1}}, taken: true, offset: pageCrossOffset, pageCross: true },
+    { name: "BCS not taken (C=0)", code: [0xB0, smallOffset], pre: {P:{C:0}}, taken: false, offset: smallOffset, pageCross: false },
 
-    { name:"BEQ taken (Z=1)",     code:[0xF0,0x02], pre:{P:{Z:1}} },
-    { name:"BEQ not taken (Z=0)", code:[0xF0,0x02], pre:{P:{Z:0}} },
+    // ----- BEQ (Zero Set) -----
+    { name: "BEQ taken (Z=1, no page cross)", code: [0xF0, smallOffset], pre: {P:{Z:1}}, taken: true, offset: smallOffset, pageCross: false },
+    { name: "BEQ taken (Z=1, page cross)", code: [0xF0, pageCrossOffset], pre: {P:{Z:1}}, taken: true, offset: pageCrossOffset, pageCross: true },
+    { name: "BEQ not taken (Z=0)", code: [0xF0, smallOffset], pre: {P:{Z:0}}, taken: false, offset: smallOffset, pageCross: false },
 
-    { name:"BMI taken (N=1)",     code:[0x30,0x02], pre:{P:{N:1}} },
-    { name:"BMI not taken (N=0)", code:[0x30,0x02], pre:{P:{N:0}} },
+    // ----- BMI (Negative Set) -----
+    { name: "BMI taken (N=1, no page cross)", code: [0x30, smallOffset], pre: {P:{N:1}}, taken: true, offset: smallOffset, pageCross: false },
+    { name: "BMI taken (N=1, page cross)", code: [0x30, pageCrossOffset], pre: {P:{N:1}}, taken: true, offset: pageCrossOffset, pageCross: true },
+    { name: "BMI not taken (N=0)", code: [0x30, smallOffset], pre: {P:{N:0}}, taken: false, offset: smallOffset, pageCross: false },
 
-    { name:"BNE taken (Z=0)",     code:[0xD0,0x02], pre:{P:{Z:0}} },
-    { name:"BNE not taken (Z=1)", code:[0xD0,0x02], pre:{P:{Z:1}} },
+    // ----- BNE (Zero Clear) -----
+    { name: "BNE taken (Z=0, no page cross)", code: [0xD0, smallOffset], pre: {P:{Z:0}}, taken: true, offset: smallOffset, pageCross: false },
+    { name: "BNE taken (Z=0, page cross)", code: [0xD0, pageCrossOffset], pre: {P:{Z:0}}, taken: true, offset: pageCrossOffset, pageCross: true },
+    { name: "BNE not taken (Z=1)", code: [0xD0, smallOffset], pre: {P:{Z:1}}, taken: false, offset: smallOffset, pageCross: false },
 
-    { name:"BPL taken (N=0)",     code:[0x10,0x02], pre:{P:{N:0}} },
-    { name:"BPL not taken (N=1)", code:[0x10,0x02], pre:{P:{N:1}} },
+    // ----- BPL (Negative Clear) -----
+    { name: "BPL taken (N=0, no page cross)", code: [0x10, smallOffset], pre: {P:{N:0}}, taken: true, offset: smallOffset, pageCross: false },
+    { name: "BPL taken (N=0, page cross)", code: [0x10, pageCrossOffset], pre: {P:{N:0}}, taken: true, offset: pageCrossOffset, pageCross: true },
+    { name: "BPL not taken (N=1)", code: [0x10, smallOffset], pre: {P:{N:1}}, taken: false, offset: smallOffset, pageCross: false },
 
-    { name:"BVC taken (V=0)",     code:[0x50,0x02], pre:{P:{V:0}} },
-    { name:"BVC not taken (V=1)", code:[0x50,0x02], pre:{P:{V:1}} },
+    // ----- BVC (Overflow Clear) -----
+    { name: "BVC taken (V=0, no page cross)", code: [0x50, smallOffset], pre: {P:{V:0}}, taken: true, offset: smallOffset, pageCross: false },
+    { name: "BVC taken (V=0, page cross)", code: [0x50, pageCrossOffset], pre: {P:{V:0}}, taken: true, offset: pageCrossOffset, pageCross: true },
+    { name: "BVC not taken (V=1)", code: [0x50, smallOffset], pre: {P:{V:1}}, taken: false, offset: smallOffset, pageCross: false },
 
-    { name:"BVS taken (V=1)",     code:[0x70,0x02], pre:{P:{V:1}} },
-    { name:"BVS not taken (V=0)", code:[0x70,0x02], pre:{P:{V:0}} }
+    // ----- BVS (Overflow Set) -----
+    { name: "BVS taken (V=1, no page cross)", code: [0x70, smallOffset], pre: {P:{V:1}}, taken: true, offset: smallOffset, pageCross: false },
+    { name: "BVS taken (V=1, page cross)", code: [0x70, pageCrossOffset], pre: {P:{V:1}}, taken: true, offset: pageCrossOffset, pageCross: true },
+    { name: "BVS not taken (V=0)", code: [0x70, smallOffset], pre: {P:{V:0}}, taken: false, offset: smallOffset, pageCross: false }
   ];
 
-setupTests(tests);
-
-  // ── build HTML table ──
   let html =
     `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
-       BRANCH OPS (BCC, BCS, BEQ, BMI, BNE, BPL, BVC, BVS)
-     </div>
-     <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
-       <thead><tr style="background:#222">
-         <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-         <th>CPU<br>Before</th><th>CPU<br>After</th><th>PPU<br>Before</th><th>PPU<br>After</th>
-         <th>Offset</th><th>Intercept</th><th>GUI Cell</th><th>Status</th>
-       </tr></thead><tbody>`;
+      BRANCH OPS (ALL: taken, not taken, page cross, etc)
+    </div>
+    <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
+      <thead><tr style="background:#222">
+        <th>Test</th><th>Op</th>
+        <th>Flags<br>Before</th><th>Flags<br>After</th>
+        <th>PC<br>Before</th><th>PC<br>After</th><th>Expected PC</th>
+        <th>ΔCycles</th><th>Expected</th>
+        <th>Status</th>
+      </tr></thead><tbody>`;
 
-  tests.forEach(test=>{
-    let intr={flag:false,addr:null}, orig=checkReadOffset;
-    checkReadOffset = a=>{ intr.flag=true; intr.addr = a&0xFFFF; return orig(a); };
+  cases.forEach(test => {
+    // ---- Set up ----
+    CPUregisters.PC = startPC;
+    systemMemory[startPC] = test.code[0];
+    systemMemory[startPC + 1] = test.code[1];
 
-    const fb={...CPUregisters.P}, cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S}, pb={...PPUregister};
+    // Set registers/flags clean
+    CPUregisters.A = 0x12; CPUregisters.X = 0x34; CPUregisters.Y = 0x56; CPUregisters.S = 0xFD;
+    // Set only the tested flags (leave others alone)
+    if(test.pre && test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
 
-    if(test.pre){ if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P); }
-    if(test.setup) test.setup();
+    // Save before-state
+    const pcBefore = CPUregisters.PC;
+    const cyclesBefore = cpuCycles;
+    const flagsBefore = { ...CPUregisters.P };
+    const regsBefore = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
 
-    step(); updateDebugTables();
-    checkReadOffset = orig;
+    // ---- Execute ----
+    step();
 
-    const fa={...CPUregisters.P}, ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S}, pa={...PPUregister};
+    // Save after-state
+    const pcAfter = CPUregisters.PC;
+    const cyclesAfter = cpuCycles;
+    const flagsAfter = { ...CPUregisters.P };
+    const regsAfter = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
 
-    // compute branch target offset (raw byte)
-    const offset = test.code[1] & 0xFF;
-    const offsetLabel = offset>0x7F ? offset-0x100 : offset;
+    // ---- Calculate expected PC ----
+    let offset = test.offset;
+    if (offset & 0x80) offset = offset - 0x100; // signed branch
+    let expectedPC = test.taken
+      ? (pcBefore + 2 + offset) & 0xFFFF
+      : (pcBefore + 2) & 0xFFFF;
 
-    const interceptCell = intr.flag
-      ? dropdown(`$${intr.addr.toString(16).padStart(4,"0")}`, getMirrors(intr.addr).map(a=>`$${a.toString(16).padStart(4,"0")}`))
-      : "no";
-    const guiLabel="n/a";
+    // ---- Calculate expected cycles ----
+    let expectedCycles = 2;
+    if(test.taken) expectedCycles += 1;
+    if(test.taken && test.pageCross) expectedCycles += 1;
+    let deltaCycles = cyclesAfter - cyclesBefore;
 
-    const pass = true;  // branches leave regs & flags unchanged
+    // ---- Check pass/fail ----
+    let pass = (
+      pcAfter === expectedPC &&
+      deltaCycles === expectedCycles &&
+      flagsEqual(flagsBefore, flagsAfter) &&
+      JSON.stringify(regsBefore) === JSON.stringify(regsAfter)
+    );
 
     html += `
-      <tr style="background:${pass?"#113311":"#331111"}">
+      <tr style="background:${pass ? "#113311" : "#331111"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${offsetLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
-        <td style="border:1px solid #444;padding:6px;">${guiLabel}</td>
-        <td style="border:1px solid #444;padding:6px;"><span style="color:#7fff7f;font-weight:bold;">✔️</span></td>
+        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(' ')}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsBin(flagsBefore)}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsBin(flagsAfter)}</td>
+        <td style="border:1px solid #444;padding:6px;">${hex(pcBefore)}</td>
+        <td style="border:1px solid #444;padding:6px;">${hex(pcAfter)}</td>
+        <td style="border:1px solid #444;padding:6px;">${hex(expectedPC)}</td>
+        <td style="border:1px solid #444;padding:6px;">${deltaCycles}</td>
+        <td style="border:1px solid #444;padding:6px;">${expectedCycles}</td>
+        <td style="border:1px solid #444;padding:6px;">
+          ${pass ? "<span style='color:#7fff7f;font-weight:bold;'>✔️</span>" : "<span style='color:#ff7777;font-weight:bold;'>❌</span>"}
+        </td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+  systemMemory[0x8000] = 0x02; // so test trigger works for next run
+}
 
-  }
+// helpers you need:
+function flagsEqual(a, b) {
+  return a.C === b.C && a.Z === b.Z && a.I === b.I && a.D === b.D && a.B === b.B && a.V === b.V && a.N === b.N;
+}
+function hex(v) {
+  return "0x" + (v != null ? v.toString(16).toUpperCase().padStart(4, '0') : "----");
+}
+function flagsBin(f) {
+  return [
+    f.N ? "N" : ".",
+    f.V ? "V" : ".",
+    f.B ? "B" : ".",
+    f.D ? "D" : ".",
+    f.I ? "I" : ".",
+    f.Z ? "Z" : ".",
+    f.C ? "C" : "."
+  ].join('');
+}
+
 
   function runJumpAndSubRoutinesTests(){
 
@@ -1539,7 +1603,7 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
 
   }
 
@@ -1664,7 +1728,7 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
 
   }
 
@@ -1833,7 +1897,7 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testingAdjacentHTML("beforeend", html);
+systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
   }
 
   function runEdgeCaseTests(){
