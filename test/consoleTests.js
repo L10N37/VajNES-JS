@@ -46,6 +46,34 @@ function runEdgeCaseTests() {
     "IRQ leaves B": ["IRQ", "implied"],
   };
 
+  /*
+
+// Clear system memory area
+for(let i = 0x8000; i <= 0x8002; i++) systemMemory[i] = 0;
+
+// Write opcode + operand at 0x8000: LDA #$00 (will modify operand next)
+systemMemory[0x8000] = 0xA9;  // LDA_IMM opcode
+systemMemory[0x8001] = 0x00;  // initial operand 0x00
+
+console.log(`Initial memory[0x8001]: 0x${systemMemory[0x8001].toString(16)}`);
+
+// Modify operand after writing opcode bytes to simulate self-modifying code
+systemMemory[0x8001] = 0x77;
+console.log(`Modified memory[0x8001]: 0x${systemMemory[0x8001].toString(16)}`);
+
+// Set CPU registers
+CPUregisters.A = 0x00;
+CPUregisters.PC = 0x8000;
+
+console.log(`Before step: A=0x${CPUregisters.A.toString(16).padStart(2,'0')}, PC=0x${CPUregisters.PC.toString(16)}`);
+
+// Step one instruction (LDA #imm)
+step();
+
+console.log(`After step: A=0x${CPUregisters.A.toString(16).padStart(2,'0')}, PC=0x${CPUregisters.PC.toString(16)}`);
+console.log(`Expected A=0x77. Test ${CPUregisters.A === 0x77 ? 'PASSED' : 'FAILED'}`);
+*/
+
   function getBaseCycles(testDesc) {
     const lookup = testLookup[testDesc];
     if (!lookup) throw new Error(`No testLookup mapping for "${testDesc}"`);
@@ -205,17 +233,62 @@ function runEdgeCaseTests() {
       extra: 0
     }),
 
-    nocross("Self-mod IMM", {
-      code: [0xA9, 0x00],
-      pre: { A: 0x00, PC: 0x8000 },
-      opcodeFn: "LDA_IMM",
-      setup: () => {
-        systemMemory[0x8001] = 0x77; // Hardcode 0x8001 here
-      },
-      expect: { A: 0x77 },
-      baseCycles: getBaseCycles("Self-mod IMM"),
-      extra: 0
-    }),
+    /* 
+      this seems like the most stupid test ever, the operand is originally 0x00, then we just patch it to 0x77
+      so -of course- it's going to return 0x77... but after some research, apparently some emulators will prefetch 
+      the opcode+operand and store them prior to the opcodes execution, hence it would return 0x00 in this case.
+      (as in, because the prefetched values changed before the opcode executed)
+
+      This weird edge case is simply checking that I don't try and return the operand byte until RUNTIME of the 
+      opcode function. Which, we don't, as the way the app was was written is it always executes operands from
+      systemMemory, at runtime, so regardless of changes we will always execute the value there at runtime. 
+
+      I feel stupid even noting this for future reference, and it doesn't make the code below any less silly at all,
+      in fact, its still stupid code, and i guess its more knowing how the app processes opcodes/operands , but hey, we 
+      get a pass :P
+
+      more research shows that some may try and optimise code to do away with runtime processing - 
+      i.e. hey, why not grab the next batch of 10/20 opcodes+operands while we have a chance,
+      store them, execute them when required and top our prefetch list back up when we aren't busy with critical 
+      code execution. This would break the 'self-mod immediate' as it's operand changed after the fetch.
+
+    */
+nocross("Self-mod IMM (console ops with full checks)", {
+  code: [0xA9, 0x00],
+  pre: { A: 0x00, PC: 0x8000 },
+  opcodeFn: "LDA_IMM",
+  baseCycles: getBaseCycles("Self-mod IMM"),
+  extra: 0,
+  run: () => {
+    // Write opcode + initial operand
+    systemMemory[0x8000] = 0xA9;
+    systemMemory[0x8001] = 0x00;
+
+    // Patch operand after opcode bytes written to simulate self-mod
+    systemMemory[0x8001] = 0x77;
+
+    // Setup CPU state before step
+    CPUregisters.A = 0x00;
+    CPUregisters.PC = 0x8000;
+    const flagsBefore = { ...CPUregisters.P };
+    const cyclesBefore = cpuCycles;
+
+    // Step CPU once
+    step();
+
+    // Checks
+    const aCorrect = CPUregisters.A === 0x77;
+    const pcCorrect = CPUregisters.PC === 0x8002;  // LDA_IMM is 2 bytes
+    const cyclesElapsed = cpuCycles - cyclesBefore;
+    const cyclesExpected = (getBaseCycles("Self-mod IMM") + 0); // adjust if extra cycles needed
+    const cyclesCorrect = cyclesElapsed === cyclesExpected;
+
+    // Log for debugging
+    console.log(`After step: A=0x${CPUregisters.A.toString(16)}, PC=0x${CPUregisters.PC.toString(16)}, Cycles used=${cyclesElapsed}`);
+
+    return aCorrect && pcCorrect && cyclesCorrect;
+  }
+}),
 
     nocross("BRK sets B", {
       code: [0x00],
@@ -1723,6 +1796,8 @@ function runBranchOpsTests() {
 
 }
 
+
+
 // helpers
 function flagsEqual(a, b) {
   return a.N === b.N && a.V === b.V && a.B === b.B && a.D === b.D &&
@@ -2584,106 +2659,106 @@ function runExtensiveDecimalModeTests() { // http://www.6502.org/tutorials/decim
   }
 
   // Test cases
-  const cases = [
-    cross("ADC Dec: 58 + 46 + 1", {
-      code: [0x69, 0x46],
-      pre: { A: 0x58, P: { D: 1, C: 1 } },
-      opcodeFn: "ADC_IMM",
-      expect: { A: 0x05, C: 1 },
-      baseCycles: getBaseCycles("ADC Dec: 58 + 46 + 1"),
-      extra: 0
-    }),
-    nocross("ADC Dec: 12 + 34 + 0", {
-      code: [0x69, 0x34],
-      pre: { A: 0x12, P: { D: 1, C: 0 } },
-      opcodeFn: "ADC_IMM",
-      expect: { A: 0x46, C: 0 },
-      baseCycles: getBaseCycles("ADC Dec: 12 + 34 + 0"),
-      extra: 0
-    }),
-    nocross("ADC Dec: 15 + 26 + 0", {
-      code: [0x69, 0x26],
-      pre: { A: 0x15, P: { D: 1, C: 0 } },
-      opcodeFn: "ADC_IMM",
-      expect: { A: 0x41, C: 0 },
-      baseCycles: getBaseCycles("ADC Dec: 15 + 26 + 0"),
-      extra: 0
-    }),
-    cross("ADC Dec: 81 + 92 + 0 (carry out)", {
-      code: [0x69, 0x92],
-      pre: { A: 0x81, P: { D: 1, C: 0 } },
-      opcodeFn: "ADC_IMM",
-      expect: { A: 0x73, C: 1 },
-      baseCycles: getBaseCycles("ADC Dec: 81 + 92 + 0 (carry out)"),
-      extra: 0
-    }),
-    nocross("SBC Dec: 46 - 12 - no borrow", {
-      code: [0xE9, 0x12],
-      pre: { A: 0x46, P: { D: 1, C: 1 } },
-      opcodeFn: "SBC_IMM",
-      expect: { A: 0x34, C: 1 },
-      baseCycles: getBaseCycles("SBC Dec: 46 - 12 - no borrow"),
-      extra: 0
-    }),
-    nocross("SBC Dec: 40 - 13 - no borrow", {
-      code: [0xE9, 0x13],
-      pre: { A: 0x40, P: { D: 1, C: 1 } },
-      opcodeFn: "SBC_IMM",
-      expect: { A: 0x27, C: 1 },
-      baseCycles: getBaseCycles("SBC Dec: 40 - 13 - no borrow"),
-      extra: 0
-    }),
-    nocross("SBC Dec: 32 - 2 - 1 borrow", {
-      code: [0xE9, 0x02],
-      pre: { A: 0x32, P: { D: 1, C: 0 } },
-      opcodeFn: "SBC_IMM",
-      expect: { A: 0x29, C: 1 },
-      baseCycles: getBaseCycles("SBC Dec: 32 - 2 - 1 borrow"),
-      extra: 0
-    }),
-    nocross("SBC Dec: 12 - 21 - borrow", {
-      code: [0xE9, 0x21],
-      pre: { A: 0x12, P: { D: 1, C: 1 } },
-      opcodeFn: "SBC_IMM",
-      expect: { A: 0x91, C: 0 },
-      baseCycles: getBaseCycles("SBC Dec: 12 - 21 - borrow"),
-      extra: 0
-    }),
-    nocross("SBC Dec: 21 - 34 - borrow", {
-      code: [0xE9, 0x34],
-      pre: { A: 0x21, P: { D: 1, C: 1 } },
-      opcodeFn: "SBC_IMM",
-      expect: { A: 0x87, C: 0 },
-      baseCycles: getBaseCycles("SBC Dec: 21 - 34 - borrow"),
-      extra: 0
-    }),
-    cross("ADC Dec: 99 + 01 (wrap to 00)", {
-      code: [0x69, 0x01],
-      pre: { A: 0x99, P: { D: 1, C: 1 } },
-      opcodeFn: "ADC_IMM",
-      expect: { A: 0x01, C: 1 }, // corrected to align with easy6502 results
-      baseCycles: getBaseCycles("ADC Dec: 99 + 01 (wrap to 00)"),
-      extra: 0
-    }),
-    nocross("SBC Dec: 01 - 01 - no borrow", {
-      code: [0xE9, 0x01],
-      pre: { A: 0x01, P: { D: 1, C: 1 } },
-      opcodeFn: "SBC_IMM",
-      expect: { A: 0x00, C: 1 },
-      baseCycles: getBaseCycles("SBC Dec: 01 - 01 - no borrow"),
-      extra: 0
-    }),
-cross("ADC Dec: 50 + 50 + 0 no carry", {
-  code: [0x69, 0x50],
-  pre: { A: 0x50, P: { D: 1, C: 0 } },
-  opcodeFn: "ADC_IMM",
-  expect: { A: 0x00, C: 1 },  // corrected to align with easy6502 results
-  baseCycles: getBaseCycles("ADC Dec: 50 + 50 + 0 no carry"),
-  extra: 0
-}),
+    const cases = [
+      cross("ADC Dec: 58 + 46 + 1", {
+        code: [0x69, 0x46],
+        pre: { A: 0x58, P: { D: 1, C: 1 } },
+        opcodeFn: "ADC_IMM",
+        expect: { A: 0x05, C: 1 },
+        baseCycles: getBaseCycles("ADC Dec: 58 + 46 + 1"),
+        extra: 0
+      }),
+      nocross("ADC Dec: 12 + 34 + 0", {
+        code: [0x69, 0x34],
+        pre: { A: 0x12, P: { D: 1, C: 0 } },
+        opcodeFn: "ADC_IMM",
+        expect: { A: 0x46, C: 0 },
+        baseCycles: getBaseCycles("ADC Dec: 12 + 34 + 0"),
+        extra: 0
+      }),
+      nocross("ADC Dec: 15 + 26 + 0", {
+        code: [0x69, 0x26],
+        pre: { A: 0x15, P: { D: 1, C: 0 } },
+        opcodeFn: "ADC_IMM",
+        expect: { A: 0x41, C: 0 },
+        baseCycles: getBaseCycles("ADC Dec: 15 + 26 + 0"),
+        extra: 0
+      }),
+      cross("ADC Dec: 81 + 92 + 0 (carry out)", {
+        code: [0x69, 0x92],
+        pre: { A: 0x81, P: { D: 1, C: 0 } },
+        opcodeFn: "ADC_IMM",
+        expect: { A: 0x73, C: 1 },
+        baseCycles: getBaseCycles("ADC Dec: 81 + 92 + 0 (carry out)"),
+        extra: 0
+      }),
+      nocross("SBC Dec: 46 - 12 - no borrow", {
+        code: [0xE9, 0x12],
+        pre: { A: 0x46, P: { D: 1, C: 1 } },
+        opcodeFn: "SBC_IMM",
+        expect: { A: 0x34, C: 1 },
+        baseCycles: getBaseCycles("SBC Dec: 46 - 12 - no borrow"),
+        extra: 0
+      }),
+      nocross("SBC Dec: 40 - 13 - no borrow", {
+        code: [0xE9, 0x13],
+        pre: { A: 0x40, P: { D: 1, C: 1 } },
+        opcodeFn: "SBC_IMM",
+        expect: { A: 0x27, C: 1 },
+        baseCycles: getBaseCycles("SBC Dec: 40 - 13 - no borrow"),
+        extra: 0
+      }),
+      nocross("SBC Dec: 32 - 2 - 1 borrow", {
+        code: [0xE9, 0x02],
+        pre: { A: 0x32, P: { D: 1, C: 0 } },
+        opcodeFn: "SBC_IMM",
+        expect: { A: 0x29, C: 1 },
+        baseCycles: getBaseCycles("SBC Dec: 32 - 2 - 1 borrow"),
+        extra: 0
+      }),
+      nocross("SBC Dec: 12 - 21 - borrow", {
+        code: [0xE9, 0x21],
+        pre: { A: 0x12, P: { D: 1, C: 1 } },
+        opcodeFn: "SBC_IMM",
+        expect: { A: 0x91, C: 0 },
+        baseCycles: getBaseCycles("SBC Dec: 12 - 21 - borrow"),
+        extra: 0
+      }),
+      nocross("SBC Dec: 21 - 34 - borrow", {
+        code: [0xE9, 0x34],
+        pre: { A: 0x21, P: { D: 1, C: 1 } },
+        opcodeFn: "SBC_IMM",
+        expect: { A: 0x87, C: 0 },
+        baseCycles: getBaseCycles("SBC Dec: 21 - 34 - borrow"),
+        extra: 0
+      }),
+      cross("ADC Dec: 99 + 01 (wrap to 00)", {
+        code: [0x69, 0x01],
+        pre: { A: 0x99, P: { D: 1, C: 1 } },
+        opcodeFn: "ADC_IMM",
+        expect: { A: 0x01, C: 1 }, // corrected to align with easy6502 results
+        baseCycles: getBaseCycles("ADC Dec: 99 + 01 (wrap to 00)"),
+        extra: 0
+      }),
+      nocross("SBC Dec: 01 - 01 - no borrow", {
+        code: [0xE9, 0x01],
+        pre: { A: 0x01, P: { D: 1, C: 1 } },
+        opcodeFn: "SBC_IMM",
+        expect: { A: 0x00, C: 1 },
+        baseCycles: getBaseCycles("SBC Dec: 01 - 01 - no borrow"),
+        extra: 0
+      }),
+  cross("ADC Dec: 50 + 50 + 0 no carry", {
+    code: [0x69, 0x50],
+    pre: { A: 0x50, P: { D: 1, C: 0 } },
+    opcodeFn: "ADC_IMM",
+    expect: { A: 0x00, C: 1 },  // corrected to align with easy6502 results
+    baseCycles: getBaseCycles("ADC Dec: 50 + 50 + 0 no carry"),
+    extra: 0
+  }),
 
-  ];
-
+    ];
+  
   let html = `
     <div style="background:darkblue;color:white;padding:7px 6px 7px 6px;font-weight:bold;">
       6502 EXTENSIVE DECIMAL MODE TEST SUITE
