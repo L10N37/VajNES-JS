@@ -2054,138 +2054,225 @@ CPUregisters.PC = 0x8000;
 
   }
 
-  function runBrkAndNopsTests(){
-
-  // ===== BRK & NOP/SKB/DOP =====
+function runBrkAndNopsTests() {
   const tests = [
-    // BRK: pushes PC+2 and flags, sets I; here we just check S decremented by 3
-    { name:"BRK (interrupt)",       code:[0x00],                     pre:{S:0xFF,P:{I:0}}, expect:{S:0xFC} },
+    // BRK: pushes PC+2 and flags, sets I; here we just check S decremented by 3 and cycles = 7
+    {
+      name: "BRK (interrupt)",
+      code: [0x00],
+      pre: { S: 0xFF, P: { I: 0 } },
+      expect: { S: 0xFC, P: { I: 1 } },
+      expectedCycles: 7
+    },
 
-    // Legal NOP
-    { name:"NOP implied",           code:[0xEA] },
+    // Official single-byte NOPs
+    { name: "NOP implied (0xEA)", code: [0xEA], expectedCycles: 2 },
+    { name: "NOP unofficial 0x1A", code: [0x1A], expectedCycles: 2 },
+    { name: "NOP unofficial 0x3A", code: [0x3A], expectedCycles: 2 },
+    { name: "NOP unofficial 0x5A", code: [0x5A], expectedCycles: 2 },
+    { name: "NOP unofficial 0x7A", code: [0x7A], expectedCycles: 2 },
+    { name: "NOP unofficial 0xDA", code: [0xDA], expectedCycles: 2 },
+    { name: "NOP unofficial 0xFA", code: [0xFA], expectedCycles: 2 },
 
-    // Unofficial single‐byte NOPs
-    { name:"NOP 1A",                code:[0x1A] },
-    { name:"NOP 3A",                code:[0x3A] },
-    { name:"NOP 5A",                code:[0x5A] },
-    { name:"NOP 7A",                code:[0x7A] },
-    { name:"NOP DA",                code:[0xDA] },
-    { name:"NOP FA",                code:[0xFA] },
+    // SKB/DOP two-byte NOPs (just skip operand, no memory access)
+    { name: "NOP 0x80 (2-byte)", code: [0x80, 0x00], expectedCycles: 2 },
+    { name: "NOP 0x82 (2-byte)", code: [0x82, 0x00], expectedCycles: 2 },
+    { name: "NOP 0x89 (2-byte)", code: [0x89, 0x00], expectedCycles: 2 },
+    { name: "NOP 0xC2 (2-byte)", code: [0xC2, 0x00], expectedCycles: 2 },
+    { name: "NOP 0xE2 (2-byte)", code: [0xE2, 0x00], expectedCycles: 2 },
 
-    // SKB/DOP two‐byte NOPs
-    { name:"NOP 80",                code:[0x80,0x00] },
-    { name:"NOP 82",                code:[0x82,0x00] },
-    { name:"NOP 89",                code:[0x89,0x00] },
-    { name:"SKB C2",                code:[0xC2,0x00] },
-    { name:"NOP E2",                code:[0xE2,0x00] },
+    // SKB three-byte NOPs (read memory, so cycle count higher)
+    { name: "NOP 0x04 (ZP)", code: [0x04, 0x00], expectedCycles: 3 },
+    { name: "NOP 0x44 (ZP)", code: [0x44, 0x00], expectedCycles: 3 },
+    { name: "NOP 0x64 (ZP)", code: [0x64, 0x00], expectedCycles: 3 },
+    { name: "NOP 0x14 (ZPX)", code: [0x14, 0x00], expectedCycles: 4 },
+    { name: "NOP 0x34 (ZPX)", code: [0x34, 0x00], expectedCycles: 4 },
+    { name: "NOP 0x54 (ZPX)", code: [0x54, 0x00], expectedCycles: 4 },
+    { name: "NOP 0x74 (ZPX)", code: [0x74, 0x00], expectedCycles: 4 },
+    { name: "NOP 0xD4 (ZPX)", code: [0xD4, 0x00], expectedCycles: 4 },
+    { name: "NOP 0xF4 (ZPX)", code: [0xF4, 0x00], expectedCycles: 4 },
 
-    // SKB three‐byte NOPs
-    { name:"NOP 04",                code:[0x04,0x00] },
-    { name:"NOP 44",                code:[0x44,0x00] },
-    { name:"NOP 64",                code:[0x64,0x00] },
-    { name:"NOP 14",                code:[0x14,0x00] },
-    { name:"NOP 34",                code:[0x34,0x00] },
-    { name:"NOP 54",                code:[0x54,0x00] },
-    { name:"NOP 74",                code:[0x74,0x00] },
-    { name:"NOP D4",                code:[0xD4,0x00] },
-    { name:"NOP F4",                code:[0xF4,0x00] },
-    { name:"NOP 0C",                code:[0x0C,0x00,0x00] },
-    { name:"NOP 1C",                code:[0x1C,0x00,0x00] },
-    { name:"NOP 3C",                code:[0x3C,0x00,0x00] },
-    { name:"NOP 5C",                code:[0x5C,0x00,0x00] },
-    { name:"NOP 7C",                code:[0x7C,0x00,0x00] },
-    { name:"NOP DC",                code:[0xDC,0x00,0x00] },
-    { name:"NOP FC",                code:[0xFC,0x00,0x00] },
+    // Absolute NOPs (3 bytes, memory read)
+    { name: "NOP 0x0C (ABS)", code: [0x0C, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP 0x1C (ABS,X)", code: [0x1C, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP 0x3C (ABS,X)", code: [0x3C, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP 0x5C (ABS,X)", code: [0x5C, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP 0x7C (ABS,X)", code: [0x7C, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP 0xDC (ABS,X)", code: [0xDC, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP 0xFC (ABS,X)", code: [0xFC, 0x00, 0x00], expectedCycles: 4 },
 
-    // NOP zeroPage,Y
-    { name:"NOP 92 (ZPY)",          code:[0x92,0x10] }
+    // Zero page,Y (rare NOP)
+    { name: "NOP 0x92 (ZP,Y)", code: [0x92, 0x10], expectedCycles: 5 }
   ];
 
-setupTests(tests);
+  // Clear and prepare system memory for indirect or memory reads in NOPs that access memory
+  for (let addr = 0; addr < 0x10000; addr++) systemMemory[addr] = 0;
 
-  // ── build HTML table ──
   let html =
-    `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
-       BRK & NOP
-     </div>
+    `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">BRK & NOPs Test Suite</div>
      <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
-       <thead><tr style="background:#222">
-         <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-         <th>CPU<br>Before</th><th>CPU<br>After</th><th>Addr</th>
-         <th>Expected</th><th>Result</th><th>Status</th>
-       </tr></thead><tbody>`;
+       <thead>
+         <tr style="background:#222">
+           <th>Test</th><th>Opcode</th><th>Flags Before</th><th>Flags After</th>
+           <th>CPU Before</th><th>CPU After</th><th>PC Before</th><th>PC After</th><th>Cycles Used</th><th>Expected Cycles</th><th>Status</th>
+         </tr>
+       </thead><tbody>`;
 
-  tests.forEach(test=>{
-    // snapshots
-    const fb = {...CPUregisters.P},
-          cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
+  for (const test of tests) {
+    // Reset CPU and memory for each test
+    for (let addr = 0; addr < 0x10000; addr++) systemMemory[addr] = 0;
+    CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
+    CPUregisters.S = 0xFF;
+    CPUregisters.P = { C: 0, Z: 0, I: 0, D: 0, B: 0, V: 0, N: 0 };
+    CPUregisters.PC = 0x8000;
 
-    // apply pre/setup
-    if(test.pre){
-      if(test.pre.S!=null) CPUregisters.S = test.pre.S;
-      if(test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
+    // Load test code bytes into memory at PC
+    for (let i = 0; i < test.code.length; i++) {
+      systemMemory[0x8000 + i] = test.code[i];
     }
-    if(test.setup) test.setup();
 
-    // run
-    step(); updateDebugTables();
+    // Apply preconditions if any
+    if (test.pre) {
+      if (test.pre.A != null) CPUregisters.A = test.pre.A;
+      if (test.pre.X != null) CPUregisters.X = test.pre.X;
+      if (test.pre.Y != null) CPUregisters.Y = test.pre.Y;
+      if (test.pre.S != null) CPUregisters.S = test.pre.S;
+      if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
+    }
 
-    // after
-    const fa = {...CPUregisters.P},
-          ca = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
+    // Snapshot before execution
+    const flagsBefore = { ...CPUregisters.P };
+    const cpuBefore = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
+    const pcBefore = CPUregisters.PC;
+    const cyclesBefore = cpuCycles;
 
-    // check
-    let pass = true, reasons = [];
-    const exp = test.expect || {};
-    ["A","X","Y","S"].forEach(r=>{
-      if(exp[r]!==undefined && ca[r]!==exp[r]){
+    // Execute one instruction step
+    step();
+
+    // Snapshot after execution
+    const flagsAfter = { ...CPUregisters.P };
+    const cpuAfter = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
+    const pcAfter = CPUregisters.PC;
+    const cyclesAfter = cpuCycles;
+
+    const cyclesUsed = cyclesAfter - cyclesBefore;
+    const expectedCycles = test.expectedCycles || 0;
+
+    // Check expected results
+    let pass = true;
+    const reasons = [];
+
+    if (test.expect) {
+      if (test.expect.S != null && cpuAfter.S !== test.expect.S) {
         pass = false;
-        reasons.push(`${r}=${hex(ca[r])}≠${hex(exp[r])}`);
+        reasons.push(`S=${cpuAfter.S}≠${test.expect.S}`);
       }
-    });
+      if (test.expect.P) {
+        for (const flag of ["C", "Z", "I", "D", "B", "V", "N"]) {
+          if (test.expect.P[flag] != null && flagsAfter[flag] !== test.expect.P[flag]) {
+            pass = false;
+            reasons.push(`P.${flag}=${flagsAfter[flag]}≠${test.expect.P[flag]}`);
+          }
+        }
+      }
+    }
 
-    // addr column only for BRK (stack write) or NOP skip
-    const addrLabel = test.expectMem
-      ? `$${test.expectMem.addr.toString(16).padStart(4,"0")}`
-      : "";
+    // For NOPs, expected is mostly cycles and PC increment
+    if (pcAfter !== pcBefore + test.code.length) {
+      pass = false;
+      reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${(pcBefore + test.code.length).toString(16)}`);
+    }
+    if (cyclesUsed !== expectedCycles) {
+      pass = false;
+      reasons.push(`cycles=${cyclesUsed}≠${expectedCycles}`);
+    }
 
-    // expected/result labels
-    const expectedLabel = Object.entries(exp).map(([k,v])=>
-      k==="S"? hex(v) : `${k}=${v}`
-    ).join(" ");
-    const resultLabel = Object.entries(exp).map(([k])=>{
-      const val = ca[k];
-      return k==="S"? hex(val) : `${k}=${val}`;
-    }).join(" ");
+    // Build opcode hex string
+    const opcodeHex = test.code.map(b => b.toString(16).padStart(2, "0")).join(" ");
+
+    // Build flags string for before and after
+    function flagsBin(f) {
+      return [
+        f.N ? "N" : ".",
+        f.V ? "V" : ".",
+        f.B ? "B" : ".",
+        f.D ? "D" : ".",
+        f.I ? "I" : ".",
+        f.Z ? "Z" : ".",
+        f.C ? "C" : "."
+      ].join("");
+    }
+    const flagsBeforeStr = flagsBin(flagsBefore);
+    const flagsAfterStr = flagsBin(flagsAfter);
 
     html += `
-      <tr style="background:${pass?"#113311":"#331111"}">
-        <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${addrLabel}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${pass?"✓":"✗"}</td>
+      <tr style="background:${pass ? "#113311" : "#331111"}">
+        <td>${test.name}</td>
+        <td>${opcodeHex}</td>
+        <td>${flagsBeforeStr}</td>
+        <td>${flagsAfterStr}</td>
+        <td>A=${cpuBefore.A} X=${cpuBefore.X} Y=${cpuBefore.Y} S=${cpuBefore.S}</td>
+        <td>A=${cpuAfter.A} X=${cpuAfter.X} Y=${cpuAfter.Y} S=${cpuAfter.S}</td>
+        <td>0x${pcBefore.toString(16)}</td>
+        <td>0x${pcAfter.toString(16)}</td>
+        <td>${cyclesUsed}</td>
+        <td>${expectedCycles}</td>
+        <td>${pass ? "✓" : `<details style="color:#ff4444"><summary>❌ Details</summary><ul>${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`}</td>
       </tr>`;
-  });
-
-  html += `</tbody></table>`;
-  document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
-CPUregisters.PC = 0x8000;
-
   }
 
+  html += "</tbody></table>";
+  document.body.insertAdjacentHTML("beforeend", html);
+
+  systemMemory[0x8000] = 0x02;
+  CPUregisters.PC = 0x8000;
+}
+
+
 function runUnofficialOpcodeTests() {
-  // ===== UNOFFICIAL/ILLEGAL OPS =====
   const tests = [
     // LAX: load into A & X
     { name:"LAX #$33 (IMM)", code:[0xAB,0x33], expect:{A:0x33,X:0x33,Z:0,N:0}, expectCycles: baseCycles.immediate },
+
     { name:"LAX $10 (ZP)", code:[0xA7,0x10], setup:()=>{systemMemory[0x10]=0x44;}, expect:{A:0x44,X:0x44,Z:0,N:0}, expectCycles: baseCycles.zeroPage },
+
+/*
+// Setup test for LAX $10 (ZP) passes, problem is in this test suite block
+cpuCycles = 0;
+CPUregisters = {
+  A: 0x33,
+  X: 0x33,
+  Y: 0x00,
+  S: 0xFF,
+  PC: 0x8000,
+  P: { C:0,Z:0,I:0,D:0,B:0,U:1,V:0,N:0 }
+};
+
+// Load opcode and operand into memory
+systemMemory[0x8000] = 0xA7;  // LAX opcode ZP
+systemMemory[0x8001] = 0x10;  // Zero page address 0x10
+
+// Prepare memory for test
+systemMemory[0x10] = 0x44;    // Value at zero page address 0x10
+
+// Log state before step
+console.log("Before step:");
+console.log(`PC=0x${CPUregisters.PC.toString(16)}`, `A=${CPUregisters.A}`, `X=${CPUregisters.X}`, `Y=${CPUregisters.Y}`, `S=${CPUregisters.S}`);
+console.log(`Cycles=${cpuCycles}`);
+
+// Execute one CPU step
+step();
+
+// Log state after step
+console.log("After step:");
+console.log(`PC=0x${CPUregisters.PC.toString(16)}`, `A=${CPUregisters.A}`, `X=${CPUregisters.X}`, `Y=${CPUregisters.Y}`, `S=${CPUregisters.S}`);
+console.log(`Cycles=${cpuCycles}`);
+
+// Also log flags for easier debugging
+console.log("Flags:", CPUregisters.P);
+
+    */
+
     { name:"LAX $10,Y (ZP,Y)", code:[0xB7,0x0F], pre:{Y:0x01}, setup:()=>{systemMemory[0x10]=0x00;}, expect:{A:0x00,X:0x00,Z:1,N:0}, expectCycles: baseCycles.zeroPageY },
     { name:"LAX $1234 (ABS)", code:[0xAF,0x34,0x12], setup:()=>{systemMemory[0x1234]=0x99;}, expect:{A:0x99,X:0x99,Z:0,N:1}, expectCycles: baseCycles.absolute },
     { name:"LAX $1234,Y (ABS,Y)", code:[0xBF,0x33,0x12], pre:{Y:0x01}, setup:()=>{systemMemory[0x1234+1]=0x00;}, expect:{A:0x00,X:0x00,Z:1,N:0}, expectCycles: baseCycles.absoluteY },
@@ -2284,6 +2371,14 @@ function runUnofficialOpcodeTests() {
        </tr></thead><tbody>`;
 
   tests.forEach(test=>{
+    // Clear opcode memory area before loading
+    for (let i = 0; i < 3; i++) {
+      systemMemory[0x8000 + i] = 0x00;
+    }
+    for (let i = 0; i < test.code.length; i++) {
+      systemMemory[0x8000 + i] = test.code[i];
+    }
+
     let intr={flag:false,addr:null}, orig=checkReadOffset;
     checkReadOffset=a=>{ intr.flag=true; intr.addr=a&0xFFFF; return orig(a); };
 
@@ -2308,7 +2403,6 @@ function runUnofficialOpcodeTests() {
           ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
           pa={...PPUregister};
 
-    // effective address
     let m=lastFetched.addressingMode, r=lastFetched.raw, ea=0;
     switch(m){
       case"immediate":  ea=lastFetched.pc+1; break;
@@ -2317,12 +2411,10 @@ function runUnofficialOpcodeTests() {
       case"absolute":   ea=(r[2]<<8)|r[1]; break;
       case"absoluteY":  ea=((r[2]<<8)|r[1])+CPUregisters.Y; break;
       case"absoluteX":  ea=((r[2]<<8)|r[1])+CPUregisters.X; break;
-      // Add more modes as needed
     }
     const mirrors=getMirrors(ea).filter(a=>a<0x10000),
           eaLabel=`$${ea.toString(16).padStart(4,"0")}`;
 
-    // check regs & flags
     let pass=true, reasons=[];
     const exp=test.expect||{};
     ["A","X","Y","S"].forEach(rn=>{ if(exp[rn]!=null && ca[rn]!==exp[rn]){ reasons.push(`${rn}=${hex(ca[rn])}≠${hex(exp[rn])}`); pass=false; } });
@@ -2331,7 +2423,6 @@ function runUnofficialOpcodeTests() {
       mirrors.forEach(a=>{ const got=systemMemory[a]; if(got!==test.expectMem.value){ reasons.push(`$${a.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`); pass=false; } });
     }
 
-    // Cycle check
     const deltaCycles = cyclesAfter - cyclesBefore;
     if (test.expectCycles !== undefined && deltaCycles !== test.expectCycles) {
       reasons.push(`cycles=${deltaCycles}≠${test.expectCycles}`);
@@ -2377,9 +2468,12 @@ function runUnofficialOpcodeTests() {
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-  systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
+
+  systemMemory[0x8000] = 0x02; // only set sentinel here once after all tests done
   CPUregisters.PC = 0x8000;
 }
+
+
 
 function runPageCrossAndQuirksTests() {
   // ========= 6502 PAGE CROSS & CYCLE QUIRK SUITE =========
