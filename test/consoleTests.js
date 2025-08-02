@@ -2233,53 +2233,14 @@ function runUnofficialOpcodeTests() {
   const tests = [
     // LAX: load into A & X
     { name:"LAX #$33 (IMM)", code:[0xAB,0x33], expect:{A:0x33,X:0x33,Z:0,N:0}, expectCycles: baseCycles.immediate },
-
     { name:"LAX $10 (ZP)", code:[0xA7,0x10], setup:()=>{systemMemory[0x10]=0x44;}, expect:{A:0x44,X:0x44,Z:0,N:0}, expectCycles: baseCycles.zeroPage },
-
-/*
-// Setup test for LAX $10 (ZP) passes, problem is in this test suite block
-cpuCycles = 0;
-CPUregisters = {
-  A: 0x33,
-  X: 0x33,
-  Y: 0x00,
-  S: 0xFF,
-  PC: 0x8000,
-  P: { C:0,Z:0,I:0,D:0,B:0,U:1,V:0,N:0 }
-};
-
-// Load opcode and operand into memory
-systemMemory[0x8000] = 0xA7;  // LAX opcode ZP
-systemMemory[0x8001] = 0x10;  // Zero page address 0x10
-
-// Prepare memory for test
-systemMemory[0x10] = 0x44;    // Value at zero page address 0x10
-
-// Log state before step
-console.log("Before step:");
-console.log(`PC=0x${CPUregisters.PC.toString(16)}`, `A=${CPUregisters.A}`, `X=${CPUregisters.X}`, `Y=${CPUregisters.Y}`, `S=${CPUregisters.S}`);
-console.log(`Cycles=${cpuCycles}`);
-
-// Execute one CPU step
-step();
-
-// Log state after step
-console.log("After step:");
-console.log(`PC=0x${CPUregisters.PC.toString(16)}`, `A=${CPUregisters.A}`, `X=${CPUregisters.X}`, `Y=${CPUregisters.Y}`, `S=${CPUregisters.S}`);
-console.log(`Cycles=${cpuCycles}`);
-
-// Also log flags for easier debugging
-console.log("Flags:", CPUregisters.P);
-
-    */
-
     { name:"LAX $10,Y (ZP,Y)", code:[0xB7,0x0F], pre:{Y:0x01}, setup:()=>{systemMemory[0x10]=0x00;}, expect:{A:0x00,X:0x00,Z:1,N:0}, expectCycles: baseCycles.zeroPageY },
     { name:"LAX $1234 (ABS)", code:[0xAF,0x34,0x12], setup:()=>{systemMemory[0x1234]=0x99;}, expect:{A:0x99,X:0x99,Z:0,N:1}, expectCycles: baseCycles.absolute },
-    { name:"LAX $1234,Y (ABS,Y)", code:[0xBF,0x33,0x12], pre:{Y:0x01}, setup:()=>{systemMemory[0x1234+1]=0x00;}, expect:{A:0x00,X:0x00,Z:1,N:0}, expectCycles: baseCycles.absoluteY },
+    { name:"LAX $1234,Y (ABS,Y)", code:[0xBF,0x33,0x12], pre:{Y:0x01}, setup:()=>{systemMemory[0x1235]=0x00;}, expect:{A:0x00,X:0x00,Z:1,N:0}, expectCycles: baseCycles.absoluteY },
     { name:"LAX ($10,X) (IND,X)", code:[0xA3,0x0F], pre:{X:0x01}, setup:()=>{
       systemMemory[0x10]=0x00; systemMemory[0x11]=0x40; systemMemory[0x4001]=0x77;
     }, expect:{A:0x77,X:0x77,Z:0,N:0}, expectCycles: baseCycles.indirectX },
-    { name:"LAX ($20),Y (IND),Y)", code:[0xB3,0x20], pre:{Y:0x02}, setup:()=>{
+    { name:"LAX ($20),Y (IND,Y)", code:[0xB3,0x20], pre:{Y:0x02}, setup:()=>{
       systemMemory[0x20]=0x00; systemMemory[0x21]=0x80; systemMemory[0x0202]=0x88;
     }, expect:{A:0x88,X:0x88,Z:0,N:1}, expectCycles: baseCycles.indirectY },
 
@@ -2358,7 +2319,6 @@ console.log("Flags:", CPUregisters.P);
       expectCycles: baseCycles.absoluteY }
   ];
 
-  // ── build HTML table ──
   let html =
     `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
        ILLEGAL/UNOFFICIAL OPCODES
@@ -2370,94 +2330,152 @@ console.log("Flags:", CPUregisters.P);
          <th>Eff Addr</th><th>Expected</th><th>Result</th><th>ΔCycles</th><th>Intercept</th><th>Status</th>
        </tr></thead><tbody>`;
 
-  tests.forEach(test=>{
-    // Clear opcode memory area before loading
+  tests.forEach(test => {
+    // Reset memory completely to avoid leftover data
+    for (let i = 0; i < 0x10000; i++) systemMemory[i] = 0;
+
+    // Reset CPU registers to a known baseline
+    CPUregisters.A = 0x00;
+    CPUregisters.X = 0x00;
+    CPUregisters.Y = 0x00;
+    CPUregisters.S = 0xFF;
+    CPUregisters.P = { C:0, Z:0, I:0, D:0, B:0, U:1, V:0, N:0 };
+    CPUregisters.PC = 0x8000;
+
+    // Reset PPU registers to zero (adjust if needed)
+    for (const key in PPUregister) {
+      if (Object.hasOwnProperty.call(PPUregister, key)) {
+        PPUregister[key] = 0;
+      }
+    }
+
+    // Clear opcode area and load test code at 0x8000
     for (let i = 0; i < 3; i++) {
-      systemMemory[0x8000 + i] = 0x00;
+      systemMemory[0x8000 + i] = 0;
     }
     for (let i = 0; i < test.code.length; i++) {
       systemMemory[0x8000 + i] = test.code[i];
     }
 
-    let intr={flag:false,addr:null}, orig=checkReadOffset;
-    checkReadOffset=a=>{ intr.flag=true; intr.addr=a&0xFFFF; return orig(a); };
-
-    const fb={...CPUregisters.P},
-          cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pb={...PPUregister};
-
-    if(test.pre){
-      if(test.pre.A!=null) CPUregisters.A=test.pre.A;
-      if(test.pre.X!=null) CPUregisters.X=test.pre.X;
-      if(test.pre.Y!=null) CPUregisters.Y=test.pre.Y;
-      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+    // Setup memory or registers if test defines
+    if (test.pre) {
+      if (test.pre.A != null) CPUregisters.A = test.pre.A;
+      if (test.pre.X != null) CPUregisters.X = test.pre.X;
+      if (test.pre.Y != null) CPUregisters.Y = test.pre.Y;
+      if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
-    if(test.setup) test.setup();
+    if (test.setup) test.setup();
 
+    // Track memory read interception
+    let intr = { flag: false, addr: null };
+    const origCheckReadOffset = checkReadOffset;
+    checkReadOffset = addr => {
+      intr.flag = true;
+      intr.addr = addr & 0xFFFF;
+      return origCheckReadOffset(addr);
+    };
+
+    // Snapshot before execution
+    const fb = { ...CPUregisters.P };
+    const cb = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
+    const pb = { ...PPUregister };
+
+    // Execute one instruction
     const cyclesBefore = cpuCycles;
-    step(); updateDebugTables();
+    step();
+    updateDebugTables();
     const cyclesAfter = cpuCycles;
-    checkReadOffset=orig;
 
-    const fa={...CPUregisters.P},
-          ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pa={...PPUregister};
+    // Restore original interception function
+    checkReadOffset = origCheckReadOffset;
 
-    let m=lastFetched.addressingMode, r=lastFetched.raw, ea=0;
-    switch(m){
-      case"immediate":  ea=lastFetched.pc+1; break;
-      case"zeroPage":   ea=r[1]&0xFF; break;
-      case"zeroPageY":  ea=(r[1]+CPUregisters.Y)&0xFF; break;
-      case"absolute":   ea=(r[2]<<8)|r[1]; break;
-      case"absoluteY":  ea=((r[2]<<8)|r[1])+CPUregisters.Y; break;
-      case"absoluteX":  ea=((r[2]<<8)|r[1])+CPUregisters.X; break;
-    }
-    const mirrors=getMirrors(ea).filter(a=>a<0x10000),
-          eaLabel=`$${ea.toString(16).padStart(4,"0")}`;
+    // Snapshot after execution
+    const fa = { ...CPUregisters.P };
+    const ca = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
+    const pa = { ...PPUregister };
 
-    let pass=true, reasons=[];
-    const exp=test.expect||{};
-    ["A","X","Y","S"].forEach(rn=>{ if(exp[rn]!=null && ca[rn]!==exp[rn]){ reasons.push(`${rn}=${hex(ca[rn])}≠${hex(exp[rn])}`); pass=false; } });
-    ["C","Z","N","V"].forEach(fn=>{ if(exp[fn]!=null && CPUregisters.P[fn]!==exp[fn]){ reasons.push(`${fn}=${CPUregisters.P[fn]}≠${exp[fn]}`); pass=false; } });
-    if(test.expectMem){
-      mirrors.forEach(a=>{ const got=systemMemory[a]; if(got!==test.expectMem.value){ reasons.push(`$${a.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`); pass=false; } });
+    // Determine effective address based on addressing mode
+    const m = lastFetched.addressingMode;
+    const r = lastFetched.raw;
+    let ea = 0;
+    switch (m) {
+      case "immediate": ea = lastFetched.pc + 1; break;
+      case "zeroPage": ea = r[1] & 0xFF; break;
+      case "zeroPageY": ea = (r[1] + CPUregisters.Y) & 0xFF; break;
+      case "absolute": ea = (r[2] << 8) | r[1]; break;
+      case "absoluteY": ea = ((r[2] << 8) | r[1]) + CPUregisters.Y; break;
+      case "absoluteX": ea = ((r[2] << 8) | r[1]) + CPUregisters.X; break;
+      // add more modes if needed
     }
 
+    const mirrors = getMirrors(ea).filter(a => a < 0x10000);
+    const eaLabel = `$${ea.toString(16).padStart(4, "0")}`;
+
+    // Check expected register and flag values
+    let pass = true;
+    const reasons = [];
+    const exp = test.expect || {};
+    ["A", "X", "Y", "S"].forEach(reg => {
+      if (exp[reg] != null && ca[reg] !== exp[reg]) {
+        reasons.push(`${reg}=${hex(ca[reg])}≠${hex(exp[reg])}`);
+        pass = false;
+      }
+    });
+    ["C", "Z", "N", "V"].forEach(flag => {
+      if (exp[flag] != null && CPUregisters.P[flag] !== exp[flag]) {
+        reasons.push(`${flag}=${CPUregisters.P[flag]}≠${exp[flag]}`);
+        pass = false;
+      }
+    });
+
+    // Check memory if applicable
+    if (test.expectMem) {
+      mirrors.forEach(a => {
+        const got = systemMemory[a];
+        if (got !== test.expectMem.value) {
+          reasons.push(`$${a.toString(16).padStart(4, "0")}=${hex(got)}≠${hex(test.expectMem.value)}`);
+          pass = false;
+        }
+      });
+    }
+
+    // Check cycles
     const deltaCycles = cyclesAfter - cyclesBefore;
     if (test.expectCycles !== undefined && deltaCycles !== test.expectCycles) {
       reasons.push(`cycles=${deltaCycles}≠${test.expectCycles}`);
       pass = false;
     }
 
+    // Prepare intercept and labels
     const interceptCell = intr.flag
-      ? dropdown(`$${intr.addr.toString(16).padStart(4,"0")}`, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))
+      ? dropdown(`$${intr.addr.toString(16).padStart(4, "0")}`, mirrors.map(a => `$${a.toString(16).padStart(4, "0")}`))
       : "no";
     const expectedLabel = test.expectMem
       ? hex(test.expectMem.value)
-      : Object.entries(exp).map(([k,v])=>`${k}=${hex(v)}`).join(" ");
+      : Object.entries(exp).map(([k, v]) => `${k}=${hex(v)}`).join(" ");
     const resultLabel = test.expectMem
       ? hex(systemMemory[ea])
-      : Object.entries(exp).map(([k])=>{
+      : Object.entries(exp).map(([k]) => {
           const val = k in ca ? ca[k] : CPUregisters.P[k];
           return `${k}=${hex(val)}`;
         }).join(" ");
 
     const statusCell = pass
       ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
-      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>`+
-        `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
+      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>` +
+        `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r => `<li>${r}</li>`).join("")}</ul></details>`;
 
     html += `
-      <tr style="background:${pass?"#113311":"#331111"}">
+      <tr style="background:${pass ? "#113311" : "#331111"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${test.code.map(b => b.toString(16).padStart(2, '0')).join(" ")}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(eaLabel,mirrors)}</td>
+        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k, v]) => `${k}=${hex(v)}`).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k, v]) => `${k}=${hex(v)}`).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(eaLabel, mirrors)}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
         <td style="border:1px solid #444;padding:6px;">${deltaCycles}</td>
@@ -2469,9 +2487,11 @@ console.log("Flags:", CPUregisters.P);
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
 
-  systemMemory[0x8000] = 0x02; // only set sentinel here once after all tests done
+  // Set sentinel opcode at the end only once
+  systemMemory[0x8000] = 0x02;
   CPUregisters.PC = 0x8000;
 }
+
 
 
 

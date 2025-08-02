@@ -217,12 +217,16 @@ a,b{
   margin: 0 auto;
 }
 
+.highlighted-cell {
+  background-color: rgb(7, 233, 210);
+}
+
 /* CRT panel itself */
 .crt-panel {
-  display: inline-block;      /* shrink to content */
+  display: inline-block;
   width: 330px;
   height: 225px;
-  background: rgba(0, 0, 0, 0.3);
+  background: #060606;
   border: 2px solid #0f0;
   border-radius: 6px;
   box-sizing: border-box;
@@ -250,8 +254,8 @@ a,b{
 
 /* Instruction / operand text lines */
 .crt-line {
-  background: rgba(0, 255, 0, 0.05);
-  border: 1px solid rgba(0, 255, 0, 0.2);
+  background: rgba(0,255,0,0.07);
+  border: 1px solid rgba(0,255,0,0.18);
   border-radius: 3px;
   padding: 4px 6px;
   font-size: 14px;
@@ -266,6 +270,7 @@ a,b{
   flex-direction: column;
   gap: 6px;
   margin-top: 6px;
+  align-items: stretch;
 }
 
 /* Buttons */
@@ -273,31 +278,50 @@ a,b{
   flex: none;
   width: 100%;
   padding: 6px 0;
-  background: rgba(0, 255, 0, 0.1);
-  border: 1px solid rgba(0, 255, 0, 0.4);
+  background: rgba(0, 255, 0, 0.13);
+  border: 1px solid rgba(0,255,0,0.45);
   color: #010;
   font-size: 13px;
   cursor: pointer;
   border-radius: 3px;
-  transition: background 0.15s ease;
+  font-family: inherit;
+  font-weight: bold;
+  text-shadow: 0 0 3px #0f0;
+  transition: background 0.18s, color 0.12s;
 }
 
 .crt-btn:hover {
-  background: rgba(0, 255, 0, 0.2);
+  background: rgba(0, 255, 0, 0.24);
+  color: #050;
 }
 
-/* Target only the GeneratedTable under .instruction-step: */
+/* Fuzzy CRT effect for step box or output area */
+.crt-step-box {
+  background: #001100;
+  border: 1.5px solid #0f0;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-weight: 600;
+  font-size: 15px;
+  color: #0f0;
+  font-family: 'Courier New', monospace;
+  text-shadow:
+    0 0 3px #0f0,
+    0 0 7px #0f0,
+    0 0 10px #3f3,
+    0 0 15px #0f0;
+  filter: drop-shadow(0 0 3px #0f0);
+  /* (optional): subtle scanlines, add a background image for more authenticity */
+}
+
+/* Generated table inside instruction-step area */
 .instruction-step > .GeneratedTable {
-  width: auto !important;             /* shrink‐wrap instead of full-width */
-  max-width: none !important;         /* no content-based cap */
-  background: transparent !important; /* remove any BG color */
-  border: none !important;            /* remove table borders */
-  box-shadow: none !important;        /* remove any shadow */
-  padding: 0 !important;              /* clear internal padding */
-  margin: 0 auto !important;          /* center it if block */
-  table-layout: auto !important;      /* let widths be intrinsic */
-}
-
-.highlighted-cell {
-  background-color: rgb(217, 217, 5);
+  width: auto !important;
+  max-width: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
+  table-layout: auto !important;
 }
