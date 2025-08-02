@@ -98,10 +98,40 @@ function STA_ABSX() {
 
 function ADC_IMM() {
   const value = checkReadOffset(CPUregisters.PC + 1);
-  const sum = CPUregisters.A + value + (CPUregisters.P.C ? 1 : 0);
-  CPUregisters.P.C = (sum > 255) ? 1 : 0;
-  CPUregisters.P.V = (((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0) ? 1 : 0;
-  CPUregisters.A = sum & 0xFF;
+  let carryIn = CPUregisters.P.C ? 1 : 0;
+  let result;
+
+  if (CPUregisters.P.D) {
+    // Decimal mode BCD addition
+    let lowNibble = (CPUregisters.A & 0x0F) + (value & 0x0F) + carryIn;
+    let carry = 0;
+
+    if (lowNibble > 9) {
+      lowNibble += 6;
+    }
+    carry = lowNibble > 0x0F ? 1 : 0;
+    lowNibble &= 0x0F;
+
+    let highNibble = (CPUregisters.A >> 4) + (value >> 4) + carry;
+    if (highNibble > 9) {
+      highNibble += 6;
+    }
+    result = ((highNibble << 4) | lowNibble) & 0xFF;
+
+    CPUregisters.P.C = highNibble > 0x0F ? 1 : 0;
+
+    // Overflow flag in decimal mode is implementation-defined; NES clears it.
+    CPUregisters.P.V = 0; 
+  } else {
+    // Binary mode addition
+    const sum = CPUregisters.A + value + carryIn;
+    CPUregisters.P.C = (sum > 255) ? 1 : 0;
+    // Overflow detection
+    CPUregisters.P.V = (((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0) ? 1 : 0;
+    result = sum & 0xFF;
+  }
+
+  CPUregisters.A = result;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
 }
@@ -422,18 +452,6 @@ function LDX_ABSY() {
   CPUregisters.P.N = ((CPUregisters.X & 0x80) !== 0) ? 1 : 0;
     // Add cycle if page crossed (standard quirk)
   if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles++;
-}
-
-function ADC_IMM() {
-  const value = checkReadOffset(CPUregisters.PC + 1);
-  const carryIn = CPUregisters.P.C ? 1 : 0;
-  const result = CPUregisters.A + value + carryIn;
-
-  CPUregisters.P.C = (result > 0xFF) ? 1 : 0;
-  CPUregisters.P.Z = ((result & 0xFF) === 0) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
-  CPUregisters.P.V = ((~(CPUregisters.A ^ value) & (CPUregisters.A ^ result) & 0x80) !== 0) ? 1 : 0;
-  CPUregisters.A = result & 0xFF;
 }
 
 function ADC_ZP() {
@@ -1351,17 +1369,53 @@ function LDY_ABSX() {
   if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles++;
 }
 
-
 function SBC_IMM() {
-  const value = checkReadOffset(CPUregisters.PC + 1) ^ 0xFF;
-  const sum = CPUregisters.A + value + CPUregisters.P.C;
+  const value = checkReadOffset(CPUregisters.PC + 1);
+  const carry = CPUregisters.P.C ? 1 : 0;
+  const A = CPUregisters.A;
 
-  CPUregisters.P.C = (sum > 0xFF ? 1 : 0) ? 1 : 0;
-  CPUregisters.P.V = (((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) ? 1 : 0) ? 1 : 0;
-  CPUregisters.A = sum & 0xFF;
-  CPUregisters.P.Z = (CPUregisters.A === 0 ? 1 : 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0 ? 1 : 0) ? 1 : 0;
+  const raw = A - value - (1 - carry);
+
+  if (CPUregisters.P.D) {
+    // BCD mode subtraction
+    let al = (A & 0x0F) - (value & 0x0F) - (1 - carry);
+    let ah = (A >> 4) - (value >> 4);
+
+    if (al < 0) {
+      al += 10;
+      ah -= 1;
+    }
+    if (ah < 0) {
+      ah += 10;
+      CPUregisters.P.C = 0; // borrow occurred, clear carry
+    } else {
+      CPUregisters.P.C = 1; // no borrow, set carry
+    }
+
+    const result = ((ah << 4) | (al & 0x0F)) & 0xFF;
+    CPUregisters.A = result;
+
+    // Set zero and negative flags
+    CPUregisters.P.Z = (result === 0) ? 1 : 0;
+    CPUregisters.P.N = (result & 0x80) ? 1 : 0;
+
+    // Overflow flag undefined in BCD, clear it
+    CPUregisters.P.V = 0;
+  } else {
+    // Binary mode subtraction
+    CPUregisters.P.C = raw >= 0 ? 1 : 0;
+    CPUregisters.A = raw & 0xFF;
+
+    // Set zero and negative flags
+    CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
+    CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
+
+    // Overflow flag
+    CPUregisters.P.V = (((A ^ raw) & (A ^ value) & 0x80) !== 0) ? 1 : 0;
+  }
 }
+
+
 
 function SBC_ZP() {
   const address = checkReadOffset(CPUregisters.PC + 1);

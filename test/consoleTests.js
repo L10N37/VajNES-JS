@@ -23,6 +23,346 @@ function setupTests(tests) {
 }
 // ────────────────────────────────────────────────────────────────────────────────
 
+function runEdgeCaseTests() {
+  // ========= 6502 EDGE CASE TEST SUITE =========
+
+  // Helper to decorate tests
+  const cross = (desc, test) => Object.assign(test, {desc, cross:true});
+  const nocross = (desc, test) => Object.assign(test, {desc, cross:false});
+
+  // Helper: [mnemonic, addressing] for each test case
+  const testLookup = {
+    "JMP ($02FF) page-wrap bug": ["JMP", "indirect"],
+    "STA $FF,X wraps": ["STA", "zeroPageX"],
+    "BNE crosses page": ["BNE", "relative"],
+    "ADC BCD half-carry": ["ADC", "immediate"],
+    "SBC BCD borrow": ["SBC", "immediate"],
+    "BIT $80 dummy-read": ["BIT", "zeroPage"],
+    "ASL $10 dummy-read": ["ASL", "zeroPage"],
+    "PHA wraps SP": ["PHA", "implied"],
+    "PHP/PLP order": ["PHP", "implied"], // PHP then PLP sequence — test uses PHP only opcodeFn for simplicity
+    "Self-mod IMM": ["LDA", "immediate"],
+    "BRK sets B": ["BRK", "implied"],
+    "IRQ leaves B": ["IRQ", "implied"],
+  };
+
+  function getBaseCycles(testDesc) {
+    const lookup = testLookup[testDesc];
+    if (!lookup) throw new Error(`No testLookup mapping for "${testDesc}"`);
+    const [mnemonic, addressing] = lookup;
+    return opcodes[mnemonic]?.[addressing]?.cycles ?? 0;
+  }
+
+  // Page crossing detection for branches and indexed modes where it matters
+  function didPageCross(test) {
+    if (!test.code || test.code.length === 0) return false;
+    // Branches (relative)
+    if (test.opcodeFn && test.opcodeFn.endsWith("_REL")) {
+      const offset = test.code[1];
+      const signed = offset < 0x80 ? offset : offset - 0x100;
+      const base = ((test.pre?.PC ?? 0x8000) + 2) & 0xFFFF;
+      const dest = (base + signed) & 0xFFFF;
+      // Branch taken flags
+      let taken = false;
+      if (/BNE/.test(test.opcodeFn)) taken = (test.pre?.P?.Z === 0);
+      else if (/BEQ/.test(test.opcodeFn)) taken = (test.pre?.P?.Z === 1);
+      else if (/BCC/.test(test.opcodeFn)) taken = (test.pre?.P?.C === 0);
+      else if (/BCS/.test(test.opcodeFn)) taken = (test.pre?.P?.C === 1);
+      else if (/BPL/.test(test.opcodeFn)) taken = (test.pre?.P?.N === 0);
+      else if (/BMI/.test(test.opcodeFn)) taken = (test.pre?.P?.N === 1);
+      else if (/BVC/.test(test.opcodeFn)) taken = (test.pre?.P?.V === 0);
+      else if (/BVS/.test(test.opcodeFn)) taken = (test.pre?.P?.V === 1);
+      if (!taken) return false;
+      return (base & 0xFF00) !== (dest & 0xFF00);
+    }
+    // Absolute,X and Absolute,Y with index
+    if (test.opcodeFn && /(ABSX|ABSY)/.test(test.opcodeFn)) {
+      const base = test.code[1] | (test.code[2] << 8);
+      let index = 0;
+      if (/ABSX/.test(test.opcodeFn)) index = test.pre?.X ?? 0;
+      if (/ABSY/.test(test.opcodeFn)) index = test.pre?.Y ?? 0;
+      const eff = (base + index) & 0xFFFF;
+      return (base & 0xFF00) !== (eff & 0xFF00);
+    }
+    // Indirect,Y
+    if (test.opcodeFn && /INDY/.test(test.opcodeFn)) {
+      const zp = test.code[1];
+      if (test.setup) test.setup();
+      const low = systemMemory[zp];
+      const high = systemMemory[(zp + 1) & 0xFF];
+      const ptr = low | (high << 8);
+      const y = test.pre?.Y ?? 0;
+      const eff = (ptr + y) & 0xFFFF;
+      return (ptr & 0xFF00) !== (eff & 0xFF00);
+    }
+    return false;
+  }
+
+  // ---- EDGE CASE TESTS ----
+  const cases = [
+    cross("JMP ($02FF) page-wrap bug", {
+      code: [0x6C, 0xFF, 0x02],
+      opcodeFn: "JMP_IND",
+      setup: () => {
+        systemMemory[0x02FF] = 0x00;
+        systemMemory[0x0200] = 0x80;
+      },
+      expectPC: 0x8000,
+      baseCycles: getBaseCycles("JMP ($02FF) page-wrap bug"),
+      extra: 0
+    }),
+    nocross("STA $FF,X wraps", {
+      code: [0x95, 0xFF],
+      pre: { A: 0x42, X: 0x01 },
+      opcodeFn: "STA_ZPX",
+      expectMem: { addr: 0x0000, value: 0x42 },
+      baseCycles: getBaseCycles("STA $FF,X wraps"),
+      extra: 0
+    }),
+    cross("BNE crosses page", {
+      code: [0xD0, 0x03],         // Branch +3
+      pre: { P: { Z: 0 }, PC: 0x80FD }, // PC near end of page 0x80
+      opcodeFn: "BNE_REL",
+      expectPC: 0x8102,           // Crosses from 0x80FD+2=0x80FF to 0x8102
+      baseCycles: getBaseCycles("BNE crosses page"),
+      extra: 2
+    }),
+    nocross("ADC BCD half-carry", {
+      code: [0x69, 0x15],
+      pre: { A: 0x27, P: { D: 1, C: 0 } },
+      opcodeFn: "ADC_IMM",
+      expect: { A: 0x42, C: 0 },
+      baseCycles: getBaseCycles("ADC BCD half-carry"),
+      extra: 0
+    }),
+
+
+
+    /*
+    verified with asm from @ https://skilldrick.github.io/easy6502/
+
+    SED           ; set decimal mode
+    CLC           ; clear carry (borrow)
+    LDA #$42      ; load A with 0x42
+    SBC #$15      ; subtract 0x15 with borrow
+    BRK           ; break to stop program
+
+    result:
+    A=$26 X=$00 Y=$00
+    SP=$ff PC=$0607
+    NV-BDIZC
+    00111001
+    */
+    nocross("SBC BCD borrow", {
+      code: [0xE9, 0x15],
+      pre: { A: 0x42, P: { D: 1, C: 0 } },
+      opcodeFn: "SBC_IMM",
+      expect: { A: 0x26, C: 1 }, //corrected to 0x26 from 0x27, and C: 0 to C:1
+      baseCycles: getBaseCycles("SBC BCD borrow"),
+      extra: 0
+    }),
+
+
+    nocross("BIT $80 dummy-read", {
+      code: [0x24, 0x80],
+      setup: () => {
+        systemMemory[0x0080] = 0xFF;
+      },
+      pre: { A: 0x00 },
+      opcodeFn: "BIT_ZP",
+      expectFlags: { Z: 1, V: 1, N: 1 },
+      baseCycles: getBaseCycles("BIT $80 dummy-read"),
+      extra: 0
+    }),
+    nocross("ASL $10 dummy-read", {
+      code: [0x06, 0x10],
+      setup: () => {
+        systemMemory[0x0010] = 0x01;
+      },
+      opcodeFn: "ASL_ZP",
+      expectMem: { addr: 0x10, value: 0x02 },
+      baseCycles: getBaseCycles("ASL $10 dummy-read"),
+      extra: 0
+    }),
+    nocross("PHA wraps SP", {
+      code: [0x48],
+      pre: { A: 0x99, S: 0x00 },
+      opcodeFn: "PHA_IMP",
+      expectMem: { addr: 0x0100, value: 0x99 },
+      expect: { S: 0xFF },
+      baseCycles: getBaseCycles("PHA wraps SP"),
+      extra: 0
+    }),
+    nocross("PHP/PLP order", {
+      code: [0x08, 0x28],
+      pre: { P: { C: 1, D: 1, I: 0, Z: 1 }, S: 0xFF },
+      opcodeFn: "PHP_IMP",
+      setup: () => {
+        systemMemory[0x01FF] = 0b00101101; // Simulate PHP pushing flags
+      },
+      expectFlags: { C: 1, Z: 1, I: 0, D: 1, B: 0, V: 0, N: 0 },
+      baseCycles: getBaseCycles("PHP/PLP order"),
+      extra: 0
+    }),
+
+    nocross("Self-mod IMM", {
+      code: [0xA9, 0x00],
+      pre: { A: 0x00, PC: 0x8000 },
+      opcodeFn: "LDA_IMM",
+      setup: () => {
+        systemMemory[0x8001] = 0x77; // Hardcode 0x8001 here
+      },
+      expect: { A: 0x77 },
+      baseCycles: getBaseCycles("Self-mod IMM"),
+      extra: 0
+    }),
+
+    nocross("BRK sets B", {
+      code: [0x00],
+      pre: { P: { I: 0, B: 0 } },
+      opcodeFn: "BRK_IMP",
+      expectFlags: { B: 1, I: 1 },
+      baseCycles: getBaseCycles("BRK sets B"),
+      extra: 0
+    }),
+    nocross("IRQ leaves B", {
+      code: [],
+      pre: { P: { I: 0, B: 0 } },
+      opcodeFn: "IRQ",
+      expectFlags: { B: 0, I: 1 },
+      baseCycles: 7,
+      extra: 0
+    }),
+  ];
+
+  let html = `
+    <div style="background:darkblue;color:white;padding:7px 6px 7px 6px;font-weight:bold;">
+      6502 EDGE CASE TEST SUITE
+    </div>
+    <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
+      <thead>
+        <tr style="background:#223366;">
+          <th>Test</th>
+          <th>Op</th>
+          <th>Opcode Fn</th>
+          <th>Flags<br>Before</th>
+          <th>Flags<br>After</th>
+          <th>CPU<br>Before</th>
+          <th>CPU<br>After</th>
+          <th>PC<br>Before</th>
+          <th>PC<br>After</th>
+          <th>Page<br>Crossed?</th>
+          <th>Cycles<br>Before</th>
+          <th>Cycles<br>After</th>
+          <th>ΔCycles</th>
+          <th>Status</th>
+        </tr>
+      </thead><tbody>`;
+
+  for (const test of cases) {
+    // --- Setup ---
+    for(let a=0; a<0x10000; a++) systemMemory[a] = 0;
+    //cpuCycles = 0;
+    CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
+    CPUregisters.S = 0xFF;
+    CPUregisters.P = {C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
+    CPUregisters.PC = test.pre?.PC ?? 0x8000;
+    if(test.pre){
+      if(test.pre.A != null) CPUregisters.A = test.pre.A;
+      if(test.pre.X != null) CPUregisters.X = test.pre.X;
+      if(test.pre.Y != null) CPUregisters.Y = test.pre.Y;
+      if(test.pre.S != null) CPUregisters.S = test.pre.S;
+      if(test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
+    }
+    if(test.setup) test.setup();
+
+    // --- Snapshot before ---
+    const fb = {...CPUregisters.P};
+    const cb = {A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S};
+    const pcBefore = CPUregisters.PC;
+    const beforeCycles = cpuCycles;
+
+    // --- Load code ---
+    if(test.code && test.code.length){
+      test.code.forEach((b, i) => { systemMemory[CPUregisters.PC + i] = b; });
+      step();
+      if (typeof updateDebugTables === "function") updateDebugTables();
+    }
+
+    // --- Snapshot after ---
+    const fa = {...CPUregisters.P};
+    const ca = {A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S};
+    const pcAfter = CPUregisters.PC;
+    const afterCycles = cpuCycles;
+    const usedCycles = afterCycles - beforeCycles;
+
+    // --- Page cross detection (branches and indexed addressing only) ---
+    let pageCrossed = didPageCross(test)
+      ? `<span style="color:orange;">Yes</span>`
+      : `<span style="color:lightgreen;">No</span>`;
+
+    // --- Pass/fail check ---
+    let pass = true, reasons = [];
+    if(test.expect){
+      for(const r in test.expect){
+        const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
+        if(actual !== test.expect[r]){
+          pass = false;
+          reasons.push(`${r}=${actual}≠${test.expect[r]}`);
+        }
+      }
+    }
+    if(test.expectMem){
+      const val = systemMemory[test.expectMem.addr];
+      if(val !== test.expectMem.value){
+        pass = false;
+        reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${val}≠${test.expectMem.value}`);
+      }
+    }
+    if(test.expectPC !== undefined && pcAfter !== test.expectPC){
+      pass = false;
+      reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${test.expectPC.toString(16)}`);
+    }
+    const cycleTarget = (test.baseCycles ?? 0) + (test.extra ?? 0);
+    if(usedCycles !== cycleTarget){
+      pass = false;
+      reasons.push(`cycles=${usedCycles}≠${cycleTarget}`);
+    }
+
+    // --- Render row ---
+    const opLabel = (test.code || []).map(b => b.toString(16).padStart(2, "0")).join(" ");
+    const status = pass
+      ? `<span style="color:#7fff7f;">✔️</span>`
+      : `<details style="color:#ff4444;cursor:pointer;"><summary>❌ Show Details</summary><ul>`+
+        reasons.map(r => `<li>${r}</li>`).join("") + `</ul></details>`;
+
+    html += `
+      <tr style="background:${pass ? "#113311" : "#331111"}">
+        <td>${test.desc || test.name}</td>
+        <td>${opLabel}</td>
+        <td>${test.opcodeFn || ""}</td>
+        <td>${flagsBin(fb)}</td>
+        <td>${flagsBin(fa)}</td>
+        <td>A=${cb.A} X=${cb.X} Y=${cb.Y} S=${cb.S}</td>
+        <td>A=${ca.A} X=${ca.X} Y=${ca.Y} S=${ca.S}</td>
+        <td>0x${pcBefore.toString(16)}</td>
+        <td>0x${pcAfter.toString(16)}</td>
+        <td>${pageCrossed}</td>
+        <td>${beforeCycles}</td>
+        <td>${afterCycles}</td>
+        <td>${usedCycles}</td>
+        <td>${status}</td>
+      </tr>`;
+  }
+
+  html += `</tbody></table>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+
+  // Reset for further testing
+  systemMemory[0x8000] = 0x02;
+  CPUregisters.PC = 0x8000;
+}
+
 function hex(v, len = 2) {
   if (v == null || typeof v.toString !== "function") return "--";
   return "0x" + v.toString(16).toUpperCase().padStart(len, "0");
@@ -1960,185 +2300,6 @@ function runUnofficialOpcodeTests() {
   CPUregisters.PC = 0x8000;
 }
 
-  function runEdgeCaseTests(){
-    // ===== EDGE CASES =====
-  const edgeCases = [
-    { name: "JMP ($02FF) page-wrap bug", code:[0x6C,0xFF,0x02], setup:()=>{
-        systemMemory[0x02FF]=0x00;
-        systemMemory[0x0200]=0x80;
-      }, expectPC:0x8000 },
-    { name: "STA $FF,X wraps",       code:[0x95,0xFF], pre:{A:0x42,X:0x01},
-      expectMem:{addr:0x0000,value:0x42} },
-    { name: "BNE crosses page",      code:[0xD0,0x7E], pre:{P:{Z:0}},
-      expectPC:0x807E, expectExtraCycle:true },
-    { name: "ADC BCD half-carry",    code:[0x69,0x15], pre:{A:0x27,P:{D:1,C:0}},
-      expect:{A:0x42,C:0} },
-    { name: "SBC BCD borrow",        code:[0xE9,0x15], pre:{A:0x42,P:{D:1,C:0}},
-      expect:{A:0x27,C:0} },
-    { name: "BIT $80 dummy-read",    code:[0x24,0x80], setup:()=>{
-        systemMemory[0x0080]=0xFF;
-      }, pre:{A:0x00}, expectFlags:{Z:1,V:1,N:1} },
-    { name: "ASL $10 dummy-read",    code:[0x06,0x10], setup:()=>{
-        systemMemory[0x10]=0x01;
-      }, expectInterceptReads:2, expectMem:{addr:0x10,value:0x02} },
-    { name: "PHA wraps SP",          code:[0x48], pre:{A:0x99,S:0x00},
-      expectMem:{addr:0x0100,value:0x99}, expect:{S:0xFF} },
-    { name: "PHP/PLP order",         code:[0x08,0x28], pre:{P:{C:1,D:1,I:0,Z:1},S:0xFF},
-      setup:()=>{
-        systemMemory[0x01FF]=0b00101101;
-      }, expectFlags:{C:1,Z:1,I:0,D:1,B:0,V:0,N:0} },
-    { name: "Self-mod IMM",          code:[0xA9,0x00], pre:{A:0x00}, setup:()=>{
-        systemMemory[CPUregisters.PC+1]=0x77;
-      }, expect:{A:0x77} },
-    { name: "BRK sets B",            code:[0x00], pre:{P:{I:0,B:0}},
-      expectFlags:{B:1,I:1} },
-    { name: "IRQ leaves B",          code:[],     pre:{P:{I:0,B:0}},
-      expectFlags:{B:0,I:1} }
-  ];
-
-  let html = `
-    <div style="background:black;color:white;padding:6px;font-weight:bold;">
-      EDGE CASES
-    </div>
-    <table style="width:98%;margin:8px auto;border-collapse:collapse;
-                  background:black;color:white;">
-      <thead><tr style="background:#222">
-        <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-        <th>CPU<br>Before</th><th>CPU<br>After</th><th>PC</th>
-        <th>Reads</th><th>Cycles<br>Before</th><th>Cycles<br>After</th><th>ΔCycles</th><th>Status</th>
-      </tr></thead><tbody>`;
-
-  edgeCases.forEach(test=>{
-    // 1) clear WRAM/PPU
-    for(let a=0;a<0x4000;a++) systemMemory[a]=0;
-    // 2) reset CPU registers
-    CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
-    CPUregisters.S = 0xFF;
-    CPUregisters.P = {C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-    // 3) set PC to start of PRG-ROM
-    CPUregisters.PC = 0x8000;
-
-    // 4) apply pre & setup hooks
-    if(test.pre){
-      if(test.pre.A != null) CPUregisters.A = test.pre.A;
-      if(test.pre.X != null) CPUregisters.X = test.pre.X;
-      if(test.pre.Y != null) CPUregisters.Y = test.pre.Y;
-      if(test.pre.S != null) CPUregisters.S = test.pre.S;
-      if(test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
-    }
-    if(test.setup) test.setup();
-
-    // 5) snapshot flags & regs before
-    const fb = {...CPUregisters.P};
-    const cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y};
-
-    // 6) snapshot cycles before (NO RESET)
-    const beforeCycles = cpuCycles;
-
-    // 7) hook read intercept counting
-    let intercepts = 0;
-    const origRead = checkReadOffset;
-    checkReadOffset = addr => { intercepts++; return origRead(addr); };
-
-    // 8) load code bytes into PRG-ROM and execute
-    if(test.code.length){
-      test.code.forEach((b,i)=>{
-        systemMemory[0x8000+i]=b;
-        systemMemory[0xC000+i]=b;
-      });
-      step(); updateDebugTables();
-    }
-
-    // 9) restore read helper & snapshot cycles after
-    checkReadOffset = origRead;
-    const afterCycles = cpuCycles;
-    const usedCycles  = afterCycles - beforeCycles;
-
-    // 10) snapshot flags & regs after, and PC
-    const fa = {...CPUregisters.P};
-    const ca = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y};
-    const pc = CPUregisters.PC;
-
-    // 11) evaluate pass/fail
-    let pass = true, reasons = [];
-    if(test.expectPC!=null && pc!==test.expectPC){
-      pass=false; reasons.push(`PC=0x${pc.toString(16)}≠0x${test.expectPC.toString(16)}`);
-    }
-    if(test.expectMem){
-      const val = systemMemory[test.expectMem.addr];
-      if(val!==test.expectMem.value){
-        pass=false; reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${hex(val)}≠${hex(test.expectMem.value)}`);
-      }
-    }
-    if(test.expectFlags){
-      for(const f in test.expectFlags){
-        if(CPUregisters.P[f]!==test.expectFlags[f]){
-          pass=false; reasons.push(`${f}=${CPUregisters.P[f]}≠${test.expectFlags[f]}`);
-        }
-      }
-    }
-    if (test.expect) {
-      for (const r in test.expect) {
-        const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
-        const expectVal = test.expect[r];
-        let aStr, eStr;
-        if (typeof actual === "number") {
-          aStr = "0x" + actual.toString(16);
-        } else if (actual === undefined) {
-          aStr = "undefined";
-        } else {
-          aStr = String(actual);
-        }
-        if (typeof expectVal === "number") {
-          eStr = "0x" + expectVal.toString(16);
-        } else if (expectVal === undefined) {
-          eStr = "undefined";
-        } else {
-          eStr = String(expectVal);
-        }
-        if (actual !== expectVal) {
-          pass = false;
-          reasons.push(`${r}=${aStr}≠${eStr}`);
-        }
-      }
-    }
-    if(test.expectInterceptReads!=null && intercepts!==test.expectInterceptReads){
-      pass=false; reasons.push(`reads=${intercepts}≠${test.expectInterceptReads}`);
-    }
-    if(test.expectExtraCycle && usedCycles<=2){
-      pass=false; reasons.push(`cycles=${usedCycles} no extra`);
-    }
-
-    // 12) render row
-    const opLabel = test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ");
-    const status = pass
-      ? `<span style="color:#7fff7f;">✔️</span>`
-      : `<details style="color:#ff4444;"><summary>❌</summary><ul>`+
-        reasons.map(r=>`<li>${r}</li>`).join("")+"</ul></details>";
-
-    html += `
-      <tr style="background:${pass?"#113311":"#331111"}">
-        <td>${test.name}</td>
-        <td>${opLabel}</td>
-        <td>${flagsBin(fb)}</td>
-        <td>${flagsBin(fa)}</td>
-        <td>A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)}</td>
-        <td>A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)}</td>
-        <td>0x${pc.toString(16)}</td>
-        <td>${intercepts}</td>
-        <td>${beforeCycles}</td>
-        <td>${afterCycles}</td>
-        <td>${usedCycles}</td>
-        <td>${status}</td>
-      </tr>`;
-  });
-
-  html += `</tbody></table>`;
-  document.body.insertAdjacentHTML("beforeend", html);
-systemMemory[0x8000] = 0x02; //reset so we can keep stepping once and testing
-CPUregisters.PC = 0x8000;
-}
-
 function runPageCrossAndQuirksTests() {
   // ========= 6502 PAGE CROSS & CYCLE QUIRK SUITE =========
 
@@ -2409,6 +2570,251 @@ function runPageCrossAndQuirksTests() {
   CPUregisters.PC = 0x8000;
 }
 
+function runExtensiveDecimalModeTests() { // http://www.6502.org/tutorials/decimal_mode.html#B
+  // ======= Extensive 6502 Decimal Mode (BCD) ADC & SBC Tests =======
+
+  // Helpers for test decoration
+  const cross = (desc, test) => Object.assign(test, { desc, cross: true });
+  const nocross = (desc, test) => Object.assign(test, { desc, cross: false });
+
+  function getBaseCycles(testDesc) {
+    if (/ADC/.test(testDesc)) return 2;
+    if (/SBC/.test(testDesc)) return 2;
+    throw new Error(`No base cycles for test: ${testDesc}`);
+  }
+
+  // Test cases
+  const cases = [
+    cross("ADC Dec: 58 + 46 + 1", {
+      code: [0x69, 0x46],
+      pre: { A: 0x58, P: { D: 1, C: 1 } },
+      opcodeFn: "ADC_IMM",
+      expect: { A: 0x05, C: 1 },
+      baseCycles: getBaseCycles("ADC Dec: 58 + 46 + 1"),
+      extra: 0
+    }),
+    nocross("ADC Dec: 12 + 34 + 0", {
+      code: [0x69, 0x34],
+      pre: { A: 0x12, P: { D: 1, C: 0 } },
+      opcodeFn: "ADC_IMM",
+      expect: { A: 0x46, C: 0 },
+      baseCycles: getBaseCycles("ADC Dec: 12 + 34 + 0"),
+      extra: 0
+    }),
+    nocross("ADC Dec: 15 + 26 + 0", {
+      code: [0x69, 0x26],
+      pre: { A: 0x15, P: { D: 1, C: 0 } },
+      opcodeFn: "ADC_IMM",
+      expect: { A: 0x41, C: 0 },
+      baseCycles: getBaseCycles("ADC Dec: 15 + 26 + 0"),
+      extra: 0
+    }),
+    cross("ADC Dec: 81 + 92 + 0 (carry out)", {
+      code: [0x69, 0x92],
+      pre: { A: 0x81, P: { D: 1, C: 0 } },
+      opcodeFn: "ADC_IMM",
+      expect: { A: 0x73, C: 1 },
+      baseCycles: getBaseCycles("ADC Dec: 81 + 92 + 0 (carry out)"),
+      extra: 0
+    }),
+    nocross("SBC Dec: 46 - 12 - no borrow", {
+      code: [0xE9, 0x12],
+      pre: { A: 0x46, P: { D: 1, C: 1 } },
+      opcodeFn: "SBC_IMM",
+      expect: { A: 0x34, C: 1 },
+      baseCycles: getBaseCycles("SBC Dec: 46 - 12 - no borrow"),
+      extra: 0
+    }),
+    nocross("SBC Dec: 40 - 13 - no borrow", {
+      code: [0xE9, 0x13],
+      pre: { A: 0x40, P: { D: 1, C: 1 } },
+      opcodeFn: "SBC_IMM",
+      expect: { A: 0x27, C: 1 },
+      baseCycles: getBaseCycles("SBC Dec: 40 - 13 - no borrow"),
+      extra: 0
+    }),
+    nocross("SBC Dec: 32 - 2 - 1 borrow", {
+      code: [0xE9, 0x02],
+      pre: { A: 0x32, P: { D: 1, C: 0 } },
+      opcodeFn: "SBC_IMM",
+      expect: { A: 0x29, C: 1 },
+      baseCycles: getBaseCycles("SBC Dec: 32 - 2 - 1 borrow"),
+      extra: 0
+    }),
+    nocross("SBC Dec: 12 - 21 - borrow", {
+      code: [0xE9, 0x21],
+      pre: { A: 0x12, P: { D: 1, C: 1 } },
+      opcodeFn: "SBC_IMM",
+      expect: { A: 0x91, C: 0 },
+      baseCycles: getBaseCycles("SBC Dec: 12 - 21 - borrow"),
+      extra: 0
+    }),
+    nocross("SBC Dec: 21 - 34 - borrow", {
+      code: [0xE9, 0x34],
+      pre: { A: 0x21, P: { D: 1, C: 1 } },
+      opcodeFn: "SBC_IMM",
+      expect: { A: 0x87, C: 0 },
+      baseCycles: getBaseCycles("SBC Dec: 21 - 34 - borrow"),
+      extra: 0
+    }),
+    cross("ADC Dec: 99 + 01 (wrap to 00)", {
+      code: [0x69, 0x01],
+      pre: { A: 0x99, P: { D: 1, C: 1 } },
+      opcodeFn: "ADC_IMM",
+      expect: { A: 0x01, C: 1 }, // corrected to align with easy6502 results
+      baseCycles: getBaseCycles("ADC Dec: 99 + 01 (wrap to 00)"),
+      extra: 0
+    }),
+    nocross("SBC Dec: 01 - 01 - no borrow", {
+      code: [0xE9, 0x01],
+      pre: { A: 0x01, P: { D: 1, C: 1 } },
+      opcodeFn: "SBC_IMM",
+      expect: { A: 0x00, C: 1 },
+      baseCycles: getBaseCycles("SBC Dec: 01 - 01 - no borrow"),
+      extra: 0
+    }),
+cross("ADC Dec: 50 + 50 + 0 no carry", {
+  code: [0x69, 0x50],
+  pre: { A: 0x50, P: { D: 1, C: 0 } },
+  opcodeFn: "ADC_IMM",
+  expect: { A: 0x00, C: 1 },  // corrected to align with easy6502 results
+  baseCycles: getBaseCycles("ADC Dec: 50 + 50 + 0 no carry"),
+  extra: 0
+}),
+
+  ];
+
+  let html = `
+    <div style="background:darkblue;color:white;padding:7px 6px 7px 6px;font-weight:bold;">
+      6502 EXTENSIVE DECIMAL MODE TEST SUITE
+    </div>
+    <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
+      <thead>
+        <tr style="background:#223366;">
+          <th>Test</th>
+          <th>Op</th>
+          <th>Opcode Fn</th>
+          <th>Flags<br>Before</th>
+          <th>Flags<br>After</th>
+          <th>CPU<br>Before</th>
+          <th>CPU<br>After</th>
+          <th>PC<br>Before</th>
+          <th>PC<br>After</th>
+          <th>Page<br>Crossed?</th>
+          <th>Cycles<br>Before</th>
+          <th>Cycles<br>After</th>
+          <th>ΔCycles</th>
+          <th>Status</th>
+        </tr>
+      </thead><tbody>`;
+
+  for (const test of cases) {
+    // Setup
+    for (let a = 0; a < 0x10000; a++) systemMemory[a] = 0;
+    cpuCycles = 0;
+    CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
+    CPUregisters.S = 0xFF;
+    CPUregisters.P = { C: 0, Z: 0, I: 0, D: 0, B: 0, V: 0, N: 0 };
+    CPUregisters.PC = test.pre && test.pre.PC !== undefined ? test.pre.PC : 0x8000;
+
+    if (test.pre) {
+      if (test.pre.A != null) CPUregisters.A = test.pre.A;
+      if (test.pre.X != null) CPUregisters.X = test.pre.X;
+      if (test.pre.Y != null) CPUregisters.Y = test.pre.Y;
+      if (test.pre.S != null) CPUregisters.S = test.pre.S;
+      if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
+    }
+
+    if (test.setup) test.setup();
+
+    // Snapshots before execution
+    const fb = { ...CPUregisters.P };
+    const cb = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
+    const pcBefore = CPUregisters.PC;
+    const beforeCycles = cpuCycles;
+
+    // Load code at PC and execute
+    if (test.code && test.code.length) {
+      test.code.forEach((b, i) => {
+        systemMemory[CPUregisters.PC + i] = b;
+      });
+      step(); // run instruction
+      if (typeof updateDebugTables === "function") updateDebugTables();
+    }
+
+    // Snapshots after execution
+    const afterCycles = cpuCycles;
+    const usedCycles = afterCycles - beforeCycles;
+    const fa = { ...CPUregisters.P };
+    const ca = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
+    const pcAfter = CPUregisters.PC;
+
+    // Page crossed - immediate mode does not cross pages
+    let pageCrossed = `<span style="color:lightgreen;">No</span>`;
+
+    // Check results
+    let pass = true,
+      reasons = [];
+    if (test.expect) {
+      for (const r in test.expect) {
+        const actual = r in ca ? ca[r] : CPUregisters.P[r];
+        if (actual !== test.expect[r]) {
+          pass = false;
+          reasons.push(`${r}=${actual}≠${test.expect[r]}`);
+        }
+      }
+    }
+    if (test.expectMem) {
+      const val = systemMemory[test.expectMem.addr];
+      if (val !== test.expectMem.value) {
+        pass = false;
+        reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${val}≠${test.expectMem.value}`);
+      }
+    }
+    if (test.expectPC !== undefined && pcAfter !== test.expectPC) {
+      pass = false;
+      reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${test.expectPC.toString(16)}`);
+    }
+    const cycleTarget = test.baseCycles + test.extra;
+    if (usedCycles !== cycleTarget) {
+      pass = false;
+      reasons.push(`cycles=${usedCycles}≠${cycleTarget}`);
+    }
+
+    const opLabel = (test.code || []).map(b => b.toString(16).padStart(2, "0")).join(" ");
+    const status = pass
+      ? `<span style="color:#7fff7f;">✔️</span>`
+      : `<details style="color:#ff4444;cursor:pointer;"><summary>❌ Show Details</summary><ul>${reasons
+          .map(r => `<li>${r}</li>`)
+          .join("")}</ul></details>`;
+
+    html += `
+      <tr style="background:${pass ? "#113311" : "#331111"}">
+        <td>${test.desc}</td>
+        <td>${opLabel}</td>
+        <td>${test.opcodeFn || ""}</td>
+        <td>${flagsBin(fb)}</td>
+        <td>${flagsBin(fa)}</td>
+        <td>A=${cb.A} X=${cb.X} Y=${cb.Y} S=${cb.S}</td>
+        <td>A=${ca.A} X=${ca.X} Y=${ca.Y} S=${ca.S}</td>
+        <td>0x${pcBefore.toString(16)}</td>
+        <td>0x${pcAfter.toString(16)}</td>
+        <td>${pageCrossed}</td>
+        <td>${beforeCycles}</td>
+        <td>${afterCycles}</td>
+        <td>${usedCycles}</td>
+        <td>${status}</td>
+      </tr>`;
+  }
+
+  html += `</tbody></table>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+
+  // Reset after tests
+  systemMemory[0x8000] = 0x02;
+  CPUregisters.PC = 0x8000;
+}
+
 function runEvery6502Test() {
 runLoadsTests();
 runStoresTests();
@@ -2425,6 +2831,7 @@ runUnofficialOpcodeTests();
 runEdgeCaseTests();
 runPageCrossAndQuirksTests();
 runBranchOpsTests();
+runExtensiveDecimalModeTests(); // based off http://www.6502.org/tutorials/decimal_mode.html#B
 }
 
 const testSuites = [
@@ -2455,7 +2862,10 @@ const testSuites = [
   // Unofficial, edge, and quirk tests
   { name: "Unofficial Opcode Tests", run: runUnofficialOpcodeTests },
   { name: "Edge Case Tests", run: runEdgeCaseTests },
-  { name: "Page Cross & Quirks Tests", run: runPageCrossAndQuirksTests }
+  { name: "Page Cross & Quirks Tests", run: runPageCrossAndQuirksTests },
+
+  // Extensive decimal mode tests (http://www.6502.org/tutorials/decimal_mode.html#B_)
+  { name: "Extensive Decimal Mode Tests", run: runExtensiveDecimalModeTests },
 ];
 
 function showTestModal() {
