@@ -54,11 +54,8 @@ const ppuRegisterOffsets = {
   PPUDATA:   0x2007
 };
 
-let DMAregister = {
-  OAMDMA: 0x00 // $4014
-};
-
-function memoryRead(address) {
+// possibly move these 2 functions to 6502.js
+function cpuRead(address) {
     // --- WRAM (2KB mirrored 4x in $0000–$1FFF) ---
     if (address >= memoryMap.RAM_BASE && address <= memoryMap.RAM_MIRROR3_END) {
       return systemMemory[address];
@@ -66,7 +63,7 @@ function memoryRead(address) {
     else return systemMemory[address];
 }
 
-function memoryWrite(address, value) {
+function cpuWrite(address, value) {
 
   if (address >= memoryMap.RAM_BASE && address <= memoryMap.RAM_BASE_END) {
     // add the value at the base 2KB and the 3 mirrors
@@ -77,146 +74,6 @@ function memoryWrite(address, value) {
   }
 
   else systemMemory[address] = value;
-}
-
-function checkWriteOffset(address, result) {
-  // === PPU Register Mirror Range ($2008–$3FFF) ===
-  if (address >= memoryMap.PPU_REGISTER_SPACE_START && address <= memoryMap.PPU_REGISTER_SPACE_END) {
-    memoryWrite(address, result);
-    address = memoryMap.PPU_REGISTER_SPACE_START + (address % 8); // Mirror to $2000–$2007
-    memoryWrite(address, result);
-  }
-
-  switch (address) {
-    // === PPU Registers ($2000–$2007) ===
-    case ppuRegisterOffsets.PPUCTRL:
-      PPUregister.CTRL = result;
-      //memoryWrite(address, PPUregister.CTRL); // ghost write
-      return;
-
-    case ppuRegisterOffsets.PPUMASK:
-      PPUregister.MASK = result;
-      //memoryWrite(address, PPUregister.CTRL); // ghost write
-      return;
-
-    case ppuRegisterOffsets.OAMADDR:
-      PPUregister.OAMADDR = result;
-      return;
-
-    case ppuRegisterOffsets.OAMDATA:
-      PPUregister.OAMDATA = result;
-      return;
-
-    case ppuRegisterOffsets.PPUSCROLL: // PPUSCROLL: write-toggled
-      if (!PPUregister.writeToggle) {
-        PPUregister.SCROLL_X = result;
-      } else {
-        PPUregister.SCROLL_Y = result;
-      }
-      PPUregister.writeToggle = !PPUregister.writeToggle;
-      return;
-
-    case ppuRegisterOffsets.PPUADDR: // PPUADDR: write-toggled
-      if (!PPUregister.writeToggle) {
-        PPUregister.ADDR_HIGH = result;
-        PPUregister.VRAM_ADDR = (result & 0x3F) << 8;
-      } else {
-        PPUregister.ADDR_LOW = result;
-        PPUregister.VRAM_ADDR |= result;
-      }
-      PPUregister.writeToggle = !PPUregister.writeToggle;
-      return;
-
-    case ppuRegisterOffsets.PPUDATA:
-      // Store value in VRAM
-      PPUregister.VRAM_DATA = result;
-      // Figure out the actual 14‑bit PPU address (0x0000–0x3FFF)
-      const rawAddr = PPUregister.VRAM_ADDR & 0x3FFF;
-      // Write to VRAM/Palette RAM in systemMemory
-      systemMemory[rawAddr] = result;
-      // Auto‑increment address for next write (by 1 or 32)
-      const step = (PPUregister.CTRL & 0x04) ? 32 : 1;
-      PPUregister.VRAM_ADDR = (rawAddr + step) & 0x3FFF;
-      return;
-
-    // === APU / I/O ===
-    case 0x4014: // OAMDMA
-      DMAregister.OAMDMA = result;
-      triggerOAMDMA(result); // must be implemented elsewhere
-      return;
-
-    case 0x4016:
-      APUregister.JOYPAD1 = result;
-      return;
-
-    case 0x4017:
-      APUregister.JOYPAD2 = result;
-      return;
-
-    default:
-      // === Fallback for unhandled writes ===
-      memoryWrite(address, result);
-      return;
-  }
-}
-
-function checkReadOffset(address) {
-
-  // === Mirror PPU register space ($2008–$3FFF) ===
-  if (address >= memoryMap.PPU_REGISTER_SPACE_START && address <= memoryMap.PPU_REGISTER_SPACE_END) {
-    address = memoryMap.PPU_REG_BASE + (address % 8); // mirror to base
-  }
-
-  switch (address) {
-    // === PPU Registers ===
-    case ppuRegisterOffsets.PPUSTATUS: // PPUSTATUS (read-only)
-      const status = PPUregister.STATUS;
-      PPUregister.STATUS &= 0x7F; // clear VBlank flag (bit 7)
-      PPUregister.writeToggle = false;
-      return status;
-
-    case ppuRegisterOffsets.OAMDATA: // OAMDATA
-      return PPUregister.OAMDATA;
-
-    case ppuRegisterOffsets.PPUDATA:  // PPUDATA read
-      // 1) Return the last buffered value:
-      const returnByte = PPUregister.VRAM_DATA;
-      
-      // 2) Refill the buffer with the *real* VRAM contents at the current address:
-      const readAddr = PPUregister.VRAM_ADDR & 0x3FFF;
-      PPUregister.VRAM_DATA = systemMemory[readAddr];
-    
-      // 3) Apply the same auto‑increment as on writes:
-      const step = (PPUregister.CTRL & 0x04) ? 32 : 1;
-      PPUregister.VRAM_ADDR = (readAddr + step) & 0x3FFF;
-    
-      return returnByte;    
-
-    // === APU and Controller I/O ===
-    case 0x4015: // APU Status (optional stub)
-      return APUregister?.STATUS ?? 0x00;
-
-    case 0x4016: // JOYPAD1
-      return APUregister?.JOYPAD1 ?? 0x00;
-
-    case 0x4017: // JOYPAD2 / Frame IRQ
-      return APUregister?.JOYPAD2 ?? 0x00;
-
-    // === Expansion / Mapper I/O (optional) ===
-    case 0x4018:
-    case 0x4019:
-    case 0x401A:
-    case 0x401B:
-    case 0x401C:
-    case 0x401D:
-    case 0x401E:
-    case 0x401F:
-      return 0x00; // disabled/test mode on real NES
-
-    // === Default to systemMemory read ===
-    default:
-      return memoryRead(address);
-  }
 }
 
 /*

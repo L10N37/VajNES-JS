@@ -2091,10 +2091,12 @@ function LAX_INDX() {
 }
 
 function LAX_INDY() {
-  const pointer = checkReadOffset(CPUregisters.PC + 1);
-  const base = (checkReadOffset((pointer + 1) & 0xFF) << 8) | checkReadOffset(pointer);
-  const addressess = base + CPUregisters.Y;
-  const value = checkReadOffset(addressess);
+  const zp = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const addr_lo = checkReadOffset(zp);
+  const addr_hi = checkReadOffset((zp + 1) & 0xFF);
+  const base = (addr_hi << 8) | addr_lo;
+  const effective = (base + CPUregisters.Y) & 0xFFFF;
+  const value = checkReadOffset(effective);
   CPUregisters.A = value;
   CPUregisters.X = value;
 

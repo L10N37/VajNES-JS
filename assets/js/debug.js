@@ -64,7 +64,7 @@ allWramCells.forEach((cell, idx) => {
     cell.classList.add('vram-cell');
   }
 
-  const val = memoryRead(idx);
+  const val = cpuRead(idx);
   cell.innerText = val.toString(16).padStart(2, '0') + 'h';
   cell.title = `$${idx.toString(16).toUpperCase().padStart(4, '0')}`;
 
@@ -327,7 +327,7 @@ function updateDebugTables() {
   );
   // preview next opcode byte
   let nextAddr = (pc + pcIncrement) & 0xFFFF;
-  let nextByte = memoryRead(nextAddr);
+  let nextByte = cpuRead(nextAddr);
   console.log(
     `Next Instruction: ${hexPrefix}${nextByte.toString(16).padStart(2,'0')} ` +
     `(at $${nextAddr.toString(16).padStart(4,'0')})`
@@ -361,7 +361,7 @@ function updateDebugTables() {
     let val;
     if (i < 0x2000) {
       // CPU work RAM and mirrors ($0000–$1FFF)
-      val = memoryRead(i);
+      val = cpuRead(i);
     } else {
       // PPU VRAM & palette RAM ($2000–$3FFF)
       val = systemMemory[i];
@@ -441,7 +441,7 @@ function getOpcodeAndAddressingMode(numericValue) {
   function step() {
   
   // Fetch & decode
-  const opcodeByte = memoryRead(CPUregisters.PC);
+  const opcodeByte = cpuRead(CPUregisters.PC);
   const fetched    = getOpcodeAndAddressingMode(opcodeByte);
 
   // safe to comment out after testing is complete
@@ -457,7 +457,7 @@ function getOpcodeAndAddressingMode(numericValue) {
   // Grab raw bytes for UI
   const raw = [];
   for (let i = 0; i < fetched.length; i++) {
-    raw.push(memoryRead(CPUregisters.PC + i));
+    raw.push(cpuRead(CPUregisters.PC + i));
   }
 
   // Snapshot everything UI needs before execution for console log debug
