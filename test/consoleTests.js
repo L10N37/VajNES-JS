@@ -240,7 +240,7 @@ console.log(`Expected A=0x77. Test ${CPUregisters.A === 0x77 ? 'PASSED' : 'FAILE
       (as in, because the prefetched values changed before the opcode executed)
 
       This weird edge case is simply checking that I don't try and return the operand byte until RUNTIME of the 
-      opcode function. Which, we don't, as the way the app was was written is it always executes operands from
+      opcode function. Which, we don't, as the way the app was written is it always executes operands from
       systemMemory, at runtime, so regardless of changes we will always execute the value there at runtime. 
 
       I feel stupid even noting this for future reference, and it doesn't make the code below any less silly at all,

@@ -992,20 +992,18 @@ function BVS_REL() {
   }
 }
 
-// --------- BRK (IMP) ---------------
-// zero increment in object for this, done here in opcode function
-function BRK_IMP() {
-  // compute return address = PC + table.pcIncrement (2)
-  const ret = (CPUregisters.PC + 2) & 0xFFFF;
+function BRK_IMP() { // Covers IRQ
+  // Return address = current PC (not PC+2 as BRK does)
+  const ret = CPUregisters.PC & 0xFFFF;
 
-  // push high then low
+  // Push return address (high then low)
   systemMemory[0x100 + CPUregisters.S] = (ret >> 8) & 0xFF;
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
   systemMemory[0x100 + CPUregisters.S] = ret & 0xFF;
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // build status with B=1
-  let st = 0x20 | 0x10; // unused & B
+  // Build status with B flag cleared (no 0x10 bit)
+  let st = 0x20; // unused bit always set
   if (CPUregisters.P.N) st |= 0x80;
   if (CPUregisters.P.V) st |= 0x40;
   if (CPUregisters.P.D) st |= 0x08;
@@ -1016,10 +1014,10 @@ function BRK_IMP() {
   systemMemory[0x100 + CPUregisters.S] = st;
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // disable interrupts
-  CPUregisters.P.I = (1) ? 1 : 0;
+  // Disable further interrupts
+  CPUregisters.P.I = 1;
 
-  // fetch vector & jump
+  // Fetch IRQ vector and jump
   const lo = checkReadOffset(0xFFFE);
   const hi = checkReadOffset(0xFFFF);
   CPUregisters.PC = (hi << 8) | lo;
