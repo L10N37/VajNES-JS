@@ -13,7 +13,7 @@ let CPUregisters = {
       I: 0,    // Interrupt Disable
       D: 0,    // Decimal Mode
       B: 0,    // Break Command
-      U: 'NA', // Unused ('U' Flag, technically always set to 1)
+      U: 1,    // Unused ('U' Flag, technically always set to 1)
       V: 0,    // Overflow
       N: 0     // Negative
   }
@@ -54,6 +54,73 @@ function opCodeTest(){
     "background: yellow; color: black; font-weight: bold; font-size: 20px; padding: 6px 12px; border: 2px solid black;"
   );
 
+}
+
+/*
+  NES Mappers That Use IRQs (Interrupt Requests):
+
+  Mapper # | Name / Alias      | IRQ Use Case
+  ---------|-------------------|-------------------------------
+  4        | MMC3              | Scanline IRQ for mid-frame effects
+  5        | MMC5              | Scanline IRQ, advanced features
+  6        | VNROM             | Uses IRQs
+  7        | AxROM             | IRQs used
+  9        | MMC2              | Scanline IRQ
+  10       | MMC4              | Scanline IRQ
+  11       | Color Dreams      | IRQ support
+  15       | Pirate MMC5       | IRQs
+  18       | Taito TC0190      | IRQ support
+  21       | Konami VRC4       | IRQ for scanline counting
+  22       | VRC6              | IRQs used
+  23       | VRC7              | IRQs used
+  24       | Namco 163         | IRQ support
+  25       | Sunsoft 5B        | IRQ support
+  26       | VRC2              | IRQ support
+  32       | Irem G-101        | IRQ support
+  33       | Jaleco JF-13      | IRQ support
+  34       | Namco 106         | IRQ support
+  66       | GNROM             | IRQ support
+  68       | Sunsoft FME-7     | IRQ support
+  71       | Camerica BC        | IRQ support
+
+  Notes:
+  - IRQs mainly used for scanline counting and mid-frame graphical effects.
+  - Simpler mappers like NROM (0) and UxROM (2) do NOT use IRQs.
+  - Some mappers have partial or undocumented IRQ features.
+
+  Prioritise implementing IRQ support for popular mappers like MMC3 (4), MMC5 (5), and VRC6 (22).
+*/
+
+function IRQ() {
+  // Push return address (current PC) on stack
+  systemMemory[0x100 + CPUregisters.S] = (CPUregisters.PC >> 8) & 0xFF;
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  systemMemory[0x100 + CPUregisters.S] = CPUregisters.PC & 0xFF;
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Build status byte with B flag cleared (0)
+  let status = 0x20; // unused bit always set
+  if (CPUregisters.P.N) status |= 0x80;
+  if (CPUregisters.P.V) status |= 0x40;
+  if (CPUregisters.P.D) status |= 0x08;
+  if (CPUregisters.P.I) status |= 0x04;
+  if (CPUregisters.P.Z) status |= 0x02;
+  if (CPUregisters.P.C) status |= 0x01;
+
+  // Push status on stack
+  systemMemory[0x100 + CPUregisters.S] = status;
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Disable further interrupts
+  CPUregisters.P.I = 1;
+
+  // Read IRQ vector and set PC
+  const lo = systemMemory[0xFFFE];
+  const hi = systemMemory[0xFFFF];
+  CPUregisters.PC = (hi << 8) | lo;
+
+  // Consume 7 cycles for IRQ handling
+  cpuCycles += 7;
 }
 
 function SEI_IMP() {
@@ -992,18 +1059,20 @@ function BVS_REL() {
   }
 }
 
-function BRK_IMP() { // Covers IRQ
-  // Return address = current PC (not PC+2 as BRK does)
-  const ret = CPUregisters.PC & 0xFFFF;
+// --------- BRK (IMP) ---------------
+// zero increment in object for this, done here in opcode function
+function BRK_IMP() {
+  // compute return address = PC + table.pcIncrement (2)
+  const ret = (CPUregisters.PC + 2) & 0xFFFF;
 
-  // Push return address (high then low)
+  // push high then low
   systemMemory[0x100 + CPUregisters.S] = (ret >> 8) & 0xFF;
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
   systemMemory[0x100 + CPUregisters.S] = ret & 0xFF;
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // Build status with B flag cleared (no 0x10 bit)
-  let st = 0x20; // unused bit always set
+  // build status with B=1
+  let st = 0x20 | 0x10; // unused & B
   if (CPUregisters.P.N) st |= 0x80;
   if (CPUregisters.P.V) st |= 0x40;
   if (CPUregisters.P.D) st |= 0x08;
@@ -1014,10 +1083,10 @@ function BRK_IMP() { // Covers IRQ
   systemMemory[0x100 + CPUregisters.S] = st;
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // Disable further interrupts
-  CPUregisters.P.I = 1;
+  // disable interrupts
+  CPUregisters.P.I = (1) ? 1 : 0;
 
-  // Fetch IRQ vector and jump
+  // fetch vector & jump
   const lo = checkReadOffset(0xFFFE);
   const hi = checkReadOffset(0xFFFF);
   CPUregisters.PC = (hi << 8) | lo;

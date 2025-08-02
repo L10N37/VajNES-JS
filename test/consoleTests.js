@@ -31,20 +31,21 @@ function runEdgeCaseTests() {
   const nocross = (desc, test) => Object.assign(test, {desc, cross:false});
 
   // Helper: [mnemonic, addressing] for each test case
-  const testLookup = {
-    "JMP ($02FF) page-wrap bug": ["JMP", "indirect"],
-    "STA $FF,X wraps": ["STA", "zeroPageX"],
-    "BNE crosses page": ["BNE", "relative"],
-    "ADC BCD half-carry": ["ADC", "immediate"],
-    "SBC BCD borrow": ["SBC", "immediate"],
-    "BIT $80 dummy-read": ["BIT", "zeroPage"],
-    "ASL $10 dummy-read": ["ASL", "zeroPage"],
-    "PHA wraps SP": ["PHA", "implied"],
-    "PHP/PLP order": ["PHP", "implied"], // PHP then PLP sequence — test uses PHP only opcodeFn for simplicity
-    "Self-mod IMM": ["LDA", "immediate"],
-    "BRK sets B": ["BRK", "implied"],
-    "IRQ leaves B": ["IRQ", "implied"],
-  };
+const testLookup = {
+  "JMP ($02FF) page-wrap bug": ["JMP", "indirect"],
+  "STA $FF,X wraps": ["STA", "zeroPageX"],
+  "BNE crosses page": ["BNE", "relative"],
+  "ADC BCD half-carry": ["ADC", "immediate"],
+  "SBC BCD borrow": ["SBC", "immediate"],
+  "BIT $80 dummy-read": ["BIT", "zeroPage"],
+  "ASL $10 dummy-read": ["ASL", "zeroPage"],
+  "PHA wraps SP": ["PHA", "implied"],
+  "PHP/PLP order": ["PHP", "implied"],
+  "Self-mod IMM": ["LDA", "immediate"],
+  "BRK sets B": ["BRK", "implied"],
+  "IRQ leaves B": [null, null], // special case, no opcode mnemonic
+};
+
 
   /*
 
@@ -75,6 +76,7 @@ console.log(`Expected A=0x77. Test ${CPUregisters.A === 0x77 ? 'PASSED' : 'FAILE
 */
 
   function getBaseCycles(testDesc) {
+    if (testDesc === "IRQ leaves B") return 7;
     const lookup = testLookup[testDesc];
     if (!lookup) throw new Error(`No testLookup mapping for "${testDesc}"`);
     const [mnemonic, addressing] = lookup;
@@ -333,100 +335,104 @@ nocross("Self-mod IMM (console ops with full checks)", {
       </thead><tbody>`;
 
   for (const test of cases) {
-    // --- Setup ---
-    for(let a=0; a<0x10000; a++) systemMemory[a] = 0;
-    //cpuCycles = 0;
-    CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
-    CPUregisters.S = 0xFF;
-    CPUregisters.P = {C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-    CPUregisters.PC = test.pre?.PC ?? 0x8000;
-    if(test.pre){
-      if(test.pre.A != null) CPUregisters.A = test.pre.A;
-      if(test.pre.X != null) CPUregisters.X = test.pre.X;
-      if(test.pre.Y != null) CPUregisters.Y = test.pre.Y;
-      if(test.pre.S != null) CPUregisters.S = test.pre.S;
-      if(test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
-    }
-    if(test.setup) test.setup();
+  // Reset memory and CPU state for all tests
+  for(let a = 0; a < 0x10000; a++) systemMemory[a] = 0;
+  CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
+  CPUregisters.S = 0xFF;
+  CPUregisters.P = {C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
+  CPUregisters.PC = test.pre?.PC ?? 0x8000;
+  if (test.pre) {
+    if (test.pre.A != null) CPUregisters.A = test.pre.A;
+    if (test.pre.X != null) CPUregisters.X = test.pre.X;
+    if (test.pre.Y != null) CPUregisters.Y = test.pre.Y;
+    if (test.pre.S != null) CPUregisters.S = test.pre.S;
+    if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
+  }
+  if (test.setup) test.setup();
 
-    // --- Snapshot before ---
-    const fb = {...CPUregisters.P};
-    const cb = {A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S};
-    const pcBefore = CPUregisters.PC;
-    const beforeCycles = cpuCycles;
+  // Snapshots before
+  const fb = {...CPUregisters.P};
+  const cb = {A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S};
+  const pcBefore = CPUregisters.PC;
+  const beforeCycles = cpuCycles;
 
-    // --- Load code ---
-    if(test.code && test.code.length){
+  if (testLookup[test.desc] && testLookup[test.desc][0] === null) {
+    // Special IRQ test — call IRQ handler directly
+    IRQ();
+  } else {
+    // Normal test: load code and step
+    if (test.code && test.code.length) {
       test.code.forEach((b, i) => { systemMemory[CPUregisters.PC + i] = b; });
       step();
       if (typeof updateDebugTables === "function") updateDebugTables();
     }
-
-    // --- Snapshot after ---
-    const fa = {...CPUregisters.P};
-    const ca = {A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S};
-    const pcAfter = CPUregisters.PC;
-    const afterCycles = cpuCycles;
-    const usedCycles = afterCycles - beforeCycles;
-
-    // --- Page cross detection (branches and indexed addressing only) ---
-    let pageCrossed = didPageCross(test)
-      ? `<span style="color:orange;">Yes</span>`
-      : `<span style="color:lightgreen;">No</span>`;
-
-    // --- Pass/fail check ---
-    let pass = true, reasons = [];
-    if(test.expect){
-      for(const r in test.expect){
-        const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
-        if(actual !== test.expect[r]){
-          pass = false;
-          reasons.push(`${r}=${actual}≠${test.expect[r]}`);
-        }
-      }
-    }
-    if(test.expectMem){
-      const val = systemMemory[test.expectMem.addr];
-      if(val !== test.expectMem.value){
-        pass = false;
-        reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${val}≠${test.expectMem.value}`);
-      }
-    }
-    if(test.expectPC !== undefined && pcAfter !== test.expectPC){
-      pass = false;
-      reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${test.expectPC.toString(16)}`);
-    }
-    const cycleTarget = (test.baseCycles ?? 0) + (test.extra ?? 0);
-    if(usedCycles !== cycleTarget){
-      pass = false;
-      reasons.push(`cycles=${usedCycles}≠${cycleTarget}`);
-    }
-
-    // --- Render row ---
-    const opLabel = (test.code || []).map(b => b.toString(16).padStart(2, "0")).join(" ");
-    const status = pass
-      ? `<span style="color:#7fff7f;">✔️</span>`
-      : `<details style="color:#ff4444;cursor:pointer;"><summary>❌ Show Details</summary><ul>`+
-        reasons.map(r => `<li>${r}</li>`).join("") + `</ul></details>`;
-
-    html += `
-      <tr style="background:${pass ? "#113311" : "#331111"}">
-        <td>${test.desc || test.name}</td>
-        <td>${opLabel}</td>
-        <td>${test.opcodeFn || ""}</td>
-        <td>${flagsBin(fb)}</td>
-        <td>${flagsBin(fa)}</td>
-        <td>A=${cb.A} X=${cb.X} Y=${cb.Y} S=${cb.S}</td>
-        <td>A=${ca.A} X=${ca.X} Y=${ca.Y} S=${ca.S}</td>
-        <td>0x${pcBefore.toString(16)}</td>
-        <td>0x${pcAfter.toString(16)}</td>
-        <td>${pageCrossed}</td>
-        <td>${beforeCycles}</td>
-        <td>${afterCycles}</td>
-        <td>${usedCycles}</td>
-        <td>${status}</td>
-      </tr>`;
   }
+
+  // Snapshots after
+  const fa = {...CPUregisters.P};
+  const ca = {A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S};
+  const pcAfter = CPUregisters.PC;
+  const afterCycles = cpuCycles;
+  const usedCycles = afterCycles - beforeCycles;
+
+  // Page cross detection
+  let pageCrossed = didPageCross(test)
+    ? `<span style="color:orange;">Yes</span>`
+    : `<span style="color:lightgreen;">No</span>`;
+
+  // Pass/fail checks (flags, mem, PC, cycles)
+  let pass = true, reasons = [];
+  if (test.expect) {
+    for (const r in test.expect) {
+      const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
+      if (actual !== test.expect[r]) {
+        pass = false;
+        reasons.push(`${r}=${actual}≠${test.expect[r]}`);
+      }
+    }
+  }
+  if (test.expectMem) {
+    const val = systemMemory[test.expectMem.addr];
+    if (val !== test.expectMem.value) {
+      pass = false;
+      reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${val}≠${test.expectMem.value}`);
+    }
+  }
+  if (test.expectPC !== undefined && pcAfter !== test.expectPC) {
+    pass = false;
+    reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${test.expectPC.toString(16)}`);
+  }
+  const cycleTarget = (test.baseCycles ?? 0) + (test.extra ?? 0);
+  if (usedCycles !== cycleTarget) {
+    pass = false;
+    reasons.push(`cycles=${usedCycles}≠${cycleTarget}`);
+  }
+
+  // Render row
+  const opLabel = (test.code || []).map(b => b.toString(16).padStart(2, "0")).join(" ");
+  const status = pass
+    ? `<span style="color:#7fff7f;">✔️</span>`
+    : `<details style="color:#ff4444;cursor:pointer;"><summary>❌ Show Details</summary><ul>`+
+      reasons.map(r => `<li>${r}</li>`).join("") + `</ul></details>`;
+
+  html += `
+    <tr style="background:${pass ? "#113311" : "#331111"}">
+      <td>${test.desc || test.name}</td>
+      <td>${opLabel}</td>
+      <td>${test.opcodeFn || ""}</td>
+      <td>${flagsBin(fb)}</td>
+      <td>${flagsBin(fa)}</td>
+      <td>A=${cb.A} X=${cb.X} Y=${cb.Y} S=${cb.S}</td>
+      <td>A=${ca.A} X=${ca.X} Y=${ca.Y} S=${ca.S}</td>
+      <td>0x${pcBefore.toString(16)}</td>
+      <td>0x${pcAfter.toString(16)}</td>
+      <td>${pageCrossed}</td>
+      <td>${beforeCycles}</td>
+      <td>${afterCycles}</td>
+      <td>${usedCycles}</td>
+      <td>${status}</td>
+    </tr>`;
+}
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
