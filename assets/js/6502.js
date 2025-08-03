@@ -5,7 +5,7 @@ let CPUregisters = {
   Y: 0x00,
   // initialized to 0xFF on power-up or reset?
   // https://www.nesdev.org/wiki/Stack
-  S: 0xFF,
+  S: 0xFF,  // stack: stack operations push/pull to $0100–$01FF (the stack page in RAM), needs a fix
   PC: 0x0000,
   P: {
       C: 0,    // Carry
@@ -240,7 +240,6 @@ function LDA_ABSY() {
   // Detect page boundary crossing
   if ((base & 0xFF00) !== (address & 0xFF00)) {
   cpuCycles++;
-  //console.log("%cPAGE BOUNDARY CROSSED! +1 cycle", "color:orange;font-weight:bold");
   }
 }
 
@@ -279,7 +278,6 @@ function STA_ZPX() {
 function STA_ABS() {
   const address = (checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1);
   checkWriteOffset(address, CPUregisters.A);
-  console.log("STA_ABS writing to", address.toString(16), "value", CPUregisters.A);
 }
 
 function STA_ABSY() {
@@ -1857,32 +1855,6 @@ function STX_ABS() {
     CPUregisters.P.N = (val >> 7) & 1;
   }
   
-  function RRA_ZP() {
-    let addr = checkReadOffset(CPUregisters.PC + 1);
-    let val = checkReadOffset(addr);
-  
-    // ROR (Rotate Right)
-    let oldCarry = CPUregisters.P.C;
-    CPUregisters.P.C = val & 0x01;
-    val = (val >> 1) | (oldCarry << 7);
-    checkWriteOffset(addr, val);
-  
-    // ADC with result (as per standard 6502 ADC logic)
-    let A = CPUregisters.A;
-    let sum = A + val + oldCarry;
-    let result = sum & 0xFF;
-  
-    // Set flags as per ADC
-    CPUregisters.P.Z = +(result === 0);
-    CPUregisters.P.N = (result >> 7) & 1;
-    // Carry out
-    CPUregisters.P.C = sum > 0xFF ? 1 : 0;
-    // Overflow detection
-    CPUregisters.P.V = (~(A ^ val) & (A ^ result) & 0x80) ? 1 : 0;
-  
-    CPUregisters.A = result;
-  }  
-
   function RRA_INDX() {
     const zp = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
     const addr = checkReadOffset(zp) | (checkReadOffset((zp + 1) & 0xFF) << 8);
@@ -1928,47 +1900,52 @@ function STX_ABS() {
     CPUregisters.A = result & 0xFF;
   }
 
-  function RRA_ZP() {
-    const addr = checkReadOffset(CPUregisters.PC + 1);
-    let val = checkReadOffset(addr);
-  
-    // ROR
-    const oldCarry = CPUregisters.P & 0x01;
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((val & 0x01) ? 1 : 0);
-    val = (val >> 1) | (oldCarry << 7);
-    checkWriteOffset(addr, val);
-  
-    // ADC
-    let acc = CPUregisters.A;
-    let carry = (CPUregisters.P & 0x01) ? 1 : 0;
-    let result = acc + val + carry;
-    CPUregisters.P = (CPUregisters.P & ~0x80) | (result & 0x80);
-    CPUregisters.P = (CPUregisters.P & ~0x02) | ((result === 0) ? 0x02 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x40) | (((~(acc ^ val) & (acc ^ result)) & 0x80) ? 0x40 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((result > 0xFF) ? 0x01 : 0);
-    CPUregisters.A = result & 0xFF;
-  }
+function RRA_ZP() {
+  const addr = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  let val = checkReadOffset(addr);
 
-  function RRA_ZPX() {
-    const addr = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
-    let val = checkReadOffset(addr);
-  
-    // ROR
-    const oldCarry = CPUregisters.P & 0x01;
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((val & 0x01) ? 1 : 0);
-    val = (val >> 1) | (oldCarry << 7);
-    checkWriteOffset(addr, val);
-  
-    // ADC
-    let acc = CPUregisters.A;
-    let carry = (CPUregisters.P & 0x01) ? 1 : 0;
-    let result = acc + val + carry;
-    CPUregisters.P = (CPUregisters.P & ~0x80) | (result & 0x80);
-    CPUregisters.P = (CPUregisters.P & ~0x02) | ((result === 0) ? 0x02 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x40) | (((~(acc ^ val) & (acc ^ result)) & 0x80) ? 0x40 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((result > 0xFF) ? 0x01 : 0);
-    CPUregisters.A = result & 0xFF;
-  }
+  // --- ROR: rotate right through carry ---
+  const oldCarry = CPUregisters.P.C;
+  CPUregisters.P.C = val & 0x01;
+  val = (val >> 1) | (oldCarry ? 0x80 : 0x00);
+  checkWriteOffset(addr, val);
+
+  // --- ADC: add val + carry ---
+  const acc = CPUregisters.A;
+  const carryIn = CPUregisters.P.C;
+  const sum = acc + val + carryIn;
+
+  // Flags for ADC
+  CPUregisters.P.C = (sum > 0xFF) ? 1 : 0;
+  CPUregisters.P.Z = ((sum & 0xFF) === 0) ? 1 : 0;
+  CPUregisters.P.N = (sum & 0x80) ? 1 : 0;
+  CPUregisters.P.V = (~(acc ^ val) & (acc ^ sum) & 0x80) ? 1 : 0;
+
+  CPUregisters.A = sum & 0xFF;
+}
+
+ function RRA_ZPX() {
+  const zpAddr = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
+  let val = checkReadOffset(zpAddr);
+
+  // ----- ROR -----
+  const oldCarry = CPUregisters.P.C;
+  CPUregisters.P.C = val & 0x01;
+  val = (val >> 1) | (oldCarry ? 0x80 : 0x00);
+  checkWriteOffset(zpAddr, val);
+
+  // ----- ADC -----
+  const acc = CPUregisters.A;
+  const carryIn = CPUregisters.P.C;
+  const sum = acc + val + carryIn;
+
+  CPUregisters.P.C = (sum > 0xFF) ? 1 : 0;
+  CPUregisters.P.Z = ((sum & 0xFF) === 0) ? 1 : 0;
+  CPUregisters.P.N = (sum & 0x80) ? 1 : 0;
+  CPUregisters.P.V = (~(acc ^ val) & (acc ^ sum) & 0x80) ? 1 : 0;
+
+  CPUregisters.A = sum & 0xFF;
+}
 
   function RRA_ABS() {
     const addr = checkReadOffset(CPUregisters.PC + 1) | (checkReadOffset(CPUregisters.PC + 2) << 8);
@@ -2117,10 +2094,20 @@ function SAX_ABS() {
 }
 
 function SAX_INDX() {
-  const pointer = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
-  const addressess = (checkReadOffset((pointer + 1) & 0xFF) << 8) | checkReadOffset(pointer);
+  // Fetch the operand (zero-page base address)
+  const zpBase = checkReadOffset(CPUregisters.PC + 1);
+
+  // Add X, wrap to zero page
+  const zpAddr = (zpBase + CPUregisters.X) & 0xFF;
+
+  // Fetch the pointer (16-bit, zero-page wrap)
+  const low = checkReadOffset(zpAddr);
+  const high = checkReadOffset((zpAddr + 1) & 0xFF);
+  const addr = (high << 8) | low;
+
+  // Store (A & X)
   const value = CPUregisters.A & CPUregisters.X;
-  checkWriteOffset(addressess, value);
+  checkWriteOffset(addr, value);
 }
 
 function SAX_ZPY() {
@@ -2590,28 +2577,26 @@ function ANC_IMM() {
 }
 
 function ALR_IMM() {
-  const val = systemMemory[CPUregisters.PC + 1];
-  CPUregisters.A &= val;
-  // Carry = bit 0 of A before shift
-  CPUregisters.STATUS = (CPUregisters.STATUS & ~0x01) | (CPUregisters.A & 0x01);
-  CPUregisters.A >>= 1;
-  // Set zero flag
-  if (CPUregisters.A === 0) CPUregisters.STATUS |= 0x02;
-  else CPUregisters.STATUS &= ~0x02;
-  // Set negative flag from bit 7
-  if (CPUregisters.A & 0x80) CPUregisters.STATUS |= 0x80;
-  else CPUregisters.STATUS &= ~0x80;
+  const val = checkReadOffset(CPUregisters.PC + 1);
+  const tmp = CPUregisters.A & val;
+  CPUregisters.P.C = tmp & 0x01;
+  CPUregisters.A = tmp >> 1;
+  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
   CPUregisters.PC += 2;
 }
 
 function ARR_IMM() {
-  const value = checkReadOffset(CPUregisters.PC + 1);
-  CPUregisters.A &= value;
-  CPUregisters.A >>= 1;
-  CPUregisters.P.C = ((CPUregisters.A & 0x40) !== 0) ? 1 : 0;
+  const val = checkReadOffset(CPUregisters.PC + 1);
+  let tmp = CPUregisters.A & val;
+  const oldCarry = CPUregisters.P.C;
+  // Perform ROR
+  const newA = (tmp >> 1) | (oldCarry ? 0x80 : 0x00);
+  // C is set to bit 0 of tmp
+  CPUregisters.P.C = (tmp & 0x01) ? 1 : 0;
+  CPUregisters.A = newA & 0xFF;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-  CPUregisters.P.V = (((CPUregisters.A >> 5) & 1) ^ ((CPUregisters.A >> 6) & 1)) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
 }
 
 function XAA_IMM() {
@@ -2625,9 +2610,10 @@ function XAA_IMM() {
 }
 
 function AXA_ABSY() {
-  const addressess = ((checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1)) + CPUregisters.Y;
-  const value = CPUregisters.A & CPUregisters.X;
-  checkWriteOffset(addressess, value & (addressess >> 8) + 1);
+  const base = (checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1);
+  const addressess = (base + CPUregisters.Y) & 0xFFFF;
+  const value = CPUregisters.A & CPUregisters.X & (((addressess >> 8) + 1) & 0xFF);
+  checkWriteOffset(addressess, value);
 }
 
 function AXA_INDY() {

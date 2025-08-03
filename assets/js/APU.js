@@ -67,7 +67,6 @@ const APU_REG_ADDRESSES = {
 //
 
 };
-
 let APUregister = {
   SQ1_VOL:   0x00, // $4000
   SQ1_SWEEP: 0x00, // $4001
@@ -92,71 +91,81 @@ let APUregister = {
 };
 
 // --- APU Write Handler ---
-// Handles all writes to $4000-$4017 (excluding $4014, which is DMA and handled separately)
-
+// Handles all writes to $4000-$4017 (excluding $4014, which is DMA and handled separately in offsetsHandler.js)
 function apuWrite(address, value) {
   switch (address) {
     // --- Square 1 Registers ---
-    case 0x4000: APUregister.SQ1_VOL = value;    break;
-    case 0x4001: APUregister.SQ1_SWEEP = value;  break;
-    case 0x4002: APUregister.SQ1_LO = value;     break;
-    case 0x4003: APUregister.SQ1_HI = value;     break;
+    case 0x4000: APUregister.SQ1_VOL = value;   cpuOpenBus = value & 0xFF; break;
+    case 0x4001: APUregister.SQ1_SWEEP = value; cpuOpenBus = value & 0xFF; break;
+    case 0x4002: APUregister.SQ1_LO = value;    cpuOpenBus = value & 0xFF; break;
+    case 0x4003: APUregister.SQ1_HI = value;    cpuOpenBus = value & 0xFF; break;
 
     // --- Square 2 Registers ---
-    case 0x4004: APUregister.SQ2_VOL = value;    break;
-    case 0x4005: APUregister.SQ2_SWEEP = value;  break;
-    case 0x4006: APUregister.SQ2_LO = value;     break;
-    case 0x4007: APUregister.SQ2_HI = value;     break;
+    case 0x4004: APUregister.SQ2_VOL = value;   cpuOpenBus = value & 0xFF; break;
+    case 0x4005: APUregister.SQ2_SWEEP = value; cpuOpenBus = value & 0xFF; break;
+    case 0x4006: APUregister.SQ2_LO = value;    cpuOpenBus = value & 0xFF; break;
+    case 0x4007: APUregister.SQ2_HI = value;    cpuOpenBus = value & 0xFF; break;
 
     // --- Triangle Channel Registers ---
-    case 0x4008: APUregister.TRI_LINEAR = value; break;
-    case 0x400A: APUregister.TRI_LO = value;     break;
-    case 0x400B: APUregister.TRI_HI = value;     break;
+    case 0x4008: APUregister.TRI_LINEAR = value; cpuOpenBus = value & 0xFF; break;
+    case 0x400A: APUregister.TRI_LO = value;     cpuOpenBus = value & 0xFF; break;
+    case 0x400B: APUregister.TRI_HI = value;     cpuOpenBus = value & 0xFF; break;
 
     // --- Noise Channel Registers ---
-    case 0x400C: APUregister.NOISE_VOL = value;  break;
-    case 0x400E: APUregister.NOISE_LO = value;   break;
-    case 0x400F: APUregister.NOISE_HI = value;   break;
+    case 0x400C: APUregister.NOISE_VOL = value;  cpuOpenBus = value & 0xFF; break;
+    case 0x400E: APUregister.NOISE_LO = value;   cpuOpenBus = value & 0xFF; break;
+    case 0x400F: APUregister.NOISE_HI = value;   cpuOpenBus = value & 0xFF; break;
 
     // --- DMC Channel Registers ---
-    case 0x4010: APUregister.DMC_FREQ = value;   break;
-    case 0x4011: APUregister.DMC_RAW = value;    break;
-    case 0x4012: APUregister.DMC_START = value;  break;
-    case 0x4013: APUregister.DMC_LEN = value;    break;
+    case 0x4010: APUregister.DMC_FREQ = value;   cpuOpenBus = value & 0xFF; break;
+    case 0x4011: APUregister.DMC_RAW = value;    cpuOpenBus = value & 0xFF; break;
+    case 0x4012: APUregister.DMC_START = value;  cpuOpenBus = value & 0xFF; break;
+    case 0x4013: APUregister.DMC_LEN = value;    cpuOpenBus = value & 0xFF; break;
 
     // --- Sound Channel Enable / Status ---
-    case 0x4015: APUregister.SND_CHN = value;    break;
+    case 0x4015: APUregister.SND_CHN = value;    cpuOpenBus = value & 0xFF; break;
 
     // --- APU Frame Counter ($4017) ---
-    // Controls frame sequencer and IRQ inhibit; see NESdev wiki for frame timing details.
-    case 0x4017: APUregister.FRAME_CNT = value; break;
+    case 0x4017: APUregister.FRAME_CNT = value;  cpuOpenBus = value & 0xFF; break;
 
-    // --- Controller strobe ($4016) and OAMDMA ($4014) are handled elsewhere! ---
+    // --- Controller Strobe ($4016) ---
+    case 0x4016: 
+      // This is a dual-purpose register: writing here controls joypad strobe (handled in controller.js),
+      // but writing still updates open bus (needed for test ROMs).
+      cpuOpenBus = value & 0xFF;
+      // If you want to call your joypadWrite here:
+      if (typeof joypadWrite === 'function') joypadWrite(address, value);
+      break;
 
+    // --- $4014 (OAMDMA) handled elsewhere! ---
     default:
-      // Some expansion audio chips are mapped here on some mappers (not implemented).
-      // Typically, just ignore unhandled writes in vanilla emulation.
+      // Do not update cpuOpenBus for unmapped or unused addresses
       break;
   }
 }
 
 // --- APU Read Handler ---
 // Handles all reads from $4000-$4017, only $4015 is readable on vanilla NES hardware
-
 function apuRead(address) {
   switch (address) {
     case 0x4015:
       // $4015: Sound channel status
-      // On a real NES, bits indicate active/ready status of each channel, and DMC IRQ/length state.
-      // For most simple emulators, just return the current contents:
-      // (Advanced: you may want to simulate bits 0-4 as channel enables, bit 6 DMC IRQ, bit 7 frame IRQ)
+      cpuOpenBus = APUregister.SND_CHN; // Update open bus with value read
       return APUregister.SND_CHN;
+
+    // Joypad reads (usually handled by controller.js, fallback here to open bus)
+    case 0x4016:
+    case 0x4017:
+      // If you want to hand off to controller read logic, do it here.
+      // Otherwise, fallback to open bus for test harness compatibility.
+      if (typeof joypadRead === 'function') return joypadRead(address, address === 0x4016 ? 1 : 2);
+      return cpuOpenBus;
+
     default:
-      // All other addresses are open bus (return last value on the data bus), or $00 for simplicity.
-      return 0x00;
+      // All other addresses are open bus (return last value on the data bus)
+      return cpuOpenBus;
   }
 }
-
 
 /*
 
@@ -178,6 +187,5 @@ almost all timing sensitive tests
 keeping in mind, this is super heavily debug/ in development code and would run like a 1970's diesel truck with
 2 million kays on the clock. All debugging needs to be stripped and the UI likely needs to be separated/
 moved across to only render / draw on call
-
 
 */

@@ -1,6 +1,18 @@
 // Full 64KB system memory
 window.systemMemory = new Array(0x10000).fill(0x00);
 
+// Holds the last value placed on the CPU data bus ("open bus").
+//
+// This is required for accurate NES emulation, as certain games (e.g. Battletoads, Stage 2 - "Wookie Hole")
+// depend on reading from write-only or unmapped PPU registers to return the last bus value.
+//
+// Without this, graphics in Battletoads and some test ROMs will break,
+// because they expect an "open bus" read to return the previous data value, not a static memory cell.
+//
+// Updated on every valid CPU/PPU memory read or write.
+let cpuOpenBus = 0x00;
+
+
 window.memoryMap = {
   // === WRAM: CPU Internal RAM and Mirrors (2KB mirrored 3x) ===
   RAM_BASE:         0x0000, // $0000–$07FF
@@ -56,56 +68,24 @@ const ppuRegisterOffsets = {
 
 // possibly move these 2 functions to 6502.js
 function cpuRead(address) {
-    // --- WRAM (2KB mirrored 4x in $0000–$1FFF) ---
-    if (address >= memoryMap.RAM_BASE && address <= memoryMap.RAM_MIRROR3_END) {
-      return systemMemory[address];
-    }
-    else return systemMemory[address];
+  // ROM, Expansion, I/O, etc — just fetch value, update open bus
+  cpuOpenBus = systemMemory[address];
+  return systemMemory[address];
 }
 
 function cpuWrite(address, value) {
+    // write directly, update open bus
+    systemMemory[address] = value;
+    cpuOpenBus = value;
+  }
 
-  if (address >= memoryMap.RAM_BASE && address <= memoryMap.RAM_BASE_END) {
-    // add the value at the base 2KB and the 3 mirrors
-    for (let i = 0; i < 4; i++) {
+  /*
+
+      // some tests will write to mirrored locations, not the base. weird. Swapped this out
+      // moved all mirror logic, centralised at mirrorHandler.js
+          for (let i = 0; i < 4; i++) {
       systemMemory[address] = value;
       address += 2048;
     }
-  }
 
-  else systemMemory[address] = value;
-}
-
-/*
-Intercepted write addresses, not stored in actual systemMemory (won't hurt to if the offset exists in systemMemory)
-
-$2000	1	PPUCTRL	Write-only, sets internal PPU flags
-$2001	1	PPUMASK	Write-only, controls rendering
-$2002	1	PPUSTATUS	Read-only, returns VBlank/NMI flags and clears them
-$2003	1	OAMADDR	Sets internal sprite memory pointer
-$2004	1	OAMDATA	R/W from internal OAM (256-byte sprite RAM)
-$2005	1	PPUSCROLL	2-write X/Y scroll latch
-$2006	1	PPUADDR	2-write VRAM address latch
-$2007	1	PPUDATA	Indirect read/write to VRAM via $2006
-$2008–$3FFF	8184	Mirrors of $2000–$2007 every 8 bytes	Must resolve to 0x2000 + (addr % 8)
-
-APU + I/O Registers
-Address	Name	Description	Interception Reason
-$4000	APU Pulse 1	Control	Affects APU channel, not RAM
-$4001–$4003		Sweep, timer, length	Internal APU registers
-$4004–$4007	APU Pulse 2	Same as above	
-$4008–$400B	APU Triangle		
-$400C–$400F	APU Noise		
-$4010–$4013	APU DMC		
-$4014	OAMDMA	Triggers sprite DMA transfer from CPU RAM to OAM	Must copy 256 bytes
-$4015	APU Status	Enables/disables channels	
-$4016	JOYPAD1	Controller input and strobe	Reading returns controller bits
-$4017	JOYPAD2 + Frame IRQ	Same as above	
-$4018–$401F	Test mode	Usually ignored	Disabled in real NES
-
-Optional: Expansion/Mapper Space
-Range	Size	Description	Interception Reason
-$4020–$5FFF	~8KB	Expansion ROM / Mapper registers	Used by MMC1–5, VRCs, etc.
-$6000–$7FFF	8KB	Battery-backed SRAM (Cartridge)	Optional intercept for mappers
-
-*/
+  */

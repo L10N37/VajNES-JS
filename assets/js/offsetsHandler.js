@@ -1,60 +1,85 @@
 // offsetsHandler, redirect all reads/writes to the appropriate hardware/ handlers, keeping the code clean and structured :D
 
 function checkWriteOffset(address, value) {
-  // PPU registers and mirrors: $2000–$3FFF
-  if (address >= 0x2000 && address <= 0x3FFF) {
-    // Mirror every 8 bytes
-   // let base = 0x2000 + ((address - 0x2000) % 8);
-    return ppuWrite(address, value);
+  // Zero Page only (NO MIRROR), write value to RAM offset here directly, no passing to other handler
+  if (address >= 0x0000 && address <= 0x00FF) {
+    systemMemory[address] = value;
+    cpuOpenBus = value;
+    return;
+  }
+    // CPU RAM mirrors: $0100–$1FFF
+  if (address >= 0x0100 && address <= 0x1FFF) {
+    cpuWrite(address, value);
+    mirrorCPURAMWrite(); // mirror handler
+    return;
   }
 
-  // APU/IO Registers: $4000–$4017
+  // 2. PPU registers and mirrors: $2000–$3FFF
+    if (address >= 0x2000 && address <= 0x3FFF) {
+    // Special case: PPU palette RAM $3F00–$3FFF
+    if (address >= 0x3F00 && address <= 0x3FFF) {
+      systemMemory[address] = value;         // write value to RAM offset here directly, no passing to other handler
+      mirrorPPUPaletteWrite(address, value); // palette mirroring handler
+      cpuOpenBus = value & 0xFF;             // open bus, 
+      return;
+    }
+    // Otherwise, normal PPU register/mirror handling
+    ppuWrite(address, value);
+    systemMemory[address & 0x3FFF] = value; //
+    mirrorPPURegisterWrite(address, value); // register mirror handler
+    return;
+  }
+
+  // 3. APU/IO Registers: $4000–$4017
   if (address >= 0x4000 && address <= 0x4017) {
     switch (address) {
-
-    //Writing to $4014 initiates a [Sprite] DMA transfer: 256 bytes from CPU page $XX00–$XXFF to PPU OAM ($2004).”
       case 0x4014: { // OAMDMA (Sprite DMA)
-        // Start DMA: copy 256 bytes from page to PPU OAM
+        cpuOpenBus = value & 0xFF;
         let page = value & 0xFF;
         let src = page << 8;
         for (let i = 0; i < 256; i++) {
           PPU_OAM[i] = systemMemory[src + i];
         }
-        // DMA timing: 513 cycles (514 if on odd cycle, rarely matters for emu)
         cpuCycles += 513;
-        // If emulating CPU/PPU clock in detail, add +1 if (cpuCycles % 2 === 1)
         return;
       }
-    // ---------------------------------------------------------------------------------------------------------
-
       case 0x4016:
+        cpuOpenBus = value & 0xFF;
         return joypadWrite(address, value);
       case 0x4017:
+        cpuOpenBus = value & 0xFF;
         return apuWrite(address, value);
       default:
+        cpuOpenBus = value & 0xFF;
         return apuWrite(address, value);
     }
   }
 
-  // Expansion/Mapper I/O: $4018–$401F (not handled yet)
+  // 4. Expansion/Mapper I/O: $4018–$401F (stub/ignored for now)
   if (address >= 0x4018 && address <= 0x401F) {
-    // Could be stub/ignored for now
-    return; // Or: mapperWrite(address, value);
+    // mapperWrite(address, value); // (unimplemented)
+    return;
   }
 
-  // Everything else (RAM, ROM, etc)
-  return cpuWrite(address, value);
+  // 5. PRG-ROM or other (should almost never be written, but allow for completeness)
+  systemMemory[address] = value;
+  cpuOpenBus = value & 0xFF;
 }
 
 function checkReadOffset(address) {
-  // PPU registers and mirrors: $2000–$3FFF
+  // 1. CPU RAM: $0000–$1FFF (including mirrors)
+  if (address >= 0x0000 && address <= 0x1FFF) {
+    return cpuRead(address);
+  }
+
+  // 2. PPU registers and mirrors: $2000–$3FFF
   if (address >= 0x2000 && address <= 0x3FFF) {
     // Mirror every 8 bytes
     let base = 0x2000 + ((address - 0x2000) % 8);
     return ppuRead(base);
   }
 
-  // APU/IO Registers: $4000–$4017
+  // 3. APU/IO Registers: $4000–$4017
   if (address >= 0x4000 && address <= 0x4017) {
     switch (address) {
       case 0x4016: // Controller 1 read
@@ -68,11 +93,11 @@ function checkReadOffset(address) {
     }
   }
 
-  // Expansion/Mapper I/O: $4018–$401F (stubbed)
+  // 4. Expansion/Mapper I/O: $4018–$401F (stubbed)
   if (address >= 0x4018 && address <= 0x401F) {
     return 0x00; // Open bus/stub value
   }
 
-  // Everything else (RAM, ROM, etc)
+  // 5. PRG-ROM or unmapped (read-only in normal NES, but allow for completeness)
   return cpuRead(address);
 }
