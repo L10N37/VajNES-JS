@@ -1,5 +1,8 @@
 // Full 64KB system memory
 window.systemMemory = new Array(0x10000).fill(0x00);
+// TO do, squeeze RAM down to actual NES size (2KB), separate storage for cartridge ROM
+//  + refactor all mirrors to fold down to base
+// as opposed to actually storing values in mirrored memory offsets (works for now)
 
 // Holds the last value placed on the CPU data bus ("open bus").
 //
@@ -75,17 +78,6 @@ function cpuRead(address) {
 
 function cpuWrite(address, value) {
     // write directly, update open bus
-    systemMemory[address] = value;
     cpuOpenBus = value;
+    mirrorCPURAMWrite();
   }
-
-  /*
-
-      // some tests will write to mirrored locations, not the base. weird. Swapped this out
-      // moved all mirror logic, centralised at mirrorHandler.js
-          for (let i = 0; i < 4; i++) {
-      systemMemory[address] = value;
-      address += 2048;
-    }
-
-  */

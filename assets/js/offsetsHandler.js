@@ -1,18 +1,12 @@
 // offsetsHandler, redirect all reads/writes to the appropriate hardware/ handlers, keeping the code clean and structured :D
 
 function checkWriteOffset(address, value) {
-  // Zero Page only (NO MIRROR), write value to RAM offset here directly, no passing to other handler
-  if (address >= 0x0000 && address <= 0x00FF) {
-    systemMemory[address] = value;
-    cpuOpenBus = value;
-    return;
-  }
-    // CPU RAM mirrors: $0100–$1FFF
-  if (address >= 0x0100 && address <= 0x1FFF) {
-    cpuWrite(address, value);
-    mirrorCPURAMWrite(); // mirror handler
-    return;
-  }
+
+  // copy to CPU RAM mirrors (for now we are using real memory for mirrors, it's an emulator ...so, no biggie)
+    if (address < 0x2000) {
+      mirrorCPURAMWrite(address, value); // pass address and value
+      return;
+    }
 
   // 2. PPU registers and mirrors: $2000–$3FFF
     if (address >= 0x2000 && address <= 0x3FFF) {

@@ -3,19 +3,12 @@
 
 // CPU RAM mirroring: $0100–$1FFF (2KB mirrored every $0800, but exclude Zero Page)
 function mirrorCPURAMWrite(address, value) {
-  const base = address & 0x07FF;
-  if (address >= 0x0100 && address <= 0x1FFF) {
-    if (address === base) {
-      // Writing to base: mirror to all mirrors except base itself
-      for (let offset = 0x0800; offset <= 0x1800; offset += 0x0800) {
-        systemMemory[base + offset] = value;
-      }
-    } else {
-      // Writing to a mirror: update the base only
-      systemMemory[base] = value;
+    const base = address & 0x07FF;
+    // Write to all mirrors
+    for (let offset = 0; offset < 0x2000; offset += 0x0800) {
+      systemMemory[base + offset] = value;
     }
   }
-}
 
 // PPU register mirroring: $2000–$3FFF (every 8 bytes)
 function mirrorPPURegisterWrite(address, value) {

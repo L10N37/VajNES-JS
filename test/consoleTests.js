@@ -3230,6 +3230,133 @@ runEdgeCaseTests();
 runPageCrossAndQuirksTests();
 runBranchOpsTests();
 runExtensiveDecimalModeTests(); // based off http://www.6502.org/tutorials/decimal_mode.html#B
+runMirroredLocationTests();
+}
+
+function runMirroredLocationTests() {
+  // Comprehensive NES mirror test cases
+  const tests = [
+    // CPU RAM
+    { name: "CPU RAM base ($0002)", addr: 0x0002, value: 0x12 },
+    { name: "CPU RAM mirror ($0802)", addr: 0x0802, value: 0x34 },
+    { name: "CPU RAM mirror ($1002)", addr: 0x1002, value: 0x56 },
+    { name: "CPU RAM mirror ($1802)", addr: 0x1802, value: 0x78 },
+
+    // PPU Registers
+    { name: "PPUCTRL base ($2000)", addr: 0x2000, value: 0xAA },
+    { name: "PPUSTATUS mirror ($2002)", addr: 0x200A, value: 0xBB },
+    { name: "PPUADDR mirror ($3FF6)", addr: 0x3FF6, value: 0xCC },
+
+    // Palette RAM (with aliasing: $3F10 mirrors $3F00, $3F14 mirrors $3F04, etc.)
+    { name: "Palette base ($3F00)", addr: 0x3F00, value: 0x40 },
+    { name: "Palette mirror ($3F10)", addr: 0x3F10, value: 0x41 },
+    { name: "Palette mirror ($3F04)", addr: 0x3F04, value: 0x42 },
+    { name: "Palette mirror ($3F14)", addr: 0x3F14, value: 0x43 }
+  ];
+
+  // Build HTML table
+  let html = `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
+    MIRRORED LOCATION TESTS
+  </div>
+  <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
+    <thead><tr style="background:#222">
+      <th>Test</th>
+      <th>Addr</th>
+      <th>Value</th>
+      <th>Mirrors (expand)</th>
+      <th>Status</th>
+    </tr></thead><tbody>`;
+
+  for (let t = 0; t < tests.length; ++t) {
+    const test = tests[t];
+    let mirrors = [];
+
+    // Inline mirror logic:
+    // 1. CPU RAM $0000-$1FFF (mirrored every $800)
+    if (test.addr >= 0x0000 && test.addr <= 0x1FFF) {
+      let base = test.addr & 0x07FF;
+      for (let i = 0; i < 4; ++i)
+        mirrors.push(0x0000 + base + 0x800 * i);
+    }
+
+    // 2. PPU registers $2000-$3FFF (mirrored every $8)
+    else if (test.addr >= 0x2000 && test.addr <= 0x3FFF) {
+      let base = 0x2000 + (test.addr & 0x7);
+      for (let i = 0; i < 0x4000; i += 8)
+        if (0x2000 + (test.addr & 0x7) + i <= 0x3FFF)
+          mirrors.push(base + i);
+    }
+
+    // 3. Palette RAM $3F00-$3FFF (mirrored every $20, aliasing $3F00, $3F04, $3F08, $3F0C)
+    // Real NES: $3F10 == $3F00, $3F14 == $3F04, etc.
+    else if (test.addr >= 0x3F00 && test.addr <= 0x3FFF) {
+      for (let i = 0; i < 0x20; ++i) {
+        let palAddr = 0x3F00 + (test.addr & 0x1F);
+        if (!mirrors.includes(palAddr)) mirrors.push(palAddr);
+        // Aliasing
+        if ((palAddr & 0x0F) === 0x10 || (palAddr & 0x0F) === 0x14 || (palAddr & 0x0F) === 0x18 || (palAddr & 0x0F) === 0x1C) {
+          let alias = palAddr - 0x10;
+          if (!mirrors.includes(alias)) mirrors.push(alias);
+        }
+      }
+      // All mirrored every $20 (palette wraps $3F20, $3F40, $3F60, ... $3FFF)
+      for (let a = (test.addr & 0x1F); a < 0x1000; a += 0x20)
+        if (!mirrors.includes(0x3F00 + a)) mirrors.push(0x3F00 + a);
+    } else {
+      mirrors.push(test.addr);
+    }
+
+    // Remove out-of-range
+    mirrors = mirrors.filter(a => a >= 0 && a <= 0xFFFF);
+
+    // Sort and deduplicate
+    mirrors = Array.from(new Set(mirrors)).sort((a, b) => a - b);
+
+    // Record before values
+    let before = {};
+    for (let i = 0; i < mirrors.length; ++i) before[mirrors[i]] = checkReadOffset(mirrors[i]);
+
+    // Write
+    checkWriteOffset(test.addr, test.value);
+
+    // Record after values
+    let after = {};
+    for (let i = 0; i < mirrors.length; ++i) after[mirrors[i]] = checkReadOffset(mirrors[i]);
+
+    // HTML details dropdown
+    let ok = true;
+    let divId = "mirr" + t;
+    let mirrorHtml = `<button onclick="document.getElementById('${divId}').style.display=(document.getElementById('${divId}').style.display==='none'?'block':'none')"
+      style="background:#444;color:#fff;border:1px solid #888;border-radius:6px;padding:2px 8px;cursor:pointer;">Show</button>
+      <div id="${divId}" style="display:none;padding:4px;max-height:300px;overflow:auto;">`;
+
+    for (let i = 0; i < mirrors.length; ++i) {
+      let m = mirrors[i];
+      let passed = (after[m] === test.value);
+      if (!passed) ok = false;
+      mirrorHtml += `<div style="color:${passed ? '#7fff7f' : '#ff4444'};">
+        $${m.toString(16).toUpperCase().padStart(4, '0')} :
+        before=0x${before[m].toString(16).toUpperCase().padStart(2, '0')}
+        → after=0x${after[m].toString(16).toUpperCase().padStart(2, '0')}
+        ${passed ? '' : '❌'}
+      </div>`;
+    }
+    mirrorHtml += "</div>";
+
+    html += `
+      <tr style="background:${ok ? "#113311" : "#331111"}">
+        <td style="border:1px solid #444;padding:6px;">${test.name}</td>
+        <td style="border:1px solid #444;padding:6px;">$${test.addr.toString(16).toUpperCase().padStart(4, '0')}</td>
+        <td style="border:1px solid #444;padding:6px;">0x${test.value.toString(16).toUpperCase().padStart(2, '0')}</td>
+        <td style="border:1px solid #444;padding:6px;">${mirrorHtml}</td>
+        <td style="border:1px solid #444;padding:6px;">${ok ? '<span style="color:#7fff7f;">✔️ Accurate</span>' : '<span style="color:#ff4444;">❌ Mirror bug</span>'}</td>
+      </tr>`;
+  }
+  html += "</tbody></table>";
+  document.body.insertAdjacentHTML("beforeend", html);
+
+  systemMemory[0x8000] = 0x02;
+  CPUregisters.PC = 0x8000;
 }
 
 const testSuites = [
@@ -3264,6 +3391,9 @@ const testSuites = [
 
   // Extensive decimal mode tests (http://www.6502.org/tutorials/decimal_mode.html#B_)
   { name: "Extensive Decimal Mode Tests", run: runExtensiveDecimalModeTests },
+
+    // Mirroring test suite
+  { name: "Mirrored Offset Tests", run: runMirroredLocationTests },
 ];
 
 function showTestModal() {
