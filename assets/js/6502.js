@@ -1084,7 +1084,6 @@ function BVS_REL() {
 }
 
 // --------- BRK (IMP) ---------------
-// zero increment in object for this, done here in opcode function
 function BRK_IMP() {
   // compute return address = PC + table.pcIncrement (2)
   const ret = (CPUregisters.PC + 2) & 0xFFFF;
@@ -1114,6 +1113,7 @@ function BRK_IMP() {
   const lo = checkReadOffset(0xFFFE);
   const hi = checkReadOffset(0xFFFF);
   CPUregisters.PC = (hi << 8) | lo;
+  cpuCycles += 5; //extra 5 on top of base
 }
 
 function CMP_IMM() {
@@ -1671,6 +1671,7 @@ function NOP_ZPY() {
   // dummy read from (ZP + Y) but do nothing else
   const zp = checkReadOffset(CPUregisters.PC + 1);
   checkReadOffset((zp + CPUregisters.Y) & 0xFF);
+  cpuCycles++; // +1 for this opcode
 }
 
 function NOP() {}
@@ -2669,7 +2670,6 @@ function LAS_ABSY() {
 function BRA_REL() {
   const offset = checkReadOffset(CPUregisters.PC + 1);
   const signed = offset < 0x80 ? offset : offset - 0x100;
-  cpuCycles += 2; // base cycles for relative
   const oldPC = CPUregisters.PC;
   const newPC = (CPUregisters.PC + 2 + signed) & 0xFFFF;
   // Page boundary cross penalty (+1 cycle)
@@ -2729,25 +2729,25 @@ function SBX_IMM() {
 const opcodes = {
 
   // ==================== BRANCH/CONTROL FLOW (pcIncrement: 0) ==================== //
-  BCC: { relative: { code: 0x90, length: 2, pcIncrement: 0, func: BCC_REL } },
-  BCS: { relative: { code: 0xB0, length: 2, pcIncrement: 0, func: BCS_REL } },
-  BEQ: { relative: { code: 0xF0, length: 2, pcIncrement: 0, func: BEQ_REL } },
-  BMI: { relative: { code: 0x30, length: 2, pcIncrement: 0, func: BMI_REL } },
-  BNE: { relative: { code: 0xD0, length: 2, pcIncrement: 0, func: BNE_REL } },
-  BPL: { relative: { code: 0x10, length: 2, pcIncrement: 0, func: BPL_REL } },
-  BVC: { relative: { code: 0x50, length: 2, pcIncrement: 0, func: BVC_REL } },
-  BVS: { relative: { code: 0x70, length: 2, pcIncrement: 0, func: BVS_REL } },
+  BCC: { relative: { code: 0x90, length: 2, pcIncrement: 2, func: BCC_REL } },
+  BCS: { relative: { code: 0xB0, length: 2, pcIncrement: 2, func: BCS_REL } },
+  BEQ: { relative: { code: 0xF0, length: 2, pcIncrement: 2, func: BEQ_REL } },
+  BMI: { relative: { code: 0x30, length: 2, pcIncrement: 2, func: BMI_REL } },
+  BNE: { relative: { code: 0xD0, length: 2, pcIncrement: 2, func: BNE_REL } },
+  BPL: { relative: { code: 0x10, length: 2, pcIncrement: 2, func: BPL_REL } },
+  BVC: { relative: { code: 0x50, length: 2, pcIncrement: 2, func: BVC_REL } },
+  BVS: { relative: { code: 0x70, length: 2, pcIncrement: 2, func: BVS_REL } },
   // Unofficial: BRA - Branch Always (0x80)
-  BRA: { relative: { code: 0x80, length: 2, pcIncrement: 0, func: BRA_REL } },
+  BRA: { relative: { code: 0x80, length: 2, pcIncrement: 2, func: BRA_REL } },
 
   JMP: {
-    absolute:   { code: 0x4C, length: 3, pcIncrement: 0, func: JMP_ABS },
-    indirect:   { code: 0x6C, length: 3, pcIncrement: 0, func: JMP_IND }
+    absolute:   { code: 0x4C, length: 3, pcIncrement: 2, func: JMP_ABS },
+    indirect:   { code: 0x6C, length: 3, pcIncrement: 2, func: JMP_IND }
   },
-  JSR: { absolute: { code: 0x20, length: 3, pcIncrement: 0, func: JSR_ABS } },
-  RTS: { implied: { code: 0x60, length: 1, pcIncrement: 0, func: RTS_IMP } },
-  RTI: { implied: { code: 0x40, length: 1, pcIncrement: 0, func: RTI_IMP } },
-  BRK: { implied: { code: 0x00, length: 1, pcIncrement: 0, func: BRK_IMP } },
+  JSR: { absolute: { code: 0x20, length: 3, pcIncrement: 2, func: JSR_ABS } },
+  RTS: { implied: { code: 0x60, length: 1, pcIncrement: 2, func: RTS_IMP } },
+  RTI: { implied: { code: 0x40, length: 1, pcIncrement: 2, func: RTI_IMP } },
+  BRK: { implied: { code: 0x00, length: 1, pcIncrement: 2, func: BRK_IMP } },
 
   // ======================= LOAD/STORE ======================= //
   LDA: {
@@ -2963,32 +2963,32 @@ const opcodes = {
     immmediate2:      { code: 0xC2, length: 2, pcIncrement: 2, func: NOP },    // plain NOP
     immediate3:      { code: 0xE2, length: 2, pcIncrement: 2, func: NOP },    // plain NOP
 
-    // Zero page NOPs: read from ZP (quirk!), so must do PC manually, set pcIncrement=0
-    zeroPage:       { code: 0x04, length: 2, pcIncrement: 0, func: NOP_ZP },    // quirk: does memory read
-    zeroPage1:       { code: 0x44, length: 2, pcIncrement: 0, func: NOP_ZP },    // "
-    zeroPage2:       { code: 0x64, length: 2, pcIncrement: 0, func: NOP_ZP },    // "
+    // Zero page NOPs: read from ZP (quirk!)
+    zeroPage:       { code: 0x04, length: 2, pcIncrement: 2, func: NOP_ZP },    // quirk: does memory read
+    zeroPage1:       { code: 0x44, length: 2, pcIncrement: 2, func: NOP_ZP },    // "
+    zeroPage2:       { code: 0x64, length: 2, pcIncrement: 2, func: NOP_ZP },    // "
 
-    // Zero page,X NOPs: read from ZP+X (quirk!), must do PC manually, pcIncrement=0
-    zeroPageX:      { code: 0x14, length: 2, pcIncrement: 0, func: NOP_ZPX },   // quirk: does memory read
-    zeroPageX1:      { code: 0x34, length: 2, pcIncrement: 0, func: NOP_ZPX },   // "
-    zeroPageX2:      { code: 0x54, length: 2, pcIncrement: 0, func: NOP_ZPX },   // "
-    zeroPageX3:      { code: 0x74, length: 2, pcIncrement: 0, func: NOP_ZPX },   // "
-    zeroPageX4:      { code: 0xD4, length: 2, pcIncrement: 0, func: NOP_ZPX },   // "
-    zeroPageX5:      { code: 0xF4, length: 2, pcIncrement: 0, func: NOP_ZPX },   // "
+    // Zero page,X NOPs: read from ZP+X (quirk!)
+    zeroPageX:      { code: 0x14, length: 2, pcIncrement: 2, func: NOP_ZPX },   // quirk: does memory read
+    zeroPageX1:      { code: 0x34, length: 2, pcIncrement: 2, func: NOP_ZPX },   // "
+    zeroPageX2:      { code: 0x54, length: 2, pcIncrement: 2, func: NOP_ZPX },   // "
+    zeroPageX3:      { code: 0x74, length: 2, pcIncrement: 2, func: NOP_ZPX },   // "
+    zeroPageX4:      { code: 0xD4, length: 2, pcIncrement: 2, func: NOP_ZPX },   // "
+    zeroPageX5:      { code: 0xF4, length: 2, pcIncrement: 2, func: NOP_ZPX },   // "
 
-    // Absolute NOP: read from $nnnn (quirk!), must do PC manually, pcIncrement=0
-    absolute:      { code: 0x0C, length: 3, pcIncrement: 0, func: NOP_ABS },   // quirk: does memory read
+    // Absolute NOP: read from $nnnn (quirk!)
+    absolute:      { code: 0x0C, length: 3, pcIncrement: 3, func: NOP_ABS },   // quirk: does memory read
 
-    // Absolute,X NOPs: read from $nnnn+X, add page cross cycle (quirk!), must do PC manually, pcIncrement=0
-    absoluteX:     { code: 0x1C, length: 3, pcIncrement: 0, func: NOP_ABSX }, // quirk: memory read + possible extra cycle
-    absoluteX1:     { code: 0x3C, length: 3, pcIncrement: 0, func: NOP_ABSX }, // "
-    absoluteX2:     { code: 0x5C, length: 3, pcIncrement: 0, func: NOP_ABSX }, // "
-    absoluteX3:     { code: 0x7C, length: 3, pcIncrement: 0, func: NOP_ABSX }, // "
-    absoluteX4:     { code: 0xDC, length: 3, pcIncrement: 0, func: NOP_ABSX }, // "
-    absoluteX5:     { code: 0xFC, length: 3, pcIncrement: 0, func: NOP_ABSX }, // "
+    // Absolute,X NOPs: read from $nnnn+X
+    absoluteX:     { code: 0x1C, length: 3, pcIncrement: 3, func: NOP_ABSX }, // quirk: memory read + possible extra cycle
+    absoluteX1:     { code: 0x3C, length: 3, pcIncrement: 3, func: NOP_ABSX }, // "
+    absoluteX2:     { code: 0x5C, length: 3, pcIncrement: 3, func: NOP_ABSX }, // "
+    absoluteX3:     { code: 0x7C, length: 3, pcIncrement: 3, func: NOP_ABSX }, // "
+    absoluteX4:     { code: 0xDC, length: 3, pcIncrement: 3, func: NOP_ABSX }, // "
+    absoluteX5:     { code: 0xFC, length: 3, pcIncrement: 3, func: NOP_ABSX }, // "
 
-    // Zero page,Y NOP: rare (quirk), must do PC manually, pcIncrement=0
-    zeroPageY:       { code: 0x92, length: 2, pcIncrement: 0, func: NOP_ZPY },  // quirk: does memory read
+    // Zero page,Y NOP: rare (quirk)
+    zeroPageY:       { code: 0x92, length: 2, pcIncrement: 2, func: NOP_ZPY },  // quirk: does memory read
   },
 
   // ======================== UNOFFICIAL/ILLEGAL OPCODES ======================== //
@@ -3081,7 +3081,7 @@ const opcodes = {
   SBX: { immediate: { code: 0xCB, length: 2, pcIncrement: 2, func: SBX_IMM } },  // aka AXS
 
   // ======================= TEST HOOK OPCODE ======================= //
-  Test_Trigger: { implied: { code: 0x02, length: 1, pcIncrement: 1, func: opCodeTest } }
+  Test_Trigger: { implied: { code: 0x02, length: 1, pcIncrement: 0, func: opCodeTest } }
 };
 
 // Base timings per addressing mode

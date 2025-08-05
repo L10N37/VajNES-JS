@@ -49,6 +49,58 @@ for (const [mnemonic, modes] of Object.entries(opcodes)) {
   }
 }
 
+function printstuff(){
+// List of 6502 branch opcodes
+const BRANCH_OPS = {
+  0x10: "BPL", 0x30: "BMI", 0x50: "BVC", 0x70: "BVS",
+  0x90: "BCC", 0xB0: "BCS", 0xD0: "BNE", 0xF0: "BEQ"
+};
+
+console.log("%cBranch opcode table (with handlers, PC inc, cycles, lengths):", "color: #fff; background: #222; font-size: 1.2em; padding: 6px;");
+
+let rows = [];
+for(let i=0; i<256; ++i) {
+  let isBranch = BRANCH_OPS.hasOwnProperty(i);
+  let handler  = opcodeFuncs[i] ? opcodeFuncs[i].name : "(none)";
+  let style    = isBranch
+    ? "background:#222;color:#8ef;padding:2px;"
+    : "background:#333;color:#fff;padding:2px;";
+  rows.push([
+    `%c${i.toString(16).padStart(2,"0").toUpperCase()}`,
+    style,
+    isBranch ? BRANCH_OPS[i] : "",
+    handler,
+    opcodePcIncs[i],
+    opcodeCyclesInc[i],
+    opcodeLengths[i],
+    opcodeHex[i] || ""
+  ]);
+}
+
+console.log(
+  "%c OPC  %c BR  %c Handler         %c PC+  %c Cyc  %c Len  %c Hex",
+  "background:#444;color:#fff;padding:3px;",
+  "background:#444;color:#eee;padding:3px;",
+  "background:#444;color:#8ef;padding:3px;",
+  "background:#444;color:#fff;padding:3px;",
+  "background:#444;color:#fff;padding:3px;",
+  "background:#444;color:#fff;padding:3px;",
+  "background:#444;color:#fff;padding:3px;"
+);
+
+for(const row of rows) {
+  console.log(
+    row[0], row[1],
+    "%c"+row[2], "color:#0ff;font-weight:bold;padding:2px;",
+    "%c"+row[3], "color:#ffd700;font-weight:bold;padding:2px;",
+    "%c"+row[4], "color:#5f5;padding:2px;",
+    "%c"+row[5], "color:#fc5;padding:2px;",
+    "%c"+row[6], "color:#6af;padding:2px;",
+    "%c"+row[7], "color:#fff;padding:2px;"
+  );
+}
+}
+
 if (test) {
   // Patch 0x02 to be a NOP during benchmarks
   opcodeFuncs[0x02] = () => { /* no-op */ };
@@ -56,6 +108,11 @@ if (test) {
 
 // ── Single‐step executor ──
 function step() {
+
+  console.log("STEP @ PC:", hex(CPUregisters.PC), 
+  "opcode:", hex(checkReadOffset(CPUregisters.PC)), 
+  "next:", hex(checkReadOffset(CPUregisters.PC + 1)));
+
 
   const pc     = CPUregisters.PC;
   const idx    = pc - 0x8000;        // PRG-ROM base

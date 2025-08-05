@@ -56,3 +56,28 @@ function incrementHexAddress(address, endAddress, step = 16) {
   if (hexValue > hexValueEnd) return null;
   return "$" + hexValue.toString(16).toUpperCase().padStart(4, '0');
 }
+
+function opcodeTablePrint(){
+
+  const BRANCH_OPS = {
+  0x10: "BPL", 0x30: "BMI", 0x50: "BVC", 0x70: "BVS",
+  0x90: "BCC", 0xB0: "BCS", 0xD0: "BNE", 0xF0: "BEQ"
+};
+
+let opcodeRows = [];
+for(let i=0; i<256; ++i) {
+  opcodeRows.push({
+    OPC: "0x" + i.toString(16).padStart(2, "0").toUpperCase(),
+    BR: BRANCH_OPS[i] || "",
+    Handler: opcodeFuncs[i] ? opcodeFuncs[i].name : "(none)",
+    "PC+": opcodePcIncs[i],
+    Cycles: opcodeCyclesInc[i],
+    Len: opcodeLengths[i],
+    Hex: opcodeHex[i] || ""
+  });
+}
+
+console.log("%c==== 6502 Opcode Table (Branch ops highlighted) ====", "color:#fff;background:#222;font-size:1.2em;padding:4px;");
+console.table(opcodeRows);
+
+}

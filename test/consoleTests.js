@@ -2153,10 +2153,20 @@ function runBrkAndNopsTests() {
     }
 
     // For NOPs, expected is mostly cycles and PC increment
-    if (pcAfter !== pcBefore + test.code.length) {
-      pass = false;
-      reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${(pcBefore + test.code.length).toString(16)}`);
-    }
+
+   // initial test calculated expected offset as + opcodes length, BRK is +2 but opcode length 1, fixed
+  let expectedPC;
+  if (test.code[0] === 0x00) { // 0x00 is BRK
+    expectedPC = pcBefore + 2;
+  } else {
+    expectedPC = pcBefore + test.code.length;
+  }
+
+if (pcAfter !== expectedPC) {
+  pass = false;
+  reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${expectedPC.toString(16)}`);
+}
+
     if (cyclesUsed !== expectedCycles) {
       pass = false;
       reasons.push(`cycles=${cyclesUsed}≠${expectedCycles}`);
