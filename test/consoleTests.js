@@ -1,5 +1,7 @@
 //TO DO: instead of constantly adjusting tests, add one to test all intercepted offsets modifying a variables data
 
+
+
 // ─── GLOBAL TEST SETUP ─────────────────────────────────────────────────────────
 function setupTests(tests) {
   // --- Reset CPU/PPU & clear WRAM/PPU space (preserve PRG-ROM) ---
@@ -11,7 +13,7 @@ function setupTests(tests) {
   }
 
   // --- Set PC to reset vector ---
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD] << 8);
+  CPUregisters.PC = 0x8000;
 
   // --- Lay out all test opcodes into PRG-ROM at $8000/$C000 ---
   let seqOffset = 0;
@@ -47,35 +49,6 @@ const testLookup = {
   "BRK sets B": ["BRK", "implied"],
   "IRQ leaves B": [null, null], // special case, no opcode mnemonic
 };
-
-
-  /*
-
-// Clear system memory area
-for(let i = 0x8000; i <= 0x8002; i++) checkWriteOffset(i, 0);
-
-// Write opcode + operand at 0x8000: LDA #$00 (will modify operand next)
-checkWriteOffset(0x8000, 0xA9);  // LDA_IMM opcode
-checkWriteOffset(0x8001, 0x00);  // initial operand 0x00
-
-console.log(`Initial memory[0x8001]: 0x${systemMemory[0x8001].toString(16)}`);
-
-// Modify operand after writing opcode bytes to simulate self-modifying code
-checkWriteOffset(0x8001, 0x77);
-console.log(`Modified memory[0x8001]: 0x${systemMemory[0x8001].toString(16)}`);
-
-// Set CPU registers
-CPUregisters.A = 0x00;
-CPUregisters.PC = 0x8000;
-
-console.log(`Before step: A=0x${CPUregisters.A.toString(16).padStart(2,'0')}, PC=0x${CPUregisters.PC.toString(16)}`);
-
-// Step one instruction (LDA #imm)
-step();
-
-console.log(`After step: A=0x${CPUregisters.A.toString(16).padStart(2,'0')}, PC=0x${CPUregisters.PC.toString(16)}`);
-console.log(`Expected A=0x77. Test ${CPUregisters.A === 0x77 ? 'PASSED' : 'FAILED'}`);
-*/
 
   function getBaseCycles(testDesc) {
     if (testDesc === "IRQ leaves B") return 7;
@@ -120,8 +93,8 @@ console.log(`Expected A=0x77. Test ${CPUregisters.A === 0x77 ? 'PASSED' : 'FAILE
     if (test.opcodeFn && /INDY/.test(test.opcodeFn)) {
       const zp = test.code[1];
       if (test.setup) test.setup();
-      const low = systemMemory[zp];
-      const high = systemMemory[(zp + 1) & 0xFF];
+      const low = [zp];
+      const high = [(zp + 1) & 0xFF];
       const ptr = low | (high << 8);
       const y = test.pre?.Y ?? 0;
       const eff = (ptr + y) & 0xFFFF;
@@ -171,7 +144,7 @@ console.log(`Expected A=0x77. Test ${CPUregisters.A === 0x77 ? 'PASSED' : 'FAILE
 
 
     /*
-    verified with asm from @ https://skilldrick.github.io/easy6502/
+    verified @ https://skilldrick.github.io/easy6502/
 
     SED           ; set decimal mode
     CLC           ; clear carry (borrow)
@@ -245,7 +218,7 @@ console.log(`Expected A=0x77. Test ${CPUregisters.A === 0x77 ? 'PASSED' : 'FAILE
 
       This weird edge case is simply checking that I don't try and return the operand byte until RUNTIME of the 
       opcode function. Which, we don't, as the way the app was written is it always executes operands from
-      systemMemory, at runtime, so regardless of changes we will always execute the value there at runtime. 
+      , at runtime, so regardless of changes we will always execute the value there at runtime. 
 
       I feel stupid even noting this for future reference, and it doesn't make the code below any less silly at all,
       in fact, its still stupid code, and i guess its more knowing how the app processes opcodes/operands , but hey, we 
@@ -366,7 +339,6 @@ nocross("Self-mod IMM (console ops with full checks)", {
     if (test.code && test.code.length) {
       test.code.forEach((b, i) => { checkWriteOffset(CPUregisters.PC + i, b); });
       step();
-      if (typeof updateDebugTables === "function") updateDebugTables();
     }
   }
 
@@ -394,7 +366,7 @@ nocross("Self-mod IMM (console ops with full checks)", {
     }
   }
   if (test.expectMem) {
-    const val = systemMemory[test.expectMem.addr];
+    const val = [test.expectMem.addr];
     if (val !== test.expectMem.value) {
       pass = false;
       reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${val}≠${test.expectMem.value}`);
@@ -488,6 +460,8 @@ function getMirrors(addr) {
 
   // Default: only itself (not mirrored)
   return [addr];
+
+  
 }
 
 function runLoadsTests() {
@@ -562,7 +536,7 @@ function runLoadsTests() {
       if(test.setup) test.setup();
   
       // execute one instruction
-      step(); updateDebugTables();
+      step();
   
       // restore checkReadOffset
       checkReadOffset = origChk;
@@ -640,7 +614,8 @@ function runLoadsTests() {
   
     html += "</tbody></table>";
     document.body.insertAdjacentHTML("beforeend", html);
-checkWriteOffset(0x8000, 0x02); //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 CPUregisters.PC = 0x8000;
 
 }
@@ -668,8 +643,8 @@ function runStoresTests() {
   CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
   if(typeof PPUregister==='object') Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
 
-  // set PC to reset-vector
-  CPUregisters.PC = systemMemory[0xFFFC] | (systemMemory[0xFFFD]<<8);
+  // hardcode for running opcodes from 0x8000
+  CPUregisters.PC = 0x8000;
 
   // lay out store opcodes sequentially into PRG-ROM
   let seqOffset=0;
@@ -717,7 +692,7 @@ function runStoresTests() {
     if(test.setup) test.setup();
 
     // execute
-    step(); updateDebugTables();
+    step();
 
     // effective address
     const r = lastFetched.raw, m = lastFetched.addressingMode;
@@ -736,7 +711,7 @@ function runStoresTests() {
     // check memory
     let reasons = [], pass = true;
     mirrors.forEach(a => {
-      const got = systemMemory[a];
+      const got = [a];
       if (got !== test.expectMem.value) {
         reasons.push(`$${a.toString(16).padStart(4,'0')}=${hex(got)}≠${hex(test.expectMem.value)}`);
         pass = false;
@@ -744,7 +719,7 @@ function runStoresTests() {
     });
 
     const expectedLabel = hex(test.expectMem.value);
-    const resultLabel   = hex(systemMemory[ea]);
+    const resultLabel   = hex([ea]);
 
     const statusCell = pass
       ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
@@ -772,8 +747,8 @@ function runStoresTests() {
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-checkWriteOffset(0x8000, 0x02); //reset so we can keep testing
-CPUregisters.PC = 0x8000;
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
  }
 
  function runRegisterTransfersAndFlagsTest() { 
@@ -834,7 +809,7 @@ CPUregisters.PC = 0x8000;
     }
 
     // execute
-    step(); updateDebugTables();
+    step();
 
     // record after-state
     const fa = { ...CPUregisters.P };
@@ -895,8 +870,8 @@ CPUregisters.PC = 0x8000;
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-checkWriteOffset(0x8000, 0x02); //reset so we can keep testing
-CPUregisters.PC = 0x8000;
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
   }
 
   function runAluAndLogicOpsTests(){
@@ -958,7 +933,7 @@ setupTests(tests);
     if(test.setup) test.setup();
 
     // execute and update
-    step(); updateDebugTables();
+    step();
 
     // restore
     checkReadOffset = orig;
@@ -1013,7 +988,7 @@ setupTests(tests);
     // memory ops
     if (test.expectMem) {
       mirrors.forEach(a=>{
-        const got = systemMemory[a];
+        const got = [a];
         if (got !== test.expectMem.value) {
           reasons.push(`$${a.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`);
           pass = false;
@@ -1046,7 +1021,7 @@ setupTests(tests);
     const resultLabel  = test.expect?.A!==undefined
       ? hex(CPUregisters.A)
       : test.expectMem
-        ? hex(systemMemory[ea])
+        ? hex([ea])
         : test.expectFlags
           ? `Z=${CPUregisters.P.Z} V=${CPUregisters.P.V} N=${CPUregisters.P.N}`
           : "";
@@ -1077,8 +1052,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-checkWriteOffset(0x8000, 0x02); //reset so we can keep testing
-CPUregisters.PC = 0x8000;
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 
   }
 
@@ -1154,7 +1129,7 @@ setupTests(tests);
     }
     if(test.setup) test.setup();
 
-    step(); updateDebugTables();
+    step();
     checkReadOffset=orig;
 
     let fa={...CPUregisters.P},
@@ -1181,7 +1156,7 @@ setupTests(tests);
       ["C","Z","N","V"].forEach(fn=>{ if(exp[fn]!=null && CPUregisters.P[fn]!==exp[fn]){ reasons.push(`${fn}=${CPUregisters.P[fn]}≠${exp[fn]}`); pass=false; } });
     }
     if(test.expectMem){
-      mirrors.forEach(a=>{ const got=systemMemory[a]; if(got!==test.expectMem.value){ reasons.push(`$${a.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`); pass=false; } });
+      mirrors.forEach(a=>{ const got=[a]; if(got!==test.expectMem.value){ reasons.push(`$${a.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`); pass=false; } });
     }
 
     const interceptCell = intr.flag
@@ -1196,7 +1171,7 @@ setupTests(tests);
     const resultLabel = test.expect?.A!=null
       ? hex(CPUregisters.A)
       : test.expectMem
-        ? hex(systemMemory[ea])
+        ? hex([ea])
         : "";
     const statusCell = pass
       ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
@@ -1224,9 +1199,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-checkWriteOffset(0x8000, 0x02); //reset so we can keep stepping once and testing
-CPUregisters.PC = 0x8000;
-
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
   }
 
   function runLoadsOpsTests(){
@@ -1304,7 +1278,7 @@ setupTests(tests);
     }
     if(test.setup) test.setup();
 
-    step(); updateDebugTables();
+    step();
     checkReadOffset=orig;
 
     const fa={...CPUregisters.P},
@@ -1392,8 +1366,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-checkWriteOffset(0x8000, 0x02); //reset so we can keep stepping once and testing
-CPUregisters.PC = 0x8000;
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 
   }
 
@@ -1470,7 +1444,7 @@ setupTests(tests);
     }
     if(test.setup) test.setup();
 
-    step(); updateDebugTables();
+    step();
     checkReadOffset = orig;
 
     const fa={...CPUregisters.P},
@@ -1540,8 +1514,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-checkWriteOffset(0x8000, 0x02); //reset so we can keep testing
-CPUregisters.PC = 0x8000;
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 
   }
 
@@ -1612,7 +1586,7 @@ setupTests(tests);
     }
     if(test.setup) test.setup();
 
-    step(); updateDebugTables();
+    step();
     checkReadOffset=orig;
 
     const fa={...CPUregisters.P},
@@ -1674,7 +1648,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-checkWriteOffset(0x8000, 0x02); //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 CPUregisters.PC = 0x8000;
 
   }
@@ -1821,38 +1796,9 @@ function runBranchOpsTests() {
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-  checkWriteOffset(0x8000, 0x02); // for next run
-  CPUregisters.PC = 0x8000;
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 
-}
-
-
-// helpers
-function flagsEqual(a, b) {
-  return a.N === b.N && a.V === b.V && a.B === b.B && a.D === b.D &&
-         a.I === b.I && a.Z === b.Z && a.C === b.C;
-}
-function hex(v) {
-  if (v == null) return "--";
-  let n = Number(v);
-  return "0x" + n.toString(16).toUpperCase().padStart(4, '0');
-}
-function flagsBin(f) {
-  return [
-    f.N ? "N" : ".",
-    f.V ? "V" : ".",
-    f.B ? "B" : ".",
-    f.D ? "D" : ".",
-    f.I ? "I" : ".",
-    f.Z ? "Z" : ".",
-    f.C ? "C" : "."
-  ].join('');
-}  
-function dropdown(label, items) {
-  return items.length > 1
-    ? `<details><summary>${label}</summary><ul style="margin:0;padding-left:18px;">`
-      + items.map(i=>`<li>${i}</li>`).join("") + `</ul></details>`
-    : label;
 }
 
   function runJumpAndSubRoutinesTests(){
@@ -1914,7 +1860,7 @@ setupTests(tests);
     }
     if(test.setup) test.setup();
 
-    step(); updateDebugTables();
+    step();
     checkReadOffset = orig;
 
     const fa={...CPUregisters.P},
@@ -1961,7 +1907,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-checkWriteOffset(0x8000, 0x02); //reset so we can keep testing
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 CPUregisters.PC = 0x8000;
 
   }
@@ -2005,7 +1952,7 @@ setupTests(tests);
     }
     if(test.setup) test.setup();
 
-    step(); updateDebugTables();
+    step();
     checkReadOffset = orig;
 
     const fa={...CPUregisters.P},
@@ -2029,7 +1976,7 @@ setupTests(tests);
 
     // check memory writes
     if(test.expectMem){
-      const got = systemMemory[test.expectMem.addr];
+      const got = [test.expectMem.addr];
       if(got !== test.expectMem.value){
         reasons.push(`$${test.expectMem.addr.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`);
         pass=false;
@@ -2045,7 +1992,7 @@ setupTests(tests);
       ? hex(test.expectMem.value)
       : Object.entries(exp).map(([k,v])=>`${k}=${hex(v)}`).join(" ");
     const resultLabel = test.expectMem
-      ? hex(systemMemory[test.expectMem.addr])
+      ? hex([test.expectMem.addr])
       : Object.entries(exp).map(([k])=>{
           const val = k in ca ? ca[k] : CPUregisters.P[k];
           return `${k}=${hex(val)}`;
@@ -2076,7 +2023,8 @@ setupTests(tests);
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-checkWriteOffset(0x8000, 0x02); //reset so we can keep stepping once and testing
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 CPUregisters.PC = 0x8000;
 
   }
@@ -2251,7 +2199,8 @@ function runBrkAndNopsTests() {
   html += "</tbody></table>";
   document.body.insertAdjacentHTML("beforeend", html);
 
-  checkWriteOffset(0x8000, 0x02);
+  CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
   CPUregisters.PC = 0x8000;
 }
 
@@ -2692,9 +2641,8 @@ function fmtExpect(expect, expectMem, expectCycles) {
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
 
-  // Optionally, reset program counter for next interactive use
-  checkWriteOffset(0x8000, 0x02);
-  CPUregisters.PC = 0x8000;
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 }
 
 
@@ -2779,9 +2727,9 @@ function runPageCrossAndQuirksTests() {
     if (test.opcodeFn && /INDY/.test(test.opcodeFn)) {
       const zp = test.code[1];
       const low = test.setup
-        ? (() => { let v=0; test.setup(); v=systemMemory[zp]; return v; })()
-        : systemMemory[zp];
-      const high = systemMemory[(zp + 1) & 0xFF];
+        ? (() => { let v=0; test.setup(); v=[zp]; return v; })()
+        : [zp];
+      const high = [(zp + 1) & 0xFF];
       const ptr = low | (high << 8);
       const y = test.pre?.Y ?? 0;
       const eff = (ptr + y) & 0xFFFF;
@@ -2900,7 +2848,6 @@ function runPageCrossAndQuirksTests() {
     if(test.code && test.code.length){
       test.code.forEach((b,i)=>{ checkWriteOffset(CPUregisters.PC+i, b); });
       step(); // run one instruction
-      if (typeof updateDebugTables==="function") updateDebugTables();
     }
 
     // --- State snapshot after ---
@@ -2924,7 +2871,7 @@ function runPageCrossAndQuirksTests() {
       }
     }
     if(test.expectMem){
-      const val = systemMemory[test.expectMem.addr];
+      const val = [test.expectMem.addr];
       if(val!==test.expectMem.value){
         pass=false; reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${val}≠${test.expectMem.value}`);
       }
@@ -2963,9 +2910,8 @@ function runPageCrossAndQuirksTests() {
   }
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-  // reset for other tests
-  checkWriteOffset(0x8000, 0x02);
-  CPUregisters.PC = 0x8000;
+  CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 }
 
 function runExtensiveDecimalModeTests() { // http://www.6502.org/tutorials/decimal_mode.html#B
@@ -3137,7 +3083,6 @@ function runExtensiveDecimalModeTests() { // http://www.6502.org/tutorials/decim
         checkWriteOffset(CPUregisters.PC + i, b);
       });
       step(); // run instruction
-      if (typeof updateDebugTables === "function") updateDebugTables();
     }
 
     // Snapshots after execution
@@ -3163,7 +3108,7 @@ function runExtensiveDecimalModeTests() { // http://www.6502.org/tutorials/decim
       }
     }
     if (test.expectMem) {
-      const val = systemMemory[test.expectMem.addr];
+      const val = [test.expectMem.addr];
       if (val !== test.expectMem.value) {
         pass = false;
         reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${val}≠${test.expectMem.value}`);
@@ -3209,8 +3154,8 @@ function runExtensiveDecimalModeTests() { // http://www.6502.org/tutorials/decim
   document.body.insertAdjacentHTML("beforeend", html);
 
   // Reset after tests
-  checkWriteOffset(0x8000, 0x02);
-  CPUregisters.PC = 0x8000;
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 }
 
 function runEvery6502Test() {
@@ -3355,14 +3300,14 @@ function runMirroredLocationTests() {
   html += "</tbody></table>";
   document.body.insertAdjacentHTML("beforeend", html);
 
-  systemMemory[0x8000] = 0x02;
-  CPUregisters.PC = 0x8000;
+CPUregisters.PC = 0x8000;    
+prgRom[CPUregisters.PC - 0x8000] = 0x02;
 }
 
 const testSuites = [
   // Loads, both standard and alternate for extra cross-verification
   { name: "LOADS (LDA/LDX/LDY)", run: runLoadsTests },
-  { name: "LOADS (LDA/LDX/LDY) (Alt)", run: runLoadsOpsTests }, // alternate block
+  { name: "LOADS (LDA/LDX/LDY) (Alt)", run: runLoadsOpsTests },
 
   // Stores
   { name: "STORES (STA/STX/STY)", run: runStoresTests },
@@ -3389,11 +3334,12 @@ const testSuites = [
   { name: "Edge Case Tests", run: runEdgeCaseTests },
   { name: "Page Cross & Quirks Tests", run: runPageCrossAndQuirksTests },
 
-  // Extensive decimal mode tests (http://www.6502.org/tutorials/decimal_mode.html#B_)
+  // Extensive decimal mode tests
   { name: "Extensive Decimal Mode Tests", run: runExtensiveDecimalModeTests },
 
-    // Mirroring test suite
+  // Mirroring test suite
   { name: "Mirrored Offset Tests", run: runMirroredLocationTests },
+
 ];
 
 function showTestModal() {
@@ -3408,7 +3354,7 @@ function showTestModal() {
 
   let title = document.createElement('div');
   title.textContent = "Select test group to run";
-  title.style = "font-size:1.5em; margin-bottom:1em;";
+  title.style = "font-size:1.5em; margin-bottom:0.5em;";
   box.appendChild(title);
 
   // Test suite selector
@@ -3428,6 +3374,7 @@ function showTestModal() {
   btnOne.style = "margin-bottom:0.7em; font-size:1em; padding:0.5em 1.5em;";
   btnOne.onclick = () => {
     modal.remove();
+    // invoke without arguments
     testSuites[+sel.value].run();
   };
   box.appendChild(btnOne);

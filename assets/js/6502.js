@@ -1,3 +1,25 @@
+/* 
+first WIP version used a flat contiguous 64KB array for EVERYTHING, for mirroring we actually wrote to memory at
+all offsets, if writing to a mirror we ran code that then wrote to the base and all mirrors
+
+for reads, we could read any mirror and it always contained the same data as the base
+even with the UI needlessly being refreshed between every step, chewing through quite a few opcodes a second.
+
+after more research, apparently using separate arrays for VRAM, WRAM, PRG-ROM etc was a better approach, and just using 
+address folding so any reads/ writes to mirrors would just fold back down to the base address was just 'a better way'
+
+After a complete refactor it averaged 2/3 seconds per opcode and sometimes up to 4/5 for the illegal opcodes, and when 
+running continuously would cause a browser crash. It seems I 'deoptimised' the app by trying to be more 'true' to hardware 
+and simplifying things made some aspects somewhat more complicated.
+
+the information here from the opcodes object now gets used to create flattened metadata arrays to speed things up and
+optimise it to the point that this can become a functional, full speed browser based emulator.
+
+anyway, it would have had to be optimised into look up tables either way, but it would have being WAYYYYYYYYYY faster doing
+things the original way. Even with all the UI and debug stuff shaved off, the old code chewed through far more opcodes per
+second
+*/
+
 let cpuCycles = 0;
 let CPUregisters = {
   A: 0x00,
@@ -6,7 +28,7 @@ let CPUregisters = {
   // initialized to 0xFF on power-up or reset?
   // https://www.nesdev.org/wiki/Stack
   S: 0xFF,  // stack: stack operations push/pull to $0100–$01FF (the stack page in RAM), needs a fix
-  PC: 0x0000,
+  PC: 0x00,
   P: {
       C: 0,    // Carry
       Z: 0,    // Zero
@@ -22,6 +44,7 @@ let CPUregisters = {
 let P_VARIABLES = ['C', 'Z', 'I', 'D', 'B', 'U', 'V', 'N'];
 
 function resetCPU() {
+  systemMemoryVideo.fill(0x00);
   systemMemory.fill(0x00); // may not happeon on a real system
   CPUregisters.A = 0x00;
   CPUregisters.X = 0x00;
@@ -33,11 +56,14 @@ function resetCPU() {
       I: 0,    // Interrupt Disable
       D: 0,    // Decimal Mode
       B: 0,    // Break Command
-      U: 'NA',     // Unused ('U' Flag, technically always set to 1)
+      U: 1,    // Unused ('U' Flag, technically always set to 1)
       V: 0,    // Overflow
       N: 0     // Negative
   };
-  CPUregisters.PC = 0x0000;
+  // pull PC from reset vector
+  const lo = cpuRead(0xFFFC);
+  const hi = cpuRead(0xFFFD);
+  CPUregisters.PC = lo | (hi << 8);;
 }
 
 ////////////////////////// CPU Functions //////////////////////////
@@ -115,9 +141,9 @@ function IRQ() {
   CPUregisters.P.I = 1;
 
   // Read IRQ vector and set PC
-  const lo = systemMemory[0xFFFE];
-  const hi = systemMemory[0xFFFF];
-  CPUregisters.PC = (hi << 8) | lo;
+  const lo = systemMemory[0xFFFC];
+  const hi = systemMemory[0xFFFD];
+  CPUregisters.PC = lo | (hi << 8);
 
   // Consume 7 cycles for IRQ handling
   cpuCycles += 7;

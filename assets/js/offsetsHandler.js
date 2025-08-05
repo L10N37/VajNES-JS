@@ -1,97 +1,66 @@
-// offsetsHandler, redirect all reads/writes to the appropriate hardware/ handlers, keeping the code clean and structured :D
-
-function checkWriteOffset(address, value) {
-
-  // copy to CPU RAM mirrors (for now we are using real memory for mirrors, it's an emulator ...so, no biggie)
-    if (address < 0x2000) {
-      mirrorCPURAMWrite(address, value); // pass address and value
-      return;
-    }
-
-  // 2. PPU registers and mirrors: $2000–$3FFF
-    if (address >= 0x2000 && address <= 0x3FFF) {
-    // Special case: PPU palette RAM $3F00–$3FFF
-    if (address >= 0x3F00 && address <= 0x3FFF) {
-      systemMemory[address] = value;         // write value to RAM offset here directly, no passing to other handler
-      mirrorPPUPaletteWrite(address, value); // palette mirroring handler
-      cpuOpenBus = value & 0xFF;             // open bus, 
-      return;
-    }
-    // Otherwise, normal PPU register/mirror handling
-    ppuWrite(address, value);
-    systemMemory[address & 0x3FFF] = value; //
-    mirrorPPURegisterWrite(address, value); // register mirror handler
-    return;
-  }
-
-  // 3. APU/IO Registers: $4000–$4017
-  if (address >= 0x4000 && address <= 0x4017) {
-    switch (address) {
-      case 0x4014: { // OAMDMA (Sprite DMA)
-        cpuOpenBus = value & 0xFF;
-        let page = value & 0xFF;
-        let src = page << 8;
-        for (let i = 0; i < 256; i++) {
-          PPU_OAM[i] = systemMemory[src + i];
-        }
-        cpuCycles += 513;
-        return;
-      }
-      case 0x4016:
-        cpuOpenBus = value & 0xFF;
-        return joypadWrite(address, value);
-      case 0x4017:
-        cpuOpenBus = value & 0xFF;
-        return apuWrite(address, value);
-      default:
-        cpuOpenBus = value & 0xFF;
-        return apuWrite(address, value);
-    }
-  }
-
-  // 4. Expansion/Mapper I/O: $4018–$401F (stub/ignored for now)
-  if (address >= 0x4018 && address <= 0x401F) {
-    // mapperWrite(address, value); // (unimplemented)
-    return;
-  }
-
-  // 5. PRG-ROM or other (should almost never be written, but allow for completeness)
-  systemMemory[address] = value;
-  cpuOpenBus = value & 0xFF;
-}
+// Routes all CPU reads/writes to their proper handler after folding for mirrors.
+// Always update cpuOpenBus on every read/write.
 
 function checkReadOffset(address) {
-  // 1. CPU RAM: $0000–$1FFF (including mirrors)
-  if (address >= 0x0000 && address <= 0x1FFF) {
-    return cpuRead(address);
-  }
+    const addr = foldMirrors(address);
+    let value;
 
-  // 2. PPU registers and mirrors: $2000–$3FFF
-  if (address >= 0x2000 && address <= 0x3FFF) {
-    // Mirror every 8 bytes
-    let base = 0x2000 + ((address - 0x2000) % 8);
-    return ppuRead(base);
-  }
-
-  // 3. APU/IO Registers: $4000–$4017
-  if (address >= 0x4000 && address <= 0x4017) {
-    switch (address) {
-      case 0x4016: // Controller 1 read
-        return joypadRead(address, 1);
-      case 0x4017: // Controller 2 read
-        return joypadRead(address, 2);
-      case 0x4015: // APU status
-        return apuRead(address);
-      default: // $4000–$4013
-        return apuRead(address);
+    if (addr < 0x2000) { // CPU RAM
+        value = cpuRead(addr);
     }
-  }
+    else if (addr < 0x4000) { // PPU registers
+        value = ppuRead(addr);
+    }
+    else if (addr < 0x4020) { // APU & I/O
+        value = apuRead(addr);
+    }
+    else if (addr < 0x6000) { // Expansion, mapper-dependent, treat as open bus by default
+        value = openBusRead(addr);
+    }
+    else if (addr >= 0x8000 && addr <= 0xFFFF) { // ======== CARTRIDGE READING ========
+    // strip off the $8000 base and pull straight from PRG-ROM buffer
+    value = prgRom[addr - 0x8000];
+    }
+    else {
+        value = openBusRead(addr);
+    }
 
-  // 4. Expansion/Mapper I/O: $4018–$401F (stubbed)
-  if (address >= 0x4018 && address <= 0x401F) {
-    return 0x00; // Open bus/stub value
-  }
-
-  // 5. PRG-ROM or unmapped (read-only in normal NES, but allow for completeness)
-  return cpuRead(address);
+    // Always update open bus on every read
+    cpuOpenBus = value & 0xFF;
+    return value & 0xFF;
 }
+
+function checkWriteOffset(address, value) {
+    const addr = foldMirrors(address);
+    value = value & 0xFF; // enforce 8-bit
+
+    if (addr < 0x2000) { // CPU RAM
+        cpuWrite(addr, value);
+    }
+    else if (addr < 0x4000) { // PPU registers
+        ppuWrite(addr, value);
+    }
+    else if (addr === 0x4014) { // OAM DMA
+    dmaTransfer(value); // <--- DMA handler here}
+    }
+    else if (addr < 0x4020) { // APU & I/O
+        apuWrite(addr, value);
+    }
+    else if (addr < 0x6000) { // Expansion, mapper-dependent
+        openBusWrite(addr, value);
+    }
+    else if (addr < 0x8000) {          // PRG-RAM (GAME SAVES)
+        prgRam[addr - 0x6000] = value;
+    }
+    else if (addr <= 0xFFFF) {         // PRG-ROM (for tests), probably not required
+        prgRom[addr - 0x8000] = value;
+    }
+    // else do nothing
+
+    // Always update open bus
+    cpuOpenBus = value & 0xFF;
+}
+
+// Fallback open bus read/write handlers
+function openBusRead(addr) { return cpuOpenBus; }
+function openBusWrite(addr, value) { /* no-op */ }

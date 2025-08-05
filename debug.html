@@ -24,6 +24,7 @@
         <button class="dropbtn" id="clickedDisplay">Display</button>
         <button class="dropbtn" id="clickedScreen">Screen</button>
         <button class="dropbtn" id="clickedTileView">Tile View</button>
+        <button class="dropbtn" id="dumpState">Dump</button>
       </div>
 
     </div>
@@ -93,12 +94,17 @@
   </div>
   
   <main>
+
     
-  <a>WRAM / VRAM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <locContainer></locContainer></a>
-  <article class="debug"></article>
-  
-  <b>PRG-ROM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <locContainer2></locContainer2></b>
-  <article class="debug2"></article>
+<div class="wram-header">| WRAM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <span id="locContainer"></span></div>
+<article class="debug"></article>
+
+<div class="vram-header">| VRAM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <span id="locContainer2"></span></div>
+<article class="debug2"></article>
+
+<div class="prgrom-header">| PRG-ROM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <span id="locContainer3"></span></div>
+<article class="debug3"></article>
+
 
   <!-- Wrap CPU + PPU side by side -->
   <div class="registers-row">
@@ -226,28 +232,34 @@
   </div>
 
 
-  <script src="assets/js/screen/palettes.js"></script>
-  <script src="assets/js/screen/screen.js"></script>
-  <script src="assets/js/screen/tileViewer.js"></script>
-  <script src="assets/js/screen/grille.js"></script>
-  <script src="assets/js/screen/scanlines.js"></script>
-  <script src="assets/js/screen/scale.js"></script>
-  <script src="assets/js/customise/display.js"></script>
-  <script src="assets/js/debugTables/tables.js"></script>
-  <script src="assets/js/offsetsHandler.js"></script>
-  <script src="assets/js/mirrorHandler.js"></script>
-  <script src="assets/js/PPU.js"></script>
-  <script src="assets/js/APU.js"></script>
-  <script src="assets/js/controller.js"></script>
-  <script src="assets/js/memory.js"></script>
-  <script src="assets/js/6502.js"></script>
-  <script src="assets/js/mapper.js"></script>
-  <script src="assets/js/debug.js"></script>
+<script src="assets/js/helpers.js"></script>
+<script src="assets/js/6502.js"></script>
+<script src="assets/js/memory.js"></script>
+<script src="assets/js/memoryMaps.js"></script>
+<script src="assets/js/offsetsHandler.js"></script>
+<script src="assets/js/mirrorHandler.js"></script>
+<script src="assets/js/PPU.js"></script>
+<script src="assets/js/APU.js"></script>
+<script src="assets/js/mapper.js"></script>
+<script src="assets/js/controller.js"></script>
+<script src="assets/js/readFile.js"></script>
 
-  <script src="test/consoleTests.js"></script>
 
- 
+<script src="assets/js/screen/palettes.js"></script>
+<script src="assets/js/screen/screen.js"></script>
+<script src="assets/js/screen/scale.js"></script>
+<script src="assets/js/screen/tileViewer.js"></script>
+<script src="assets/js/screen/grille.js"></script>
+<script src="assets/js/screen/scanlines.js"></script>
+<script src="assets/js/customise/display.js"></script>
 
+
+<script src="assets/js/debugTables/tables.js"></script>
+<script src="assets/js/debug.js"></script>
+
+<script src="test/consoleTests.js"></script>
+<script src="test/benchmarks/benchMarkTests.js"></script>
+<script src="assets/js/logDump.js"></script>
 
 </body>
 <footer>

@@ -20,52 +20,6 @@ const APU_REG_ADDRESSES = {
   0x4015: "SND_CHN",    // Write
   0x4017: "FRAME_CNT"   // Write
 
-
-  // $4014 is OAMDMA (handled by PPU usually)
-
-  // $4014 is OAMDMA (Object Attribute Memory Direct Memory Access) — write-only.
-// Writing any value here triggers a 256-byte DMA transfer from CPU RAM $XX00–$XXFF
-// to the PPU's internal sprite memory (OAM RAM).
-//
-//   - The value written is used as the high byte of the source address (i.e., value * 0x100).
-//   - The CPU is stalled for either 513 or 514 cycles (see below).
-//   - Cycle penalty: If the write occurs on an even CPU cycle, 513 cycles are consumed.
-//                    If on an odd CPU cycle, 514 cycles are consumed.
-//   - The CPU cannot execute instructions during the DMA transfer (except for reading from open bus).
-//   - Not readable. Reading from $4014 yields open bus and serves no purpose.
-//
-// Example in emulator write handler:
-//
-//   function write4014(value) {
-//     const startAddr = value << 8;
-//     for (let i = 0; i < 256; i++) {
-//       PPU_OAM[i] = systemMemory[startAddr + i];
-//     }
-//     // Simulate CPU cycle penalty
-//     cpuCycles += (cpuCycles & 1) ? 513 : 514; // NES behavior depends on current cycle parity
-//   }
-
-// $4016-$4017 are also joypad
-
-// $4016–$4017: Dual-purpose registers for Joypad (controller) and APU functionality.
-//
-// READS:
-//   - $4016 (bits 0-3): Returns serial data from Joypad 1 (bits 0-3: A, B, Select, Start, Up, Down, Left, Right)
-//   - $4017 (bits 0-3): Returns serial data from Joypad 2 (same bit layout)
-//   - Some cartridges and expansion devices use bits 4-7 or these addresses for other hardware.
-//
-// WRITES:
-//   - $4016 (bit 0): Controls strobe/latch for both controller ports.
-//         • Writing 1 then 0 to bit 0 tells the controller hardware to latch current button states.
-//         • After latching, repeated reads return each button in order (A, B, Select, Start, Up, Down, Left, Right).
-//   - $4017 (write): Used by the APU as the "frame counter" control register. This controls the APU's frame sequencer for sound timing.
-//         • Writing here affects audio timing but does NOT impact controller logic.
-//
-// OTHER NOTES:
-//   - Typical emulators implement $4016 reads/writes for controller input and strobing, and $4017 writes for sound/frame sequencing.
-//   - Reads from $4017 typically return controller 2 data, though some bits may be affected by expansion hardware.
-//
-
 };
 let APUregister = {
   SQ1_VOL:   0x00, // $4000
@@ -153,13 +107,9 @@ function apuRead(address) {
       cpuOpenBus = APUregister.SND_CHN; // Update open bus with value read
       return APUregister.SND_CHN;
 
-    // Joypad reads (usually handled by controller.js, fallback here to open bus)
-    case 0x4016:
-    case 0x4017:
-      // If you want to hand off to controller read logic, do it here.
-      // Otherwise, fallback to open bus for test harness compatibility.
-      if (typeof joypadRead === 'function') return joypadRead(address, address === 0x4016 ? 1 : 2);
-      return cpuOpenBus;
+    // Joypad reads controller.js
+    //case 0x4016:
+    //case 0x4017:
 
     default:
       // All other addresses are open bus (return last value on the data bus)
@@ -189,3 +139,49 @@ keeping in mind, this is super heavily debug/ in development code and would run 
 moved across to only render / draw on call
 
 */
+
+
+  // $4014 is OAMDMA (handled by PPU usually)
+
+  // $4014 is OAMDMA (Object Attribute Memory Direct Memory Access) — write-only.
+// Writing any value here triggers a 256-byte DMA transfer from CPU RAM $XX00–$XXFF
+// to the PPU's internal sprite memory (OAM RAM).
+//
+//   - The value written is used as the high byte of the source address (i.e., value * 0x100).
+//   - The CPU is stalled for either 513 or 514 cycles (see below).
+//   - Cycle penalty: If the write occurs on an even CPU cycle, 513 cycles are consumed.
+//                    If on an odd CPU cycle, 514 cycles are consumed.
+//   - The CPU cannot execute instructions during the DMA transfer (except for reading from open bus).
+//   - Not readable. Reading from $4014 yields open bus and serves no purpose.
+//
+// Example in emulator write handler:
+//
+//   function write4014(value) {
+//     const startAddr = value << 8;
+//     for (let i = 0; i < 256; i++) {
+//       PPU_OAM[i] = systemMemory[startAddr + i];
+//     }
+//     // Simulate CPU cycle penalty
+//     cpuCycles += (cpuCycles & 1) ? 513 : 514; // NES behavior depends on current cycle parity
+//   }
+
+// $4016-$4017 are also joypad
+
+// $4016–$4017: Dual-purpose registers for Joypad (controller) and APU functionality.
+//
+// READS:
+//   - $4016 (bits 0-3): Returns serial data from Joypad 1 (bits 0-3: A, B, Select, Start, Up, Down, Left, Right)
+//   - $4017 (bits 0-3): Returns serial data from Joypad 2 (same bit layout)
+//   - Some cartridges and expansion devices use bits 4-7 or these addresses for other hardware.
+//
+// WRITES:
+//   - $4016 (bit 0): Controls strobe/latch for both controller ports.
+//         • Writing 1 then 0 to bit 0 tells the controller hardware to latch current button states.
+//         • After latching, repeated reads return each button in order (A, B, Select, Start, Up, Down, Left, Right).
+//   - $4017 (write): Used by the APU as the "frame counter" control register. This controls the APU's frame sequencer for sound timing.
+//         • Writing here affects audio timing but does NOT impact controller logic.
+//
+// OTHER NOTES:
+//   - Typical emulators implement $4016 reads/writes for controller input and strobing, and $4017 writes for sound/frame sequencing.
+//   - Reads from $4017 typically return controller 2 data, though some bits may be affected by expansion hardware.
+//

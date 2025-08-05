@@ -1,45 +1,41 @@
+// --- NES Mapper 0 (NROM) ---
+// Mirrors 16KB PRG up to 32KB, or just copies 32KB PRG as is
+// Always ends up with a flat 32KB PRG-ROM region at $8000-$FFFF
+// Sets the reset vector for the CPU. No header export, just does its job.
+
 function mapper(nesHeader) {
+  const prgBanks = nesHeader[4]; // 1 or 2 usually
+  const chrBanks = nesHeader[5];
+  const prgSize = prgBanks * 0x4000;
+  const chrSize = chrBanks * 0x2000;
 
-  const prgCount     = nesHeader[4];
-  const mapperNumber = ((nesHeader[6] >> 4) | (nesHeader[7] & 0xF0));
-  const mirroring    = (nesHeader[6] & 0x01) ? 'Vertical' : 'Horizontal';
+  // Always use a flat 32KB buffer for PRG-ROM (code/data)
+  let flatPrg = new Uint8Array(0x8000);
 
-  console.log(`Mapper #: ${mapperNumber}, Mirroring: ${mirroring}`);
-  if (mapperNumber !== 0) throw new Error(`Unsupported mapper: ${mapperNumber}`);
-  if (!loadedROM) throw new Error("No ROM loaded");
+  if (!prgRom || prgRom.length < prgSize)
+    throw new Error("ROM file too small for header PRG count");
 
-  const hexHeader = Array.from(nesHeader, byte => byte.toString(16).padStart(2, '0')).join(' ');
-  console.log(`[Mapper] NES Header: ${hexHeader}`);
-  isRomLoaded = true;
-
-  const PRG_BANK_SIZE = memoryMap.prgRomLower.size;
-
-  if (prgCount === 1) {
-    for (let i = 0; i < PRG_BANK_SIZE; i++) {
-      const b = loadedROM[i];
-      systemMemory[memoryMap.prgRomLower.addr + i] = b;
-      systemMemory[memoryMap.prgRomUpper.addr + i] = b;
-    }
-  } else if (prgCount === 2) {
-    for (let i = 0; i < PRG_BANK_SIZE; i++) {
-      systemMemory[memoryMap.prgRomLower.addr + i] = loadedROM[i];
-      systemMemory[memoryMap.prgRomUpper.addr + i] = loadedROM[PRG_BANK_SIZE + i];
-    }
+  if (prgBanks === 1) {
+    // 16KB PRG: Mirror into both halves ($8000-$BFFF and $C000-$FFFF)
+    flatPrg.set(prgRom.slice(0, 0x4000), 0x0000); // $8000
+    flatPrg.set(prgRom.slice(0, 0x4000), 0x4000); // $C000
+    console.log("[Mapper] Mirrored 16KB PRG into 32KB region ($8000-$FFFF)");
+  } else if (prgBanks === 2) {
+    // 32KB PRG: just copy
+    flatPrg.set(prgRom.slice(0, 0x8000), 0x0000);
+    console.log("[Mapper] Loaded 32KB PRG as is ($8000-$FFFF)");
   } else {
-    throw new Error(`Unexpected PRG-ROM bank count: ${prgCount}`);
+    throw new Error(`Unexpected PRG-ROM bank count: ${prgBanks}`);
   }
 
-  // === Reset Vector
-  let lo, hi;
-  if (prgCount === 1) {
-    lo = loadedROM[0x3FFC];
-    hi = loadedROM[0x3FFD];
-  } else {
-    lo = loadedROM[0x7FFC];
-    hi = loadedROM[0x7FFD];
-  }
-  systemMemory[0xFFFC] = lo;
-  systemMemory[0xFFFD] = hi;
+  // Now prgRom global is always 32KB, always flat
+  prgRom = flatPrg;
+
+  // CHR-ROM stays untouched (already global), no further mapping for Mapper 0
+
+  // --- Set CPU reset vector from $FFFC-$FFFD (last 4 bytes of PRG region)
+  const lo = prgRom[0x7FFC];
+  const hi = prgRom[0x7FFD];
   CPUregisters.PC = (hi << 8) | lo;
-  console.log(`Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, '0')}`);
+  console.log(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
 }

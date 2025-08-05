@@ -66,14 +66,6 @@ color: blue;
   display: block;
 }
 
-.debug, .debug2 {
-  height: 250px;
-  padding: 16px;
-  overflow-y: scroll;
-  overflow-x: scroll;
-  opacity: 0.9; /* set opacity to 90% */
-}
-
 .flag-register{
   padding: 16px;
   float: left;
@@ -98,18 +90,28 @@ registersText{
   color: white;
 }
 
-a,b{
+.wram-header,
+.vram-header,
+.prgrom-header {
   font-size: 32px;
   font-weight: bolder;
   border: outset aqua;
   display: flex;
-  align-items: center;      /*X axis*/
-  justify-content: center;  /*Y axis*/
+  align-items: center;      /* X axis */
+  justify-content: center;  /* Y axis */
   padding: 10px;
   margin: 10px;
   background-color: rgba(0, 0, 0, 0.5); /* black with 50% transparency */
   color: white;
   margin-top: 20px;
+}
+
+.debug, .debug2, .debug3 { /* PRGROM, VRAM, WRAM scrolling/ styling */
+  height: 250px;
+  padding: 16px;
+  overflow-y: scroll;
+  overflow-x: scroll;
+  opacity: 0.9; /* set opacity to 90% */
 }
 
 .GeneratedTable {
@@ -166,14 +168,16 @@ a,b{
     background-color: black;
   }
 
-  loc{
+  loc{ /* "offset" text styling */
     font-size: 18px;
     color: yellow;
   }
 
-  locContainer,locContainer2{
+  /*
+  locContainer,locContainer2,locContainer3{
     color:white;
   }
+  */
 
   .openFile{
     display: flex;
@@ -198,7 +202,7 @@ a,b{
     color: blue;
   }
 
-  .vram-cell{
+  .vramCells{
     color:rgb(191, 45, 69);
   }
 
@@ -217,15 +221,14 @@ a,b{
   margin: 0 auto;
 }
 
-.highlighted-cell {
-  background-color: rgb(7, 233, 210);
-}
+.highlighted-cell { background-color: #ffd966 !important; }
+.edited-cell { background-color: #c6efce !important; }
 
 /* CRT panel itself */
 .crt-panel {
   display: inline-block;
   width: 330px;
-  height: 225px;
+  height: px;
   background: #060606;
   border: 2px solid #0f0;
   border-radius: 6px;
@@ -239,7 +242,7 @@ a,b{
 
 /* Top display area */
 .crt-display {
-  height: 100px;
+  /*height: 100px;*/
   display: flex;
   flex-direction: column;
   justify-content: space-evenly;
@@ -278,7 +281,7 @@ a,b{
   flex: none;
   width: 100%;
   padding: 6px 0;
-  background: rgba(0, 255, 0, 0.13);
+  
   border: 1px solid rgba(0,255,0,0.45);
   color: #010;
   font-size: 13px;
@@ -286,13 +289,12 @@ a,b{
   border-radius: 3px;
   font-family: inherit;
   font-weight: bold;
-  text-shadow: 0 0 3px #0f0;
+  
   transition: background 0.18s, color 0.12s;
 }
 
 .crt-btn:hover {
-  background: rgba(0, 255, 0, 0.24);
-  color: #050;
+  color: rgb(192, 6, 244);
 }
 
 /* Fuzzy CRT effect for step box or output area */

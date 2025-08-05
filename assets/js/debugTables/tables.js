@@ -1,4 +1,232 @@
-// This adds 16 bytes after the addresses it receives, in address order!
+/* 
+old debugging, as done its job, can't use as these aren't global vars and will log every step with UI refresh
+console.log(`WRAM cells = ${allWramCells.length} bytes`);
+console.log(`WRAM cells = ${(allWramCells.length / 1024).toFixed(2)} KB`);
+console.log(`VRAM cells = ${allVramCells.length} bytes`);
+console.log(`VRAM cells = ${(allVramCells.length / 1024).toFixed(2)} KB`);
+console.log(`Cartridge1 space cells = ${allCartSpaceBytes1.length} bytes`);
+console.log(`Cartridge2 space cells = ${allCartSpaceBytes2.length} bytes`);
+console.log(`Total Cartridge space = ${(allCartSpaceBytes1.length + allCartSpaceBytes2.length) / 1024} KB`);
+*/
+
+// Chrome has an issue with scroll to view that isn't present on other browsers, only since having 3 separate 
+// tables
+
+// ================== WRAM TABLE (FULL, WITH MIRRORS) ==================
+
+function createWRAMTable() {
+  // Mirrors: $0000-$07FF, $0800-$0FFF, $1000-$17FF, $1800-$1FFF
+  const regions = [
+    { label: "Work RAM $0000–$07FF - Actual RAM space, not a mirror", start: "$0000", end: "$07F0" },
+    { label: "Work RAM Mirror $0800–$0FFF", start: "$0800", end: "$0FF0" },
+    { label: "Work RAM Mirror $1000–$17FF", start: "$1000", end: "$17F0" },
+    { label: "Work RAM Mirror $1800–$1FFF", start: "$1800", end: "$1FF0" }
+  ];
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th class='addressClass sticky'>Offset(h)</th>
+          ${[...Array(16).keys()].map(x => `<th class='addressClass sticky'>${x.toString(16).toUpperCase().padStart(2, '0')}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  for (const {label, start, end} of regions) {
+    html += `<tr><td colspan="17" class="subheading">${label}</td></tr>`;
+    let current = start;
+    while (true) {
+      const rowAddr = parseInt(current.substring(1), 16);
+      html += `<tr>
+        <td class="addressClass">${current}</td>
+        ${[...Array(16).keys()].map(col => {
+          const cellAddr = rowAddr + col;
+          return `<td class="wramCells" id="WRAM-CELL-${cellAddr.toString(16).toUpperCase().padStart(4, '0')}"></td>`;
+        }).join('')}
+      </tr>`;
+      if (current === end) break;
+      current = incrementHexAddress(current, end, 16);
+      if (!current) break;
+    }
+  }
+  html += `</tbody></table>`;
+  return html;
+}
+const WRAM_Table = createWRAMTable();
+
+// ================== VRAM TABLE (FULL, WITH MIRRORS) ==================
+
+function createVRAMTable() {
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th class='addressClass sticky'>Offset(h)</th>
+          ${[...Array(16).keys()].map(x => `<th class='addressClass sticky'>${x.toString(16).toUpperCase().padStart(2,'0')}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  for (let row = 0x0000; row <= 0x3FF0; row += 0x10) {
+    html += `<tr><td class="addressClass">${'$'+row.toString(16).toUpperCase().padStart(4,'0')}</td>`;
+    for (let col = 0; col < 16; ++col) {
+      let addr = row + col;
+      html += `<td class="vramCells" id="VRAM-CELL-${addr.toString(16).toUpperCase().padStart(4,'0')}"></td>`;
+    }
+    html += `</tr>`;
+  }
+  html += `</tbody></table>`;
+  return html;
+}
+
+const VRAM_Table = createVRAMTable();
+
+// ================== HANDY JUMP DROPDOWNS (WRAM/VRAM) ==================
+
+// WRAM dropdown
+function createWRAMJumpDropdown() {
+  // label, start, length
+const options = [
+  { label: "Jump to...",                             addr: null,   len: 0 },
+  { label: "Zero Page ($0000–$00FF)",                addr: 0x0000, len: 0x0100 },
+  { label: "Stack Page ($0100–$01FF)",               addr: 0x0100, len: 0x0100 },
+  { label: "OAM-DMA Buffer (convention) ($0200–$02FF)", addr: 0x0200, len: 0x0100 },
+  { label: "General Purpose RAM ($0300–$07FF)",      addr: 0x0300, len: 0x0500 },
+  { label: "WRAM Mirror #1 ($0800–$0FFF)",           addr: 0x0800, len: 0x0800 },
+  { label: "WRAM Mirror #2 ($1000–$17FF)",           addr: 0x1000, len: 0x0800 },
+  { label: "WRAM Mirror #3 ($1800–$1FFF)",           addr: 0x1800, len: 0x0800 }
+];
+
+  const dropdown = document.createElement("select");
+  dropdown.id = "wramJumpSelect";
+  dropdown.style.fontSize = "12px";
+  options.forEach(opt => {
+    const option = document.createElement("option");
+    option.value = opt.addr !== null ? `${opt.addr}-${opt.len}` : "";
+    option.textContent = opt.label;
+    dropdown.appendChild(option);
+  });
+  dropdown.addEventListener("change", function() {
+    if (!this.value) return;
+    const [start, len] = this.value.split('-').map(x => parseInt(x, 10));
+    if (isNaN(start)) return;
+    // Highlight region
+    let highlighted = [];
+    for (let i = 0; i < (len || 1); ++i) {
+      const id = `WRAM-CELL-${(start + i).toString(16).toUpperCase().padStart(4, '0')}`;
+      const cell = document.getElementById(id);
+      if (cell) {
+        cell.classList.add('highlighted-cell');
+        highlighted.push(cell);
+      }
+      if (i === 0 && cell) {
+        // Only scroll to first cell
+        cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+    setTimeout(() => highlighted.forEach(c => c.classList.remove('highlighted-cell')), 900);
+    this.value = "";
+  });
+  return dropdown;
+}
+
+function createVRAMJumpDropdown() {
+  const options = [
+    { label: "Jump to...", addr: null, len: 0 },
+    { label: "Pattern Table 0 ($0000)", addr: 0x0000, len: 0x1000 },
+    { label: "Pattern Table 1 ($1000)", addr: 0x1000, len: 0x1000 },
+    { label: "Nametable 0 ($2000)", addr: 0x2000, len: 0x400 },
+    { label: "Nametable 1 ($2400)", addr: 0x2400, len: 0x400 },
+    { label: "Nametable 2 ($2800)", addr: 0x2800, len: 0x400 },
+    { label: "Nametable 3 ($2C00)", addr: 0x2C00, len: 0x400 },
+    { label: "Palette RAM ($3F00)", addr: 0x3F00, len: 0x20 }
+  ];
+  const dropdown = document.createElement("select");
+  dropdown.id = "vramJumpSelect";
+  dropdown.style.fontSize = "12px";
+
+  // Make sure options are appended!
+  options.forEach(opt => {
+    const option = document.createElement("option");
+    option.value = opt.addr !== null ? `${opt.addr}-${opt.len}` : "";
+    option.textContent = opt.label;
+    dropdown.appendChild(option);
+  });
+
+  dropdown.addEventListener("change", function() {
+    if (!this.value) return;
+    const [start, len] = this.value.split('-').map(x => parseInt(x, 10));
+    if (isNaN(start)) return;
+    let highlighted = [];
+    for (let i = 0; i < (len || 1); ++i) {
+      const id = `VRAM-CELL-${(start + i).toString(16).toUpperCase().padStart(4, '0')}`;
+      const cell = document.getElementById(id);
+      if (cell) {
+        cell.classList.add('highlighted-cell');
+        highlighted.push(cell);
+        // Optional: Scroll into view
+        if (i === 0 && cell) cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+    setTimeout(() => highlighted.forEach(c => c.classList.remove('highlighted-cell')), 900);
+    this.value = "";
+  });
+
+  return dropdown;
+}
+
+// PRGROM quick jump drop down
+function createPRGROMJumpDropdown() {
+  const options = [
+    { label: "Jump to...", addr: null, len: 0 },
+    { label: "PRG-ROM Bank 1 Start ($8000)", addr: 0x8000, len: 0x4000 },
+    { label: "PRG-ROM Bank 1 Mid ($A000)", addr: 0xA000, len: 0x1000 },
+    { label: "PRG-ROM Bank 2 Start ($C000)", addr: 0xC000, len: 0x4000 },
+    { label: "PRG-ROM Bank 2 Mid ($E000)", addr: 0xE000, len: 0x1000 },
+    { label: "NMI Vector ($FFFA)", addr: 0xFFFA, len: 2 },
+    { label: "Reset Vector ($FFFC)", addr: 0xFFFC, len: 2 },
+    { label: "IRQ/BRK Vector ($FFFE)", addr: 0xFFFE, len: 2 },
+    { label: "Last Byte ($FFFF)", addr: 0xFFFF, len: 1 }
+  ];
+  const dropdown = document.createElement("select");
+  dropdown.id = "prgromJumpSelect";
+  dropdown.style.fontSize = "12px";
+  options.forEach(opt => {
+    const option = document.createElement("option");
+    option.value = opt.addr !== null ? `${opt.addr}-${opt.len}` : "";
+    option.textContent = opt.label;
+    dropdown.appendChild(option);
+  });
+  dropdown.addEventListener("change", function() {
+    if (!this.value) return;
+    const [start, len] = this.value.split('-').map(x => parseInt(x, 10));
+    if (isNaN(start)) return;
+    let highlighted = [];
+    for (let i = 0; i < (len || 1); ++i) {
+      // Figure out which bank this is (bank 2 for $C000 and up)
+      let cellID;
+      if (start + i >= 0xC000) {
+        cellID = `cartSpaceTwoID-${(start + i).toString(16).toUpperCase().padStart(4, '0')}`;
+      } else {
+        cellID = `cartSpaceOneID-${(start + i).toString(16).toUpperCase().padStart(4, '0')}`;
+      }
+      const cell = document.getElementById(cellID);
+      if (cell) {
+        cell.classList.add('highlighted-cell');
+        highlighted.push(cell);
+      }
+      if (i === 0 && cell) {
+        cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+    setTimeout(() => highlighted.forEach(c => c.classList.remove('highlighted-cell')), 900);
+    this.value = "";
+  });
+  return dropdown;
+}
+
+// PRG-ROM TABLE ROW GENERATOR 
+
 function incrementAddress(address, endAddress) {
   let hexValue = parseInt(address.substring(1), 16);
   let hexValueEnd = parseInt(endAddress.substring(1), 16);
@@ -31,87 +259,418 @@ function createTable(startAddress, endAddress, addClass) {
   return `${rows.join('')}`;
 }
 
-// Expanded RAM/VRAM Table Generation
-const WRAM_Table = `
-  <table>
-    <thead>
-      <tr>
-        <th class='addressClass sticky'>Offset(h)</th>
-        <th class='addressClass sticky'>00</th>
-        <th class='addressClass sticky'>01</th>
-        <th class='addressClass sticky'>02</th>
-        <th class='addressClass sticky'>03</th>
-        <th class='addressClass sticky'>04</th>
-        <th class='addressClass sticky'>05</th>
-        <th class='addressClass sticky'>06</th>
-        <th class='addressClass sticky'>07</th>
-        <th class='addressClass sticky'>08</th>
-        <th class='addressClass sticky'>09</th>
-        <th class='addressClass sticky'>0A</th>
-        <th class='addressClass sticky'>0B</th>
-        <th class='addressClass sticky'>0C</th>
-        <th class='addressClass sticky'>0D</th>
-        <th class='addressClass sticky'>0E</th>
-        <th class='addressClass sticky'>0F</th>
-      </tr>
-    </thead>
-<tbody>
-  <!-- Work RAM $0000–$07FF -->
-  <tr><td colspan="17" class="subheading">Work RAM $0000–$07FF</td></tr>
-  ${createTable("$0000", "$07F0", 'wramCells')}
 
-  <!-- PPU VRAM & Palette RAM $0800–$3FFF -->
-  <tr><td colspan="17" class="subheading">PPU VRAM & Palette RAM $0800–$3FFF</td></tr>
-  ${createTable("$0800", "$3FF0", 'wramCells')}
-</tbody>
-  </table>
+// ================== PRG-ROM TABLE ==================
+function createPRGROMTable() {
+  let html = `
+    <table>
+      <thead>
+        <tr>
+          <th class='addressClass sticky'>Offset (h)</th>
+          ${[...Array(16).keys()].map(x => `<th class='addressClass sticky'>${x.toString(16).toUpperCase().padStart(2, '0')}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  // Bank 1: $8000–$BFFF
+  for (let row = 0x8000; row <= 0xBFF0; row += 0x10) {
+    html += `<tr><td class="addressClass">${'$'+row.toString(16).toUpperCase().padStart(4,'0')}</td>`;
+    for (let col = 0; col < 16; ++col) {
+      let addr = row + col;
+      html += `<td class="cartspace1" id="cartSpaceOneID-${addr.toString(16).toUpperCase().padStart(4,'0')}"></td>`;
+    }
+    html += `</tr>`;
+  }
+  // Bank 2: $C000–$FFF0
+  for (let row = 0xC000; row <= 0xFFF0; row += 0x10) {
+    html += `<tr><td class="addressClass">${'$'+row.toString(16).toUpperCase().padStart(4,'0')}</td>`;
+    for (let col = 0; col < 16; ++col) {
+      let addr = row + col;
+      html += `<td class="cartspace2" id="cartSpaceTwoID-${addr.toString(16).toUpperCase().padStart(4,'0')}"></td>`;
+    }
+    html += `</tr>`;
+  }
+  html += `</tbody></table>`;
+  return html;
+}
+
+let pgRom_Table = createPRGROMTable();
+
+// ============= TABLE RENDER + POPULATE ========================
+
+// WRAM Table insertion
+const container1 = document.querySelector('.debug');
+container1.insertAdjacentHTML('beforeend', WRAM_Table);
+container1.lastElementChild.classList.add('GeneratedTable');
+
+// VRAM Table insertion
+const container2 = document.querySelector('.debug2');
+container2.insertAdjacentHTML('beforeend', VRAM_Table);
+container2.lastElementChild.classList.add('GeneratedTable');
+
+// PRG-ROM Table insertion
+const container3 = document.querySelector('.debug3');
+container3.insertAdjacentHTML('beforeend', pgRom_Table);
+container3.lastElementChild.classList.add('GeneratedTable');
+
+
+// WRAM populate
+function wramPopulate(){
+const allWramCells = document.querySelectorAll('.wramCells');
+
+allWramCells.forEach(cell => {
+  const match = cell.id.match(/WRAM-CELL-([0-9A-F]{4})/);
+  const addr = match ? parseInt(match[1], 16) : 0;
+  if (addr < 0x0800) cell.classList.add('workRAM-cell');
+  else cell.classList.add('wram-mirror-cell');
+  // Use direct systemMemory access with mirroring!
+  const val = systemMemory[addr & 0x7FF];
+  cell.innerText = val.toString(16).padStart(2, '0') + 'h';
+  cell.title = `$${addr.toString(16).toUpperCase().padStart(4, '0')}`;
+
+  // Click: toggle highlight for this cell only, update offset display if present
+  cell.addEventListener('click', () => {
+    cell.classList.toggle('highlighted-cell');
+    const hex = addr.toString(16).toUpperCase().padStart(4, '0');
+    const offsetContainer = document.getElementById('locContainer');
+    if (offsetContainer) offsetContainer.innerHTML = `&nbsp;$${hex}`;
+  });
+
+  // Double-click: edit value in cell
+  cell.addEventListener('dblclick', (e) => {
+    // Prevent normal click from toggling highlight when editing
+    e.stopPropagation();
+
+    let curValue = cell.innerText.replace('h','');
+    let input = document.createElement('input');
+    input.type = 'text';
+    input.value = curValue;
+    input.maxLength = 2;
+    input.style.width = '2.2em';
+    cell.innerText = '';
+    cell.appendChild(input);
+    input.focus();
+
+    // Commit value on blur or Enter
+    function commit() {
+      let v = parseInt(input.value, 16);
+      if (isNaN(v) || v < 0x00 || v > 0xFF) v = 0; // Clamp to byte
+      systemMemory[addr & 0x7FF] = v; // Store to actual RAM
+      cell.innerText = v.toString(16).padStart(2, '0').toUpperCase() + 'h';
+      cell.classList.add('edited-cell'); // mark as edited
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        input.blur();
+      } else if (e.key === 'Escape') {
+        cell.innerText = curValue.padStart(2, '0').toUpperCase() + 'h';
+      }
+    });
+  });
+});
+}
+
+// VRAM populate
+function vramPopulate(){
+const allVramCells = document.querySelectorAll('.vramCells');
+allVramCells.forEach(cell => {
+  const match = cell.id.match(/VRAM-CELL-([0-9A-F]{4})/);
+  const addr = match ? parseInt(match[1], 16) : 0;
+  const val = systemMemoryVideo[addr & 0x7FF];
+  cell.innerText = val.toString(16).padStart(2, '0').toUpperCase() + 'h';
+  cell.title = `$${addr.toString(16).toUpperCase().padStart(4, '0')}`;
+
+  // Click: toggle highlight for this cell only, update offset display if present
+  cell.addEventListener('click', () => {
+    cell.classList.toggle('highlighted-cell');
+    const hex = addr.toString(16).toUpperCase().padStart(4, '0');
+    const offsetContainer = document.getElementById('locContainer2');
+    if (offsetContainer) offsetContainer.innerHTML = `&nbsp;$${hex}`;
+  });
+
+  // Double-click: edit value in cell
+  cell.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    let curValue = cell.innerText.replace('h','');
+    let input = document.createElement('input');
+    input.type = 'text';
+    input.value = curValue;
+    input.maxLength = 2;
+    input.style.width = '2.2em';
+    cell.innerText = '';
+    cell.appendChild(input);
+    input.focus();
+
+    // Commit value on blur or Enter
+    function commit() {
+      let v = parseInt(input.value, 16);
+      if (isNaN(v) || v < 0x00 || v > 0xFF) v = 0; // Clamp to byte
+      systemMemoryVideo[addr & 0x7FF] = v; // Store to actual video RAM
+      cell.innerText = v.toString(16).padStart(2, '0').toUpperCase() + 'h';
+      cell.classList.add('edited-cell'); // mark as edited
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        input.blur();
+      } else if (e.key === 'Escape') {
+        cell.innerText = curValue.padStart(2, '0').toUpperCase() + 'h';
+      }
+    });
+  });
+});
+}
+
+function prgRomPopulate(){
+// PRG-ROM populate
+let allCartSpaceBytes1 = document.querySelectorAll('.cartspace1');
+let allCartSpaceBytes2 = document.querySelectorAll('.cartspace2');
+let allCartSpaceBytes = [...allCartSpaceBytes1, ...allCartSpaceBytes2];
+
+allCartSpaceBytes.forEach((cell, idx) => {
+  const addr = 0x8000 + idx;
+  let prgRomOffset;
+
+  // Mirroring: 16KB ROM maps twice
+  if (prgRom.length === 0x4000 && addr >= 0xC000) {
+    prgRomOffset = (addr - 0x8000) % 0x4000; // 0x0000–0x3FFF
+  } else {
+    prgRomOffset = addr - 0x8000;
+  }
+
+  // Show value (if loaded)
+  const val = prgRom[prgRomOffset];
+  cell.innerText = (val !== undefined)
+    ? val.toString(16).padStart(2, '0').toUpperCase() + 'h'
+    : '--';
+  cell.title = `$${addr.toString(16).toUpperCase().padStart(4, '0')}`;
+
+  // Click: toggle highlight
+  cell.addEventListener('click', () => {
+    cell.classList.toggle('highlighted-cell');
+    const hex = addr.toString(16).toUpperCase().padStart(4, '0');
+    const offsetContainer = document.getElementById('locContainer3');
+    if (offsetContainer) offsetContainer.innerHTML = `&nbsp;$${hex}`;
+  });
+
+  // Double-click: edit
+  cell.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    let curValue = cell.innerText.replace('h','');
+    let input = document.createElement('input');
+    input.type = 'text';
+    input.value = curValue;
+    input.maxLength = 2;
+    input.style.width = '2.2em';
+    cell.innerText = '';
+    cell.appendChild(input);
+    input.focus();
+
+    function commit() {
+      let v = parseInt(input.value, 16);
+      if (isNaN(v) || v < 0x00 || v > 0xFF) v = 0;
+      prgRom[prgRomOffset] = v; // Write to the correct physical byte!
+      cell.innerText = v.toString(16).padStart(2, '0').toUpperCase() + 'h';
+      cell.classList.add('edited-cell');
+    }
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+      else if (e.key === 'Escape') cell.innerText = curValue.padStart(2, '0').toUpperCase() + 'h';
+    });
+  });
+});
+
+for (let i = 0; i < allCartSpaceBytes.length; i++) {
+  let cartSpaceByte = allCartSpaceBytes[i];
+  if (i < 16 * 1024) {
+    cartSpaceByte.setAttribute('id', `cartSpaceOneID-${i + 0x8000}`);
+    cartSpaceByte.addEventListener('click', function () {
+      let indexHex1 = (i + 0x8000).toString(16).toUpperCase().padStart(4, '0');
+      document.getElementById('locContainer3').innerHTML = `&nbsp $${indexHex1}`;
+    });
+  } else {
+    cartSpaceByte.setAttribute('id', `cartSpaceTwoID-${(i - (16 * 1024)) + 0xC000}`);
+    cartSpaceByte.addEventListener('click', function () {
+      let indexHex2 = ((i - (16 * 1024)) + 0xC000).toString(16).toUpperCase().padStart(4, '0');
+      document.getElementById('locContainer3').innerHTML = `&nbsp $${indexHex2}`;
+    });
+  }
+}
+}
+
+// populate cpu register bits
+function cpuRegisterBitsPopulate() {
+  // Helper for 8-bit registers
+  function setBits(regVal, prefix) {
+    for (let i = 7; i >= 0; --i) {
+      const cell = document.getElementById(prefix + i);
+      if (cell) cell.innerText = (regVal >> i) & 1;
+    }
+  }
+
+  setBits(CPUregisters.A, 'A');
+  setBits(CPUregisters.X, 'X');
+  setBits(CPUregisters.Y, 'Y');
+  setBits(CPUregisters.S, 'S');
+
+  // PC is 16-bit: high byte (PCH) -> PC0–PC7, low byte (PCL) -> PC8–PC15
+  let PC = CPUregisters.PC || 0;
+  let PCH = (PC >> 8) & 0xFF;
+  let PCL = PC & 0xFF;
+
+  // Fill PC0..PC7 (high byte)
+  for (let i = 0; i < 8; ++i) {
+    const cell = document.getElementById('PC' + i);
+    if (cell) cell.innerText = (PCH >> (7 - i)) & 1;
+  }
+  // Fill PC8..PC15 (low byte)
+  for (let i = 0; i < 8; ++i) {
+    const cell = document.getElementById('PC' + (8 + i));
+    if (cell) cell.innerText = (PCL >> (7 - i)) & 1;
+  }
+}
+
+// populate cpu register bits
+function cpuStatusRegisterPopulate() {
+  // P0–P7 = C Z I D B U V N
+  const flagOrder = ['C', 'Z', 'I', 'D', 'B', 'U', 'V', 'N'];
+  for (let i = 0; i < 8; i++) {
+    const cell = document.getElementById('P' + i);
+    if (cell) cell.innerText = CPUregisters.P[flagOrder[i]];
+  }
+}
+
+// populate ppu register bits
+function ppuRegisterBitsPopulate() {
+  // Helper for 8-bit PPU registers
+  function setBitsPPU(regVal, prefix) {
+    for (let i = 7; i >= 0; --i) {
+      const cell = document.getElementById(prefix + i);
+      if (cell) cell.innerText = (regVal >> i) & 1;
+    }
+  }
+  setBitsPPU(PPUregister.CTRL,      "PPUCTRL");
+  setBitsPPU(PPUregister.MASK,      "PPUMASK");
+  setBitsPPU(PPUregister.STATUS,    "PPUSTATUS");
+  setBitsPPU(PPUregister.OAMADDR,   "OAMADDR");
+  setBitsPPU(PPUregister.OAMDATA,   "OAMDATA");
+  setBitsPPU(PPUregister.ADDR_HIGH, "PPUADDR_HIGH");
+  setBitsPPU(PPUregister.ADDR_LOW,  "PPUADDR_LOW");
+  setBitsPPU(PPUregister.VRAM_DATA, "PPUDATA");
+}
+
+// =================== CPU/PPU REGISTERS + FLAGS TABLES ===================
+
+const registersTable = `
+<table>
+  <thead>
+    <tr>
+      <th class='addressClass'>Register</th>
+      <th class='addressClass'>07</th>
+      <th class='addressClass'>06</th>
+      <th class='addressClass'>05</th>
+      <th class='addressClass'>04</th>
+      <th class='addressClass'>03</th>
+      <th class='addressClass'>02</th>
+      <th class='addressClass'>01</th>
+      <th class='addressClass'>00</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class='addressClass'>A</td>
+      <td id='A7'></td><td id='A6'></td><td id='A5'></td><td id='A4'></td>
+      <td id='A3'></td><td id='A2'></td><td id='A1'></td><td id='A0'></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>X</td>
+      <td id='X7'></td><td id='X6'></td><td id='X5'></td><td id='X4'></td>
+      <td id='X3'></td><td id='X2'></td><td id='X1'></td><td id='X0'></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>Y</td>
+      <td id='Y7'></td><td id='Y6'></td><td id='Y5'></td><td id='Y4'></td>
+      <td id='Y3'></td><td id='Y2'></td><td id='Y1'></td><td id='Y0'></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>S</td>
+      <td id='S7'></td><td id='S6'></td><td id='S5'></td><td id='S4'></td>
+      <td id='S3'></td><td id='S2'></td><td id='S1'></td><td id='S0'></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>PCH</td>
+      <td id='PC0'></td><td id='PC1'></td><td id='PC2'></td><td id='PC3'></td>
+      <td id='PC4'></td><td id='PC5'></td><td id='PC6'></td><td id='PC7'></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>PCL</td>
+      <td id='PC8'></td><td id='PC9'></td><td id='PC10'></td><td id='PC11'></td>
+      <td id='PC12'></td><td id='PC13'></td><td id='PC14'></td><td id='PC15'></td>
+    </tr>
+  </tbody>
+</table>
 `;
 
-let pgRom_Table = `
-  <table>
-    <thead>
-      <tr>
-        <th class='addressClass sticky'>Offset (h)</th>
-        <th class='addressClass sticky'>00</th>
-        <th class='addressClass sticky'>01</th>
-        <th class='addressClass sticky'>02</th>
-        <th class='addressClass sticky'>03</th>
-        <th class='addressClass sticky'>04</th>
-        <th class='addressClass sticky'>05</th>
-        <th class='addressClass sticky'>06</th>
-        <th class='addressClass sticky'>07</th>
-        <th class='addressClass sticky'>08</th>
-        <th class='addressClass sticky'>09</th>
-        <th class='addressClass sticky'>0A</th>
-        <th class='addressClass sticky'>0B</th>
-        <th class='addressClass sticky'>0C</th>
-        <th class='addressClass sticky'>0D</th>
-        <th class='addressClass sticky'>0E</th>
-        <th class='addressClass sticky'>0F</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${createTable("$8000", "$BFF0", "cartspace1")}
-      ${createTable("$C000", "$FFF0", "cartspace2")}
-    </tbody>
-  </table>
-  <table>
-`;
-
-let instructionStepTable = `
-<div class="crt-panel">
-  <div class="crt-display">
-    <div class="crt-label">Instruction</div>
-    <div id="instruction" class="crt-line"></div>
-    <div class="crt-label">Operand/s</div>
-    <div id="operand" class="crt-line"></div>
-  </div>
-  <div class="crt-controls">
-    <button class="crt-btn" onclick="step()">STEP/ test suite</button>
-    <button class="crt-btn" onclick="run()">RUN</button>
-    <button class="crt-btn" onclick="pause()">PAUSE</button>
-  </div>
-</div>
+const PPUregistersTable = `
+<table>
+  <thead>
+    <tr>
+      <th class='addressClass'>Register</th>
+      <th class='addressClass'>07</th>
+      <th class='addressClass'>06</th>
+      <th class='addressClass'>05</th>
+      <th class='addressClass'>04</th>
+      <th class='addressClass'>03</th>
+      <th class='addressClass'>02</th>
+      <th class='addressClass'>01</th>
+      <th class='addressClass'>00</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class='addressClass'>PPU [CTRL1]</td>
+      <td id="PPUCTRL7"></td><td id="PPUCTRL6"></td><td id="PPUCTRL5"></td><td id="PPUCTRL4"></td>
+      <td id="PPUCTRL3"></td><td id="PPUCTRL2"></td><td id="PPUCTRL1"></td><td id="PPUCTRL0"></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>PPU [CTRL2]</td>
+      <td id="PPUMASK7"></td><td id="PPUMASK6"></td><td id="PPUMASK5"></td><td id="PPUMASK4"></td>
+      <td id="PPUMASK3"></td><td id="PPUMASK2"></td><td id="PPUMASK1"></td><td id="PPUMASK0"></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>PPU [SR]</td>
+      <td id="PPUSTATUS7"></td><td id="PPUSTATUS6"></td><td id="PPUSTATUS5"></td><td id="PPUSTATUS4"></td>
+      <td id="PPUSTATUS3"></td><td id="PPUSTATUS2"></td><td id="PPUSTATUS1"></td><td id="PPUSTATUS0"></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>SPR-RAM [ADDR]</td>
+      <td id="OAMADDR7"></td><td id="OAMADDR6"></td><td id="OAMADDR5"></td><td id="OAMADDR4"></td>
+      <td id="OAMADDR3"></td><td id="OAMADDR2"></td><td id="OAMADDR1"></td><td id="OAMADDR0"></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>SPR-RAM [I/O]</td>
+      <td id="OAMDATA7"></td><td id="OAMDATA6"></td><td id="OAMDATA5"></td><td id="OAMDATA4"></td>
+      <td id="OAMDATA3"></td><td id="OAMDATA2"></td><td id="OAMDATA1"></td><td id="OAMDATA0"></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>VRAM [ADDR1]</td>
+      <td id="PPUADDR_HIGH7"></td><td id="PPUADDR_HIGH6"></td><td id="PPUADDR_HIGH5"></td><td id="PPUADDR_HIGH4"></td>
+      <td id="PPUADDR_HIGH3"></td><td id="PPUADDR_HIGH2"></td><td id="PPUADDR_HIGH1"></td><td id="PPUADDR_HIGH0"></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>VRAM [ADDR2]</td>
+      <td id="PPUADDR_LOW7"></td><td id="PPUADDR_LOW6"></td><td id="PPUADDR_LOW5"></td><td id="PPUADDR_LOW4"></td>
+      <td id="PPUADDR_LOW3"></td><td id="PPUADDR_LOW2"></td><td id="PPUADDR_LOW1"></td><td id="PPUADDR_LOW0"></td>
+    </tr>
+    <tr>
+      <td class='addressClass'>VRAM [I/O]</td>
+      <td id="PPUDATA7"></td><td id="PPUDATA6"></td><td id="PPUDATA5"></td><td id="PPUDATA4"></td>
+      <td id="PPUDATA3"></td><td id="PPUDATA2"></td><td id="PPUDATA1"></td><td id="PPUDATA0"></td>
+    </tr>
+  </tbody>
+</table>
 `;
 
 let FlagRegisterTable =  
@@ -144,318 +703,49 @@ let FlagRegisterTable =
 </table>
 `;
 
-const registersTable = 
-`
-<table>
-    <thead>
-        <tr>
-            <th class='addressClass'>Register</th>
-            <th class='addressClass'>07</th>
-            <th class='addressClass'>06</th>
-            <th class='addressClass'>05</th>
-            <th class='addressClass'>04</th>
-            <th class='addressClass'>03</th>
-            <th class='addressClass'>02</th>
-            <th class='addressClass'>01</th>
-            <th class='addressClass'>00</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr> 
-            <td class='addressClass'>A</td>
-            <td id='A0'></td>
-            <td id='A1'></td>
-            <td id='A2'></td>
-            <td id='A3'></td>
-            <td id='A4'></td>
-            <td id='A5'></td>
-            <td id='A6'></td>
-            <td id='A7'></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>X</td>
-            <td id='X0'></td>
-            <td id='X1'></td>
-            <td id='X2'></td>
-            <td id='X3'></td>
-            <td id='X4'></td>
-            <td id='X5'></td>
-            <td id='X6'></td>
-            <td id='X7'></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>Y</td>
-            <td id='Y0'></td>
-            <td id='Y1'></td>
-            <td id='Y2'></td>
-            <td id='Y3'></td>
-            <td id='Y4'></td>
-            <td id='Y5'></td>
-            <td id='Y6'></td>
-            <td id='Y7'></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>S</td>
-            <td id='S0'></td>
-            <td id='S1'></td>
-            <td id='S2'></td>
-            <td id='S3'></td>
-            <td id='S4'></td>
-            <td id='S5'></td>
-            <td id='S6'></td>
-            <td id='S7'></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>PCH</td>
-            <td id='PC0'></td>
-            <td id='PC1'></td>
-            <td id='PC2'></td>
-            <td id='PC3'></td>
-            <td id='PC4'></td>
-            <td id='PC5'></td>
-            <td id='PC6'></td>
-            <td id='PC7'></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>PCL</td>
-            <td id='PC8'></td>
-            <td id='PC9'></td>
-            <td id='PC10'></td>
-            <td id='PC11'></td>
-            <td id='PC12'></td>
-            <td id='PC13'></td>
-            <td id='PC14'></td>
-            <td id='PC15'></td>
-        </tr>
-    </tbody>
-</table>
-`
-const PPUregistersTable = 
-`
-<table>
-    <thead>
-        <tr>
-            <th class='addressClass'>Register</th>
-            <th class='addressClass'>07</th>
-            <th class='addressClass'>06</th>
-            <th class='addressClass'>05</th>
-            <th class='addressClass'>04</th>
-            <th class='addressClass'>03</th>
-            <th class='addressClass'>02</th>
-            <th class='addressClass'>01</th>
-            <th class='addressClass'>00</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr> 
-            <td class='addressClass'>PPU [CTRL1]</td>
-            <td id="PPUCTRL7"></td>
-            <td id="PPUCTRL6"></td>
-            <td id="PPUCTRL5"></td>
-            <td id="PPUCTRL4"></td>
-            <td id="PPUCTRL3"></td>
-            <td id="PPUCTRL2"></td>
-            <td id="PPUCTRL1"></td>
-            <td id="PPUCTRL0"></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>PPU [CTRL2]</td>
-            <td id="PPUMASK7"></td>
-            <td id="PPUMASK6"></td>
-            <td id="PPUMASK5"></td>
-            <td id="PPUMASK4"></td>
-            <td id="PPUMASK3"></td>
-            <td id="PPUMASK2"></td>
-            <td id="PPUMASK1"></td>
-            <td id="PPUMASK0"></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>PPU [SR]</td>
-            <td id="PPUSTATUS7"></td>
-            <td id="PPUSTATUS6"></td>
-            <td id="PPUSTATUS5"></td>
-            <td id="PPUSTATUS4"></td>
-            <td id="PPUSTATUS3"></td>
-            <td id="PPUSTATUS2"></td>
-            <td id="PPUSTATUS1"></td>
-            <td id="PPUSTATUS0"></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>SPR-RAM [ADDR]</td>
-            <td id="OAMADDR7"></td>
-            <td id="OAMADDR6"></td>
-            <td id="OAMADDR5"></td>
-            <td id="OAMADDR4"></td>
-            <td id="OAMADDR3"></td>
-            <td id="OAMADDR2"></td>
-            <td id="OAMADDR1"></td>
-            <td id="OAMADDR0"></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>SPR-RAM [I/O]</td>
-            <td id="OAMDATA7"></td>
-            <td id="OAMDATA6"></td>
-            <td id="OAMDATA5"></td>
-            <td id="OAMDATA4"></td>
-            <td id="OAMDATA3"></td>
-            <td id="OAMDATA2"></td>
-            <td id="OAMDATA1"></td>
-            <td id="OAMDATA0"></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>VRAM [ADDR1]</td>
-            <td id="PPUADDR_HIGH7"></td>
-            <td id="PPUADDR_HIGH6"></td>
-            <td id="PPUADDR_HIGH5"></td>
-            <td id="PPUADDR_HIGH4"></td>
-            <td id="PPUADDR_HIGH3"></td>
-            <td id="PPUADDR_HIGH2"></td>
-            <td id="PPUADDR_HIGH1"></td>
-            <td id="PPUADDR_HIGH0"></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>VRAM [ADDR2]</td>
-            <td id="PPUADDR_LOW7"></td>
-            <td id="PPUADDR_LOW6"></td>
-            <td id="PPUADDR_LOW5"></td>
-            <td id="PPUADDR_LOW4"></td>
-            <td id="PPUADDR_LOW3"></td>
-            <td id="PPUADDR_LOW2"></td>
-            <td id="PPUADDR_LOW1"></td>
-            <td id="PPUADDR_LOW0"></td>
-        </tr>
-        <tr> 
-            <td class='addressClass'>VRAM [I/O]</td>
-            <td id="PPUDATA7"></td>
-            <td id="PPUDATA6"></td>
-            <td id="PPUDATA5"></td>
-            <td id="PPUDATA4"></td>
-            <td id="PPUDATA3"></td>
-            <td id="PPUDATA2"></td>
-            <td id="PPUDATA1"></td>
-            <td id="PPUDATA0"></td>
-        </tr>
-    </tbody>
-</table>
-`
-const label = document.querySelector('a');
-if (label) {
-  const dropdown = document.createElement("select");
-  dropdown.id = "ramJumpSelect";
-  dropdown.style.fontSize = "12px";
-  dropdown.style.marginRight = "10px";
+let instructionStepTable = `
+<div class="crt-panel">
+  <div class="crt-display">
+  </div>
+  <div class="crt-controls">
+    <button class="crt-btn" onclick="step()">STEP/ Test Suite</button>
+    <button class="crt-btn" onclick="run()">RUN</button>
+    <button class="crt-btn" onclick="pause()">PAUSE</button>
+  </div>
+</div>
+`;
 
-  // Expanded to include all meaningful intercepted NES offsets
-  const jumpTargets = [
-    { label: "Jump to...", offset: null, range: 0 },
-    { label: "Zero Page ($0000)", offset: 0x0000, range: 0x80 },
-    { label: "Temp Vars ($0004)", offset: 0x0004, range: 0x10 },
-    { label: "Stack ($0100)", offset: 0x0100, range: 0x100 },
-    { label: "Input ($0200)", offset: 0x0200, range: 0x20 },
-    { label: "General Use ($0300)", offset: 0x0300, range: 0x100 },
-    { label: "VRAM Buffers ($0400)", offset: 0x0400, range: 0x100 },
-    { label: "Sprite Buffers ($0500)", offset: 0x0500, range: 0x100 },
-    { label: "Scroll Vars ($0600)", offset: 0x0600, range: 0x20 },
-    { label: "RAM End ($07F0)", offset: 0x07F0, range: 0x10 },
-    { label: "NMI Vector ($07FA–$07FF)", offset: 0x07FA, range: 0x06 },
+// dynamic table insertions
+let insertRegistersTable = document.createElement('table');
+insertRegistersTable.className = 'GeneratedTable';
+let registerSection = document.querySelector('.CPU-registers');
+registerSection.appendChild(insertRegistersTable);
+insertRegistersTable.innerHTML = registersTable;
 
-    // NES PPU registers (primary and mirrors)
-    { label: "PPU Registers ($2000–$2007)", offset: 0x2000, range: 8 },
-    { label: "PPU Reg Mirror ($2008–$200F)", offset: 0x2008, range: 8 },
-    { label: "PPU Reg Mirror ($2010–$2017)", offset: 0x2010, range: 8 },
-    { label: "PPU Reg Mirror ($3FF8–$3FFF)", offset: 0x3FF8, range: 8 },
+insertRegistersTable = document.createElement('table');
+insertRegistersTable.className = 'GeneratedTable';
+registerSection = document.querySelector('.PPU-registers');
+registerSection.appendChild(insertRegistersTable);
+insertRegistersTable.innerHTML = PPUregistersTable;
 
-    // Palette RAM
-    { label: "Palette RAM ($3F00–$3F1F)", offset: 0x3F00, range: 0x20 },
-    { label: "Palette Mirror ($3F20–$3FFF)", offset: 0x3F20, range: 0xFE0 }, // mirrors for palette RAM
-    // Individual handy palette strips, as before
-    { label: "Palette 1 ($3F01–$3F03)", offset: 0x3F01, range: 0x03 },
-    { label: "Palette 2 ($3F05–$3F07)", offset: 0x3F05, range: 0x03 },
-    { label: "Palette 3 ($3F09–$3F0B)", offset: 0x3F09, range: 0x03 },
-  ];
+let insertFlagRegisterTable = document.createElement('table');
+insertFlagRegisterTable.className = 'GeneratedTable';
+let flagRegisterSection = document.querySelector('.flag-register');
+flagRegisterSection.appendChild(insertFlagRegisterTable);
+insertFlagRegisterTable.innerHTML = FlagRegisterTable;
 
-  // Build dropdown options
-  for (const { label: text, offset, range } of jumpTargets) {
-    const option = document.createElement("option");
-    option.value = offset !== null ? `${offset}|${range}` : "";
-    option.textContent = text;
-    dropdown.appendChild(option);
-  }
+//instruction table not drawn until rom load
 
-  // On dropdown change
-  dropdown.addEventListener("change", function () {
-    const val = this.value;
-    if (!val) return;
+// ========== HANDY DROPDOWNS ==========
 
-    const [baseOffsetStr, rangeStr] = val.split("|");
-    const baseOffset = parseInt(baseOffsetStr);
-    const range = parseInt(rangeStr);
+// WRAM Drop-down:
+const wramHeader = document.querySelector('.wram-header');
+if (wramHeader) wramHeader.insertBefore(createWRAMJumpDropdown(), wramHeader.firstChild);
 
-    // Otherwise scroll & highlight RAM cells
-    for (let i = 0; i < range; i++) {
-      const id = `wram-${baseOffset + i}`;
-      const cell = document.getElementById(id);
-      if (cell) {
-        if (i === 0) cell.scrollIntoView({ behavior: "smooth", block: "center" });
-        cell.style.backgroundColor = "#ffd700";
-        setTimeout(() => (cell.style.backgroundColor = ""), 1000);
-      }
-    }
-    this.value = "";
-  });
+// VRAM Drop-down:
+const vramHeader = document.querySelector('.vram-header');
+if (vramHeader) vramHeader.insertBefore(createVRAMJumpDropdown(), vramHeader.firstChild);
 
-  // Prepend dropdown to Work RAM label
-  label.prepend(dropdown);
-}
-
-// === Handy Offset Dropdown for PRG-ROM cells ===
-const romLabel = Array.from(document.querySelectorAll("b"))
-  .find(el => el.textContent.includes("PRG-ROM"));
-
-if (romLabel) {
-  const romDropdown = document.createElement("select");
-  romDropdown.id = "romJumpSelect";
-  romDropdown.style.fontSize = "12px";
-  romDropdown.style.marginRight = "10px";
-
-  // Handy PRG-ROM locations for homebrew and hacking
-  const romOptions = [
-    { label: "Jump to...", offset: null },
-    { label: "Reset Vector ($FFFC–$FFFD)", offset: 0xFFFC, range: 2, prefix: "cartSpaceTwoID-" },
-    { label: "NMI Vector ($FFFA–$FFFB)", offset: 0xFFFA, range: 2, prefix: "cartSpaceTwoID-" },
-    { label: "IRQ/BRK Vector ($FFFE–$FFFF)", offset: 0xFFFE, range: 2, prefix: "cartSpaceTwoID-" },
-    { label: "PRG-ROM Bank 1: $8000–$BFFF (16KB)", offset: 0x8000, range: 0x4000, prefix: "cartSpaceOneID-" },
-    { label: "PRG-ROM Bank 2: $C000–$FFFF (16KB)", offset: 0xC000, range: 0x4000, prefix: "cartSpaceTwoID-" }
-  ];
-
-  romOptions.forEach(opt => {
-    const option = document.createElement("option");
-    option.value = opt.offset !== null ? JSON.stringify(opt) : "";
-    option.textContent = opt.label;
-    romDropdown.appendChild(option);
-  });
-
-  romDropdown.addEventListener("change", function () {
-    if (!this.value) return;
-    const { offset, range, prefix } = JSON.parse(this.value);
-    for (let i = 0; i < range; i++) {
-      const id = `${prefix}${offset + i}`;
-      const target = document.getElementById(id);
-      if (target) {
-        if (i === 0) target.scrollIntoView({ behavior: "smooth", block: "center" });
-        target.style.backgroundColor = "#90EE90";
-      }
-    }
-    setTimeout(() => {
-      for (let i = 0; i < range; i++) {
-        const id = `${prefix}${offset + i}`;
-        const t = document.getElementById(id);
-        if (t) t.style.backgroundColor = "";
-      }
-    }, 1000);
-    this.value = "";
-  });
-
-  // Insert the dropdown before the PRG-ROM label
-  romLabel.prepend(romDropdown);
-}
+// PRG-ROM Drop-down:
+const prgromHeader = document.querySelector('.prgrom-header');
+if (prgromHeader) prgromHeader.insertBefore(createPRGROMJumpDropdown(), prgromHeader.firstChild);
