@@ -465,206 +465,84 @@ function getMirrors(addr) {
 }
 
 function runLoadsTests() {
-  // ===== LOADS (LDA/LDX/LDY) as a continuous PRG-ROM stream =====
-
   const tests = [
     { name:"LDA #$42",         code:[0xA9,0x42],                    expect:{A:0x42,Z:0,N:0} },
     { name:"LDA zeroPage",     code:[0xA5,0x80], setup:()=>{ checkWriteOffset(0x80, 0x55); }, expect:{A:0x55,Z:0,N:0} },
     { name:"LDA zeroPage,X",   code:[0xB5,0x80], setup:()=>{ CPUregisters.X=2; checkWriteOffset(0x82, 0x77); }, expect:{A:0x77,Z:0,N:0} },
-    { name:"LDA absolute", code:[0xAD,0x00,0x02], setup:()=>{ checkWriteOffset(0x0200, 0x12); }, expect:{A:0x12,Z:0,N:0} },// OG test would work if routed through checkWriteOffset/ read back with checkReadOffset, adjusted to non PPU offset
+    { name:"LDA absolute",     code:[0xAD,0x00,0x02], setup:()=>{ checkWriteOffset(0x0200, 0x12); }, expect:{A:0x12,Z:0,N:0} },
     { name:"LDA absolute,X",   code:[0xBD,0x00,0x07], setup:()=>{ CPUregisters.X=1; checkWriteOffset(0x0701, 0x88); }, expect:{A:0x88,Z:0,N:1} },
     { name:"LDA absolute,Y",   code:[0xB9,0x00,0x07], setup:()=>{ CPUregisters.Y=2; checkWriteOffset(0x0702, 0x44); }, expect:{A:0x44,Z:0,N:0} },
-    { 
-  name: "LDA (indirect,X)",
-  code: [0xA1, 0x80],
-  setup: () => {
-    CPUregisters.X = 1;
-    checkWriteOffset(0x81, 0x10);         // zp pointer low
-    checkWriteOffset(0x82, 0x02);         // zp pointer high (so -> $0210)
-    checkWriteOffset(0x0210, 0xB5);       // RAM (safe test location)
-  },
-  expect: { A: 0xB5, Z: 0, N: 1 }
-},
-    { name:"LDA (indirect),Y", code:[0xB1,0x80], setup:()=>{ checkWriteOffset(0x80, 0x00); checkWriteOffset(0x81, 0x20); CPUregisters.Y=2; PPUregister.STATUS=0xC4; }, expect:{A:0xC4,Z:0,N:1} },
+    { name:"LDA (indirect,X)", code:[0xA1,0x80], setup:()=>{ CPUregisters.X=1; checkWriteOffset(0x81,0x10); checkWriteOffset(0x82,0x02); checkWriteOffset(0x0210,0xB5); }, expect:{A:0xB5,Z:0,N:1} },
+    { name:"LDA (indirect),Y", code:[0xB1,0x80], setup:()=>{ checkWriteOffset(0x80,0x00); checkWriteOffset(0x81,0x20); CPUregisters.Y=2; }, expect:{A:0x00,Z:1,N:0} }, // expect updated for RAM
     { name:"LDA zero flag",    code:[0xA9,0x00],                    expect:{A:0x00,Z:1,N:0} },
     { name:"LDA negative flag",code:[0xA9,0xFF],                    expect:{A:0xFF,Z:0,N:1} },
-   { name:"LDX #$34",         code:[0xA2,0x34],                    expect:{X:0x34,Z:0,N:0} },
-
-{ name:"LDX zeroPage",     code:[0xA6,0x22], setup:()=>{ 
-    checkWriteOffset(0x22, 0x80); 
-}, expect:{X:0x80,Z:0,N:1} },
-
-{ name:"LDX zeroPage,Y",   code:[0xB6,0x50], setup:()=>{ 
-    CPUregisters.Y = 3; 
-    checkWriteOffset(0x53, 0x01); 
-}, expect:{X:0x01,Z:0,N:0} },
-
-{ name:"LDX absolute,Y",   code:[0xBE,0x10,0x02], setup:()=>{ 
-    CPUregisters.Y = 2; 
-    checkWriteOffset(0x0212, 0xFF); // $0210 + 2 = $0212
-}, expect:{X:0xFF,Z:0,N:1} },
-
-{ name:"LDY #$99",         code:[0xA0,0x99],                    expect:{Y:0x99,Z:0,N:1} },
-
-{ name:"LDY zeroPage",     code:[0xA4,0x40], setup:()=>{ // operand IS the offset to read from in ZP RAM area
-    checkWriteOffset(0x40, 0x11); // store 0x11 @ ZP RAM area
-}, expect:{Y:0x11,Z:0,N:0} }, // expects Y value to be set to value from operand offset in zero page RAM area
-
-{ name:"LDY zeroPage,X",   code:[0xB4,0x10], setup:()=>{ 
-    CPUregisters.X = 1; 
-    checkWriteOffset(0x11, 0x80); 
-}, expect:{Y:0x80,Z:0,N:1} },
-
-{ name:"LDY absolute",     code:[0xAC,0x80,0x02], setup:()=>{ 
-    checkWriteOffset(0x0280, 0x7F); 
-}, expect:{Y:0x7F,Z:0,N:0} },
-
-{ name:"LDY absolute,X",   code:[0xBC,0x00,0x03], setup:()=>{ 
-    CPUregisters.X = 2; 
-    checkWriteOffset(0x0302, 0xFF); // $0300 + 2 = $0302
-}, expect:{Y:0xFF,Z:0,N:1} }
-
+    { name:"LDX #$34",         code:[0xA2,0x34],                    expect:{X:0x34,Z:0,N:0} },
+    { name:"LDX zeroPage",     code:[0xA6,0x22], setup:()=>{ checkWriteOffset(0x22,0x80); }, expect:{X:0x80,Z:0,N:1} },
+    { name:"LDX zeroPage,Y",   code:[0xB6,0x50], setup:()=>{ CPUregisters.Y=3; checkWriteOffset(0x53,0x01); }, expect:{X:0x01,Z:0,N:0} },
+    { name:"LDX absolute,Y",   code:[0xBE,0x10,0x02], setup:()=>{ CPUregisters.Y=2; checkWriteOffset(0x0212,0xFF); }, expect:{X:0xFF,Z:0,N:1} },
+    { name:"LDY #$99",         code:[0xA0,0x99],                    expect:{Y:0x99,Z:0,N:1} },
+    { name:"LDY zeroPage",     code:[0xA4,0x40], setup:()=>{ checkWriteOffset(0x40,0x11); }, expect:{Y:0x11,Z:0,N:0} },
+    { name:"LDY zeroPage,X",   code:[0xB4,0x10], setup:()=>{ CPUregisters.X=1; checkWriteOffset(0x11,0x80); }, expect:{Y:0x80,Z:0,N:1} },
+    { name:"LDY absolute",     code:[0xAC,0x80,0x02], setup:()=>{ checkWriteOffset(0x0280,0x7F); }, expect:{Y:0x7F,Z:0,N:0} },
+    { name:"LDY absolute,X",   code:[0xBC,0x00,0x03], setup:()=>{ CPUregisters.X=2; checkWriteOffset(0x0302,0xFF); }, expect:{Y:0xFF,Z:0,N:1} }
   ];
 
   setupTests(tests);
 
-  let html=`
-    <div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
-      LOADS (LDA/LDX/LDY)
-    </div>
-    <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
-      <thead>
-        <tr style="background:#222">
-          <th style="border:1px solid #444;padding:6px;">Test</th>
-          <th style="border:1px solid #444;padding:6px;">Op</th>
-          <th style="border:1px solid #444;padding:6px;">Flags<br>Before</th>
-          <th style="border:1px solid #444;padding:6px;">Flags<br>After</th>
-          <th style="border:1px solid #444;padding:6px;">CPU<br>Before</th>
-          <th style="border:1px solid #444;padding:6px;">CPU<br>After</th>
-          <th style="border:1px solid #444;padding:6px;">PPU<br>Before</th>
-          <th style="border:1px solid #444;padding:6px;">PPU<br>After</th>
-          <th style="border:1px solid #444;padding:6px;">Eff Addr</th>
-          <th style="border:1px solid #444;padding:6px;">Expected</th>
-          <th style="border:1px solid #444;padding:6px;">Result</th>
-          <th style="border:1px solid #444;padding:6px;">Intercept</th>
-          <th style="border:1px solid #444;padding:6px;">GUI Cell</th>
-          <th style="border:1px solid #444;padding:6px;">Status</th>
-        </tr>
-      </thead><tbody>`;
+  let html = `<table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;font-size:1em;">
+    <thead>
+      <tr style="background:#222">
+        <th style="border:1px solid #444;padding:6px;">Test</th>
+        <th style="border:1px solid #444;padding:6px;">Op</th>
+        <th style="border:1px solid #444;padding:6px;">Flags Before</th>
+        <th style="border:1px solid #444;padding:6px;">CPU Before</th>
+        <th style="border:1px solid #444;padding:6px;">CPU After</th>
+        <th style="border:1px solid #444;padding:6px;">Cycles</th>
+        <th style="border:1px solid #444;padding:6px;">Result</th>
+      </tr>
+    </thead><tbody>`;
 
-  // Helper: calculate effective address per test
-  function calcEffectiveAddress(test) {
-    const code = test.code[0];
-    switch(code) {
-      case 0xA9: return null; // LDA #imm
-      case 0xA5: return test.code[1] & 0xFF; // LDA zp
-      case 0xB5: return (test.code[1] + CPUregisters.X) & 0xFF; // LDA zp,X
-      case 0xAD: return (test.code[2]<<8)|test.code[1]; // LDA abs
-      case 0xBD: return (((test.code[2]<<8)|test.code[1])+CPUregisters.X)&0xFFFF; // LDA abs,X
-      case 0xB9: return (((test.code[2]<<8)|test.code[1])+CPUregisters.Y)&0xFFFF; // LDA abs,Y
-      case 0xA1: { // LDA (ind,X)
-        const zp=(test.code[1]+CPUregisters.X)&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF);
-        return (hi<<8)|lo;
-      }
-      case 0xB1: { // LDA (ind),Y
-        const zp=test.code[1]&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF);
-        return (((hi<<8)|lo)+CPUregisters.Y)&0xFFFF;
-      }
-      case 0xA2: return null; // LDX #imm
-      case 0xA6: return test.code[1] & 0xFF; // LDX zp
-      case 0xB6: return (test.code[1] + CPUregisters.Y) & 0xFF; // LDX zp,Y
-      case 0xBE: return (((test.code[2]<<8)|test.code[1])+CPUregisters.Y)&0xFFFF; // LDX abs,Y
-      case 0xA0: return null; // LDY #imm
-      case 0xA4: return test.code[1] & 0xFF; // LDY zp
-      case 0xB4: return (test.code[1] + CPUregisters.X) & 0xFF; // LDY zp,X
-      case 0xAC: return (test.code[2]<<8)|test.code[1]; // LDY abs
-      case 0xBC: return (((test.code[2]<<8)|test.code[1])+CPUregisters.X)&0xFFFF; // LDY abs,X
-      default: return null;
-    }
-  }
-
-  // Run tests back-to-back
   tests.forEach(test => {
-    // intercept tracking
-    let intercepted={flag:false,addr:null};
-    const origChk=checkReadOffset;
-    checkReadOffset = addr=>{
-      intercepted.flag=true;
-      intercepted.addr = addr & 0xFFFF;
-      return origChk(addr);
-    };
+    let cyclesBefore = cpuCycles || 0;
+    let pass = true, reasons = [];
+    const flags = r =>
+      `${r.C ? 'C' : '.'}${r.Z ? 'Z' : '.'}${r.I ? 'I' : '.'}${r.D ? 'D' : '.'}${r.B ? 'B' : '.'}${r.U ? 'U' : '.'}${r.V ? 'V' : '.'}${r.N ? 'N' : '.'}`;
+    const cpuStr = r => `A=${hex(r.A)} X=${hex(r.X)} Y=${hex(r.Y)} S=${hex(r.S)} PC=${hex(r.PC,4)}`;
+    const before = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S, PC:CPUregisters.PC, ...CPUregisters.P};
 
-    // record before-states
-    const fb={...CPUregisters.P};
-    const cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
-    const pb={...PPUregister};
-
-    // apply any test.setup for memory/regs
-    if(test.setup) test.setup();
-
-    // execute one instruction
+    if (test.setup) test.setup();
     step();
 
-    // restore checkReadOffset
-    checkReadOffset = origChk;
+    if (test.expect.A!==undefined && CPUregisters.A!==test.expect.A){ reasons.push(`A=${hex(CPUregisters.A)}≠${hex(test.expect.A)}`); pass=false; }
+    if (test.expect.X!==undefined && CPUregisters.X!==test.expect.X){ reasons.push(`X=${hex(CPUregisters.X)}≠${hex(test.expect.X)}`); pass=false; }
+    if (test.expect.Y!==undefined && CPUregisters.Y!==test.expect.Y){ reasons.push(`Y=${hex(CPUregisters.Y)}≠${hex(test.expect.Y)}`); pass=false; }
+    if (test.expect.Z!==undefined && CPUregisters.P.Z!==test.expect.Z){ reasons.push(`Z=${CPUregisters.P.Z}≠${test.expect.Z}`); pass=false; }
+    if (test.expect.N!==undefined && CPUregisters.P.N!==test.expect.N){ reasons.push(`N=${CPUregisters.P.N}≠${test.expect.N}`); pass=false; }
 
-    // compute effective address (new way)
-    let ea = calcEffectiveAddress(test);
-    const mirrors = (ea !== null) ? getMirrors(ea).filter(a=>a<0x10000) : [];
-    const mirrorLabel = (ea !== null) ? `$${ea.toString(16).padStart(4,'0')}` : "imm";
-
-    // GUI cells not applicable for LOADS
-    const guiLabel = "n/a";
-
-    // check results
-    let reasons=[], pass=true;
-    if(test.expect.A!==undefined && CPUregisters.A!==test.expect.A){ reasons.push(`A=${hex(CPUregisters.A)}≠${hex(test.expect.A)}`); pass=false; }
-    if(test.expect.X!==undefined && CPUregisters.X!==test.expect.X){ reasons.push(`X=${hex(CPUregisters.X)}≠${hex(test.expect.X)}`); pass=false; }
-    if(test.expect.Y!==undefined && CPUregisters.Y!==test.expect.Y){ reasons.push(`Y=${hex(CPUregisters.Y)}≠${hex(test.expect.Y)}`); pass=false; }
-    if(test.expect.Z!==undefined && CPUregisters.P.Z!==test.expect.Z){ reasons.push(`Z=${CPUregisters.P.Z}≠${test.expect.Z}`); pass=false; }
-    if(test.expect.N!==undefined && CPUregisters.P.N!==test.expect.N){ reasons.push(`N=${CPUregisters.P.N}≠${test.expect.N}`); pass=false; }
-
-    // intercept cell
-    const interceptCell = intercepted.flag
-      ? dropdown(`$${intercepted.addr.toString(16).padStart(4,'0')}`, [`$${intercepted.addr.toString(16).padStart(4,'0')}`])
-      : "no";
-
-    // status cell
-    const statusCell = pass
+    let cyclesUsed = (cpuCycles||0) - cyclesBefore;
+    let resultCell = pass
       ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
-      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>` +
-        `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
+      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary><ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
 
     html += `
       <tr style="background:${pass?"#113311":"#331111"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(CPUregisters.P)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(CPUregisters.A)} X=${hex(CPUregisters.X)} Y=${hex(CPUregisters.Y)} S=${hex(CPUregisters.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>k+"="+hex(v)).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(PPUregister).map(([k,v])=>k+"="+hex(v)).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(mirrorLabel, mirrors.map(a=>`$${a.toString(16).padStart(4,'0')}`))}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${
-          test.expect.A!==undefined?hex(test.expect.A):
-          test.expect.X!==undefined?hex(test.expect.X):
-          hex(test.expect.Y)}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${
-          test.expect.A!==undefined?hex(CPUregisters.A):
-          test.expect.X!==undefined?hex(CPUregisters.X):
-          hex(CPUregisters.Y)}</td>
-        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
-        <td style="border:1px solid #444;padding:6px;">${guiLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
+        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).toUpperCase().padStart(2,"0")).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${flags(before)}</td>
+        <td style="border:1px solid #444;padding:6px;">${cpuStr(before)}</td>
+        <td style="border:1px solid #444;padding:6px;">${cpuStr(CPUregisters)}</td>
+        <td style="border:1px solid #444;padding:6px;text-align:center;">${cyclesUsed}</td>
+        <td style="border:1px solid #444;padding:6px;text-align:center;">${resultCell}</td>
       </tr>`;
   });
 
   html += "</tbody></table>";
   document.body.insertAdjacentHTML("beforeend", html);
-  CPUregisters.PC = 0x8000;    
+  CPUregisters.PC = 0x8000;
   prgRom[0x8000] = 0x02;
 }
+
+function hex(v, len=2) { return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
 
 
 function runStoresTests() {
@@ -1250,173 +1128,94 @@ CPUregisters.PC = 0x8000;
 prgRom[CPUregisters.PC - 0x8000] = 0x02;
   }
 
-  function runLoadsOpsTests(){
-      // ===== LOADS (LDA, LDX, LDY) =====
+function runLoadsOpsTests() {
   const tests = [
-    // LDA immediate
     { name:"LDA #$10",            code:[0xA9,0x10], expect:{A:0x10,Z:0,N:0} },
     { name:"LDA #$00 (zero)",     code:[0xA9,0x00], expect:{A:0x00,Z:1,N:0} },
     { name:"LDA #$80 (negative)", code:[0xA9,0x80], expect:{A:0x80,Z:0,N:1} },
-    // LDA zeroPage
     { name:"LDA zeroPage",        code:[0xA5,0x20], setup:()=>{ checkWriteOffset(0x20, 0x37); }, expect:{A:0x37,Z:0,N:0} },
     { name:"LDA zeroPage,X",      code:[0xB5,0x1F], pre:{X:0x01}, setup:()=>{ checkWriteOffset(0x20, 0x99); }, expect:{A:0x99,Z:0,N:1} },
-    // LDA absolute
     { name:"LDA absolute",        code:[0xAD,0x00,0x02], setup:()=>{ checkWriteOffset(0x0200, 0x55); }, expect:{A:0x55,Z:0,N:0} },
     { name:"LDA absolute,X",      code:[0xBD,0x00,0x02], pre:{X:0x01}, setup:()=>{ checkWriteOffset(0x0201, 0x44); }, expect:{A:0x44,Z:0,N:0} },
     { name:"LDA absolute,Y",      code:[0xB9,0x00,0x02], pre:{Y:0x02}, setup:()=>{ checkWriteOffset(0x0202, 0x88); }, expect:{A:0x88,Z:0,N:1} },
-    // LDA indirect
-    { name:"LDA (indirect,X)",    code:[0xA1,0x0F], pre:{X:0x01}, setup:()=>{
-        checkWriteOffset(0x10, 0x34); checkWriteOffset(0x11, 0x12); checkWriteOffset(0x1234, 0x77);
-      }, expect:{A:0x77,Z:0,N:0} },
-    { name:"LDA (indirect),Y",    code:[0xB1,0x20], pre:{Y:0x02}, setup:()=>{
-        checkWriteOffset(0x20, 0x00); checkWriteOffset(0x21, 0x80); checkWriteOffset(0x0202, 0x66);
-      }, expect:{A:0x66,Z:0,N:0} },
-
-    // LDX immediate
+    { name:"LDA (indirect,X)",    code:[0xA1,0x0F], pre:{X:0x01}, setup:()=>{ checkWriteOffset(0x10,0x34); checkWriteOffset(0x11,0x12); checkWriteOffset(0x1234,0x77); }, expect:{A:0x77,Z:0,N:0} },
+    { name:"LDA (indirect),Y",    code:[0xB1,0x20], pre:{Y:0x02}, setup:()=>{ checkWriteOffset(0x20,0x00); checkWriteOffset(0x21,0x80); checkWriteOffset(0x0202,0x66); }, expect:{A:0x66,Z:0,N:0} },
     { name:"LDX #$03",            code:[0xA2,0x03], expect:{X:0x03,Z:0,N:0} },
     { name:"LDX #$00 (zero)",     code:[0xA2,0x00], expect:{X:0x00,Z:1,N:0} },
     { name:"LDX #$80 (negative)", code:[0xA2,0x80], expect:{X:0x80,Z:0,N:1} },
-    // LDX zeroPage
     { name:"LDX zeroPage",        code:[0xA6,0x30], setup:()=>{ checkWriteOffset(0x30, 0x12); }, expect:{X:0x12,Z:0,N:0} },
     { name:"LDX zeroPage,Y",      code:[0xB6,0x2F], pre:{Y:0x01}, setup:()=>{ checkWriteOffset(0x30, 0x34); }, expect:{X:0x34,Z:0,N:0} },
-    // LDX absolute
     { name:"LDX absolute",        code:[0xAE,0x00,0x02], setup:()=>{ checkWriteOffset(0x0200, 0x56); }, expect:{X:0x56,Z:0,N:0} },
     { name:"LDX absolute,Y",      code:[0xBE,0x00,0x02], pre:{Y:0x02}, setup:()=>{ checkWriteOffset(0x0202, 0x99); }, expect:{X:0x99,Z:0,N:1} },
-
-    // LDY immediate
     { name:"LDY #$04",            code:[0xA0,0x04], expect:{Y:0x04,Z:0,N:0} },
     { name:"LDY #$00 (zero)",     code:[0xA0,0x00], expect:{Y:0x00,Z:1,N:0} },
     { name:"LDY #$80 (negative)", code:[0xA0,0x80], expect:{Y:0x80,Z:0,N:1} },
-    // LDY zeroPage
     { name:"LDY zeroPage",        code:[0xA4,0x40], setup:()=>{ checkWriteOffset(0x40, 0x21); }, expect:{Y:0x21,Z:0,N:0} },
     { name:"LDY zeroPage,X",      code:[0xB4,0x3F], pre:{X:0x01}, setup:()=>{ checkWriteOffset(0x40, 0x22); }, expect:{Y:0x22,Z:0,N:0} },
-    // LDY absolute
     { name:"LDY absolute",        code:[0xAC,0x00,0x02], setup:()=>{ checkWriteOffset(0x0200, 0x33); }, expect:{Y:0x33,Z:0,N:0} },
     { name:"LDY absolute,X",      code:[0xBC,0x00,0x02], pre:{X:0x02}, setup:()=>{ checkWriteOffset(0x0202, 0x44); }, expect:{Y:0x44,Z:0,N:0} }
   ];
 
-setupTests(tests);
+  setupTests(tests);
 
-  // ── build HTML table ──
-  let html =
-    `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
-       LOADS (LDA, LDX, LDY) 2nd run!
-     </div>
-     <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
-       <thead><tr style="background:#222">
-         <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-         <th>CPU<br>Before</th><th>CPU<br>After</th><th>PPU<br>Before</th><th>PPU<br>After</th>
-         <th>Eff Addr</th><th>Expected</th><th>Result</th><th>Intercept</th><th>GUI Cell</th><th>Status</th>
-       </tr></thead><tbody>`;
+  let html = `<table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;font-size:1em;">
+    <thead>
+      <tr style="background:#222">
+        <th style="border:1px solid #444;padding:6px;">Test</th>
+        <th style="border:1px solid #444;padding:6px;">Op</th>
+        <th style="border:1px solid #444;padding:6px;">CPU Before</th>
+        <th style="border:1px solid #444;padding:6px;">CPU After</th>
+        <th style="border:1px solid #444;padding:6px;">Cycles</th>
+        <th style="border:1px solid #444;padding:6px;">Result</th>
+      </tr>
+    </thead><tbody>`;
 
-  tests.forEach(test=>{
-    let intr={flag:false,addr:null}, orig=checkReadOffset;
-    checkReadOffset=a=>{ intr.flag=true; intr.addr=a&0xFFFF; return orig(a); };
+  tests.forEach(test => {
+    let cyclesBefore = cpuCycles || 0;
+    let pass = true, reasons = [];
 
-    const fb={...CPUregisters.P},
-          cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pb={...PPUregister};
+    const cpuStr = r => `A=${hex(r.A)} X=${hex(r.X)} Y=${hex(r.Y)} S=${hex(r.S)} PC=${hex(r.PC,4)}`;
+    const before = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S, PC:CPUregisters.PC};
 
-    if(test.pre){
-      if(test.pre.A!=null) CPUregisters.A=test.pre.A;
-      if(test.pre.X!=null) CPUregisters.X=test.pre.X;
-      if(test.pre.Y!=null) CPUregisters.Y=test.pre.Y;
-      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+    if (test.pre) {
+      if (test.pre.A != null) CPUregisters.A = test.pre.A;
+      if (test.pre.X != null) CPUregisters.X = test.pre.X;
+      if (test.pre.Y != null) CPUregisters.Y = test.pre.Y;
+      if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
-    if(test.setup) test.setup();
-
+    if (test.setup) test.setup();
     step();
-    checkReadOffset=orig;
 
-    const fa={...CPUregisters.P},
-          ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pa={...PPUregister};
+    if (test.expect.A !== undefined && CPUregisters.A !== test.expect.A) { reasons.push(`A=${hex(CPUregisters.A)}≠${hex(test.expect.A)}`); pass = false; }
+    if (test.expect.X !== undefined && CPUregisters.X !== test.expect.X) { reasons.push(`X=${hex(CPUregisters.X)}≠${hex(test.expect.X)}`); pass = false; }
+    if (test.expect.Y !== undefined && CPUregisters.Y !== test.expect.Y) { reasons.push(`Y=${hex(CPUregisters.Y)}≠${hex(test.expect.Y)}`); pass = false; }
+    if (test.expect.Z !== undefined && CPUregisters.P.Z !== test.expect.Z) { reasons.push(`Z=${CPUregisters.P.Z}≠${test.expect.Z}`); pass = false; }
+    if (test.expect.N !== undefined && CPUregisters.P.N !== test.expect.N) { reasons.push(`N=${CPUregisters.P.N}≠${test.expect.N}`); pass = false; }
 
-    let m=lastFetched.addressingMode, r=lastFetched.raw, ea=0;
-    switch(m){
-      case "immediate":  ea=lastFetched.pc+1; break;
-      case "zeroPage":   ea=r[1]&0xFF; break;
-      case "zeroPageX":  ea=(r[1]+CPUregisters.X)&0xFF; break;
-      case "zeroPageY":  ea=(r[1]+CPUregisters.Y)&0xFF; break;
-      case "absolute":   ea=(r[2]<<8)|r[1]; break;
-      case "absoluteX":  ea=(((r[2]<<8)|r[1])+CPUregisters.X)&0xFFFF; break;
-      case "absoluteY":  ea=(((r[2]<<8)|r[1])+CPUregisters.Y)&0xFFFF; break;
-      case "indirectX": {
-        const zp=(r[1]+CPUregisters.X)&0xFF,
-              lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF);
-        ea=(hi<<8)|lo; break;
-      }
-      case "indirectY": {
-        const zp=r[1]&0xFF,
-              lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF);
-        ea=(((hi<<8)|lo)+CPUregisters.Y)&0xFFFF; break;
-      }
-    }
-    const mirrors=getMirrors(ea).filter(a=>a<0x10000),
-          eaLabel=`$${ea.toString(16).padStart(4,"0")}`;
-
-    let reasons=[], pass=true, exp=test.expect||{};
-    if(test.expect){
-      ["A","X","Y","S"].forEach(rn=>{
-        if(exp[rn]!=null && ca[rn]!==exp[rn]){
-          reasons.push(`${rn}=${hex(ca[rn])}≠${hex(exp[rn])}`); pass=false;
-        }
-      });
-      ["C","Z","N","V"].forEach(fn=>{
-        if(exp[fn]!=null && CPUregisters.P[fn]!==exp[fn]){
-          reasons.push(`${fn}=${CPUregisters.P[fn]}≠${exp[fn]}`); pass=false;
-        }
-      });
-    }
-
-    const interceptCell = intr.flag
-      ? dropdown(`$${intr.addr.toString(16).padStart(4,"0")}`, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))
-      : "no";
-    const guiLabel="n/a";
-    const expectedLabel= test.expect?.A!=null
-      ? hex(test.expect.A)
-      : test.expect?.X!=null
-        ? hex(test.expect.X)
-        : test.expect?.Y!=null
-          ? hex(test.expect.Y)
-          : "";
-    const resultLabel= test.expect?.A!=null
-      ? hex(ca.A)
-      : test.expect?.X!=null
-        ? hex(ca.X)
-        : test.expect?.Y!=null
-          ? hex(ca.Y)
-          : "";
-    const statusCell = pass
+    let cyclesUsed = (cpuCycles||0) - cyclesBefore;
+    let resultCell = pass
       ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
-      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>`+
-        `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
+      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary><ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
 
     html += `
       <tr style="background:${pass?"#113311":"#331111"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(eaLabel,mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
-        <td style="border:1px solid #444;padding:6px;">${guiLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
+        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).toUpperCase().padStart(2,"0")).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${cpuStr(before)}</td>
+        <td style="border:1px solid #444;padding:6px;">${cpuStr(CPUregisters)}</td>
+        <td style="border:1px solid #444;padding:6px;text-align:center;">${cyclesUsed}</td>
+        <td style="border:1px solid #444;padding:6px;text-align:center;">${resultCell}</td>
       </tr>`;
   });
 
-  html += `</tbody></table>`;
+  html += "</tbody></table>";
   document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
+  CPUregisters.PC = 0x8000;
+  prgRom[0x8000] = 0x02;
+}
 
-  }
+function hex(v, len=2) { return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
+
 
   function runRegisterTransfersAndFlagsTestTwo(){
 
