@@ -21,6 +21,17 @@ const APU_REG_ADDRESSES = {
   0x4017: "FRAME_CNT"   // Write
 
 };
+
+/*
+console tested, no test suite 
+------------------------------
+checkWriteOffset(0x4000, 0x99)
+undefined
+checkReadOffset(0x4000)
+153
+*/
+
+
 let APUregister = {
   SQ1_VOL:   0x00, // $4000
   SQ1_SWEEP: 0x00, // $4001

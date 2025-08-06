@@ -41,7 +41,7 @@ function checkWriteOffset(address, value) {
         ppuWrite(addr, value);
     }
     else if (addr === 0x4014) { // OAM DMA
-    dmaTransfer(value); // <--- DMA handler here}
+    dmaTransfer(value); // <--- DMA handler here
     }
     else if (addr < 0x4020) { // APU & I/O
         apuWrite(addr, value);

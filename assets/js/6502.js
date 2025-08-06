@@ -492,7 +492,7 @@ function TSX_IMP() {
 
 function LDX_IMM() {
   // Load immediate value into X register (immediate operand is next byte)
-  CPUregisters.X = systemMemory[CPUregisters.PC + 1];
+  CPUregisters.X = prgRom[CPUregisters.PC + 1 - 0x8000];
   
   // Set zero and negative flags
   CPUregisters.P.Z = ((CPUregisters.X === 0)) ? 1 : 0;
@@ -501,8 +501,8 @@ function LDX_IMM() {
 
 function LDX_ZP() {
   // Load value from zero page into X
-  const addressess = systemMemory[CPUregisters.PC + 1];
-  CPUregisters.X = checkReadOffset(addressess);
+  const zeropageAddress = prgRom[CPUregisters.PC + 1 - 0x8000];
+  CPUregisters.X = systemMemory[zeropageAddress];
   
   // Set zero and negative flags
   CPUregisters.P.Z = ((CPUregisters.X === 0)) ? 1 : 0;
@@ -511,7 +511,7 @@ function LDX_ZP() {
 
 function LDX_ZPY() {
   // Load value from zero page addressess + Y into X
-  const baseaddress = systemMemory[CPUregisters.PC + 1];
+  const baseaddress = prgRom[CPUregisters.PC + 1 - 0x8000];
   const addressess = (baseaddress + CPUregisters.Y) & 0xFF; // zero page wrap
   CPUregisters.X = checkReadOffset(addressess);
   
@@ -522,8 +522,8 @@ function LDX_ZPY() {
 
 function LDX_ABS() {
   // Load value from absolute addressess into X
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
+  const low = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const high = prgRom[CPUregisters.PC + 2 - 0x8000];
   const addressess = (high << 8) | low;
   CPUregisters.X = checkReadOffset(addressess);
   
@@ -1417,13 +1417,11 @@ function LDY_IMM() {
 }
 
 function LDY_ZP() {
-  const address = systemMemory[CPUregisters.PC + 1];
+  const address = prgRom[CPUregisters.PC + 1];
   const value = systemMemory[address & 0xFF];
   CPUregisters.Y = value;
-
-  CPUregisters.STATUS = (CPUregisters.STATUS & 0x7D) |
-                        (value === 0 ? 0x02 : 0x00) |
-                        (value & 0x80);
+  CPUregisters.P.Z = (value === 0) ? 1 : 0;
+  CPUregisters.P.N = (value & 0x80) ? 1 : 0;
 }
 
 function LDY_ZPX() {
@@ -2741,13 +2739,13 @@ const opcodes = {
   BRA: { relative: { code: 0x80, length: 2, pcIncrement: 2, func: BRA_REL } },
 
   JMP: {
-    absolute:   { code: 0x4C, length: 3, pcIncrement: 2, func: JMP_ABS },
-    indirect:   { code: 0x6C, length: 3, pcIncrement: 2, func: JMP_IND }
+    absolute:   { code: 0x4C, length: 3, pcIncrement: 3, func: JMP_ABS }, // 3 or set directly
+    indirect:   { code: 0x6C, length: 3, pcIncrement: 3, func: JMP_IND }  // 3 or set directly
   },
-  JSR: { absolute: { code: 0x20, length: 3, pcIncrement: 2, func: JSR_ABS } },
-  RTS: { implied: { code: 0x60, length: 1, pcIncrement: 2, func: RTS_IMP } },
-  RTI: { implied: { code: 0x40, length: 1, pcIncrement: 2, func: RTI_IMP } },
-  BRK: { implied: { code: 0x00, length: 1, pcIncrement: 2, func: BRK_IMP } },
+  JSR: { absolute: { code: 0x20, length: 3, pcIncrement: 3, func: JSR_ABS } }, // 3 or set directly
+  RTS: { implied: { code: 0x60, length: 1, pcIncrement: 0, func: RTS_IMP } }, // PC from stack
+  RTI: { implied: { code: 0x40, length: 1, pcIncrement: 0, func: RTI_IMP } }, // PC from stack
+  BRK: { implied: { code: 0x00, length: 1, pcIncrement: 2, func: BRK_IMP } }, // quirk, single byte opcode / increment PC +2
 
   // ======================= LOAD/STORE ======================= //
   LDA: {

@@ -72,7 +72,7 @@ for(let i=0; i<256; ++i) {
     Handler: opcodeFuncs[i] ? opcodeFuncs[i].name : "(none)",
     "PC+": opcodePcIncs[i],
     Cycles: opcodeCyclesInc[i],
-    Len: opcodeLengths[i],
+    //Len: opcodeLengths[i],
     Hex: opcodeHex[i] || ""
   });
 }
@@ -80,4 +80,13 @@ for(let i=0; i<256; ++i) {
 console.log("%c==== 6502 Opcode Table (Branch ops highlighted) ====", "color:#fff;background:#222;font-size:1.2em;padding:4px;");
 console.table(opcodeRows);
 
+}
+
+function updateDebugTables() {
+  wramPopulate();
+  vramPopulate();
+  prgRomPopulate();
+  cpuRegisterBitsPopulate();
+  cpuStatusRegisterPopulate();
+  ppuRegisterBitsPopulate();
 }

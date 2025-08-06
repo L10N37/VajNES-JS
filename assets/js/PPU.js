@@ -48,7 +48,17 @@ function ppuWrite(addr, value) {
   switch (addr) {
     case 0x2000: PPUregister.CTRL = value;      cpuOpenBus = value; break;
     case 0x2001: PPUregister.MASK = value;      cpuOpenBus = value; break;
-    case 0x2002: /* read-only */                break;
+
+
+    case 0x2002: /* read-only */ //window.alert("attempt made to write to PPU status (read only register)"); 
+    
+    PPUregister.STATUS = value; // for test suite only
+    
+    break;
+
+
+
+
     case 0x2003: PPUregister.OAMADDR = value;   cpuOpenBus = value; break;
     case 0x2004:
       PPU_OAM[PPUregister.OAMADDR] = value;

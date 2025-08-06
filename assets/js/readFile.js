@@ -1,4 +1,3 @@
-let prgRom = null; // Always ends up as 32KB after mapping
 let chrRom = null; // Usually 8KB, sometimes more, null if CHR-RAM
 
 function readFile(input) {
@@ -78,14 +77,6 @@ function readFile(input) {
     mapper(romBytes.slice(0, 16)); // Just pass the header
 
     updateDebugTables();
-
-  // dynamic insertion, step box
-  let instructionSection = document.querySelector('.instruction-step');
-  instructionSection.innerHTML = ``;
-  let insertInstructionArea = document.createElement('table');
-  insertInstructionArea.className = 'GeneratedTable';
-  instructionSection.appendChild(insertInstructionArea);
-  insertInstructionArea.innerHTML = instructionStepTable;
   };
 
   reader.onerror = function () {

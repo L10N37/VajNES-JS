@@ -151,10 +151,6 @@ registersText{
     border: solid;
   }
 
-  td[id^='wram-']:hover,[id^='cartSpace']:hover{
-  background-color: yellow;
-  }
-
   td[id^='A'], td[id^='X'], td[id^='Y'], td[id^='S'], td[id^='PC']  {
     color: blue;
   }
@@ -220,9 +216,6 @@ registersText{
   padding: 0;
   margin: 0 auto;
 }
-
-.highlighted-cell { background-color: #ffd966 !important; }
-.edited-cell { background-color: #c6efce !important; }
 
 /* CRT panel itself */
 .crt-panel {
@@ -326,4 +319,22 @@ registersText{
   padding: 0 !important;
   margin: 0 auto !important;
   table-layout: auto !important;
+}
+
+.wramCells.highlighted-cell,
+.vramCells.highlighted-cell,
+.cartspace1.highlighted-cell,
+.cartspace2.highlighted-cell,
+.highlighted-cell {
+  background-color: #ffd966 !important;
+  color: #222 !important;
+  outline: 2px solid #d6b400;
+}
+.edited-cell { background-color: #c6efce !important; }
+
+.wramCells:hover,
+.vramCells:hover,
+.cartspace1:hover,
+.cartspace2:hover {
+  background-color: yellow !important;
 }

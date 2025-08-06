@@ -710,7 +710,7 @@ let instructionStepTable = `
   <div class="crt-controls">
     <button class="crt-btn" onclick="step()">STEP/ Test Suite</button>
     <button class="crt-btn" onclick="run()">RUN</button>
-    <button class="crt-btn" onclick="pause()">PAUSE</button>
+    <button class="crt-btn" onclick="pause()">PAUSE / Refresh UI</button>
   </div>
 </div>
 `;
@@ -748,4 +748,73 @@ if (vramHeader) vramHeader.insertBefore(createVRAMJumpDropdown(), vramHeader.fir
 
 // PRG-ROM Drop-down:
 const prgromHeader = document.querySelector('.prgrom-header');
-if (prgromHeader) prgromHeader.insertBefore(createPRGROMJumpDropdown(), prgromHeader.firstChild);
+if (prgromHeader) {
+  prgromHeader.insertBefore(createPRGROMJumpDropdown(), prgromHeader.firstChild);
+
+  // --- Add "Set PC" elements ---
+  const container = document.createElement("span");
+  container.style.display = "inline-flex";
+  container.style.alignItems = "center";
+  container.style.gap = "4px";
+  container.style.marginLeft = "12px";
+
+  // 0x prefix cell
+  const prefix = document.createElement("span");
+  prefix.textContent = "0x";
+  prefix.style.fontFamily = "monospace";
+  prefix.style.fontSize = "1em";
+  container.appendChild(prefix);
+
+  // Input (default 8000)
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = "8000";
+  input.style.width = "76px";
+  input.style.fontFamily = "monospace";
+  input.style.fontSize = "1em";
+  input.style.padding = "2px 4px";
+  input.style.border = "1px solid #888";
+  input.style.borderRadius = "4px";
+  input.style.background = "#222";
+  input.style.color = "#fff";
+  container.appendChild(input);
+
+  // "Set PC" button
+  const btn = document.createElement("button");
+  btn.textContent = "Set PC";
+  btn.style.fontSize = "0.95em";
+  btn.style.padding = "2px 10px";
+  btn.style.border = "1px solid #888";
+  btn.style.borderRadius = "4px";
+  btn.style.background = "#444";
+  btn.style.color = "#fff";
+  btn.style.marginLeft = "2px";
+  btn.style.cursor = "pointer";
+  btn.onmouseenter = () => btn.style.background = "#666";
+  btn.onmouseleave = () => btn.style.background = "#444";
+
+  btn.onclick = () => {
+    let val = input.value.trim();
+    if (val.startsWith("0x")) val = val.slice(2);
+    const parsed = parseInt(val, 16);
+    if (!isNaN(parsed) && parsed >= 0 && parsed <= 0xFFFF) {
+      CPUregisters.PC = parsed;
+      input.style.borderColor = "#1f7";
+      setTimeout(() => { input.style.borderColor = "#888"; }, 600);
+    } else {
+      input.style.borderColor = "#f44";
+      setTimeout(() => { input.style.borderColor = "#888"; }, 800);
+    }
+  };
+  container.appendChild(btn);
+
+  prgromHeader.appendChild(container);
+}
+
+  // dynamic insertion, step box
+  let instructionSection = document.querySelector('.instruction-step');
+  instructionSection.innerHTML = ``;
+  let insertInstructionArea = document.createElement('table');
+  insertInstructionArea.className = 'GeneratedTable';
+  instructionSection.appendChild(insertInstructionArea);
+  insertInstructionArea.innerHTML = instructionStepTable;

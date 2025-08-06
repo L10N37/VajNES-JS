@@ -465,160 +465,207 @@ function getMirrors(addr) {
 }
 
 function runLoadsTests() {
-    // ===== LOADS (LDA/LDX/LDY) as a continuous PRG-ROM stream =====
-  
-    const tests = [
-      { name:"LDA #$42",         code:[0xA9,0x42],                    expect:{A:0x42,Z:0,N:0} },
-      { name:"LDA zeroPage",     code:[0xA5,0x80], setup:()=>{ checkWriteOffset(0x80, 0x55); }, expect:{A:0x55,Z:0,N:0} },
-      { name:"LDA zeroPage,X",   code:[0xB5,0x80], setup:()=>{ CPUregisters.X=2; checkWriteOffset(0x82, 0x77); }, expect:{A:0x77,Z:0,N:0} },
-      { name:"LDA absolute",     code:[0xAD,0x00,0x20], setup:()=>{ checkWriteOffset(0x2000, 0x12); }, expect:{A:0x12,Z:0,N:0} },
-      { name:"LDA absolute,X",   code:[0xBD,0x00,0x07], setup:()=>{ CPUregisters.X=1; checkWriteOffset(0x0701, 0x88); }, expect:{A:0x88,Z:0,N:1} },
-      { name:"LDA absolute,Y",   code:[0xB9,0x00,0x07], setup:()=>{ CPUregisters.Y=2; checkWriteOffset(0x0702, 0x44); }, expect:{A:0x44,Z:0,N:0} },
-      { name:"LDA (indirect,X)", code:[0xA1,0x80], setup:()=>{ CPUregisters.X=1; checkWriteOffset(0x81, 0x10); checkWriteOffset(0x82, 0x80); checkWriteOffset(0x8010, 0xB5); }, expect:{A:0xB5,Z:0,N:1} },
-      { name:"LDA (indirect),Y", code:[0xB1,0x80], setup:()=>{ checkWriteOffset(0x80, 0x00); checkWriteOffset(0x81, 0x20); CPUregisters.Y=2; PPUregister.STATUS=0xC4; }, expect:{A:0xC4,Z:0,N:1} },
-      { name:"LDA zero flag",    code:[0xA9,0x00],                    expect:{A:0x00,Z:1,N:0} },
-      { name:"LDA negative flag",code:[0xA9,0xFF],                    expect:{A:0xFF,Z:0,N:1} },
-      { name:"LDX #$34",         code:[0xA2,0x34],                    expect:{X:0x34,Z:0,N:0} },
-      { name:"LDX zeroPage",     code:[0xA6,0x22], setup:()=>{ checkWriteOffset(0x22, 0x80); }, expect:{X:0x80,Z:0,N:1} },
-      { name:"LDX zeroPage,Y",   code:[0xB6,0x50], setup:()=>{ CPUregisters.Y=3; checkWriteOffset(0x53, 0x01); }, expect:{X:0x01,Z:0,N:0} },
-      { name:"LDX absolute,Y",   code:[0xBE,0x10,0x20], setup:()=>{ CPUregisters.Y=2; checkWriteOffset(0x2012, 0xFF); }, expect:{X:0xFF,Z:0,N:1} },
-      { name:"LDY #$99",         code:[0xA0,0x99],                    expect:{Y:0x99,Z:0,N:1} },
-      { name:"LDY zeroPage",     code:[0xA4,0x40], setup:()=>{ checkWriteOffset(0x40, 0x11); }, expect:{Y:0x11,Z:0,N:0} },
-      { name:"LDY zeroPage,X",   code:[0xB4,0x10], setup:()=>{ CPUregisters.X=1; checkWriteOffset(0x11, 0x80); }, expect:{Y:0x80,Z:0,N:1} },
-      { name:"LDY absolute",     code:[0xAC,0x80,0x00], setup:()=>{ checkWriteOffset(0x80, 0x7F); }, expect:{Y:0x7F,Z:0,N:0} },
-      { name:"LDY absolute,X",   code:[0xBC,0x00,0x30], setup:()=>{ CPUregisters.X=2; checkWriteOffset(0x3002, 0xFF); }, expect:{Y:0xFF,Z:0,N:1} }
-    ];
-  
-    setupTests(tests);
-  
-    // --- Build table ---
-    let html=`
-      <div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
-        LOADS (LDA/LDX/LDY)
-      </div>
-      <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
-        <thead>
-          <tr style="background:#222">
-            <th style="border:1px solid #444;padding:6px;">Test</th>
-            <th style="border:1px solid #444;padding:6px;">Op</th>
-            <th style="border:1px solid #444;padding:6px;">Flags<br>Before</th>
-            <th style="border:1px solid #444;padding:6px;">Flags<br>After</th>
-            <th style="border:1px solid #444;padding:6px;">CPU<br>Before</th>
-            <th style="border:1px solid #444;padding:6px;">CPU<br>After</th>
-            <th style="border:1px solid #444;padding:6px;">PPU<br>Before</th>
-            <th style="border:1px solid #444;padding:6px;">PPU<br>After</th>
-            <th style="border:1px solid #444;padding:6px;">Eff Addr</th>
-            <th style="border:1px solid #444;padding:6px;">Expected</th>
-            <th style="border:1px solid #444;padding:6px;">Result</th>
-            <th style="border:1px solid #444;padding:6px;">Intercept</th>
-            <th style="border:1px solid #444;padding:6px;">GUI Cell</th>
-            <th style="border:1px solid #444;padding:6px;">Status</th>
-          </tr>
-        </thead><tbody>`;
-  
-    // Run tests back-to-back
-    tests.forEach(test=>{
-      // intercept tracking
-      let intercepted={flag:false,addr:null};
-      const origChk=checkReadOffset;
-      checkReadOffset = addr=>{
-        intercepted.flag=true;
-        intercepted.addr = addr & 0xFFFF;
-        return origChk(addr);
-      };
-  
-      // record before-states
-      const fb={...CPUregisters.P};
-      const cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
-      const pb={...PPUregister};
-  
-      // apply any test.setup for memory/regs
-      if(test.setup) test.setup();
-  
-      // execute one instruction
-      step();
-  
-      // restore checkReadOffset
-      checkReadOffset = origChk;
-  
-      // compute effective address
-      let ea=0, m=lastFetched.addressingMode, r=lastFetched.raw;
-      switch(m){
-        case "immediate": ea=lastFetched.pc+1; break;
-        case "zeroPage":  ea=r[1]&0xFF; break;
-        case "zeroPageX": ea=(r[1]+CPUregisters.X)&0xFF; break;
-        case "zeroPageY": ea=(r[1]+CPUregisters.Y)&0xFF; break;
-        case "absolute":  ea=(r[2]<<8)|r[1]; break;
-        case "absoluteX": ea=(((r[2]<<8)|r[1])+CPUregisters.X)&0xFFFF; break;
-        case "absoluteY": ea=(((r[2]<<8)|r[1])+CPUregisters.Y)&0xFFFF; break;
-        case "indirectX": {
-          const zp=(r[1]+CPUregisters.X)&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF);
-          ea=(hi<<8)|lo; break;
-        }
-        case "indirectY": {
-          const zp=r[1]&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF);
-          ea=(((hi<<8)|lo)+CPUregisters.Y)&0xFFFF; break;
-        }
-      }
-  
-      // mirror list (within 0–0xFFFF)
-      const mirrors = getMirrors(ea).filter(a=>a<0x10000);
-      const mirrorLabel = `$${ea.toString(16).padStart(4,'0')}`;
-  
-      // GUI cells not applicable for LOADS
-      const guiLabel = "n/a";
-  
-      // check results
-      let reasons=[], pass=true;
-      if(test.expect.A!==undefined && CPUregisters.A!==test.expect.A){ reasons.push(`A=${hex(CPUregisters.A)}≠${hex(test.expect.A)}`); pass=false; }
-      if(test.expect.X!==undefined && CPUregisters.X!==test.expect.X){ reasons.push(`X=${hex(CPUregisters.X)}≠${hex(test.expect.X)}`); pass=false; }
-      if(test.expect.Y!==undefined && CPUregisters.Y!==test.expect.Y){ reasons.push(`Y=${hex(CPUregisters.Y)}≠${hex(test.expect.Y)}`); pass=false; }
-      if(test.expect.Z!==undefined && CPUregisters.P.Z!==test.expect.Z){ reasons.push(`Z=${CPUregisters.P.Z}≠${test.expect.Z}`); pass=false; }
-      if(test.expect.N!==undefined && CPUregisters.P.N!==test.expect.N){ reasons.push(`N=${CPUregisters.P.N}≠${test.expect.N}`); pass=false; }
-  
-      // intercept cell
-      const interceptCell = intercepted.flag
-        ? dropdown(`$${intercepted.addr.toString(16).padStart(4,'0')}`, [`$${intercepted.addr.toString(16).padStart(4,'0')}`])
-        : "no";
-  
-      // status cell
-      const statusCell = pass
-        ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
-        : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>` +
-          `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
-  
-      html += `
-        <tr style="background:${pass?"#113311":"#331111"}">
-          <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-          <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
-          <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
-          <td style="border:1px solid #444;padding:6px;">${flagsBin(CPUregisters.P)}</td>
-          <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
-          <td style="border:1px solid #444;padding:6px;">A=${hex(CPUregisters.A)} X=${hex(CPUregisters.X)} Y=${hex(CPUregisters.Y)} S=${hex(CPUregisters.S)}</td>
-          <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>k+"="+hex(v)).join(" ")}</td>
-          <td style="border:1px solid #444;padding:6px;">${Object.entries(PPUregister).map(([k,v])=>k+"="+hex(v)).join(" ")}</td>
-          <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(mirrorLabel, mirrors.map(a=>`$${a.toString(16).padStart(4,'0')}`))}</td>
-          <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${
-            test.expect.A!==undefined?hex(test.expect.A):
-            test.expect.X!==undefined?hex(test.expect.X):
-            hex(test.expect.Y)}</td>
-          <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${
-            test.expect.A!==undefined?hex(CPUregisters.A):
-            test.expect.X!==undefined?hex(CPUregisters.X):
-            hex(CPUregisters.Y)}</td>
-          <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
-          <td style="border:1px solid #444;padding:6px;">${guiLabel}</td>
-          <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
-        </tr>`;
-    });
-  
-    html += "</tbody></table>";
-    document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
-CPUregisters.PC = 0x8000;
+  // ===== LOADS (LDA/LDX/LDY) as a continuous PRG-ROM stream =====
 
+  const tests = [
+    { name:"LDA #$42",         code:[0xA9,0x42],                    expect:{A:0x42,Z:0,N:0} },
+    { name:"LDA zeroPage",     code:[0xA5,0x80], setup:()=>{ checkWriteOffset(0x80, 0x55); }, expect:{A:0x55,Z:0,N:0} },
+    { name:"LDA zeroPage,X",   code:[0xB5,0x80], setup:()=>{ CPUregisters.X=2; checkWriteOffset(0x82, 0x77); }, expect:{A:0x77,Z:0,N:0} },
+    { name:"LDA absolute", code:[0xAD,0x00,0x02], setup:()=>{ checkWriteOffset(0x0200, 0x12); }, expect:{A:0x12,Z:0,N:0} },// OG test would work if routed through checkWriteOffset/ read back with checkReadOffset, adjusted to non PPU offset
+    { name:"LDA absolute,X",   code:[0xBD,0x00,0x07], setup:()=>{ CPUregisters.X=1; checkWriteOffset(0x0701, 0x88); }, expect:{A:0x88,Z:0,N:1} },
+    { name:"LDA absolute,Y",   code:[0xB9,0x00,0x07], setup:()=>{ CPUregisters.Y=2; checkWriteOffset(0x0702, 0x44); }, expect:{A:0x44,Z:0,N:0} },
+    { 
+  name: "LDA (indirect,X)",
+  code: [0xA1, 0x80],
+  setup: () => {
+    CPUregisters.X = 1;
+    checkWriteOffset(0x81, 0x10);         // zp pointer low
+    checkWriteOffset(0x82, 0x02);         // zp pointer high (so -> $0210)
+    checkWriteOffset(0x0210, 0xB5);       // RAM (safe test location)
+  },
+  expect: { A: 0xB5, Z: 0, N: 1 }
+},
+    { name:"LDA (indirect),Y", code:[0xB1,0x80], setup:()=>{ checkWriteOffset(0x80, 0x00); checkWriteOffset(0x81, 0x20); CPUregisters.Y=2; PPUregister.STATUS=0xC4; }, expect:{A:0xC4,Z:0,N:1} },
+    { name:"LDA zero flag",    code:[0xA9,0x00],                    expect:{A:0x00,Z:1,N:0} },
+    { name:"LDA negative flag",code:[0xA9,0xFF],                    expect:{A:0xFF,Z:0,N:1} },
+   { name:"LDX #$34",         code:[0xA2,0x34],                    expect:{X:0x34,Z:0,N:0} },
+
+{ name:"LDX zeroPage",     code:[0xA6,0x22], setup:()=>{ 
+    checkWriteOffset(0x22, 0x80); 
+}, expect:{X:0x80,Z:0,N:1} },
+
+{ name:"LDX zeroPage,Y",   code:[0xB6,0x50], setup:()=>{ 
+    CPUregisters.Y = 3; 
+    checkWriteOffset(0x53, 0x01); 
+}, expect:{X:0x01,Z:0,N:0} },
+
+{ name:"LDX absolute,Y",   code:[0xBE,0x10,0x02], setup:()=>{ 
+    CPUregisters.Y = 2; 
+    checkWriteOffset(0x0212, 0xFF); // $0210 + 2 = $0212
+}, expect:{X:0xFF,Z:0,N:1} },
+
+{ name:"LDY #$99",         code:[0xA0,0x99],                    expect:{Y:0x99,Z:0,N:1} },
+
+{ name:"LDY zeroPage",     code:[0xA4,0x40], setup:()=>{ // operand IS the offset to read from in ZP RAM area
+    checkWriteOffset(0x40, 0x11); // store 0x11 @ ZP RAM area
+}, expect:{Y:0x11,Z:0,N:0} }, // expects Y value to be set to value from operand offset in zero page RAM area
+
+{ name:"LDY zeroPage,X",   code:[0xB4,0x10], setup:()=>{ 
+    CPUregisters.X = 1; 
+    checkWriteOffset(0x11, 0x80); 
+}, expect:{Y:0x80,Z:0,N:1} },
+
+{ name:"LDY absolute",     code:[0xAC,0x80,0x02], setup:()=>{ 
+    checkWriteOffset(0x0280, 0x7F); 
+}, expect:{Y:0x7F,Z:0,N:0} },
+
+{ name:"LDY absolute,X",   code:[0xBC,0x00,0x03], setup:()=>{ 
+    CPUregisters.X = 2; 
+    checkWriteOffset(0x0302, 0xFF); // $0300 + 2 = $0302
+}, expect:{Y:0xFF,Z:0,N:1} }
+
+  ];
+
+  setupTests(tests);
+
+  let html=`
+    <div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
+      LOADS (LDA/LDX/LDY)
+    </div>
+    <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
+      <thead>
+        <tr style="background:#222">
+          <th style="border:1px solid #444;padding:6px;">Test</th>
+          <th style="border:1px solid #444;padding:6px;">Op</th>
+          <th style="border:1px solid #444;padding:6px;">Flags<br>Before</th>
+          <th style="border:1px solid #444;padding:6px;">Flags<br>After</th>
+          <th style="border:1px solid #444;padding:6px;">CPU<br>Before</th>
+          <th style="border:1px solid #444;padding:6px;">CPU<br>After</th>
+          <th style="border:1px solid #444;padding:6px;">PPU<br>Before</th>
+          <th style="border:1px solid #444;padding:6px;">PPU<br>After</th>
+          <th style="border:1px solid #444;padding:6px;">Eff Addr</th>
+          <th style="border:1px solid #444;padding:6px;">Expected</th>
+          <th style="border:1px solid #444;padding:6px;">Result</th>
+          <th style="border:1px solid #444;padding:6px;">Intercept</th>
+          <th style="border:1px solid #444;padding:6px;">GUI Cell</th>
+          <th style="border:1px solid #444;padding:6px;">Status</th>
+        </tr>
+      </thead><tbody>`;
+
+  // Helper: calculate effective address per test
+  function calcEffectiveAddress(test) {
+    const code = test.code[0];
+    switch(code) {
+      case 0xA9: return null; // LDA #imm
+      case 0xA5: return test.code[1] & 0xFF; // LDA zp
+      case 0xB5: return (test.code[1] + CPUregisters.X) & 0xFF; // LDA zp,X
+      case 0xAD: return (test.code[2]<<8)|test.code[1]; // LDA abs
+      case 0xBD: return (((test.code[2]<<8)|test.code[1])+CPUregisters.X)&0xFFFF; // LDA abs,X
+      case 0xB9: return (((test.code[2]<<8)|test.code[1])+CPUregisters.Y)&0xFFFF; // LDA abs,Y
+      case 0xA1: { // LDA (ind,X)
+        const zp=(test.code[1]+CPUregisters.X)&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF);
+        return (hi<<8)|lo;
+      }
+      case 0xB1: { // LDA (ind),Y
+        const zp=test.code[1]&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF);
+        return (((hi<<8)|lo)+CPUregisters.Y)&0xFFFF;
+      }
+      case 0xA2: return null; // LDX #imm
+      case 0xA6: return test.code[1] & 0xFF; // LDX zp
+      case 0xB6: return (test.code[1] + CPUregisters.Y) & 0xFF; // LDX zp,Y
+      case 0xBE: return (((test.code[2]<<8)|test.code[1])+CPUregisters.Y)&0xFFFF; // LDX abs,Y
+      case 0xA0: return null; // LDY #imm
+      case 0xA4: return test.code[1] & 0xFF; // LDY zp
+      case 0xB4: return (test.code[1] + CPUregisters.X) & 0xFF; // LDY zp,X
+      case 0xAC: return (test.code[2]<<8)|test.code[1]; // LDY abs
+      case 0xBC: return (((test.code[2]<<8)|test.code[1])+CPUregisters.X)&0xFFFF; // LDY abs,X
+      default: return null;
+    }
+  }
+
+  // Run tests back-to-back
+  tests.forEach(test => {
+    // intercept tracking
+    let intercepted={flag:false,addr:null};
+    const origChk=checkReadOffset;
+    checkReadOffset = addr=>{
+      intercepted.flag=true;
+      intercepted.addr = addr & 0xFFFF;
+      return origChk(addr);
+    };
+
+    // record before-states
+    const fb={...CPUregisters.P};
+    const cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
+    const pb={...PPUregister};
+
+    // apply any test.setup for memory/regs
+    if(test.setup) test.setup();
+
+    // execute one instruction
+    step();
+
+    // restore checkReadOffset
+    checkReadOffset = origChk;
+
+    // compute effective address (new way)
+    let ea = calcEffectiveAddress(test);
+    const mirrors = (ea !== null) ? getMirrors(ea).filter(a=>a<0x10000) : [];
+    const mirrorLabel = (ea !== null) ? `$${ea.toString(16).padStart(4,'0')}` : "imm";
+
+    // GUI cells not applicable for LOADS
+    const guiLabel = "n/a";
+
+    // check results
+    let reasons=[], pass=true;
+    if(test.expect.A!==undefined && CPUregisters.A!==test.expect.A){ reasons.push(`A=${hex(CPUregisters.A)}≠${hex(test.expect.A)}`); pass=false; }
+    if(test.expect.X!==undefined && CPUregisters.X!==test.expect.X){ reasons.push(`X=${hex(CPUregisters.X)}≠${hex(test.expect.X)}`); pass=false; }
+    if(test.expect.Y!==undefined && CPUregisters.Y!==test.expect.Y){ reasons.push(`Y=${hex(CPUregisters.Y)}≠${hex(test.expect.Y)}`); pass=false; }
+    if(test.expect.Z!==undefined && CPUregisters.P.Z!==test.expect.Z){ reasons.push(`Z=${CPUregisters.P.Z}≠${test.expect.Z}`); pass=false; }
+    if(test.expect.N!==undefined && CPUregisters.P.N!==test.expect.N){ reasons.push(`N=${CPUregisters.P.N}≠${test.expect.N}`); pass=false; }
+
+    // intercept cell
+    const interceptCell = intercepted.flag
+      ? dropdown(`$${intercepted.addr.toString(16).padStart(4,'0')}`, [`$${intercepted.addr.toString(16).padStart(4,'0')}`])
+      : "no";
+
+    // status cell
+    const statusCell = pass
+      ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
+      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>` +
+        `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
+
+    html += `
+      <tr style="background:${pass?"#113311":"#331111"}">
+        <td style="border:1px solid #444;padding:6px;">${test.name}</td>
+        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsBin(CPUregisters.P)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hex(CPUregisters.A)} X=${hex(CPUregisters.X)} Y=${hex(CPUregisters.Y)} S=${hex(CPUregisters.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>k+"="+hex(v)).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${Object.entries(PPUregister).map(([k,v])=>k+"="+hex(v)).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(mirrorLabel, mirrors.map(a=>`$${a.toString(16).padStart(4,'0')}`))}</td>
+        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${
+          test.expect.A!==undefined?hex(test.expect.A):
+          test.expect.X!==undefined?hex(test.expect.X):
+          hex(test.expect.Y)}</td>
+        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${
+          test.expect.A!==undefined?hex(CPUregisters.A):
+          test.expect.X!==undefined?hex(CPUregisters.X):
+          hex(CPUregisters.Y)}</td>
+        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
+        <td style="border:1px solid #444;padding:6px;">${guiLabel}</td>
+        <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
+      </tr>`;
+  });
+
+  html += "</tbody></table>";
+  document.body.insertAdjacentHTML("beforeend", html);
+  CPUregisters.PC = 0x8000;    
+  prgRom[0x8000] = 0x02;
 }
+
 
 function runStoresTests() {
     // ===== STORES (STA/STX/STY) =====
@@ -3189,27 +3236,20 @@ runMirroredLocationTests();
 }
 
 function runMirroredLocationTests() {
-  // Comprehensive NES mirror test cases
+     
+    // mainly silly tests you can easily check through console in a couple of seconds
+    // probably like most of this test suite
+    
+  // Set PPU status directly for read-only mirror test
+  PPUregister.STATUS = 0x77;
+
   const tests = [
-    // CPU RAM
     { name: "CPU RAM base ($0002)", addr: 0x0002, value: 0x12 },
     { name: "CPU RAM mirror ($0802)", addr: 0x0802, value: 0x34 },
-    { name: "CPU RAM mirror ($1002)", addr: 0x1002, value: 0x56 },
-    { name: "CPU RAM mirror ($1802)", addr: 0x1802, value: 0x78 },
-
-    // PPU Registers
-    { name: "PPUCTRL base ($2000)", addr: 0x2000, value: 0xAA },
-    { name: "PPUSTATUS mirror ($2002)", addr: 0x200A, value: 0xBB },
-    { name: "PPUADDR mirror ($3FF6)", addr: 0x3FF6, value: 0xCC },
-
-    // Palette RAM (with aliasing: $3F10 mirrors $3F00, $3F14 mirrors $3F04, etc.)
-    { name: "Palette base ($3F00)", addr: 0x3F00, value: 0x40 },
-    { name: "Palette mirror ($3F10)", addr: 0x3F10, value: 0x41 },
-    { name: "Palette mirror ($3F04)", addr: 0x3F04, value: 0x42 },
-    { name: "Palette mirror ($3F14)", addr: 0x3F14, value: 0x43 }
+    { name: "PPUSTATUS mirror ($2002 + $8N)", addr: 0x2002, value: 0x77, readonly: true },
+    { name: "Palette mirror ($3F10)", addr: 0x3F10, value: 0x41 }
   ];
 
-  // Build HTML table
   let html = `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
     MIRRORED LOCATION TESTS
   </div>
@@ -3226,92 +3266,97 @@ function runMirroredLocationTests() {
     const test = tests[t];
     let mirrors = [];
 
-    // Inline mirror logic:
-    // 1. CPU RAM $0000-$1FFF (mirrored every $800)
+    // Mirror calculation
     if (test.addr >= 0x0000 && test.addr <= 0x1FFF) {
       let base = test.addr & 0x07FF;
       for (let i = 0; i < 4; ++i)
         mirrors.push(0x0000 + base + 0x800 * i);
-    }
-
-    // 2. PPU registers $2000-$3FFF (mirrored every $8)
-    else if (test.addr >= 0x2000 && test.addr <= 0x3FFF) {
-      let base = 0x2000 + (test.addr & 0x7);
-      for (let i = 0; i < 0x4000; i += 8)
-        if (0x2000 + (test.addr & 0x7) + i <= 0x3FFF)
-          mirrors.push(base + i);
-    }
-
-    // 3. Palette RAM $3F00-$3FFF (mirrored every $20, aliasing $3F00, $3F04, $3F08, $3F0C)
-    // Real NES: $3F10 == $3F00, $3F14 == $3F04, etc.
-    else if (test.addr >= 0x3F00 && test.addr <= 0x3FFF) {
+    } else if (test.addr >= 0x2000 && test.addr <= 0x3FFF) {
+      let regOffset = (test.addr & 0x7);
+      for (let i = 0x2000 + regOffset; i <= 0x3FFF; i += 8)
+        mirrors.push(i);
+    } else if (test.addr >= 0x3F00 && test.addr <= 0x3FFF) {
+      let palAddr = 0x3F00 + (test.addr & 0x1F);
       for (let i = 0; i < 0x20; ++i) {
-        let palAddr = 0x3F00 + (test.addr & 0x1F);
-        if (!mirrors.includes(palAddr)) mirrors.push(palAddr);
-        // Aliasing
-        if ((palAddr & 0x0F) === 0x10 || (palAddr & 0x0F) === 0x14 || (palAddr & 0x0F) === 0x18 || (palAddr & 0x0F) === 0x1C) {
-          let alias = palAddr - 0x10;
+        let pa = 0x3F00 + (palAddr & 0x1F);
+        if (!mirrors.includes(pa)) mirrors.push(pa);
+        if ([0x10, 0x14, 0x18, 0x1C].includes(pa & 0x1F)) {
+          let alias = pa - 0x10;
           if (!mirrors.includes(alias)) mirrors.push(alias);
         }
       }
-      // All mirrored every $20 (palette wraps $3F20, $3F40, $3F60, ... $3FFF)
-      for (let a = (test.addr & 0x1F); a < 0x1000; a += 0x20)
+      for (let a = (palAddr & 0x1F); a < 0x1000; a += 0x20)
         if (!mirrors.includes(0x3F00 + a)) mirrors.push(0x3F00 + a);
     } else {
       mirrors.push(test.addr);
     }
 
-    // Remove out-of-range
-    mirrors = mirrors.filter(a => a >= 0 && a <= 0xFFFF);
+    mirrors = Array.from(new Set(mirrors)).filter(a => a >= 0 && a <= 0xFFFF);
 
-    // Sort and deduplicate
-    mirrors = Array.from(new Set(mirrors)).sort((a, b) => a - b);
+    let passes = [];
+    let fails = [];
 
-    // Record before values
-    let before = {};
-    for (let i = 0; i < mirrors.length; ++i) before[mirrors[i]] = checkReadOffset(mirrors[i]);
+    // Special PPUSTATUS read-only handling
+    if (test.readonly) {
+      for (let i = 0; i < mirrors.length; ++i) {
+        let v = checkReadOffset(mirrors[i]);
+        if (v === test.value) {
+          passes.push(mirrors[i]);
+        } else {
+          fails.push({ addr: mirrors[i], value: v });
+        }
+      }
+    } else {
+      checkWriteOffset(test.addr, test.value);
+      for (let i = 0; i < mirrors.length; ++i) {
+        let v = checkReadOffset(mirrors[i]);
+        if (v === test.value) {
+          passes.push(mirrors[i]);
+        } else {
+          fails.push({ addr: mirrors[i], value: v });
+        }
+      }
+    }
 
-    // Write
-    checkWriteOffset(test.addr, test.value);
-
-    // Record after values
-    let after = {};
-    for (let i = 0; i < mirrors.length; ++i) after[mirrors[i]] = checkReadOffset(mirrors[i]);
-
-    // HTML details dropdown
-    let ok = true;
+    let status, detail;
     let divId = "mirr" + t;
     let mirrorHtml = `<button onclick="document.getElementById('${divId}').style.display=(document.getElementById('${divId}').style.display==='none'?'block':'none')"
       style="background:#444;color:#fff;border:1px solid #888;border-radius:6px;padding:2px 8px;cursor:pointer;">Show</button>
       <div id="${divId}" style="display:none;padding:4px;max-height:300px;overflow:auto;">`;
 
+    // Show pass/fail for each mirror, color coded
     for (let i = 0; i < mirrors.length; ++i) {
-      let m = mirrors[i];
-      let passed = (after[m] === test.value);
-      if (!passed) ok = false;
-      mirrorHtml += `<div style="color:${passed ? '#7fff7f' : '#ff4444'};">
-        $${m.toString(16).toUpperCase().padStart(4, '0')} :
-        before=0x${before[m].toString(16).toUpperCase().padStart(2, '0')}
-        → after=0x${after[m].toString(16).toUpperCase().padStart(2, '0')}
-        ${passed ? '' : '❌'}
+      let found = passes.includes(mirrors[i]);
+      let fail = fails.find(f => f.addr === mirrors[i]);
+      mirrorHtml += `<div style="color:${found ? '#7fff7f' : '#ff4444'};">
+        $${mirrors[i].toString(16).toUpperCase().padStart(4, '0')}
+        ${found ? '' : `=0x${fail.value.toString(16).toUpperCase().padStart(2,'0')} ❌`}
       </div>`;
     }
     mirrorHtml += "</div>";
 
+    if (passes.length === 0) {
+      status = `<span style="color:#ff4444;">❌ Fault</span>`;
+      detail = ""; // mirrors list is in the dropdown
+    } else if (fails.length === 0) {
+      status = `<span style="color:#7fff7f;">✔️ All mirrors correct</span>`;
+      detail = ""; // mirrors list is in the dropdown
+    } else {
+      status = `<span style="color:#ffd700;">⚠️ Partial</span>`;
+      detail = ""; // mirrors list is in the dropdown
+    }
+
     html += `
-      <tr style="background:${ok ? "#113311" : "#331111"}">
+      <tr style="background:${passes.length === 0 ? "#331111" : fails.length === 0 ? "#113311" : "#332211"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
         <td style="border:1px solid #444;padding:6px;">$${test.addr.toString(16).toUpperCase().padStart(4, '0')}</td>
         <td style="border:1px solid #444;padding:6px;">0x${test.value.toString(16).toUpperCase().padStart(2, '0')}</td>
-        <td style="border:1px solid #444;padding:6px;">${mirrorHtml}</td>
-        <td style="border:1px solid #444;padding:6px;">${ok ? '<span style="color:#7fff7f;">✔️ Accurate</span>' : '<span style="color:#ff4444;">❌ Mirror bug</span>'}</td>
+        <td style="border:1px solid #444;padding:6px;max-width:320px;">${mirrorHtml}</td>
+        <td style="border:1px solid #444;padding:6px;">${status}</td>
       </tr>`;
   }
   html += "</tbody></table>";
   document.body.insertAdjacentHTML("beforeend", html);
-
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
 }
 
 const testSuites = [

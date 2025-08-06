@@ -11,9 +11,8 @@ let prgRam = new Uint8Array(0x2000); // Typical size, mapper may change this
 prgRam.fill(0x00);
 
 // PRG-ROM (32KB banked window, always $8000–$FFFF)
-// 1MB array, maximum size, to copy loadedROM variable across to. 1MB for down the track when adding mapper support
-//let prgRom = new Uint8Array;
-//prgRom.fill(0x00);
+let prgRom = new Uint8Array (32 * 1024);
+prgRom.fill(0x00);
 
 // Last value placed on the CPU bus ("open bus" behavior)
 let cpuOpenBus = 0x00;
