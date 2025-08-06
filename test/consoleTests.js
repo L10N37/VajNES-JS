@@ -545,136 +545,6 @@ function runLoadsTests() {
 function hex(v, len=2) { return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
 
 
-function runStoresTests() {
-    // ===== STORES (STA/STX/STY) =====
-
-  const tests = [
-    { name: "STA zeroPage",         code: [0x85, 0x80],              setup: () => { CPUregisters.A = 0x99; },   expectMem: { addr: 0x0080, value: 0x99 } },
-    { name: "STA zeroPage,X (wrap)",code: [0x95, 0xFF],              setup: () => { CPUregisters.X = 1; CPUregisters.A = 0x42; }, expectMem: { addr: 0x0000, value: 0x42 } },
-    { name: "STA absolute",         code: [0x8D, 0x34, 0x12],       setup: () => { CPUregisters.A = 0x56; },   expectMem: { addr: 0x1234, value: 0x56 } },
-    { name: "STA absolute,X",       code: [0x9D, 0x00, 0x07],       setup: () => { CPUregisters.X = 2; CPUregisters.A = 0xAB; }, expectMem: { addr: 0x0702, value: 0xAB } },
-    { name: "STA absolute,Y",       code: [0x99, 0x00, 0x07],       setup: () => { CPUregisters.Y = 3; CPUregisters.A = 0xFE; }, expectMem: { addr: 0x0703, value: 0xFE } },
-    { name: "STX zeroPage",         code: [0x86, 0x30],              setup: () => { CPUregisters.X = 0x55; },   expectMem: { addr: 0x0030, value: 0x55 } },
-    { name: "STX zeroPage,Y",       code: [0x96, 0x40],              setup: () => { CPUregisters.X = 0xAA; CPUregisters.Y = 2; }, expectMem: { addr: 0x0042, value: 0xAA } },
-    { name: "STX absolute",         code: [0x8E, 0x12, 0x34],       setup: () => { CPUregisters.X = 0x77; },   expectMem: { addr: 0x3412, value: 0x77 } },
-    { name: "STY zeroPage",         code: [0x84, 0x50],              setup: () => { CPUregisters.Y = 0x44; },   expectMem: { addr: 0x0050, value: 0x44 } },
-    { name: "STY zeroPage,X",       code: [0x94, 0x60],              setup: () => { CPUregisters.Y = 0x88; CPUregisters.X = 3; }, expectMem: { addr: 0x0063, value: 0x88 } },
-    { name: "STY absolute",         code: [0x8C, 0xAB, 0xCD],       setup: () => { CPUregisters.Y = 0x99; },   expectMem: { addr: 0xCDAB, value: 0x99 } }
-  ];
-
-  // clear WRAM & PPU space, reset regs
-  for(let a=0;a<0x4000;a++) checkWriteOffset(a, 0);
-  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
-  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  if(typeof PPUregister==='object') Object.keys(PPUregister).forEach(k=>PPUregister[k]=0);
-
-  // hardcode for running opcodes from 0x8000
-  CPUregisters.PC = 0x8000;
-
-  // lay out store opcodes sequentially into PRG-ROM
-  let seqOffset=0;
-  tests.forEach(t=>{
-    t.code.forEach(b=>{
-      checkWriteOffset(0x8000+seqOffset, b);
-      checkWriteOffset(0xC000+seqOffset, b);
-      seqOffset++;
-    });
-  });
-
-  // build HTML table
-  let html=`
-    <div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
-      STORES (STA/STX/STY)
-    </div>
-    <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
-      <thead><tr style="background:#222">
-        <th style="border:1px solid #444;padding:6px;">Test</th>
-        <th style="border:1px solid #444;padding:6px;">Op</th>
-        <th style="border:1px solid #444;padding:6px;">Flags<br>Before</th>
-        <th style="border:1px solid #444;padding:6px;">Flags<br>After</th>
-        <th style="border:1px solid #444;padding:6px;">CPU<br>Before</th>
-        <th style="border:1px solid #444;padding:6px;">CPU<br>After</th>
-        <th style="border:1px solid #444;padding:6px;">PPU<br>Before</th>
-        <th style="border:1px solid #444;padding:6px;">PPU<br>After</th>
-        <th style="border:1px solid #444;padding:6px;">Eff Addr</th>
-        <th style="border:1px solid #444;padding:6px;">Expected</th>
-        <th style="border:1px solid #444;padding:6px;">Result</th>
-        <th style="border:1px solid #444;padding:6px;">Intercept</th>
-        <th style="border:1px solid #444;padding:6px;">GUI Cell</th>
-        <th style="border:1px solid #444;padding:6px;">Status</th>
-      </tr></thead><tbody>`;
-
-  tests.forEach(test=>{
-    // intercept writes? for now always "no"
-    const interceptCell = "no";
-    const guiCell = "n/a";
-
-    // record before state
-    const fb = {...CPUregisters.P};
-    const cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
-    const pb = {...PPUregister};
-
-    if(test.setup) test.setup();
-
-    // execute
-    step();
-
-    // effective address
-    const r = lastFetched.raw, m = lastFetched.addressingMode;
-    let ea = 0;
-    switch(m){
-      case "zeroPage":    ea = r[1]&0xFF; break;
-      case "zeroPageX":   ea = (r[1]+CPUregisters.X)&0xFF; break;
-      case "zeroPageY":   ea = (r[1]+CPUregisters.Y)&0xFF; break;
-      case "absolute":    ea = (r[2]<<8)|r[1]; break;
-      case "absoluteX":   ea = (((r[2]<<8)|r[1])+CPUregisters.X)&0xFFFF; break;
-      case "absoluteY":   ea = (((r[2]<<8)|r[1])+CPUregisters.Y)&0xFFFF; break;
-    }
-    const mirrors = getMirrors(ea).filter(a=>a<0x10000);
-    const addrLabel = dropdown(`$${ea.toString(16).padStart(4,'0')}`, mirrors.map(a=>`$${a.toString(16).padStart(4,'0')}`));
-
-    // check memory
-    let reasons = [], pass = true;
-    mirrors.forEach(a => {
-      const got = [a];
-      if (got !== test.expectMem.value) {
-        reasons.push(`$${a.toString(16).padStart(4,'0')}=${hex(got)}≠${hex(test.expectMem.value)}`);
-        pass = false;
-      }
-    });
-
-    const expectedLabel = hex(test.expectMem.value);
-    const resultLabel   = hex([ea]);
-
-    const statusCell = pass
-      ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
-      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>` +
-        `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
-
-    html += `
-      <tr style="background:${pass?"#113311":"#331111"}">
-        <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(CPUregisters.P)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(CPUregisters.A)} X=${hex(CPUregisters.X)} Y=${hex(CPUregisters.Y)} S=${hex(CPUregisters.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>k+"="+hex(v)).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(PPUregister).map(([k,v])=>k+"="+hex(v)).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${addrLabel}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
-        <td style="border:1px solid #444;padding:6px;">${guiCell}</td>
-        <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
-      </tr>`;
-  });
-
-  html += `</tbody></table>`;
-  document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
- }
 
 function runRegisterTransfersAndFlagsTest() { 
   // ===== REGISTER TRANSFERS & FLAGS =====
@@ -3115,6 +2985,114 @@ function runMirroredLocationTests() {
   }
   html += "</tbody></table>";
   document.body.insertAdjacentHTML("beforeend", html);
+}
+
+function runStoresTests() {
+  // ===== STORES (STA/STX/STY) =====
+  const tests = [
+    { name: "STA zeroPage",         code: [0x85, 0x80],              setup: () => { CPUregisters.A = 0x99; },   expectMem: { addr: 0x0080, value: 0x99 } },
+    { name: "STA zeroPage,X (wrap)",code: [0x95, 0xFF],              setup: () => { CPUregisters.X = 1; CPUregisters.A = 0x42; }, expectMem: { addr: 0x0000, value: 0x42 } },
+    { name: "STA absolute",         code: [0x8D, 0x34, 0x12],        setup: () => { CPUregisters.A = 0x56; },   expectMem: { addr: 0x1234, value: 0x56 } },
+    { name: "STA absolute,X",       code: [0x9D, 0x00, 0x07],        setup: () => { CPUregisters.X = 2; CPUregisters.A = 0xAB; }, expectMem: { addr: 0x0702, value: 0xAB } },
+    { name: "STA absolute,Y",       code: [0x99, 0x00, 0x07],        setup: () => { CPUregisters.Y = 3; CPUregisters.A = 0xFE; }, expectMem: { addr: 0x0703, value: 0xFE } },
+    { name: "STX zeroPage",         code: [0x86, 0x30],              setup: () => { CPUregisters.X = 0x55; },   expectMem: { addr: 0x0030, value: 0x55 } },
+    { name: "STX zeroPage,Y",       code: [0x96, 0x40],              setup: () => { CPUregisters.X = 0xAA; CPUregisters.Y = 2; }, expectMem: { addr: 0x0042, value: 0xAA } },
+    { name: "STX absolute",         code: [0x8E, 0x12, 0x34],        setup: () => { CPUregisters.X = 0x77; },   expectMem: { addr: 0x3412, value: 0x77 } },
+    { name: "STY zeroPage",         code: [0x84, 0x50],              setup: () => { CPUregisters.Y = 0x44; },   expectMem: { addr: 0x0050, value: 0x44 } },
+    { name: "STY zeroPage,X",       code: [0x94, 0x60],              setup: () => { CPUregisters.Y = 0x88; CPUregisters.X = 3; }, expectMem: { addr: 0x0063, value: 0x88 } },
+    { name: "STY absolute",         code: [0x8C, 0xAB, 0xCD],        setup: () => { CPUregisters.Y = 0x99; },   expectMem: { addr: 0xCDAB, value: 0x99 } }
+  ];
+
+  // Clear RAM and reset regs
+  for(let a=0; a<0x4000; a++) checkWriteOffset(a, 0);
+  CPUregisters.A=0; CPUregisters.X=0; CPUregisters.Y=0; CPUregisters.S=0xFF;
+  CPUregisters.P={C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
+
+  // Lay out all store opcodes sequentially into PRG-ROM
+  CPUregisters.PC = 0x8000;
+  let seqOffset = 0;
+  tests.forEach(t => t.code.forEach(b => { checkWriteOffset(0x8000+seqOffset, b); seqOffset++; }));
+
+  let html = `
+    <div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
+      STORES (STA/STX/STY)
+    </div>
+    <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
+      <thead><tr style="background:#222">
+        <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
+        <th>CPU<br>Before</th><th>CPU<br>After</th>
+        <th>Effective Addr</th><th>Expected</th><th>Result</th><th>Mirrors</th><th>Status</th>
+      </tr></thead><tbody>`;
+
+  // Helper to compute effective store address
+  function calcEffectiveAddress(test) {
+    const c = test.code, op = c[0];
+    switch(op) {
+      case 0x85: return c[1] & 0xFF;                        // STA zp
+      case 0x95: return (c[1] + CPUregisters.X) & 0xFF;     // STA zp,X
+      case 0x8D: return (c[2]<<8) | c[1];                   // STA abs
+      case 0x9D: return (((c[2]<<8) | c[1]) + CPUregisters.X) & 0xFFFF; // STA abs,X
+      case 0x99: return (((c[2]<<8) | c[1]) + CPUregisters.Y) & 0xFFFF; // STA abs,Y
+      case 0x86: return c[1] & 0xFF;                        // STX zp
+      case 0x96: return (c[1] + CPUregisters.Y) & 0xFF;     // STX zp,Y
+      case 0x8E: return (c[2]<<8) | c[1];                   // STX abs
+      case 0x84: return c[1] & 0xFF;                        // STY zp
+      case 0x94: return (c[1] + CPUregisters.X) & 0xFF;     // STY zp,X
+      case 0x8C: return (c[2]<<8) | c[1];                   // STY abs
+      default: return 0;
+    }
+  }
+
+  // Test runner
+  tests.forEach(test => {
+    // Record before
+    const fb = {...CPUregisters.P};
+    const cb = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
+
+    if(test.setup) test.setup();
+
+    step();
+
+    const fa = {...CPUregisters.P};
+    const ca = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
+
+    const effAddr = calcEffectiveAddress(test);
+    const mirrors = getMirrors(effAddr).filter(a=>a<0x10000);
+
+    // Check all mirrors
+    let reasons = [], pass = true;
+    let mirrorLabels = mirrors.map(addr => {
+      const val = checkReadOffset(addr);
+      const isOk = val === test.expectMem.value;
+      if (!isOk) { reasons.push(`$${addr.toString(16).padStart(4,'0')}=${hex(val)}≠${hex(test.expectMem.value)}`); pass = false; }
+      return `<span style="color:${isOk ? '#7fff7f' : '#ff4444'};">$${addr.toString(16).padStart(4,'0')}=${hex(val)}</span>`;
+    }).join(" ");
+
+    const statusCell = pass
+      ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
+      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>` +
+        `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
+
+    html += `
+      <tr style="background:${pass?"#113311":"#331111"}">
+        <td style="border:1px solid #444;padding:6px;">${test.name}</td>
+        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">$${effAddr.toString(16).padStart(4,'0')}</td>
+        <td style="border:1px solid #444;padding:6px;">${hex(test.expectMem.value)}</td>
+        <td style="border:1px solid #444;padding:6px;">${hex(checkReadOffset(effAddr))}</td>
+        <td style="border:1px solid #444;padding:6px;">${mirrorLabels}</td>
+        <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
+      </tr>`;
+  });
+
+  html += `</tbody></table>`;
+  document.body.insertAdjacentHTML("beforeend", html);
+  CPUregisters.PC = 0x8000;
+  prgRom[0x00] = 0x02;
 }
 
 const testSuites = [
