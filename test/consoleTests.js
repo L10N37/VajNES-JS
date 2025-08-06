@@ -676,8 +676,8 @@ CPUregisters.PC = 0x8000;
 prgRom[CPUregisters.PC - 0x8000] = 0x02;
  }
 
- function runRegisterTransfersAndFlagsTest() { 
-// ===== REGISTER TRANSFERS & FLAGS =====
+function runRegisterTransfersAndFlagsTest() { 
+  // ===== REGISTER TRANSFERS & FLAGS =====
   const tests = [
     // Register transfers
     { name: "TAX", code: [0xAA], pre: { A: 0x66, X: 0x11 }, expect: { X: 0x66, Z: 0, N: 0 } },
@@ -687,44 +687,38 @@ prgRom[CPUregisters.PC - 0x8000] = 0x02;
     { name: "TSX", code: [0xBA], pre: { S: 0x55, X: 0x11 }, expect: { X: 0x55 } },
     { name: "TXS", code: [0x9A], pre: { X: 0xCD, S: 0x99 }, expect: { S: 0xCD } },
     // Flag operations
-    { name: "CLC", code: [0x18], expectP: { C: 0 } },
-    { name: "SEC", code: [0x38], expectP: { C: 1 } },
-    { name: "CLI", code: [0x58], expectP: { I: 0 } },
-    { name: "SEI", code: [0x78], expectP: { I: 1 } },
-    { name: "CLV", code: [0xB8], expectP: { V: 0 } },
-    { name: "CLD", code: [0xD8], expectP: { D: 0 } },
-    { name: "SED", code: [0xF8], expectP: { D: 1 } }
+    { name: "CLC", code: [0x18], pre: { P: { C: 1 } }, expectP: { C: 0 } },
+    { name: "SEC", code: [0x38], pre: { P: { C: 0 } }, expectP: { C: 1 } },
+    { name: "CLI", code: [0x58], pre: { P: { I: 1 } }, expectP: { I: 0 } },
+    { name: "SEI", code: [0x78], pre: { P: { I: 0 } }, expectP: { I: 1 } },
+    { name: "CLV", code: [0xB8], pre: { P: { V: 1 } }, expectP: { V: 0 } },
+    { name: "CLD", code: [0xD8], pre: { P: { D: 1 } }, expectP: { D: 0 } },
+    { name: "SED", code: [0xF8], pre: { P: { D: 0 } }, expectP: { D: 1 } }
   ];
 
   setupTests(tests);
 
-  // Build HTML
   let html = `
     <div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
       REGISTER TRANSFERS & FLAGS
     </div>
     <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
       <thead><tr style="background:#222">
-        <th style="border:1px solid #444;padding:6px;">Test</th>
-        <th style="border:1px solid #444;padding:6px;">Op</th>
-        <th style="border:1px solid #444;padding:6px;">Flags<br>Before</th>
-        <th style="border:1px solid #444;padding:6px;">Flags<br>After</th>
-        <th style="border:1px solid #444;padding:6px;">CPU<br>Before</th>
-        <th style="border:1px solid #444;padding:6px;">CPU<br>After</th>
-        <th style="border:1px solid #444;padding:6px;">PPU<br>Before</th>
-        <th style="border:1px solid #444;padding:6px;">PPU<br>After</th>
-        <th style="border:1px solid #444;padding:6px;">Intercept</th>
-        <th style="border:1px solid #444;padding:6px;">GUI Cell</th>
-        <th style="border:1px solid #444;padding:6px;">Status</th>
+        <th>Test</th>
+        <th>Op</th>
+        <th>Flags<br>Before</th>
+        <th>Flags<br>After</th>
+        <th>CPU<br>Before</th>
+        <th>CPU<br>After</th>
+        <th>Status</th>
       </tr></thead><tbody>`;
 
   tests.forEach(test => {
     // record before-state
     const fb = { ...CPUregisters.P };
     const cb = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
-    const pb = { ...PPUregister };
 
-    // apply any setup
+    // pre-setup
     if (test.pre) {
       if (test.pre.A !== undefined) CPUregisters.A = test.pre.A;
       if (test.pre.X !== undefined) CPUregisters.X = test.pre.X;
@@ -733,44 +727,32 @@ prgRom[CPUregisters.PC - 0x8000] = 0x02;
       if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
 
-    // execute
     step();
 
-    // record after-state
+    // after-state
     const fa = { ...CPUregisters.P };
     const ca = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
-    const pa = { ...PPUregister };
 
-    // check results
+    // check
     let reasons = [], pass = true;
     const exp = test.expect || {};
-    // registers
-    ["A","X","Y","S"].forEach(r => {
+    ["A", "X", "Y", "S"].forEach(r => {
       if (exp[r] !== undefined && ca[r] !== exp[r]) {
-        reasons.push(`${r}=${hex(ca[r])}≠${hex(exp[r])}`);
-        pass = false;
+        reasons.push(`${r}=${hex(ca[r])}≠${hex(exp[r])}`); pass = false;
       }
     });
-
-      // flags
-      if (exp.Z !== undefined && CPUregisters.P.Z !== exp.Z) {
-        reasons.push(`Z=${CPUregisters.P.Z}≠${exp.Z}`);
-        pass = false;
+    if (exp.Z !== undefined && CPUregisters.P.Z !== exp.Z) {
+      reasons.push(`Z=${CPUregisters.P.Z}≠${exp.Z}`); pass = false;
+    }
+    if (exp.N !== undefined && CPUregisters.P.N !== exp.N) {
+      reasons.push(`N=${CPUregisters.P.N}≠${exp.N}`); pass = false;
+    }
+    const expP = test.expectP || {};
+    for (const k in expP) {
+      if (CPUregisters.P[k] !== expP[k]) {
+        reasons.push(`${k}=${CPUregisters.P[k]}≠${expP[k]}`); pass = false;
       }
-      if (exp.N !== undefined && CPUregisters.P.N !== exp.N) {
-        reasons.push(`N=${CPUregisters.P.N}≠${exp.N}`);
-        pass = false;
-      }
-
-      // explicit flag expectations (expectP)
-      const expP = test.expectP || {};
-      for (const k in expP) {
-        if (CPUregisters.P[k] !== expP[k]) {
-          reasons.push(`${k}=${CPUregisters.P[k]}≠${expP[k]}`);
-          pass = false;
-        }
-      }
-
+    }
 
     const statusCell = pass
       ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
@@ -778,26 +760,23 @@ prgRom[CPUregisters.PC - 0x8000] = 0x02;
         `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
 
     html += `
-      <tr style="background:${pass?"#113311":"#331111"}">
+      <tr style="background:${pass ? "#113311" : "#331111"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
         <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">no</td>
-        <td style="border:1px solid #444;padding:6px;">n/a</td>
         <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
-  }
+  CPUregisters.PC = 0x8000;    
+  prgRom[CPUregisters.PC - 0x8000] = 0x02;
+}
+
 
   function runAluAndLogicOpsTests(){
       // ===== ALU & LOGIC OPS (ADC, SBC, INC, DEC, AND, ORA, EOR, BIT) =====
@@ -1257,10 +1236,10 @@ function runRegisterTransfersAndFlagsTestTwo() {
     { name:"CLC",         code:[0x18], pre:{P:{C:1}},           expect:{C:0} },
     { name:"SEC",         code:[0x38], pre:{P:{C:0}},           expect:{C:1} },
     { name:"CLV",         code:[0xB8], pre:{P:{V:1}},           expect:{V:0} },
-    { name:"CLI",         code:[0x58], pre:{P:{I:1}},           /* no expect */ },
-    { name:"SEI",         code:[0x78], pre:{P:{I:0}},           /* no expect */ },
-    { name:"CLD",         code:[0xD8], pre:{P:{D:1}},           /* no expect */ },
-    { name:"SED",         code:[0xF8], pre:{P:{D:0}},           /* no expect */ }
+    { name:"CLI",         code:[0x58], pre:{P:{I:1}},           expect:{I:0} },
+    { name:"SEI",         code:[0x78], pre:{P:{I:0}},           expect:{I:1} },
+    { name:"CLD",         code:[0xD8], pre:{P:{D:1}},           expect:{D:0} },
+    { name:"SED",         code:[0xF8], pre:{P:{D:0}},           expect:{D:1} }
   ];
 
   setupTests(tests);
@@ -1277,7 +1256,6 @@ function runRegisterTransfersAndFlagsTestTwo() {
        </tr></thead><tbody>`;
 
   tests.forEach(test => {
-    // No intercept/cell/PPU/GUI fields - cleaner!
     const fb = {...CPUregisters.P};
     const cb = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
 
@@ -1297,12 +1275,17 @@ function runRegisterTransfersAndFlagsTestTwo() {
     const ca = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
 
     let reasons = [], pass = true, exp = test.expect || {};
-    if(test.expect){
-      ["A","X","Y","S"].forEach(rn=>{
-        if(exp[rn]!=null && ca[rn]!==exp[rn]){ reasons.push(`${rn}=${hex(ca[rn])}≠${hex(exp[rn])}`); pass=false; }
+    if (test.expect) {
+      ["A","X","Y","S"].forEach(rn => {
+        if (exp[rn]!=null && ca[rn]!==exp[rn]) {
+          reasons.push(`${rn}=${hex(ca[rn])}≠${hex(exp[rn])}`); pass=false;
+        }
       });
-      ["C","Z","N","V"].forEach(fn=>{
-        if(exp[fn]!=null && CPUregisters.P[fn]!==exp[fn]){ reasons.push(`${fn}=${CPUregisters.P[fn]}≠${exp[fn]}`); pass=false; }
+      // Flag bits (any in expect)
+      ["C","Z","N","V","I","D"].forEach(fn => {
+        if (exp[fn]!=null && CPUregisters.P[fn]!==exp[fn]) {
+          reasons.push(`${fn}=${CPUregisters.P[fn]}≠${exp[fn]}`); pass=false;
+        }
       });
     }
 
@@ -1336,7 +1319,7 @@ function runRegisterTransfersAndFlagsTestTwo() {
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-  CPUregisters.PC = 0x8000;    
+  CPUregisters.PC = 0x8000;
   prgRom[0x00] = 0x02;
 }
 
