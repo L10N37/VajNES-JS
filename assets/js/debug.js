@@ -61,8 +61,6 @@ function step() {
 console.log("instr:", `0x${code.toString(16).toUpperCase()}`);
 console.log(`PC=> 0x${pc.toString(16).toUpperCase().padStart(4, "0")}`);
 
-   //updateDebugTables(); // ok for stepping only
-   
   // Execute instruction
   execFn();
 

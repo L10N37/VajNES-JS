@@ -1417,7 +1417,7 @@ function LDY_IMM() {
 }
 
 function LDY_ZP() {
-  const address = prgRom[CPUregisters.PC + 1];
+  const address = prgRom[CPUregisters.PC + 1 - 0x8000];
   const value = systemMemory[address & 0xFF];
   CPUregisters.Y = value;
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
@@ -1433,15 +1433,13 @@ function LDY_ZPX() {
 }
 
 function LDY_ABS() {
-  const lo = systemMemory[CPUregisters.PC + 1];
-  const hi = systemMemory[CPUregisters.PC + 2];
+  const lo = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const hi = prgRom[CPUregisters.PC + 2 - 0x8000];
   const address = (hi << 8) | lo;
   const value = systemMemory[address];
   CPUregisters.Y = value;
-
-  CPUregisters.STATUS = (CPUregisters.STATUS & 0x7D) |
-                        (value === 0 ? 0x02 : 0x00) |
-                        (value & 0x80);
+  CPUregisters.P.Z = (value === 0) ? 1 : 0;
+  CPUregisters.P.N = (value & 0x80) ? 1 : 0;
 }
 
 function LDY_ABSX() {
