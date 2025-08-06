@@ -1139,7 +1139,18 @@ function runLoadsOpsTests() {
     { name:"LDA absolute,X",      code:[0xBD,0x00,0x02], pre:{X:0x01}, setup:()=>{ checkWriteOffset(0x0201, 0x44); }, expect:{A:0x44,Z:0,N:0} },
     { name:"LDA absolute,Y",      code:[0xB9,0x00,0x02], pre:{Y:0x02}, setup:()=>{ checkWriteOffset(0x0202, 0x88); }, expect:{A:0x88,Z:0,N:1} },
     { name:"LDA (indirect,X)",    code:[0xA1,0x0F], pre:{X:0x01}, setup:()=>{ checkWriteOffset(0x10,0x34); checkWriteOffset(0x11,0x12); checkWriteOffset(0x1234,0x77); }, expect:{A:0x77,Z:0,N:0} },
-    { name:"LDA (indirect),Y",    code:[0xB1,0x20], pre:{Y:0x02}, setup:()=>{ checkWriteOffset(0x20,0x00); checkWriteOffset(0x21,0x80); checkWriteOffset(0x0202,0x66); }, expect:{A:0x66,Z:0,N:0} },
+
+    { 
+  name: "LDA (indirect),Y",
+  code: [0xB1, 0x20],
+  pre: { Y: 0x02 },
+  setup: () => {
+    checkWriteOffset(0x20, 0x00);  // low byte
+    checkWriteOffset(0x21, 0x80);  // high byte
+    checkWriteOffset(0x8002, 0x66); 
+  },
+  expect: { A: 0x66, Z: 0, N: 0 }
+},   
     { name:"LDX #$03",            code:[0xA2,0x03], expect:{X:0x03,Z:0,N:0} },
     { name:"LDX #$00 (zero)",     code:[0xA2,0x00], expect:{X:0x00,Z:1,N:0} },
     { name:"LDX #$80 (negative)", code:[0xA2,0x80], expect:{X:0x80,Z:0,N:1} },
@@ -1211,44 +1222,37 @@ function runLoadsOpsTests() {
   html += "</tbody></table>";
   document.body.insertAdjacentHTML("beforeend", html);
   CPUregisters.PC = 0x8000;
-  prgRom[0x8000] = 0x02;
+  prgRom[0x00] = 0x02;
+  CPUregisters.PC = 0x8000;
 }
 
 function hex(v, len=2) { return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
 
 
-  function runRegisterTransfersAndFlagsTestTwo(){
-
-     // ===== REGISTER TRANSFERS & FLAGS (TAX, TAY, TXA, TYA, TSX, TXS, CLC, SEC, CLV, CLI, SEI, CLD, SED) =====
+function runRegisterTransfersAndFlagsTestTwo() {
   const tests = [
     // TAX
     { name:"TAX A->X",    code:[0xAA], pre:{A:0x12},            expect:{X:0x12,Z:0,N:0} },
     { name:"TAX zero",    code:[0xAA], pre:{A:0x00},            expect:{X:0x00,Z:1,N:0} },
     { name:"TAX negative",code:[0xAA], pre:{A:0x80},            expect:{X:0x80,Z:0,N:1} },
-
     // TAY
     { name:"TAY A->Y",    code:[0xA8], pre:{A:0x34},            expect:{Y:0x34,Z:0,N:0} },
     { name:"TAY zero",    code:[0xA8], pre:{A:0x00},            expect:{Y:0x00,Z:1,N:0} },
     { name:"TAY negative",code:[0xA8], pre:{A:0xFF},            expect:{Y:0xFF,Z:0,N:1} },
-
     // TXA
     { name:"TXA X->A",    code:[0x8A], pre:{X:0x56},            expect:{A:0x56,Z:0,N:0} },
     { name:"TXA zero",    code:[0x8A], pre:{X:0x00},            expect:{A:0x00,Z:1,N:0} },
     { name:"TXA negative",code:[0x8A], pre:{X:0x80},            expect:{A:0x80,Z:0,N:1} },
-
     // TYA
     { name:"TYA Y->A",    code:[0x98], pre:{Y:0x77},            expect:{A:0x77,Z:0,N:0} },
     { name:"TYA zero",    code:[0x98], pre:{Y:0x00},            expect:{A:0x00,Z:1,N:0} },
     { name:"TYA negative",code:[0x98], pre:{Y:0xFF},            expect:{A:0xFF,Z:0,N:1} },
-
     // TSX
     { name:"TSX S->X",    code:[0xBA], pre:{S:0x80},            expect:{X:0x80,Z:0,N:1} },
     { name:"TSX zero",    code:[0xBA], pre:{S:0x00},            expect:{X:0x00,Z:1,N:0} },
-
     // TXS (no flags)
     { name:"TXS X->S",    code:[0x9A], pre:{X:0x12},            expect:{S:0x12} },
     { name:"TXS zero",    code:[0x9A], pre:{X:0x00},            expect:{S:0x00} },
-
     // Flag ops
     { name:"CLC",         code:[0x18], pre:{P:{C:1}},           expect:{C:0} },
     { name:"SEC",         code:[0x38], pre:{P:{C:0}},           expect:{C:1} },
@@ -1259,9 +1263,8 @@ function hex(v, len=2) { return "0x"+v.toString(16).toUpperCase().padStart(len,"
     { name:"SED",         code:[0xF8], pre:{P:{D:0}},           /* no expect */ }
   ];
 
-setupTests(tests);
+  setupTests(tests);
 
-  // ── build HTML table ──
   let html =
     `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
        REGISTER TRANSFERS & FLAGS 2nd run!
@@ -1269,61 +1272,40 @@ setupTests(tests);
      <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
        <thead><tr style="background:#222">
          <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-         <th>CPU<br>Before</th><th>CPU<br>After</th><th>PPU<br>Before</th><th>PPU<br>After</th>
-         <th>Eff Addr</th><th>Expected</th><th>Result</th><th>Intercept</th><th>GUI Cell</th><th>Status</th>
+         <th>CPU<br>Before</th><th>CPU<br>After</th>
+         <th>Expected</th><th>Result</th><th>Status</th>
        </tr></thead><tbody>`;
 
-  tests.forEach(test=>{
-    let intr={flag:false,addr:null}, orig=checkReadOffset;
-    checkReadOffset = a=> { intr.flag=true; intr.addr = a&0xFFFF; return orig(a); };
+  tests.forEach(test => {
+    // No intercept/cell/PPU/GUI fields - cleaner!
+    const fb = {...CPUregisters.P};
+    const cb = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
 
-    const fb={...CPUregisters.P},
-          cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pb={...PPUregister};
-
-    if(test.pre){
-      if(test.pre.A!=null) CPUregisters.A=test.pre.A;
-      if(test.pre.X!=null) CPUregisters.X=test.pre.X;
-      if(test.pre.Y!=null) CPUregisters.Y=test.pre.Y;
-      if(test.pre.S!=null) CPUregisters.S=test.pre.S;
-      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+    // Pre-state
+    if (test.pre) {
+      if (test.pre.A != null) CPUregisters.A = test.pre.A;
+      if (test.pre.X != null) CPUregisters.X = test.pre.X;
+      if (test.pre.Y != null) CPUregisters.Y = test.pre.Y;
+      if (test.pre.S != null) CPUregisters.S = test.pre.S;
+      if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
-    if(test.setup) test.setup();
+    if (test.setup) test.setup();
 
     step();
-    checkReadOffset = orig;
 
-    const fa={...CPUregisters.P},
-          ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pa={...PPUregister};
-
-    let m=lastFetched.addressingMode, r=lastFetched.raw, ea=0;
-    switch(m){
-      case "immediate":  ea=lastFetched.pc+1; break;
-      case "zeroPage":   ea=r[1]&0xFF; break;
-      case "zeroPageX":  ea=(r[1]+CPUregisters.X)&0xFF; break;
-      case "absolute":   ea=(r[2]<<8)|r[1]; break;
-      case "absoluteX":  ea=(((r[2]<<8)|r[1])+CPUregisters.X)&0xFFFF; break;
-      case "indirectX":  { const zp=(r[1]+CPUregisters.X)&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF); ea=(hi<<8)|lo; break; }
-      case "indirectY":  { const zp=r[1]&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF); ea=(((hi<<8)|lo)+CPUregisters.Y)&0xFFFF; break; }
-    }
-    const mirrors = getMirrors(ea).filter(a=>a<0x10000),
-          eaLabel = `$${ea.toString(16).padStart(4,"0")}`;
+    const fa = {...CPUregisters.P};
+    const ca = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
 
     let reasons = [], pass = true, exp = test.expect || {};
     if(test.expect){
-      ["A","X","Y","S"].forEach(rn=> {
+      ["A","X","Y","S"].forEach(rn=>{
         if(exp[rn]!=null && ca[rn]!==exp[rn]){ reasons.push(`${rn}=${hex(ca[rn])}≠${hex(exp[rn])}`); pass=false; }
       });
-      ["C","Z","N","V"].forEach(fn=> {
+      ["C","Z","N","V"].forEach(fn=>{
         if(exp[fn]!=null && CPUregisters.P[fn]!==exp[fn]){ reasons.push(`${fn}=${CPUregisters.P[fn]}≠${exp[fn]}`); pass=false; }
       });
     }
 
-    const interceptCell = intr.flag
-      ? dropdown(`$${intr.addr.toString(16).padStart(4,"0")}`, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))
-      : "no";
-    const guiLabel="n/a";
     const expectedLabel = test.expect
       ? Object.entries(test.expect).map(([k,v])=> k.length>1 ? `${k}=${hex(v)}` : `${k}=${v}`).join(" ")
       : "";
@@ -1333,7 +1315,6 @@ setupTests(tests);
           return k.length>1 ? `${k}=${hex(val)}` : `${k}=${val}`;
         }).join(" ")
       : "";
-
     const statusCell = pass
       ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
       : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>`+
@@ -1347,23 +1328,18 @@ setupTests(tests);
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(eaLabel,mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
-        <td style="border:1px solid #444;padding:6px;">${guiLabel}</td>
+        <td style="border:1px solid #444;padding:6px;">${expectedLabel}</td>
+        <td style="border:1px solid #444;padding:6px;">${resultLabel}</td>
         <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
+  CPUregisters.PC = 0x8000;    
+  prgRom[0x00] = 0x02;
+}
 
-  }
 
   function runCompareOpsTests(){
 
@@ -1495,7 +1471,7 @@ setupTests(tests);
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
 CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
+prgRom[0x00] = 0x02;
 CPUregisters.PC = 0x8000;
 
   }

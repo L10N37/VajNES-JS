@@ -1603,8 +1603,10 @@ function SBC_INDY() {
 // TYA - Transfer Y to A (implied)
 function TYA_IMP() {
   CPUregisters.A = CPUregisters.Y;
-  CPUregisters.SR = (CPUregisters.SR & 0x7D) | (CPUregisters.A === 0 ? 0x02 : 0) | (CPUregisters.A & 0x80 ? 0x80 : 0);
+  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
 }
+
 
 // TXA - Transfer X to A (implied)
 function TXA_IMP() {
