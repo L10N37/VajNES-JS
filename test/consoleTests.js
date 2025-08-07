@@ -416,10 +416,6 @@ nocross("Self-mod IMM (console ops with full checks)", {
   CPUregisters.PC = 0x8000;
 }
 
-function hex(v, len = 2) {
-  if (v == null || typeof v.toString !== "function") return "--";
-  return "0x" + v.toString(16).toUpperCase().padStart(len, "0");
-}
 function flagsBin(P) {
   return ((P.N<<7)|(P.V<<6)|(1<<5)|(P.B<<4)|(P.D<<3)|(P.I<<2)|(P.Z<<1)|(P.C))
            .toString(2).padStart(8,"0");
@@ -541,10 +537,6 @@ function runLoadsTests() {
   CPUregisters.PC = 0x8000;
   prgRom[0x00] = 0x02;
 }
-
-function hex(v, len=2) { return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-
-
 
 function runRegisterTransfersAndFlagsTest() { 
   // ===== REGISTER TRANSFERS & FLAGS =====
@@ -1129,9 +1121,6 @@ function runLoadsOpsTests() {
   CPUregisters.PC = 0x8000;
 }
 
-function hex(v, len=2) { return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
-
-
 function runRegisterTransfersAndFlagsTestTwo() {
   const tests = [
     // TAX
@@ -1214,7 +1203,7 @@ function runRegisterTransfersAndFlagsTestTwo() {
     }
 
     const expectedLabel = test.expect
-      ? Object.entries(test.expect).map(([k,v])=> k.length>1 ? `${k}=${hex(v)}` : `${k}=${v}`).join(" ")
+      ? Object.entries(test.expect).map(([k,v])=> k.length>1 ? `${k}=${testSuiteHex(v)}` : `${k}=${v}`).join(" ")
       : "";
     const resultLabel = test.expect
       ? Object.entries(test.expect).map(([k])=> {
@@ -1317,7 +1306,7 @@ function runCompareOpsTests() {
       ["C","Z","N","V"].forEach(fn=>{ if(exp[fn]!=null && CPUregisters.P[fn]!==exp[fn]){ reasons.push(`${fn}=${CPUregisters.P[fn]}≠${exp[fn]}`); pass=false; } });
     }
 
-    const expectedLabel = Object.entries(test.expect||{}).map(([k,v])=>`${k}=${hex(v)}`).join(" ");
+    const expectedLabel = Object.entries(test.expect||{}).map(([k,v])=>`${k}=${testSuiteHex(v)}`).join(" ");
     const resultLabel   = Object.entries(test.expect||{}).map(([k])=>{
       const val = k in ca ? ca[k] : CPUregisters.P[k];
       return `${k}=${hex(val)}`;
@@ -1588,7 +1577,12 @@ function runJumpAndSubRoutinesTests() {
 
   // ===== STACK OPS (PHA, PHP, PLA, PLP) =====
   const tests = [
+
+
     { name:"PHA pushes A",    code:[0x48], pre:{A:0x37,S:0xFF},                                     expectMem:{addr:0x01FF,value:0x37}, expect:{S:0xFE} },
+
+
+
     { name:"PHP pushes P",    code:[0x08], pre:{P:{C:1},S:0xFF},                                    expectMem:{addr:0x01FF,value:0x21}, expect:{S:0xFE} },
     { name:"PLA pulls A",     code:[0x68], pre:{S:0xFE},   setup:()=>{ checkWriteOffset(0x01FF, 0x44); }, expect:{A:0x44,Z:0,N:0,S:0xFF} },
     { name:"PLP pulls P",     code:[0x28], pre:{S:0xFE},   setup:()=>{ checkWriteOffset(0x01FF, 0x21); }, expect:{S:0xFF,C:1} }
@@ -1661,7 +1655,7 @@ setupTests(tests);
 
     const expectedLabel = test.expectMem
       ? hex(test.expectMem.value)
-      : Object.entries(exp).map(([k,v])=>`${k}=${hex(v)}`).join(" ");
+      : Object.entries(exp).map(([k,v])=>`${k}=${testSuiteHex(v)}`).join(" ");
     const resultLabel = test.expectMem
       ? hex([test.expectMem.addr])
       : Object.entries(exp).map(([k])=>{
@@ -1682,8 +1676,8 @@ setupTests(tests);
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${testSuiteHex(v)}`).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${testSuiteHex(v)}`).join(" ")}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${addrLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
@@ -1899,11 +1893,7 @@ function deepCloneCPU(cpu) {
 function deepClonePPU(ppu) { return {...ppu}; }
 function deepCloneAPU(apu) { return {...apu}; }
 function deepCloneJoypad(jp) { return {...jp}; }
-function hex(v) {
-  if (v == null) return "--";
-  let n = Number(v);
-  return "0x" + n.toString(16).toUpperCase().padStart(4, '0');
-}
+
 function flagsBin(f) {
   return [
     f.N ? "N" : ".", f.V ? "V" : ".", f.B ? "B" : ".", f.D ? "D" : ".",

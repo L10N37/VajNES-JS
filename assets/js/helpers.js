@@ -24,11 +24,23 @@ function flagsEqual(a, b) {
          a.I === b.I && a.Z === b.Z && a.C === b.C;
 }
 
+// hex output helpers, ToDO, combine into one, edit all calls to pass correct parameters for output
+function testSuiteHex(v, len = 2) {
+  if (v == null || typeof v.toString !== "function") return "--";
+  return "0x" + v.toString(16).toUpperCase().padStart(len, "0");
+}
+
 function hex(v) {
   if (v == null) return "--";
   let n = Number(v);
   return "0x" + n.toString(16).toUpperCase().padStart(4, '0');
 }
+
+// hex for 0x00 (PPU regs are 8-bit)
+function hexTwo(val, len = 2) {
+  return "$" + val.toString(16).toUpperCase().padStart(len, "0");
+}
+
 function flagsBin(f) {
   return [
     f.N ? "N" : ".",

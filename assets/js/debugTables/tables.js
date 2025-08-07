@@ -689,16 +689,16 @@ let FlagRegisterTable =
     </tr>
   </thead>
   <tbody>
-    <tr>
-      <td id='P0'></td>
-      <td id='P1'></td>
-      <td id='P2'></td>
-      <td id='P3'></td>
-      <td id='P4'></td>
-      <td id='P5'></td>
-      <td id='P6'></td>
-      <td id='P7'></td>
-    </tr>
+  <tr>
+    <td id="P0">0</td>
+    <td id="P1">0</td>
+    <td id="P2">0</td>
+    <td id="P3">0</td>
+    <td id="P4">0</td>
+    <td id="P5">1</td>
+    <td id="P6">0</td>
+    <td id="P7">0</td>
+  </tr>
   </tbody>
 </table>
 `;
@@ -734,7 +734,13 @@ let flagRegisterSection = document.querySelector('.flag-register');
 flagRegisterSection.appendChild(insertFlagRegisterTable);
 insertFlagRegisterTable.innerHTML = FlagRegisterTable;
 
-//instruction table not drawn until rom load
+  // dynamic insertion, step box
+  let instructionSection = document.querySelector('.instruction-step');
+  instructionSection.innerHTML = ``;
+  let insertInstructionArea = document.createElement('table');
+  insertInstructionArea.className = 'GeneratedTable';
+  instructionSection.appendChild(insertInstructionArea);
+  insertInstructionArea.innerHTML = instructionStepTable; 
 
 // ========== HANDY DROPDOWNS ==========
 
@@ -805,16 +811,9 @@ if (prgromHeader) {
       input.style.borderColor = "#f44";
       setTimeout(() => { input.style.borderColor = "#888"; }, 800);
     }
+  cpuRegisterBitsPopulate();
   };
   container.appendChild(btn);
 
   prgromHeader.appendChild(container);
 }
-
-  // dynamic insertion, step box
-  let instructionSection = document.querySelector('.instruction-step');
-  instructionSection.innerHTML = ``;
-  let insertInstructionArea = document.createElement('table');
-  insertInstructionArea.className = 'GeneratedTable';
-  instructionSection.appendChild(insertInstructionArea);
-  insertInstructionArea.innerHTML = instructionStepTable;
