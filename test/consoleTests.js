@@ -799,7 +799,7 @@ function runAluAndLogicOpsTests() {
     if (test.expect) {
       ["A","X","Y","S"].forEach(r=>{
         if (test.expect[r] !== undefined && ca[r] !== test.expect[r]) {
-          reasons.push(`${r}=${hex(ca[r])}≠${hex(test.expect[r])}`);
+          reasons.push(`${r}=${hexTwo(ca[r])}≠${hexTwo(test.expect[r])}`);
           pass = false;
         }
       });
@@ -815,7 +815,7 @@ function runAluAndLogicOpsTests() {
       mirrors.forEach(addr => {
         const got = checkReadOffset(addr);
         if (got !== test.expectMem.value) {
-          reasons.push(`$${addr.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`);
+          reasons.push(`$${addr.toString(16).padStart(4,"0")}=${hexTwo(got)}≠${hexTwo(test.expectMem.value)}`);
           pass = false;
         }
       });
@@ -840,10 +840,10 @@ function runAluAndLogicOpsTests() {
     let expectedLabel = "";
     let resultLabel = "";
     if (test.expect?.A !== undefined) {
-      expectedLabel = hex(test.expect.A); resultLabel = hex(CPUregisters.A);
+      expectedLabel = hexTwo(test.expect.A); resultLabel = hexTwo(CPUregisters.A);
     } else if (test.expectMem) {
-      expectedLabel = hex(test.expectMem.value);
-      resultLabel = ea !== null ? hex(checkReadOffset(ea)) : "";
+      expectedLabel = hexTwo(test.expectMem.value);
+      resultLabel = ea !== null ? hexTwo(checkReadOffset(ea)) : "";
     } else if (test.expectFlags) {
       expectedLabel = Object.entries(test.expectFlags).map(([k,v])=>`${k}=${v}`).join(" ");
       resultLabel   = ["Z","V","N"].map(k=>`${k}=${CPUregisters.P[k]}`).join(" ");
@@ -860,8 +860,8 @@ function runAluAndLogicOpsTests() {
         <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,"0")).join(" ")}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hexTwo(cb.A)} X=${hexTwo(cb.X)} Y=${hexTwo(cb.Y)} S=${hexTwo(cb.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hexTwo(ca.A)} X=${hexTwo(ca.X)} Y=${hexTwo(ca.Y)} S=${hex(ca.S)}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdownMirrors}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>

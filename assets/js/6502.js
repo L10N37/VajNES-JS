@@ -229,10 +229,24 @@ function ADC_IMM() {
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
 }
 
+/*
+The AND instruction does a bitwise AND between the accumulator (A) and the given immediate value, then stores the result in A.
+
+It also sets flags:
+
+Z (zero) if the result is 0
+
+N (negative) if the result has bit 7 set
+*/
 function AND_IMM() {
-  CPUregisters.A &= checkReadOffset(CPUregisters.PC + 1);
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  // opcode logic
+  let oldVal = CPUregisters.A;
+  let immVal = prgRom [CPUregisters.PC + 1 - 0x8000];
+  let newVal = oldVal & immVal;
+  CPUregisters.A = newVal;
+  // flags
+  if (CPUregisters.A === 0) CPUregisters.P.Z = 1;
+  if (CPUregisters.A & 0x80) CPUregisters.P.N = 1;
 }
 
 function LDA_ABSX() {
@@ -651,13 +665,6 @@ function ADC_INDY() {
   CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
   CPUregisters.P.V = ((~(CPUregisters.A ^ value) & (CPUregisters.A ^ result) & 0x80) !== 0) ? 1 : 0;
   CPUregisters.A = result & 0xFF;
-}
-
-function AND_IMM() {
-  const value = systemMemory[CPUregisters.PC + 1];
-  CPUregisters.A &= value;
-  CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
 }
 
 function AND_ZP() {
