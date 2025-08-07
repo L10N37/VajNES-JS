@@ -219,8 +219,8 @@ function ADC_IMM() {
     // Binary mode addition
     const sum = CPUregisters.A + value + carryIn;
     CPUregisters.P.C = (sum > 255) ? 1 : 0;
-    // Overflow detection
-    CPUregisters.P.V = (((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0) ? 1 : 0;
+    // **Correct overflow detection:**
+    CPUregisters.P.V = ((~(CPUregisters.A ^ value) & (CPUregisters.A ^ sum) & 0x80) !== 0) ? 1 : 0;
     result = sum & 0xFF;
   }
 
@@ -1002,7 +1002,9 @@ function BCC_REL() {
 function BCS_REL() {
   const offset = checkReadOffset(CPUregisters.PC + 1);
   const signed = offset < 0x80 ? offset : offset - 0x100;
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
+  const oldPC = CPUregisters.PC;
+  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF; // advance past opcode+operand
+
   if (CPUregisters.P.C) {
     const dest = (CPUregisters.PC + signed) & 0xFFFF;
     cpuCycles += 1;
@@ -1223,12 +1225,19 @@ function CPY_ABS() {
 }
 
 function DEC_ZP() {
-  const addressess = systemMemory[CPUregisters.PC + 1];
-  const value = (systemMemory[addressess] - 1) & 0xFF;
-  systemMemory[addressess] = value;
-  CPUregisters.P.Z = ((value === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
+  // 1. Fetch address from instruction
+  const addr = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  // 2. Read value at address
+  let val = checkReadOffset(addr);
+  // 3. Decrement, wrap 8-bit
+  val = (val - 1) & 0xFF;
+  // 4. Write back
+  checkWriteOffset(addr, val);
+  // 5. Set flags
+  CPUregisters.P.Z = (val === 0) ? 1 : 0;
+  CPUregisters.P.N = (val & 0x80) ? 1 : 0;
 }
+
 
 function DEC_ZPX() {
   const addressess = (systemMemory[CPUregisters.PC + 1] + CPUregisters.X) & 0xFF;

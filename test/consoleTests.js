@@ -539,7 +539,7 @@ function runLoadsTests() {
   html += "</tbody></table>";
   document.body.insertAdjacentHTML("beforeend", html);
   CPUregisters.PC = 0x8000;
-  prgRom[0x8000] = 0x02;
+  prgRom[0x00] = 0x02;
 }
 
 function hex(v, len=2) { return "0x"+v.toString(16).toUpperCase().padStart(len,"0"); }
@@ -647,35 +647,125 @@ function runRegisterTransfersAndFlagsTest() {
   prgRom[CPUregisters.PC - 0x8000] = 0x02;
 }
 
+function runAluAndLogicOpsTests() {
+  // ===== ALU & LOGIC OPS (ADC, SBC, INC, DEC, AND, ORA, EOR, BIT) =====
+  const tests = 
+[
+// ==== AND (8 variants) ====
+{ name:"AND #$F0",       code:[0x29,0xF0],    pre:{A:0xAA},                          expect:{A:0xA0,Z:0,N:1} },
+{ name:"AND $10",        code:[0x25,0x10],    pre:{A:0xF0}, setup:()=>{checkWriteOffset(0x10,0x0F);},      expect:{A:0x00,Z:1,N:0} },
+{ name:"AND $10,X",      code:[0x35,0x0E],    pre:{A:0xF0,X:0x02}, setup:()=>{checkWriteOffset(0x10,0xFF);}, expect:{A:0xF0,Z:0,N:1} },
+{ name:"AND $2345",      code:[0x2D,0x45,0x23], pre:{A:0x5A}, setup:()=>{checkWriteOffset(0x2345,0x3C);}, expect:{A:0x18,Z:0,N:0} },
+{ name:"AND $2345,X",    code:[0x3D,0x40,0x23], pre:{A:0xFF,X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x80);}, expect:{A:0x80,Z:0,N:1} },
+{ name:"AND $2345,Y",    code:[0x39,0x44,0x23], pre:{A:0xF0,Y:0x01}, setup:()=>{checkWriteOffset(0x2345,0xAA);}, expect:{A:0xA0,Z:0,N:1} },
+{ name:"AND ($20,X)",    code:[0x21,0x10],   pre:{A:0x0F,X:0x05}, setup:()=>{checkWriteOffset(0x15,0x30);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1230,0x0A);}, expect:{A:0x0A,Z:0,N:0} },
+{ name:"AND ($20),Y",    code:[0x31,0x12],   pre:{A:0xF0,Y:0x01}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x0F);}, expect:{A:0x00,Z:1,N:0} },
 
-  function runAluAndLogicOpsTests(){
-      // ===== ALU & LOGIC OPS (ADC, SBC, INC, DEC, AND, ORA, EOR, BIT) =====
-  const tests = [
-    { name:"ADC #$10, C=0",           code:[0x69,0x10], pre:{A:0x20,P:{C:0}},                        expect:{A:0x30,C:0,Z:0,N:0,V:0} },
-    { name:"ADC #$90, C=1 (O/N)",      code:[0x69,0x90], pre:{A:0x70,P:{C:1}},                        expect:{A:0x01,C:1,Z:0,N:0,V:1} },
-    { name:"ADC #$00, C=1 (Z stays)",  code:[0x69,0x00], pre:{A:0xFF,P:{C:1}},                        expect:{A:0x00,C:1,Z:1,N:0,V:0} },
-    { name:"SBC #$10, C=1",           code:[0xE9,0x10], pre:{A:0x20,P:{C:1}},                        expect:{A:0x10,C:1,Z:0,N:0,V:0} },
-    { name:"SBC #$01, C=0 (borrow)",   code:[0xE9,0x01], pre:{A:0x00,P:{C:0}},                        expect:{A:0xFE,C:0,Z:0,N:1,V:0} },
-    { name:"SBC #$80, C=1 (O/N)",      code:[0xE9,0x80], pre:{A:0x7F,P:{C:1}},                        expect:{A:0xFF,C:0,Z:0,N:1,V:1} },
-    { name:"INC $20",                 code:[0xE6,0x20], setup:()=>{ checkWriteOffset(0x20, 0x01); },        expectMem:{addr:0x20,value:0x02}, expectFlags:{Z:0,N:0} },
-    { name:"INC $20 (to zero)",       code:[0xE6,0x20], setup:()=>{ checkWriteOffset(0x20, 0xFF); },        expectMem:{addr:0x20,value:0x00}, expectFlags:{Z:1,N:0} },
-    { name:"DEC $20 (set N)",         code:[0xC6,0x20], setup:()=>{ checkWriteOffset(0x20, 0x00); },        expectMem:{addr:0x20,value:0xFF}, expectFlags:{Z:0,N:1} },
-    { name:"DEC $20 (to zero)",       code:[0xC6,0x20], setup:()=>{ checkWriteOffset(0x20, 0x01); },        expectMem:{addr:0x20,value:0x00}, expectFlags:{Z:1,N:0} },
-    { name:"INX (no Z/N)",            code:[0xE8],          pre:{X:0x01},                            expect:{X:0x02,Z:0,N:0} },
-    { name:"INX (overflow)",          code:[0xE8],          pre:{X:0xFF},                            expect:{X:0x00,Z:1,N:0} },
-    { name:"DEX (set N)",             code:[0xCA],          pre:{X:0x00},                            expect:{X:0xFF,Z:0,N:1} },
-    { name:"INY (set Z)",             code:[0xC8],          pre:{Y:0xFF},                            expect:{Y:0x00,Z:1,N:0} },
-    { name:"DEY (no Z/N)",            code:[0x88],          pre:{Y:0x01},                            expect:{Y:0x00,Z:1,N:0} },
-    { name:"AND #$F0",                code:[0x29,0xF0],     pre:{A:0xAB},                            expect:{A:0xA0,Z:0,N:1} },
-    { name:"ORA #$0F",                code:[0x09,0x0F],     pre:{A:0x10},                            expect:{A:0x1F,Z:0,N:0} },
-    { name:"EOR #$FF",                code:[0x49,0xFF],     pre:{A:0x55},                            expect:{A:0xAA,Z:0,N:1} },
-    { name:"BIT $40 (Z,V,N)",         code:[0x24,0x40],     setup:()=>{ checkWriteOffset(0x40, 0x40); CPUregisters.A=0x00; }, expectFlags:{Z:1,V:0,N:0} },
-    { name:"BIT $C0 (V,N)",           code:[0x24,0x42],     setup:()=>{ checkWriteOffset(0x42, 0xC0); CPUregisters.A=0xFF; }, expectFlags:{Z:0,V:1,N:1} }
-  ];
+// ==== ORA (8 variants) ====
+{ name:"ORA #$0F",       code:[0x09,0x0F],    pre:{A:0x10},                          expect:{A:0x1F,Z:0,N:0} },
+{ name:"ORA $10",        code:[0x05,0x10],    pre:{A:0x80}, setup:()=>{checkWriteOffset(0x10,0x01);},      expect:{A:0x81,Z:0,N:1} },
+{ name:"ORA $10,X",      code:[0x15,0x0E],    pre:{A:0x80,X:0x02}, setup:()=>{checkWriteOffset(0x10,0x70);}, expect:{A:0xF0,Z:0,N:1} },
+{ name:"ORA $2345",      code:[0x0D,0x45,0x23], pre:{A:0x00}, setup:()=>{checkWriteOffset(0x2345,0xC0);}, expect:{A:0xC0,Z:0,N:1} },
+{ name:"ORA $2345,X",    code:[0x1D,0x40,0x23], pre:{A:0x01,X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x10);}, expect:{A:0x11,Z:0,N:0} },
+{ name:"ORA $2345,Y",    code:[0x19,0x44,0x23], pre:{A:0x0F,Y:0x01}, setup:()=>{checkWriteOffset(0x2345,0xF0);}, expect:{A:0xFF,Z:0,N:1} },
+{ name:"ORA ($20,X)",    code:[0x01,0x10],   pre:{A:0xF0,X:0x05}, setup:()=>{checkWriteOffset(0x15,0x40);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1240,0x0C);}, expect:{A:0xFC,Z:0,N:1} },
+{ name:"ORA ($20),Y",    code:[0x11,0x12],   pre:{A:0x00,Y:0x01}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x01);}, expect:{A:0x01,Z:0,N:0} },
 
-setupTests(tests);
+// ==== EOR (8 variants) ====
+{ name:"EOR #$FF",       code:[0x49,0xFF],   pre:{A:0x55},                          expect:{A:0xAA,Z:0,N:1} },
+{ name:"EOR $10",        code:[0x45,0x10],   pre:{A:0x0F}, setup:()=>{checkWriteOffset(0x10,0xF0);},      expect:{A:0xFF,Z:0,N:1} },
+{ name:"EOR $10,X",      code:[0x55,0x0E],   pre:{A:0xF0,X:0x02}, setup:()=>{checkWriteOffset(0x10,0xF0);}, expect:{A:0x00,Z:1,N:0} },
+{ name:"EOR $2345",      code:[0x4D,0x45,0x23], pre:{A:0xA5}, setup:()=>{checkWriteOffset(0x2345,0x5A);}, expect:{A:0xFF,Z:0,N:1} },
+{ name:"EOR $2345,X",    code:[0x5D,0x40,0x23], pre:{A:0xFF,X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x55);}, expect:{A:0xAA,Z:0,N:1} },
+{ name:"EOR $2345,Y",    code:[0x59,0x44,0x23], pre:{A:0x0F,Y:0x01}, setup:()=>{checkWriteOffset(0x2345,0xF0);}, expect:{A:0xFF,Z:0,N:1} },
+{ name:"EOR ($20,X)",    code:[0x41,0x10],  pre:{A:0x0F,X:0x05}, setup:()=>{checkWriteOffset(0x15,0x30);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1230,0xF0);}, expect:{A:0xFF,Z:0,N:1} },
+{ name:"EOR ($20),Y",    code:[0x51,0x12],  pre:{A:0xF0,Y:0x01}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x0F);}, expect:{A:0xFF,Z:0,N:1} },
 
-  // ── build HTML table ──
+// ==== BIT (2 variants) ====
+{ name:"BIT $20",        code:[0x24,0x20],   setup:()=>{CPUregisters.A=0x0F; checkWriteOffset(0x20,0xF0);}, expectFlags:{Z:0,V:1,N:1} },
+{ name:"BIT $2345",      code:[0x2C,0x45,0x23], setup:()=>{CPUregisters.A=0x00; checkWriteOffset(0x2345,0x00);}, expectFlags:{Z:1,V:0,N:0} },
+
+// ==== ADC (8 variants) ====
+{ name:"ADC #$01",       code:[0x69,0x01],   pre:{A:0x01,P:{C:0}},                 expect:{A:0x02,C:0,Z:0,N:0,V:0} },
+{ name:"ADC $10",        code:[0x65,0x10],   pre:{A:0x80,P:{C:0}}, setup:()=>{checkWriteOffset(0x10,0x80);}, expect:{A:0x00,C:1,Z:1,N:0,V:1} },
+{ name:"ADC $10,X",      code:[0x75,0x0E],   pre:{A:0x10,X:0x02,P:{C:1}}, setup:()=>{checkWriteOffset(0x10,0x10);}, expect:{A:0x21,C:0,Z:0,N:0,V:0} },
+{ name:"ADC $2345",      code:[0x6D,0x45,0x23], pre:{A:0x7F,P:{C:0}}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{A:0x80,C:0,Z:0,N:1,V:1} },
+{ name:"ADC $2345,X",    code:[0x7D,0x40,0x23], pre:{A:0x01,X:0x05,P:{C:0}}, setup:()=>{checkWriteOffset(0x2345,0x02);}, expect:{A:0x03,C:0,Z:0,N:0,V:0} },
+{ name:"ADC $2345,Y",    code:[0x79,0x44,0x23], pre:{A:0x80,Y:0x01,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x80);}, expect:{A:0x01,C:1,Z:0,N:0,V:1} },
+{ name:"ADC ($20,X)",    code:[0x61,0x10],  pre:{A:0x20,X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x15,0x30);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1230,0x10);}, expect:{A:0x31,C:0,Z:0,N:0,V:0} },
+{ name:"ADC ($20),Y",    code:[0x71,0x12],  pre:{A:0x70,Y:0x01,P:{C:1}}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x90);}, expect:{A:0x01,C:1,Z:0,N:0,V:1} },
+
+// ==== SBC (8 variants) ====
+{ name:"SBC #$01",       code:[0xE9,0x01],   pre:{A:0x03,P:{C:1}},                 expect:{A:0x02,C:1,Z:0,N:0,V:0} },
+{ name:"SBC $10",        code:[0xE5,0x10],   pre:{A:0x00,P:{C:0}}, setup:()=>{checkWriteOffset(0x10,0x01);}, expect:{A:0xFE,C:0,Z:0,N:1,V:0} },
+{ name:"SBC $10,X",      code:[0xF5,0x0E],   pre:{A:0x0F,X:0x02,P:{C:1}}, setup:()=>{checkWriteOffset(0x10,0x01);}, expect:{A:0x0E,C:1,Z:0,N:0,V:0} },
+{ name:"SBC $2345",      code:[0xED,0x45,0x23], pre:{A:0x80,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{A:0x7F,C:1,Z:0,N:0,V:1} },
+{ name:"SBC $2345,X",    code:[0xFD,0x40,0x23], pre:{A:0x03,X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x02);}, expect:{A:0x01,C:1,Z:0,N:0,V:0} },
+{ name:"SBC $2345,Y",    code:[0xF9,0x44,0x23], pre:{A:0x01,Y:0x01,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{A:0x00,C:1,Z:1,N:0,V:0} },
+{ name:"SBC ($20,X)",    code:[0xE1,0x10],  pre:{A:0x05,X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x15,0x30);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1230,0x02);}, expect:{A:0x03,C:1,Z:0,N:0,V:0} },
+{ name:"SBC ($20),Y",    code:[0xF1,0x12],  pre:{A:0x20,Y:0x01,P:{C:1}}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x10);}, expect:{A:0x10,C:1,Z:0,N:0,V:0} },
+
+// ==== CMP (8 variants) ====
+{ name:"CMP #$10",       code:[0xC9,0x10],   pre:{A:0x10},                          expect:{C:1,Z:1,N:0} },
+{ name:"CMP $10",        code:[0xC5,0x10],   pre:{A:0x0F}, setup:()=>{checkWriteOffset(0x10,0x01);},      expect:{C:1,Z:0,N:0} },
+{ name:"CMP $10,X",      code:[0xD5,0x0E],   pre:{A:0x00,X:0x02}, setup:()=>{checkWriteOffset(0x10,0x01);}, expect:{C:0,Z:0,N:1} },
+{ name:"CMP $2345",      code:[0xCD,0x45,0x23], pre:{A:0xFF}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{C:1,Z:0,N:1} },
+{ name:"CMP $2345,X",    code:[0xDD,0x40,0x23], pre:{A:0x05,X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x02);}, expect:{C:1,Z:0,N:0} },
+{ name:"CMP $2345,Y",    code:[0xD9,0x44,0x23], pre:{A:0x01,Y:0x01}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{C:1,Z:1,N:0} },
+{ name:"CMP ($20,X)",    code:[0xC1,0x10],  pre:{A:0x0F,X:0x05}, setup:()=>{checkWriteOffset(0x15,0x30);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1230,0x10);}, expect:{C:0,Z:0,N:1} },
+{ name:"CMP ($20),Y",    code:[0xD1,0x12],  pre:{A:0x10,Y:0x01}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x20);}, expect:{C:0,Z:0,N:1} },
+
+// ==== CPX (3 variants) ====
+{ name:"CPX #$10",       code:[0xE0,0x10],   pre:{X:0x10},                          expect:{C:1,Z:1,N:0} },
+{ name:"CPX $10",        code:[0xE4,0x10],   pre:{X:0x0F}, setup:()=>{checkWriteOffset(0x10,0x01);},      expect:{C:1,Z:0,N:0} },
+{ name:"CPX $2345",      code:[0xEC,0x45,0x23], pre:{X:0xFF}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{C:1,Z:0,N:1} },
+
+// ==== CPY (3 variants) ====
+{ name:"CPY #$10",       code:[0xC0,0x10],   pre:{Y:0x10},                          expect:{C:1,Z:1,N:0} },
+{ name:"CPY $10",        code:[0xC4,0x10],   pre:{Y:0x0F}, setup:()=>{checkWriteOffset(0x10,0x01);},      expect:{C:1,Z:0,N:0} },
+{ name:"CPY $2345",      code:[0xCC,0x45,0x23], pre:{Y:0xFF}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{C:1,Z:0,N:1} },
+
+// ==== INC (3 variants) ====
+{ name:"INC $10",        code:[0xE6,0x10],   setup:()=>{checkWriteOffset(0x10,0x01);},      expectMem:{addr:0x10,value:0x02}, expectFlags:{Z:0,N:0} },
+{ name:"INC $10,X",      code:[0xF6,0x0E],   pre:{X:0x02}, setup:()=>{checkWriteOffset(0x10,0xFF);}, expectMem:{addr:0x12,value:0x00}, expectFlags:{Z:1,N:0} },
+{ name:"INC $2345",      code:[0xEE,0x45,0x23], setup:()=>{checkWriteOffset(0x2345,0x7F);}, expectMem:{addr:0x2345,value:0x80}, expectFlags:{Z:0,N:1} },
+
+// ==== DEC (3 variants) ====
+{ name:"DEC $10",        code:[0xC6,0x10],   setup:()=>{checkWriteOffset(0x10,0x01);},      expectMem:{addr:0x10,value:0x00}, expectFlags:{Z:1,N:0} },
+{ name:"DEC $10,X",      code:[0xD6,0x0E],   pre:{X:0x02}, setup:()=>{checkWriteOffset(0x10,0x00);}, expectMem:{addr:0x12,value:0xFF}, expectFlags:{Z:0,N:1} },
+{ name:"DEC $2345",      code:[0xCE,0x45,0x23], setup:()=>{checkWriteOffset(0x2345,0x01);}, expectMem:{addr:0x2345,value:0x00}, expectFlags:{Z:1,N:0} },
+
+// ==== ASL (5 variants) ====
+{ name:"ASL A",          code:[0x0A],        pre:{A:0x40},                          expect:{A:0x80,C:0,Z:0,N:1} },
+{ name:"ASL $10",        code:[0x06,0x10],   setup:()=>{checkWriteOffset(0x10,0x80);},      expectMem:{addr:0x10,value:0x00}, expect:{C:1,Z:1,N:0} },
+{ name:"ASL $10,X",      code:[0x16,0x0E],   pre:{X:0x02}, setup:()=>{checkWriteOffset(0x10,0x40);}, expectMem:{addr:0x12,value:0x80}, expect:{C:0,Z:0,N:1} },
+{ name:"ASL $2345",      code:[0x0E,0x45,0x23], setup:()=>{checkWriteOffset(0x2345,0xFF);}, expectMem:{addr:0x2345,value:0xFE}, expect:{C:1,Z:0,N:1} },
+{ name:"ASL $2345,X",    code:[0x1E,0x40,0x23], pre:{X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x10);}, expectMem:{addr:0x234A,value:0x20}, expect:{C:0,Z:0,N:0} },
+
+// ==== LSR (5 variants) ====
+{ name:"LSR A",          code:[0x4A],        pre:{A:0x01},                          expect:{A:0x00,C:1,Z:1,N:0} },
+{ name:"LSR $10",        code:[0x46,0x10],   setup:()=>{checkWriteOffset(0x10,0x03);},      expectMem:{addr:0x10,value:0x01}, expect:{C:1,Z:0,N:0} },
+{ name:"LSR $10,X",      code:[0x56,0x0E],   pre:{X:0x02}, setup:()=>{checkWriteOffset(0x10,0x02);}, expectMem:{addr:0x12,value:0x01}, expect:{C:0,Z:0,N:0} },
+{ name:"LSR $2345",      code:[0x4E,0x45,0x23], setup:()=>{checkWriteOffset(0x2345,0x80);}, expectMem:{addr:0x2345,value:0x40}, expect:{C:0,Z:0,N:0} },
+{ name:"LSR $2345,X",    code:[0x5E,0x40,0x23], pre:{X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expectMem:{addr:0x234A,value:0x00}, expect:{C:1,Z:1,N:0} },
+
+// ==== ROL (5 variants) ====
+{ name:"ROL A",          code:[0x2A],        pre:{A:0x40,P:{C:1}},                  expect:{A:0x81,C:0,Z:0,N:1} },
+{ name:"ROL $10",        code:[0x26,0x10],   pre:{P:{C:1}}, setup:()=>{checkWriteOffset(0x10,0x80);},      expectMem:{addr:0x10,value:0x01}, expect:{C:1,Z:0,N:0} },
+{ name:"ROL $10,X",      code:[0x36,0x0E],   pre:{X:0x02,P:{C:0}}, setup:()=>{checkWriteOffset(0x10,0x40);}, expectMem:{addr:0x12,value:0x80}, expect:{C:0,Z:0,N:1} },
+{ name:"ROL $2345",      code:[0x2E,0x45,0x23], pre:{P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0xFF);}, expectMem:{addr:0x2345,value:0xFF}, expect:{C:1,Z:0,N:1} },
+{ name:"ROL $2345,X",    code:[0x3E,0x40,0x23], pre:{X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x00);}, expectMem:{addr:0x234A,value:0x01}, expect:{C:0,Z:0,N:0} },
+
+// ==== ROR (5 variants) ====
+{ name:"ROR A",          code:[0x6A],        pre:{A:0x01,P:{C:1}},                  expect:{A:0x80,C:1,Z:0,N:1} },
+{ name:"ROR $10",        code:[0x66,0x10],   pre:{P:{C:0}}, setup:()=>{checkWriteOffset(0x10,0x02);},      expectMem:{addr:0x10,value:0x01}, expect:{C:0,Z:0,N:0} },
+{ name:"ROR $10,X",      code:[0x76,0x0E],   pre:{X:0x02,P:{C:1}}, setup:()=>{checkWriteOffset(0x10,0x01);}, expectMem:{addr:0x12,value:0x80}, expect:{C:1,Z:0,N:1} },
+{ name:"ROR $2345",      code:[0x6E,0x45,0x23], pre:{P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x00);}, expectMem:{addr:0x2345,value:0x80}, expect:{C:0,Z:0,N:1} },
+{ name:"ROR $2345,X",    code:[0x7E,0x40,0x23], pre:{X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x02);}, expectMem:{addr:0x234A,value:0x81}, expect:{C:0,Z:0,N:1} },
+];
+
+  setupTests(tests);
+
   let html =
     `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
        ALU & LOGIC OPS
@@ -683,94 +773,62 @@ setupTests(tests);
      <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
        <thead><tr style="background:#222">
          <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-         <th>CPU<br>Before</th><th>CPU<br>After</th><th>PPU<br>Before</th><th>PPU<br>After</th>
-         <th>Eff Addr</th><th>Expected</th><th>Result</th><th>Intercept</th><th>GUI Cell</th><th>Status</th>
+         <th>CPU<br>Before</th><th>CPU<br>After</th>
+         <th>Eff Addr</th><th>Expected</th><th>Result</th><th>Status</th>
        </tr></thead><tbody>`;
 
-  tests.forEach(test=>{
-    // intercept hook
-    let intr={flag:false,addr:null};
-    const orig=checkReadOffset;
-    checkReadOffset = a=>{ intr.flag=true; intr.addr=a&0xFFFF; return orig(a); };
+  tests.forEach(test => {
+    const fb = {...CPUregisters.P}, cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
 
-    // before snapshots
-    const fb={...CPUregisters.P}, cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pb={...PPUregister};
-
-    // apply pre/setup
     if(test.pre){
       if(test.pre.A!=null) CPUregisters.A=test.pre.A;
       if(test.pre.X!=null) CPUregisters.X=test.pre.X;
       if(test.pre.Y!=null) CPUregisters.Y=test.pre.Y;
-      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+      if(test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
     if(test.setup) test.setup();
 
-    // execute and update
+    // Store a snapshot of relevant memory before
+    let memBefore = undefined;
+    if (test.expectMem) memBefore = checkReadOffset(test.expectMem.addr);
+
+    // Execute instruction
     step();
 
-    // restore
-    checkReadOffset = orig;
+    // Check effective address (for memory ops) - use test.expectMem.addr if present
+    let ea = test.expectMem?.addr !== undefined ? test.expectMem.addr : null;
+    const mirrors = ea !== null ? getMirrors(ea).filter(a=>a<0x10000) : [];
 
-    // record after snapshots
-    const fa={...CPUregisters.P}, ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pa={...PPUregister};
+    // Build table cells
+    const fa = {...CPUregisters.P}, ca = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
 
-    // compute effective address
-    const m=lastFetched.addressingMode, r=lastFetched.raw;
-    let ea=0;
-    switch(m){
-      case "immediate":  ea=lastFetched.pc+1; break;
-      case "zeroPage":   ea=r[1]&0xFF; break;
-      case "zeroPageX":  ea=(r[1]+CPUregisters.X)&0xFF; break;
-      case "zeroPageY":  ea=(r[1]+CPUregisters.Y)&0xFF; break;
-      case "absolute":   ea=(r[2]<<8)|r[1]; break;
-      case "absoluteX":  ea=(((r[2]<<8)|r[1])+CPUregisters.X)&0xFFFF; break;
-      case "absoluteY":  ea=(((r[2]<<8)|r[1])+CPUregisters.Y)&0xFFFF; break;
-      case "indirectX": {
-        const zp=(r[1]+CPUregisters.X)&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF);
-        ea=(hi<<8)|lo; break;
-      }
-      case "indirectY": {
-        const zp=r[1]&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF);
-        ea=(((hi<<8)|lo)+CPUregisters.Y)&0xFFFF; break;
-      }
-    }
-    const mirrors = getMirrors(ea).filter(a=>a<0x10000);
-    const eaLabel = `$${ea.toString(16).padStart(4,"0")}`;
-
-    // check results
-    let reasons = [], pass = true;
-    const exp = test.expect || {};
-
-    // only check regs & flags if expect was provided
+    let reasons=[], pass=true;
+    // Register/flag checks
     if (test.expect) {
       ["A","X","Y","S"].forEach(r=>{
-        if (exp[r] !== undefined && ca[r] !== exp[r]) {
-          reasons.push(`${r}=${hex(ca[r])}≠${hex(exp[r])}`);
+        if (test.expect[r] !== undefined && ca[r] !== test.expect[r]) {
+          reasons.push(`${r}=${hex(ca[r])}≠${hex(test.expect[r])}`);
           pass = false;
         }
       });
       ["C","Z","N","V"].forEach(f=>{
-        if (exp[f] !== undefined && CPUregisters.P[f] !== exp[f]) {
-          reasons.push(`${f}=${CPUregisters.P[f]}≠${exp[f]}`);
+        if (test.expect[f] !== undefined && CPUregisters.P[f] !== test.expect[f]) {
+          reasons.push(`${f}=${CPUregisters.P[f]}≠${test.expect[f]}`);
           pass = false;
         }
       });
     }
-
-    // memory ops
-    if (test.expectMem) {
-      mirrors.forEach(a=>{
-        const got = [a];
+    // Memory
+    if (test.expectMem && ea !== null) {
+      mirrors.forEach(addr => {
+        const got = checkReadOffset(addr);
         if (got !== test.expectMem.value) {
-          reasons.push(`$${a.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`);
+          reasons.push(`$${addr.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`);
           pass = false;
         }
       });
     }
-
-    // BIT-only flags
+    // BIT flags
     if (test.expectFlags) {
       ["Z","V","N"].forEach(f=>{
         if (test.expectFlags[f] !== undefined && CPUregisters.P[f] !== test.expectFlags[f]) {
@@ -780,25 +838,24 @@ setupTests(tests);
       });
     }
 
-    // labels
-    const interceptCell = intr.flag
-      ? dropdown(`$${intr.addr.toString(16).padStart(4,"0")}`, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))
-      : "no";
-    const guiLabel     = "n/a";
-    const expectedLabel= test.expect?.A!==undefined
-      ? hex(test.expect.A)
-      : test.expectMem
-        ? hex(test.expectMem.value)
-        : test.expectFlags
-          ? `Z=${test.expectFlags.Z} V=${test.expectFlags.V} N=${test.expectFlags.N}`
-          : "";
-    const resultLabel  = test.expect?.A!==undefined
-      ? hex(CPUregisters.A)
-      : test.expectMem
-        ? hex([ea])
-        : test.expectFlags
-          ? `Z=${CPUregisters.P.Z} V=${CPUregisters.P.V} N=${CPUregisters.P.N}`
-          : "";
+    // Dropdown mirrors
+    const mirrorLabel = ea !== null ? `$${ea.toString(16).padStart(4,"0")}` : "";
+    const dropdownMirrors = ea !== null
+      ? dropdown(mirrorLabel, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))
+      : "";
+
+    // Expected/Result value
+    let expectedLabel = "";
+    let resultLabel = "";
+    if (test.expect?.A !== undefined) {
+      expectedLabel = hex(test.expect.A); resultLabel = hex(CPUregisters.A);
+    } else if (test.expectMem) {
+      expectedLabel = hex(test.expectMem.value);
+      resultLabel = ea !== null ? hex(checkReadOffset(ea)) : "";
+    } else if (test.expectFlags) {
+      expectedLabel = Object.entries(test.expectFlags).map(([k,v])=>`${k}=${v}`).join(" ");
+      resultLabel   = ["Z","V","N"].map(k=>`${k}=${CPUregisters.P[k]}`).join(" ");
+    }
 
     const statusCell = pass
       ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
@@ -808,72 +865,68 @@ setupTests(tests);
     html += `
       <tr style="background:${pass?"#113311":"#331111"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,"0")).join(" ")}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(eaLabel, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))}</td>
+        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdownMirrors}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
-        <td style="border:1px solid #444;padding:6px;">${guiLabel}</td>
         <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
-
-  }
-
-  function runShiftOpsTests(){
-
-      // ===== SHIFT OPS (ASL, LSR, ROL, ROR) =====
+  CPUregisters.PC = 0x8000;    
+  prgRom[CPUregisters.PC - 0x8000] = 0x02;
+}
+function runShiftOpsTests() {
+  // ===== SHIFT OPS (ASL, LSR, ROL, ROR, all modes) =====
   const tests = [
-    // ASL accumulator
+    // ASL accumulator (carry/zero/negative)
     { name:"ASL A (no carry)",            code:[0x0A],                   pre:{A:0x41,P:{C:0}}, expect:{A:0x82,C:0,Z:0,N:1} },
     { name:"ASL A (carry & zero)",        code:[0x0A],                   pre:{A:0x80,P:{C:0}}, expect:{A:0x00,C:1,Z:1,N:0} },
-    // ASL memory
+    // ASL memory (ZP/ZPX/ABS/ABSX)
     { name:"ASL $20",                     code:[0x06,0x20],              setup:()=>{ checkWriteOffset(0x20, 0x03); }, expectMem:{addr:0x20,value:0x06}, expect:{C:0,Z:0,N:0} },
     { name:"ASL $20 (carry)",             code:[0x06,0x20],              setup:()=>{ checkWriteOffset(0x20, 0x80); }, expectMem:{addr:0x20,value:0x00}, expect:{C:1,Z:1,N:0} },
     { name:"ASL $10,X",                   code:[0x16,0x10],   pre:{X:0x10}, setup:()=>{ checkWriteOffset(0x20, 0x02); }, expectMem:{addr:0x20,value:0x04}, expect:{C:0,Z:0,N:0} },
     { name:"ASL $1234",                   code:[0x0E,0x34,0x12],         setup:()=>{ checkWriteOffset(0x1234, 0x01); }, expectMem:{addr:0x1234,value:0x02}, expect:{C:0,Z:0,N:0} },
     { name:"ASL $1234,X",                 code:[0x1E,0x34,0x12], pre:{X:0x10}, setup:()=>{ checkWriteOffset(0x1244, 0x80); }, expectMem:{addr:0x1244,value:0x00}, expect:{C:1,Z:1,N:0} },
+
     // LSR accumulator
     { name:"LSR A (no carry)",            code:[0x4A],                   pre:{A:0x02,P:{C:0}}, expect:{A:0x01,C:0,Z:0,N:0} },
     { name:"LSR A (carry & zero)",        code:[0x4A],                   pre:{A:0x01,P:{C:0}}, expect:{A:0x00,C:1,Z:1,N:0} },
-    // LSR memory
+    // LSR memory (ZP/ZPX/ABS/ABSX)
     { name:"LSR $30",                     code:[0x46,0x30],              setup:()=>{ checkWriteOffset(0x30, 0x04); }, expectMem:{addr:0x30,value:0x02}, expect:{C:0,Z:0,N:0} },
     { name:"LSR $30 (carry)",             code:[0x46,0x30],              setup:()=>{ checkWriteOffset(0x30, 0x01); }, expectMem:{addr:0x30,value:0x00}, expect:{C:1,Z:1,N:0} },
     { name:"LSR $20,X",                   code:[0x56,0x1F],   pre:{X:0x01}, setup:()=>{ checkWriteOffset(0x20, 0x02); }, expectMem:{addr:0x20,value:0x01}, expect:{C:0,Z:0,N:0} },
     { name:"LSR $0C00",                   code:[0x4E,0x00,0x0C],         setup:()=>{ checkWriteOffset(0x0C00, 0x02); }, expectMem:{addr:0x0C00,value:0x01}, expect:{C:0,Z:0,N:0} },
     { name:"LSR $0C00,X",                 code:[0x5E,0xFF,0x0B], pre:{X:0x01}, setup:()=>{ checkWriteOffset(0x0C00, 0x01); }, expectMem:{addr:0x0C00,value:0x00}, expect:{C:1,Z:1,N:0} },
+
     // ROL accumulator
     { name:"ROL A (no carry)",            code:[0x2A],                   pre:{A:0x40,P:{C:0}}, expect:{A:0x80,C:0,Z:0,N:1} },
     { name:"ROL A (carry in & out)",      code:[0x2A],                   pre:{A:0x80,P:{C:1}}, expect:{A:0x01,C:1,Z:0,N:0} },
-    // ROL memory
+    // ROL memory (ZP/ZPX/ABS/ABSX)
     { name:"ROL $10",                     code:[0x26,0x10],   pre:{P:{C:0}}, setup:()=>{ checkWriteOffset(0x10, 0x01); }, expectMem:{addr:0x10,value:0x02}, expect:{C:0,Z:0,N:0} },
     { name:"ROL $10 (carry)",             code:[0x26,0x10],   pre:{P:{C:1}}, setup:()=>{ checkWriteOffset(0x10, 0x80); }, expectMem:{addr:0x10,value:0x01}, expect:{C:1,Z:0,N:0} },
     { name:"ROL $20,X",                   code:[0x36,0x10], pre:{X:0x10,P:{C:0}}, setup:()=>{ checkWriteOffset(0x20, 0x40); }, expectMem:{addr:0x20,value:0x80}, expect:{C:0,Z:0,N:1} },
     { name:"ROL $2000",                   code:[0x2E,0x00,0x20], pre:{P:{C:1}}, setup:()=>{ checkWriteOffset(0x2000, 0x40); }, expectMem:{addr:0x2000,value:0x81}, expect:{C:0,Z:0,N:1} },
     { name:"ROL $2000,X",                 code:[0x3E,0xFF,0x1F], pre:{X:0x01,P:{C:1}}, setup:()=>{ checkWriteOffset(0x2000, 0x80); }, expectMem:{addr:0x2000,value:0x01}, expect:{C:1,Z:0,N:0} },
+
     // ROR accumulator
     { name:"ROR A (no carry)",            code:[0x6A],                   pre:{A:0x02,P:{C:0}}, expect:{A:0x01,C:0,Z:0,N:0} },
     { name:"ROR A (carry in & zero)",     code:[0x6A],                   pre:{A:0x00,P:{C:1}}, expect:{A:0x80,C:0,Z:0,N:1} },
-    // ROR memory
+    // ROR memory (ZP/ZPX/ABS/ABSX)
     { name:"ROR $15",                     code:[0x66,0x15],   pre:{P:{C:0}}, setup:()=>{ checkWriteOffset(0x15, 0x02); }, expectMem:{addr:0x15,value:0x01}, expect:{C:0,Z:0,N:0} },
     { name:"ROR $15 (carry)",             code:[0x66,0x15],   pre:{P:{C:1}}, setup:()=>{ checkWriteOffset(0x15, 0x01); }, expectMem:{addr:0x15,value:0x80}, expect:{C:1,Z:0,N:1} },
     { name:"ROR $20,X",                   code:[0x76,0x1F], pre:{X:0x01,P:{C:1}}, setup:()=>{ checkWriteOffset(0x20, 0x00); }, expectMem:{addr:0x20,value:0x80}, expect:{C:0,Z:0,N:1} },
-    { name:"ROR $0D00",                   code:[0x6E,0x00,0x0D],         setup:()=>{ checkWriteOffset(0x0D00, 0x02); }, pre:{P:{C:1}}, expectMem:{addr:0x0D00,value:0x81}, expect:{C:0,Z:0,N:1} },
-    { name:"ROR $0D00,X",                 code:[0x7E,0xFF,0x0C], pre:{X:0x01,P:{C:1}}, setup:()=>{ checkWriteOffset(0x0D00, 0x01); }, expectMem:{addr:0x0D00,value:0x80}, expect:{C:1,Z:0,N:1} }
+    { name:"ROR $0D00",                   code:[0x6E,0x00,0x0D],         pre:{P:{C:1}}, setup:()=>{ checkWriteOffset(0x0D00, 0x02); }, expectMem:{addr:0x0D00,value:0x81}, expect:{C:0,Z:0,N:1} },
+    { name:"ROR $0D00,X",                 code:[0x7E,0xFF,0x0C], pre:{X:0x01,P:{C:1}}, setup:()=>{ checkWriteOffset(0x0D00, 0x01); }, expectMem:{addr:0x0D00,value:0x80}, expect:{C:1,Z:0,N:1} },
   ];
 
-setupTests(tests);
+  setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -883,99 +936,100 @@ setupTests(tests);
      <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
        <thead><tr style="background:#222">
          <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-         <th>CPU<br>Before</th><th>CPU<br>After</th><th>PPU<br>Before</th><th>PPU<br>After</th>
-         <th>Eff Addr</th><th>Expected</th><th>Result</th><th>Intercept</th><th>GUI Cell</th><th>Status</th>
+         <th>CPU<br>Before</th><th>CPU<br>After</th>
+         <th>Eff Addr</th><th>Expected</th><th>Result</th><th>Status</th>
        </tr></thead><tbody>`;
 
-  tests.forEach(test=>{
-    let intr={flag:false,addr:null}, orig=checkReadOffset;
-    checkReadOffset=a=>{intr.flag=true;intr.addr=a&0xFFFF;return orig(a);};
-
-    let fb={...CPUregisters.P},
-        cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-        pb={...PPUregister};
-
+  tests.forEach(test => {
+    // Capture before
+    const fb = {...CPUregisters.P}, cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
     if(test.pre){
       if(test.pre.A!=null) CPUregisters.A=test.pre.A;
       if(test.pre.X!=null) CPUregisters.X=test.pre.X;
       if(test.pre.Y!=null) CPUregisters.Y=test.pre.Y;
-      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+      if(test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
     if(test.setup) test.setup();
 
+    // Memory snapshot before (optional)
+    let memBefore;
+    if(test.expectMem) memBefore = checkReadOffset(test.expectMem.addr);
+
+    // Execute
     step();
-    checkReadOffset=orig;
 
-    let fa={...CPUregisters.P},
-        ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-        pa={...PPUregister};
+    // Check effective address (for memory ops)
+    let ea = test.expectMem?.addr !== undefined ? test.expectMem.addr : null;
+    const mirrors = ea !== null ? getMirrors(ea).filter(a=>a<0x10000) : [];
 
-    let m=lastFetched.addressingMode, r=lastFetched.raw, ea=0;
-    switch(m){
-      case"immediate":  ea=lastFetched.pc+1; break;
-      case"zeroPage":   ea=r[1]&0xFF;      break;
-      case"zeroPageX":  ea=(r[1]+CPUregisters.X)&0xFF; break;
-      case"absolute":   ea=(r[2]<<8)|r[1]; break;
-      case"absoluteX":  ea=(((r[2]<<8)|r[1])+CPUregisters.X)&0xFFFF; break;
-      case"indirectX": { const zp=(r[1]+CPUregisters.X)&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF); ea=(hi<<8)|lo; break; }
-      case"indirectY": { const zp=r[1]&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF); ea=(((hi<<8)|lo)+CPUregisters.Y)&0xFFFF; break; }
-    }
-    const mirrors=getMirrors(ea).filter(a=>a<0x10000),
-          eaLabel=`$${ea.toString(16).padStart(4,"0")}`;
+    // After state
+    const fa = {...CPUregisters.P}, ca = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
 
-    let reasons=[], pass=true,
-        exp=test.expect||{};
+    let reasons = [], pass = true;
+    // Reg/flag checks
     if(test.expect){
-      ["A","X","Y","S"].forEach(rn=>{ if(exp[rn]!=null && ca[rn]!==exp[rn]){ reasons.push(`${rn}=${hex(ca[rn])}≠${hex(exp[rn])}`); pass=false; } });
-      ["C","Z","N","V"].forEach(fn=>{ if(exp[fn]!=null && CPUregisters.P[fn]!==exp[fn]){ reasons.push(`${fn}=${CPUregisters.P[fn]}≠${exp[fn]}`); pass=false; } });
+      ["A","X","Y","S"].forEach(r=>{
+        if(test.expect[r] !== undefined && ca[r] !== test.expect[r]){
+          reasons.push(`${r}=${hex(ca[r])}≠${hex(test.expect[r])}`); pass = false;
+        }
+      });
+      ["C","Z","N","V"].forEach(f=>{
+        if(test.expect[f] !== undefined && CPUregisters.P[f] !== test.expect[f]){
+          reasons.push(`${f}=${CPUregisters.P[f]}≠${test.expect[f]}`); pass = false;
+        }
+      });
     }
-    if(test.expectMem){
-      mirrors.forEach(a=>{ const got=[a]; if(got!==test.expectMem.value){ reasons.push(`$${a.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`); pass=false; } });
+    // Memory
+    if(test.expectMem && ea !== null){
+      mirrors.forEach(addr=>{
+        const got = checkReadOffset(addr);
+        if(got !== test.expectMem.value){
+          reasons.push(`$${addr.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`); pass = false;
+        }
+      });
     }
 
-    const interceptCell = intr.flag
-      ? dropdown(`$${intr.addr.toString(16).padStart(4,"0")}`, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))
-      : "no";
-    const guiLabel="n/a";
-    const expectedLabel = test.expect?.A!=null
-      ? hex(test.expect.A)
-      : test.expectMem
-        ? hex(test.expectMem.value)
-        : "";
-    const resultLabel = test.expect?.A!=null
-      ? hex(CPUregisters.A)
-      : test.expectMem
-        ? hex([ea])
-        : "";
+    // Table labels
+    const mirrorLabel = ea !== null ? `$${ea.toString(16).padStart(4,"0")}` : "";
+    const dropdownMirrors = ea !== null
+      ? dropdown(mirrorLabel, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))
+      : "";
+
+    let expectedLabel = "";
+    let resultLabel = "";
+    if (test.expect?.A !== undefined) {
+      expectedLabel = hex(test.expect.A); resultLabel = hex(CPUregisters.A);
+    } else if (test.expectMem) {
+      expectedLabel = hex(test.expectMem.value);
+      resultLabel = ea !== null ? hex(checkReadOffset(ea)) : "";
+    }
+
     const statusCell = pass
       ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
-      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>` +
+      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>`+
         `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
 
     html += `
       <tr style="background:${pass?"#113311":"#331111"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,"0")).join(" ")}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(eaLabel,mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))}</td>
+        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdownMirrors}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
-        <td style="border:1px solid #444;padding:6px;">${guiLabel}</td>
         <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
-  }
+
+  CPUregisters.PC = 0x8000;    
+  prgRom[CPUregisters.PC - 0x8000] = 0x02;
+}
 
 function runLoadsOpsTests() {
   const tests = [
@@ -1193,10 +1247,7 @@ function runRegisterTransfersAndFlagsTestTwo() {
   prgRom[0x00] = 0x02;
 }
 
-
-  function runCompareOpsTests(){
-
-
+function runCompareOpsTests() {
   // ===== COMPARE OPS (CMP, CPX, CPY) =====
   const tests = [
     // CMP
@@ -1231,7 +1282,7 @@ function runRegisterTransfersAndFlagsTestTwo() {
     { name:"CPY absolute",        code:[0xCC,0x00,0x02], pre:{Y:0x02}, setup:()=>{ checkWriteOffset(0x0200, 0x03); }, expect:{C:0,Z:0,N:1} }
   ];
 
-setupTests(tests);
+  setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -1241,46 +1292,24 @@ setupTests(tests);
      <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
        <thead><tr style="background:#222">
          <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-         <th>CPU<br>Before</th><th>CPU<br>After</th><th>PPU<br>Before</th><th>PPU<br>After</th>
-         <th>Eff Addr</th><th>Expected</th><th>Result</th><th>Intercept</th><th>GUI Cell</th><th>Status</th>
+         <th>CPU<br>Before</th><th>CPU<br>After</th>
+         <th>Expected</th><th>Result</th><th>Status</th>
        </tr></thead><tbody>`;
 
-  tests.forEach(test=>{
-    let intr={flag:false,addr:null}, orig=checkReadOffset;
-    checkReadOffset=a=>{ intr.flag=true; intr.addr=a&0xFFFF; return orig(a); };
-
-    const fb={...CPUregisters.P},
-          cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pb={...PPUregister};
+  tests.forEach(test => {
+    const fb = {...CPUregisters.P}, cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
 
     if(test.pre){
       if(test.pre.A!=null) CPUregisters.A=test.pre.A;
       if(test.pre.X!=null) CPUregisters.X=test.pre.X;
       if(test.pre.Y!=null) CPUregisters.Y=test.pre.Y;
-      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+      if(test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
     if(test.setup) test.setup();
 
     step();
-    checkReadOffset=orig;
 
-    const fa={...CPUregisters.P},
-          ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pa={...PPUregister};
-
-    let m=lastFetched.addressingMode, r=lastFetched.raw, ea=0;
-    switch(m){
-      case "immediate":  ea=lastFetched.pc+1; break;
-      case "zeroPage":   ea=r[1]&0xFF; break;
-      case "zeroPageX":  ea=(r[1]+CPUregisters.X)&0xFF; break;
-      case "absolute":   ea=(r[2]<<8)|r[1]; break;
-      case "absoluteX":  ea=(((r[2]<<8)|r[1])+CPUregisters.X)&0xFFFF; break;
-      case "absoluteY":  ea=(((r[2]<<8)|r[1])+CPUregisters.Y)&0xFFFF; break;
-      case "indirectX":  { const zp=(r[1]+CPUregisters.X)&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF); ea=(hi<<8)|lo; break; }
-      case "indirectY":  { const zp=r[1]&0xFF, lo=cpuRead(zp), hi=cpuRead((zp+1)&0xFF); ea=(((hi<<8)|lo)+CPUregisters.Y)&0xFFFF; break; }
-    }
-    const mirrors = getMirrors(ea).filter(a=>a<0x10000),
-          eaLabel = `$${ea.toString(16).padStart(4,"0")}`;
+    const fa = {...CPUregisters.P}, ca = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
 
     let reasons=[], pass=true, exp=test.expect||{};
     if(test.expect){
@@ -1288,10 +1317,6 @@ setupTests(tests);
       ["C","Z","N","V"].forEach(fn=>{ if(exp[fn]!=null && CPUregisters.P[fn]!==exp[fn]){ reasons.push(`${fn}=${CPUregisters.P[fn]}≠${exp[fn]}`); pass=false; } });
     }
 
-    const interceptCell = intr.flag
-      ? dropdown(`$${intr.addr.toString(16).padStart(4,"0")}`, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))
-      : "no";
-    const guiLabel="n/a";
     const expectedLabel = Object.entries(test.expect||{}).map(([k,v])=>`${k}=${hex(v)}`).join(" ");
     const resultLabel   = Object.entries(test.expect||{}).map(([k])=>{
       const val = k in ca ? ca[k] : CPUregisters.P[k];
@@ -1310,32 +1335,23 @@ setupTests(tests);
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(eaLabel,mirrors)}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
-        <td style="border:1px solid #444;padding:6px;">${guiLabel}</td>
         <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[0x00] = 0x02;
-CPUregisters.PC = 0x8000;
-
-  }
+  CPUregisters.PC = 0x8000;    
+  prgRom[0x00] = 0x02;
+}
 
 function runBranchOpsTests() {
   const startPC = 0x8000;
-  // Offsets for testing
-  const smallOffset = 0x02;           // stays on page ($8000 + 2 + 2 = $8004)
-  const pageCrossOffset = 0x82;       // -0x7E = jump back and cross to $7F80
+  const smallOffset = 0x02;             // stays on page ($8000 + 2 + 2 = $8004)
+  const pageCrossOffset = 0x82;         // -0x7E = jump back and cross to $7F80
 
-  // Each entry: { name, code, pre, taken, offset, pageCross }
   const cases = [
     { name: "BCC taken (C=0, no page cross)", code: [0x90, smallOffset], pre: {P:{C:0}}, taken: true, offset: smallOffset, pageCross: false },
     { name: "BCC taken (C=0, page cross)", code: [0x90, pageCrossOffset], pre: {P:{C:0}}, taken: true, offset: pageCrossOffset, pageCross: true },
@@ -1370,7 +1386,7 @@ function runBranchOpsTests() {
     { name: "BVS not taken (V=0)", code: [0x70, smallOffset], pre: {P:{V:0}}, taken: false, offset: smallOffset, pageCross: false }
   ];
 
-  let html =
+ let html =
     `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
       BRANCH OPS (ALL: taken, not taken, page cross, etc)
     </div>
@@ -1387,64 +1403,74 @@ function runBranchOpsTests() {
         <th>Expected PC</th>
         <th>ΔCycles</th>
         <th>Expected Cycles</th>
+        <th>Page Cross<br>(actual)</th>
+        <th>Page Cross<br>(expected)</th>
         <th>Status</th>
         <th>Details</th>
       </tr></thead><tbody>`;
 
   cases.forEach(test => {
-    // ---- Set up ----
+    // Set up
     CPUregisters.PC = startPC;
     checkWriteOffset(startPC, test.code[0]);
     checkWriteOffset(startPC + 1, test.code[1]);
-
-    // Set registers/flags clean
     CPUregisters.A = 0x12; CPUregisters.X = 0x34; CPUregisters.Y = 0x56; CPUregisters.S = 0xFD;
-    // Set only the tested flags (leave others alone)
-    Object.assign(CPUregisters.P, {N:0,V:0,B:0,D:0,I:0,Z:0,C:0}); // clear all, so each test is isolated
+    Object.assign(CPUregisters.P, {N:0,V:0,B:0,D:0,I:0,Z:0,C:0});
     if(test.pre && test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
 
-    // Save before-state
+    // Before state
     const pcBefore = CPUregisters.PC;
     const cyclesBefore = cpuCycles;
     const flagsBefore = { ...CPUregisters.P };
     const regsBefore = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
 
-    // ---- Execute ----
+    // Run
     step();
 
-    // Save after-state
+    // After state
     const pcAfter = CPUregisters.PC;
     const cyclesAfter = cpuCycles;
     const flagsAfter = { ...CPUregisters.P };
     const regsAfter = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
 
-    // ---- Calculate expected PC ----
+    // Calculate expected PC & cycles
     let offset = test.offset;
-    if (offset & 0x80) offset = offset - 0x100; // signed branch
+    if (offset & 0x80) offset = offset - 0x100;
     let expectedPC = test.taken
       ? (pcBefore + 2 + offset) & 0xFFFF
       : (pcBefore + 2) & 0xFFFF;
 
-    // ---- Calculate expected cycles ----
     let expectedCycles = 2;
     if(test.taken) expectedCycles += 1;
-    if(test.taken && test.pageCross) expectedCycles += 1;
+    // Calculate if *actual* page crossed
+    let pageCrossed = false;
+    if (test.taken) {
+      pageCrossed = ((pcBefore + 2) & 0xFF00) !== (expectedPC & 0xFF00);
+      if (!pageCrossed && test.pageCross) expectedCycles += 0; // If test expects, but doesn't happen, highlight
+      if (pageCrossed) expectedCycles += 1;
+    }
     let deltaCycles = cyclesAfter - cyclesBefore;
 
-    // ---- Check pass/fail and build fail reasons ----
+    // Pass/fail
     let failReasons = [];
     let pass = true;
     if (pcAfter !== expectedPC) { failReasons.push(`PC=${hex(pcAfter)}≠${hex(expectedPC)}`); pass = false; }
     if (deltaCycles !== expectedCycles) { failReasons.push(`cycles=${deltaCycles}≠${expectedCycles}`); pass = false; }
-    // Register check: for branches, A/X/Y/S shouldn't change
+    // Registers must not change
     for (let r of ["A","X","Y","S"]) {
       if (regsAfter[r] !== regsBefore[r]) { failReasons.push(`${r}=${hex(regsAfter[r])}≠${hex(regsBefore[r])}`); pass = false; }
     }
-    // Flags: for branches, only Z/N/V/C may affect branch, all others should be untouched unless opcode is broken
+    // Flags must not change
     if (!flagsEqual(flagsBefore, flagsAfter)) {
       failReasons.push(`flags changed`);
       pass = false;
     }
+    // Page cross mismatch
+    if (pageCrossed !== !!test.pageCross) {
+      failReasons.push(`pageCross mismatch: actual=${pageCrossed}, testCase=${!!test.pageCross}`);
+      pass = false;
+    }
+
     let status = pass
       ? "<span style='color:#7fff7f;font-weight:bold;'>✔️ Pass</span>"
       : "<span style='color:#ff7777;font-weight:bold;'>❌ Fail</span>";
@@ -1462,8 +1488,10 @@ function runBranchOpsTests() {
         <td style="border:1px solid #444;padding:6px;">${flagsBin(flagsAfter)}</td>
         <td style="border:1px solid #444;padding:6px;">${hex(pcAfter)}</td>
         <td style="border:1px solid #444;padding:6px;">${hex(expectedPC)}</td>
-        <td style="border:1px solid #444;padding:6px;${(deltaCycles!==expectedCycles)?'color:#FFD700;font-weight:bold;':''}">${deltaCycles}</td>
-        <td style="border:1px solid #444;padding:6px;${(deltaCycles!==expectedCycles)?'color:#FFD700;font-weight:bold;':''}">${expectedCycles}</td>
+        <td style="border:1px solid #444;padding:6px;${(deltaCycles!==expectedCycles)?'color:#FFD700;font-weight:bold;':''}'>${deltaCycles}</td>
+        <td style="border:1px solid #444;padding:6px;${(deltaCycles!==expectedCycles)?'color:#FFD700;font-weight:bold;':''}'>${expectedCycles}</td>
+        <td style="border:1px solid #444;padding:6px;${pageCrossed ? 'color:orange' : 'color:lightgreen'};font-weight:bold;'>${pageCrossed ? "YES" : "NO"}</td>
+        <td style="border:1px solid #444;padding:6px;${test.pageCross ? 'color:orange' : 'color:lightgreen'};font-weight:bold;'>${test.pageCross ? "YES" : "NO"}</td>
         <td style="border:1px solid #444;padding:6px;">${status}</td>
         <td style="border:1px solid #444;padding:6px;color:#FF7777;">${details}</td>
       </tr>`;
@@ -1471,12 +1499,11 @@ function runBranchOpsTests() {
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
-
+  CPUregisters.PC = 0x8000;    
+  prgRom[CPUregisters.PC - 0x8000] = 0x02;
 }
 
-  function runJumpAndSubRoutinesTests(){
+function runJumpAndSubRoutinesTests() {
 
   // ===== JUMP & SUBROUTINES (JMP, JSR, RTI, RTS) =====
   const tests = [
@@ -1504,9 +1531,8 @@ prgRom[CPUregisters.PC - 0x8000] = 0x02;
       } }
   ];
 
-setupTests(tests);
+  setupTests(tests);
 
-  // ── build HTML table ──
   let html =
     `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
        JUMP & SUBROUTINES
@@ -1514,17 +1540,13 @@ setupTests(tests);
      <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
        <thead><tr style="background:#222">
          <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-         <th>CPU<br>Before</th><th>CPU<br>After</th><th>PPU<br>Before</th><th>PPU<br>After</th>
-         <th>Target</th><th>Intercept</th><th>GUI Cell</th><th>Status</th>
+         <th>CPU<br>Before</th><th>CPU<br>After</th>
+         <th>Target PC</th><th>Status</th>
        </tr></thead><tbody>`;
 
   tests.forEach(test=>{
-    let intr={flag:false,addr:null}, orig=checkReadOffset;
-    checkReadOffset = a=>{ intr.flag=true; intr.addr=a&0xFFFF; return orig(a); };
-
     const fb={...CPUregisters.P},
-          cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pb={...PPUregister};
+          cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
 
     if(test.pre){
       if(test.pre.A!=null) CPUregisters.A=test.pre.A;
@@ -1536,57 +1558,32 @@ setupTests(tests);
     if(test.setup) test.setup();
 
     step();
-    checkReadOffset = orig;
 
     const fa={...CPUregisters.P},
-          ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pa={...PPUregister};
+          ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
 
-    // compute target EA (for JMP/JSR) or return PC (for RTS/RTI)
-    const m = lastFetched.addressingMode, r = lastFetched.raw, target = (() => {
-      switch(m){
-        case "absolute":    return (r[2]<<8)|r[1];
-        case "indirect":    {
-          const lo=cpuRead(r[1]), hi=cpuRead((r[1]+1)&0xFF);
-          return (hi<<8)|lo;
-        }
-        default:
-          return CPUregisters.PC;
-      }
-    })();
-    const mirrors = getMirrors(target).filter(a=>a<0x10000);
-    const targetLabel = `$${target.toString(16).padStart(4,"0")}`;
-
-    const interceptCell = intr.flag
-      ? dropdown(`$${intr.addr.toString(16).padStart(4,"0")}`, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))
-      : "no";
-    const guiLabel="n/a";
-    const pass = true;
+    // Target PC (after jump/return)
+    let targetPC = hex(CPUregisters.PC);
 
     html += `
-      <tr style="background:${pass?"#113311":"#331111"}">
+      <tr style="background:#113311">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
         <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${hex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdown(targetLabel,mirrors)}</td>
-        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
-        <td style="border:1px solid #444;padding:6px;">${guiLabel}</td>
+        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${targetPC}</td>
         <td style="border:1px solid #444;padding:6px;"><span style="color:#7fff7f;font-weight:bold;">✔️</span></td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
-CPUregisters.PC = 0x8000;
-
-  }
+  CPUregisters.PC = 0x8000;    
+  prgRom[CPUregisters.PC - 0x8000] = 0x02;
+  CPUregisters.PC = 0x8000;
+}
 
   function runStackOpsTests(){
 
