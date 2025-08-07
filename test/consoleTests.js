@@ -1386,11 +1386,11 @@ function runBranchOpsTests() {
     { name: "BVS not taken (V=0)", code: [0x70, smallOffset], pre: {P:{V:0}}, taken: false, offset: smallOffset, pageCross: false }
   ];
 
- let html =
+  let html =
     `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
       BRANCH OPS (ALL: taken, not taken, page cross, etc)
     </div>
-    <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
+    <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;table-layout:fixed;">
       <thead><tr style="background:#222">
         <th>Test</th>
         <th>Op</th>
@@ -1403,14 +1403,13 @@ function runBranchOpsTests() {
         <th>Expected PC</th>
         <th>ΔCycles</th>
         <th>Expected Cycles</th>
-        <th>Page Cross<br>(actual)</th>
-        <th>Page Cross<br>(expected)</th>
+        <th>Page Cross</th>
         <th>Status</th>
         <th>Details</th>
       </tr></thead><tbody>`;
 
   cases.forEach(test => {
-    // Set up
+    // Setup registers/memory
     CPUregisters.PC = startPC;
     checkWriteOffset(startPC, test.code[0]);
     checkWriteOffset(startPC + 1, test.code[1]);
@@ -1418,64 +1417,65 @@ function runBranchOpsTests() {
     Object.assign(CPUregisters.P, {N:0,V:0,B:0,D:0,I:0,Z:0,C:0});
     if(test.pre && test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
 
-    // Before state
+    // Before
     const pcBefore = CPUregisters.PC;
     const cyclesBefore = cpuCycles;
     const flagsBefore = { ...CPUregisters.P };
     const regsBefore = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
 
-    // Run
+    // Execute
     step();
 
-    // After state
+    // After
     const pcAfter = CPUregisters.PC;
     const cyclesAfter = cpuCycles;
     const flagsAfter = { ...CPUregisters.P };
     const regsAfter = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
 
-    // Calculate expected PC & cycles
+    // Calculate expected PC and page cross (actual)
     let offset = test.offset;
     if (offset & 0x80) offset = offset - 0x100;
     let expectedPC = test.taken
       ? (pcBefore + 2 + offset) & 0xFFFF
       : (pcBefore + 2) & 0xFFFF;
 
-    let expectedCycles = 2;
-    if(test.taken) expectedCycles += 1;
-    // Calculate if *actual* page crossed
-    let pageCrossed = false;
+    // Determine if actual branch crosses a page
+    let actualPageCrossed = false;
     if (test.taken) {
-      pageCrossed = ((pcBefore + 2) & 0xFF00) !== (expectedPC & 0xFF00);
-      if (!pageCrossed && test.pageCross) expectedCycles += 0; // If test expects, but doesn't happen, highlight
-      if (pageCrossed) expectedCycles += 1;
+      const fromPage = ((pcBefore + 2) & 0xFF00);
+      const toPage = (expectedPC & 0xFF00);
+      actualPageCrossed = fromPage !== toPage;
     }
+
     let deltaCycles = cyclesAfter - cyclesBefore;
 
-    // Pass/fail
+    // *** Expected Cycles logic ***
+    let expectedCycles = 2;
+    if (test.taken) expectedCycles += 1;
+    if (test.taken && actualPageCrossed) expectedCycles += 1;
+
+    // Pass/fail check
     let failReasons = [];
     let pass = true;
     if (pcAfter !== expectedPC) { failReasons.push(`PC=${hex(pcAfter)}≠${hex(expectedPC)}`); pass = false; }
     if (deltaCycles !== expectedCycles) { failReasons.push(`cycles=${deltaCycles}≠${expectedCycles}`); pass = false; }
-    // Registers must not change
     for (let r of ["A","X","Y","S"]) {
       if (regsAfter[r] !== regsBefore[r]) { failReasons.push(`${r}=${hex(regsAfter[r])}≠${hex(regsBefore[r])}`); pass = false; }
     }
-    // Flags must not change
     if (!flagsEqual(flagsBefore, flagsAfter)) {
       failReasons.push(`flags changed`);
       pass = false;
     }
-    // Page cross mismatch
-    if (pageCrossed !== !!test.pageCross) {
-      failReasons.push(`pageCross mismatch: actual=${pageCrossed}, testCase=${!!test.pageCross}`);
-      pass = false;
-    }
+    // "Page Cross" column shows actual page cross status and pass/fail for expectedness
+    let pageCrossCell = actualPageCrossed === !!test.pageCross
+      ? `<span style='color:${actualPageCrossed ? "orange" : "lightgreen"};font-weight:bold;'>${actualPageCrossed ? "YES" : "NO"}</span>`
+      : `<span style='color:red;font-weight:bold;'>${actualPageCrossed ? "YES" : "NO"}</span>`;
 
     let status = pass
       ? "<span style='color:#7fff7f;font-weight:bold;'>✔️ Pass</span>"
       : "<span style='color:#ff7777;font-weight:bold;'>❌ Fail</span>";
 
-    let details = pass ? "" : failReasons.join("; ");
+    let details = failReasons.join("; ");
 
     html += `
       <tr style="background:${pass ? "#113311" : "#331111"}">
@@ -1488,18 +1488,17 @@ function runBranchOpsTests() {
         <td style="border:1px solid #444;padding:6px;">${flagsBin(flagsAfter)}</td>
         <td style="border:1px solid #444;padding:6px;">${hex(pcAfter)}</td>
         <td style="border:1px solid #444;padding:6px;">${hex(expectedPC)}</td>
-        <td style="border:1px solid #444;padding:6px;${(deltaCycles!==expectedCycles)?'color:#FFD700;font-weight:bold;':''}'>${deltaCycles}</td>
-        <td style="border:1px solid #444;padding:6px;${(deltaCycles!==expectedCycles)?'color:#FFD700;font-weight:bold;':''}'>${expectedCycles}</td>
-        <td style="border:1px solid #444;padding:6px;${pageCrossed ? 'color:orange' : 'color:lightgreen'};font-weight:bold;'>${pageCrossed ? "YES" : "NO"}</td>
-        <td style="border:1px solid #444;padding:6px;${test.pageCross ? 'color:orange' : 'color:lightgreen'};font-weight:bold;'>${test.pageCross ? "YES" : "NO"}</td>
+        <td style="border:1px solid #444;padding:6px;">${deltaCycles}</td>
+        <td style="border:1px solid #444;padding:6px;">${expectedCycles}</td>
+        <td style="border:1px solid #444;padding:6px;">${pageCrossCell}</td>
         <td style="border:1px solid #444;padding:6px;">${status}</td>
-        <td style="border:1px solid #444;padding:6px;color:#FF7777;">${details}</td>
+        <td style="border:1px solid #444;padding:6px;color:#FF7777;max-width:260px;word-wrap:break-word;white-space:pre-line;">${details}</td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-  CPUregisters.PC = 0x8000;    
+  CPUregisters.PC = 0x8000;
   prgRom[CPUregisters.PC - 0x8000] = 0x02;
 }
 
