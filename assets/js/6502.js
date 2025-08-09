@@ -1064,37 +1064,44 @@ function ORA_INDY() {
 }
 
 // --------- BRK (IMP) ---------------
+// BRK (0x00) — force interrupt
 function BRK_IMP() {
-  // compute return address = PC + table.pcIncrement (2)
-  const ret = (CPUregisters.PC + 2) & 0xFFFF;
+  // Return address is PC+2 per 6502 (opcode + padding byte)
+  const ret = (CPUregisters.PC + 2 - 0x8000) & 0xFFFF;
 
-  // push high then low
-  systemMemory[0x100 + CPUregisters.S] = (ret >> 8) & 0xFF;
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  systemMemory[0x100 + CPUregisters.S] = ret & 0xFF;
+  // Push PCH, then PCL
+  checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), (ret >> 8) & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // build status with B=1
-  let st = 0x20 | 0x10; // unused & B
-  if (CPUregisters.P.N) st |= 0x80;
-  if (CPUregisters.P.V) st |= 0x40;
-  if (CPUregisters.P.D) st |= 0x08;
-  if (CPUregisters.P.I) st |= 0x04;
-  if (CPUregisters.P.Z) st |= 0x02;
-  if (CPUregisters.P.C) st |= 0x01;
-
-  systemMemory[0x100 + CPUregisters.S] = st;
+  checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), ret & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // disable interrupts
-  CPUregisters.P.I = (1) ? 1 : 0;
+  // Build status byte with bit5=1 and B=1 for BRK
+  let p = 0;
+  p |= (CPUregisters.P.N & 1) << 7;
+  p |= (CPUregisters.P.V & 1) << 6;
+  p |= 1 << 5;                  // bit 5 always set when pushed
+  p |= 1 << 4;                  // B=1 for BRK (IRQ/NMI would push B=0)
+  p |= (CPUregisters.P.D & 1) << 3;
+  p |= (CPUregisters.P.I & 1) << 2;
+  p |= (CPUregisters.P.Z & 1) << 1;
+  p |= (CPUregisters.P.C & 1) << 0;
 
-  // fetch vector & jump
-  const lo = checkReadOffset(0xFFFE);
-  const hi = checkReadOffset(0xFFFF);
-  CPUregisters.PC = (hi << 8) | lo;
-  cpuCycles += 5; //extra 5 on top of base
+  checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), p & 0xFF);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Set I (disable further IRQs)
+  CPUregisters.P.I = 1;
+
+  // Fetch BRK/IRQ vector (no +0x8000!)
+  const lo = checkReadOffset(0xFFFE) & 0xFF;
+  const hi = checkReadOffset(0xFFFF) & 0xFF;
+
+  //CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
+
+  cpuCycles += 5;
 }
+
 
 // CMP #imm — 0xC9
 function CMP_IMM() {
@@ -1720,14 +1727,13 @@ function NOP_ZPY() {
   cpuCycles++; // +1 for this opcode
 }
 
-function NOP() {}
+function NOP(){}
 
 // Zero Page NOP (0x04, 0x44, 0x64)
 // Reads zp operand, does nothing else
 function NOP_ZP() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   checkReadOffset(zp & 0xFF);
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 }
 
 // Zero Page,X NOP (0x14, 0x34, 0x54, 0x74, 0xD4, 0xF4)
@@ -1735,7 +1741,6 @@ function NOP_ZP() {
 function NOP_ZPX() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   checkReadOffset((zp + CPUregisters.X) & 0xFF);
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 }
 
 // Absolute NOP (0x0C)
@@ -1745,7 +1750,6 @@ function NOP_ABS() {
   const hi = checkReadOffset(CPUregisters.PC + 2);
   const addr = lo | (hi << 8);
   checkReadOffset(addr);
-  CPUregisters.PC = (CPUregisters.PC + 3) & 0xFFFF;
 }
 
 function NOP_ABSX() {
@@ -1755,7 +1759,6 @@ function NOP_ABSX() {
   const eff = (base + CPUregisters.X) & 0xFFFF;
   checkReadOffset(eff);
   if ((base & 0xFF00) !== (eff & 0xFF00)) cpuCycles += 1; // Add cycle if page crossed
-  CPUregisters.PC = (CPUregisters.PC + 3) & 0xFFFF;
 }
 
 function SKB_IMM() {
@@ -2806,7 +2809,7 @@ function BCS_REL() {
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
-  }
+   }
 }
 
 // BEQ — Branch if Zero Set (0xF0)

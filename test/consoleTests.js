@@ -337,7 +337,7 @@ nocross("Self-mod IMM (console ops with full checks)", {
   } else {
     // Normal test: load code and step
     if (test.code && test.code.length) {
-      test.code.forEach((b, i) => { checkWriteOffset(CPUregisters.PC + i, b); });
+      test.code.forEach((b, i) => prgRom[CPUregisters.PC + i - 0x8000, b]);
       step();
     }
   }
@@ -2086,84 +2086,167 @@ function runStackOpsTests() {
 }
 
 
+
 function runBrkAndNopsTests() {
   const tests = [
-    // BRK: pushes PC+2 and flags, sets I; here we just check S decremented by 3 and cycles = 7
+    // ───────────────────── BRK (0x00) ─────────────────────
+    // BRK pushes PC+2 and P|B to stack, sets I, uses 7 cycles
     {
-      name: "BRK (interrupt)",
+      name: "BRK (S=FF, I=0)",
       code: [0x00],
-      pre: { S: 0xFF, P: { I: 0 } },
+      pre:  { S: 0xFF, P: { I: 0 } },
       expect: { S: 0xFC, P: { I: 1 } },
       expectedCycles: 7
     },
+    {
+      name: "BRK (S=80, I=0)",
+      code: [0x00],
+      pre:  { S: 0x80, P: { I: 0 } },
+      expect: { S: 0x7D, P: { I: 1 } },
+      expectedCycles: 7
+    },
+    {
+      name: "BRK (S=00 wrap case, I=0)",
+      code: [0x00],
+      pre:  { S: 0x00, P: { I: 0 } },
+      expect:{ S: 0xFD, P: { I: 1 } }, // 00 -> FF -> FE -> FD
+      expectedCycles: 7
+    },
+    {
+      name: "BRK (I already 1)",
+      code: [0x00],
+      pre:  { S: 0xFF, P: { I: 1 } },
+      expect:{ S: 0xFC, P: { I: 1 } },
+      expectedCycles: 7
+    },
+    {
+      name: "BRK (D=1 preserved; I goes 1)",
+      code: [0x00],
+      pre:  { S: 0xFF, P: { I: 0, D: 1 } },
+      expect:{ S: 0xFC, P: { I: 1, D: 1 } },
+      expectedCycles: 7
+    },
+    {
+      name: "BRK (Z=1, C=1 preserved; I goes 1)",
+      code: [0x00],
+      pre:  { S: 0xFE, P: { I: 0, Z: 1, C: 1 } },
+      expect:{ S: 0xFB, P: { I: 1, Z: 1, C: 1 } },
+      expectedCycles: 7
+    },
+    {
+      name: "BRK (N=1, V=1 preserved; I goes 1)",
+      code: [0x00],
+      pre:  { S: 0x10, P: { I: 0, N: 1, V: 1 } },
+      expect:{ S: 0x0D, P: { I: 1, N: 1, V: 1 } },
+      expectedCycles: 7
+    },
+    {
+      name: "BRK (all flags set except I; I becomes 1)",
+      code: [0x00],
+      pre:  { S: 0xA5, P: { N:1,V:1,D:1,I:0,Z:1,C:1 } },
+      expect:{ S: 0xA2, P: { I:1, N:1,V:1,D:1,Z:1,C:1 } },
+      expectedCycles: 7
+    },
+    {
+      name: "BRK (all flags clear; only I becomes 1)",
+      code: [0x00],
+      pre:  { S: 0x7F, P: { N:0,V:0,D:0,I:0,Z:0,C:0 } },
+      expect:{ S: 0x7C, P: { I:1, N:0,V:0,D:0,Z:0,C:0 } },
+      expectedCycles: 7
+    },
+    {
+      name: "BRK (stack near underflow edge)",
+      code: [0x00],
+      pre:  { S: 0x02, P: { I: 0 } },
+      expect:{ S: 0xFF, P: { I: 1 } }, // 02 -> 01 -> 00 -> FF
+      expectedCycles: 7
+    },
 
-    // Official single-byte NOPs
+    // ───────────────────── Official & Implied NOPs ─────────────────────
     { name: "NOP implied (0xEA)", code: [0xEA], expectedCycles: 2 },
-    { name: "NOP unofficial 0x1A", code: [0x1A], expectedCycles: 2 },
-    { name: "NOP unofficial 0x3A", code: [0x3A], expectedCycles: 2 },
-    { name: "NOP unofficial 0x5A", code: [0x5A], expectedCycles: 2 },
-    { name: "NOP unofficial 0x7A", code: [0x7A], expectedCycles: 2 },
-    { name: "NOP unofficial 0xDA", code: [0xDA], expectedCycles: 2 },
-    { name: "NOP unofficial 0xFA", code: [0xFA], expectedCycles: 2 },
+    { name: "NOP implied (0x1A)", code: [0x1A], expectedCycles: 2 },
+    { name: "NOP implied (0x3A)", code: [0x3A], expectedCycles: 2 },
+    { name: "NOP implied (0x5A)", code: [0x5A], expectedCycles: 2 },
+    { name: "NOP implied (0x7A)", code: [0x7A], expectedCycles: 2 },
+    { name: "NOP implied (0xDA)", code: [0xDA], expectedCycles: 2 },
+    { name: "NOP implied (0xFA)", code: [0xFA], expectedCycles: 2 },
 
-    // SKB/DOP two-byte NOPs (just skip operand, no memory access)
-    { name: "NOP 0x80 (2-byte)", code: [0x80, 0x00], expectedCycles: 2 },
-    { name: "NOP 0x82 (2-byte)", code: [0x82, 0x00], expectedCycles: 2 },
-    { name: "NOP 0x89 (2-byte)", code: [0x89, 0x00], expectedCycles: 2 },
-    { name: "NOP 0xC2 (2-byte)", code: [0xC2, 0x00], expectedCycles: 2 },
-    { name: "NOP 0xE2 (2-byte)", code: [0xE2, 0x00], expectedCycles: 2 },
+    // ───────────────────── Two-byte DOP/SKB NOPs (no mem read) ─────────────────────
+    { name: "NOP DOP (0x80)", code: [0x80, 0x00], expectedCycles: 2 },
+    { name: "NOP DOP (0x82)", code: [0x82, 0x00], expectedCycles: 2 },
+    { name: "NOP DOP (0x89)", code: [0x89, 0x00], expectedCycles: 2 },
+    { name: "NOP DOP (0xC2)", code: [0xC2, 0x00], expectedCycles: 2 },
+    { name: "NOP DOP (0xE2)", code: [0xE2, 0x00], expectedCycles: 2 },
 
-    // SKB three-byte NOPs (read memory, so cycle count higher)
-    { name: "NOP 0x04 (ZP)", code: [0x04, 0x00], expectedCycles: 3 },
-    { name: "NOP 0x44 (ZP)", code: [0x44, 0x00], expectedCycles: 3 },
-    { name: "NOP 0x64 (ZP)", code: [0x64, 0x00], expectedCycles: 3 },
-    { name: "NOP 0x14 (ZPX)", code: [0x14, 0x00], expectedCycles: 4 },
-    { name: "NOP 0x34 (ZPX)", code: [0x34, 0x00], expectedCycles: 4 },
-    { name: "NOP 0x54 (ZPX)", code: [0x54, 0x00], expectedCycles: 4 },
-    { name: "NOP 0x74 (ZPX)", code: [0x74, 0x00], expectedCycles: 4 },
-    { name: "NOP 0xD4 (ZPX)", code: [0xD4, 0x00], expectedCycles: 4 },
-    { name: "NOP 0xF4 (ZPX)", code: [0xF4, 0x00], expectedCycles: 4 },
+    // ───────────────────── Memory-reading NOPs ─────────────────────
+    // ZP
+    { name: "NOP ZP (0x04)", code: [0x04, 0x00], expectedCycles: 3 },
+    { name: "NOP ZP (0x44)", code: [0x44, 0x00], expectedCycles: 3 },
+    { name: "NOP ZP (0x64)", code: [0x64, 0x00], expectedCycles: 3 },
+    // ZP,X
+    { name: "NOP ZPX (0x14)", code: [0x14, 0x00], expectedCycles: 4 },
+    { name: "NOP ZPX (0x34)", code: [0x34, 0x00], expectedCycles: 4 },
+    { name: "NOP ZPX (0x54)", code: [0x54, 0x00], expectedCycles: 4 },
+    { name: "NOP ZPX (0x74)", code: [0x74, 0x00], expectedCycles: 4 },
+    { name: "NOP ZPX (0xD4)", code: [0xD4, 0x00], expectedCycles: 4 },
+    { name: "NOP ZPX (0xF4)", code: [0xF4, 0x00], expectedCycles: 4 },
+    // ABS
+    { name: "NOP ABS (0x0C)", code: [0x0C, 0x00, 0x00], expectedCycles: 4 },
+    // ABS,X (no page cross → 4 cycles)
+    { name: "NOP ABSX (0x1C)", code: [0x1C, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP ABSX (0x3C)", code: [0x3C, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP ABSX (0x5C)", code: [0x5C, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP ABSX (0x7C)", code: [0x7C, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP ABSX (0xDC)", code: [0xDC, 0x00, 0x00], expectedCycles: 4 },
+    { name: "NOP ABSX (0xFC)", code: [0xFC, 0x00, 0x00], expectedCycles: 4 },
 
-    // Absolute NOPs (3 bytes, memory read)
-    { name: "NOP 0x0C (ABS)", code: [0x0C, 0x00, 0x00], expectedCycles: 4 },
-    { name: "NOP 0x1C (ABS,X)", code: [0x1C, 0x00, 0x00], expectedCycles: 4 },
-    { name: "NOP 0x3C (ABS,X)", code: [0x3C, 0x00, 0x00], expectedCycles: 4 },
-    { name: "NOP 0x5C (ABS,X)", code: [0x5C, 0x00, 0x00], expectedCycles: 4 },
-    { name: "NOP 0x7C (ABS,X)", code: [0x7C, 0x00, 0x00], expectedCycles: 4 },
-    { name: "NOP 0xDC (ABS,X)", code: [0xDC, 0x00, 0x00], expectedCycles: 4 },
-    { name: "NOP 0xFC (ABS,X)", code: [0xFC, 0x00, 0x00], expectedCycles: 4 },
-
-    // Zero page,Y (rare NOP)
-    { name: "NOP 0x92 (ZP,Y)", code: [0x92, 0x10], expectedCycles: 5 }
+    // ───────────────────── Page-crossing ABS,X NOPs (+1 cycle) ─────────────────────
+    // Base = $00FF, X=1 → cross to $0100 → expect 5 cycles.
+    {
+      name: "NOP ABSX (0x1C) page cross",
+      code: [0x1C, 0xFF, 0x00],
+      pre:  { X: 0x01 },
+      expectedCycles: 5
+    },
+    {
+      name: "NOP ABSX (0x7C) page cross",
+      code: [0x7C, 0xFF, 0x00],
+      pre:  { X: 0x01 },
+      expectedCycles: 5
+    }
   ];
 
-  // Clear and prepare system memory for indirect or memory reads in NOPs that access memory
+  // Full clear (if your emulator needs it)
   for (let addr = 0; addr < 0x10000; addr++) checkWriteOffset(addr, 0);
 
   let html =
-    `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">BRK & NOPs Test Suite</div>
+    `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
+       BRK & NOPs Test Suite
+     </div>
      <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
        <thead>
          <tr style="background:#222">
            <th>Test</th><th>Opcode</th><th>Flags Before</th><th>Flags After</th>
-           <th>CPU Before</th><th>CPU After</th><th>PC Before</th><th>PC After</th><th>Cycles Used</th><th>Expected Cycles</th><th>Status</th>
+           <th>CPU Before</th><th>CPU After</th>
+           <th>PC Before</th><th>PC After</th>
+           <th>Cycles Used</th><th>Expected Cycles</th><th>Status</th>
          </tr>
        </thead><tbody>`;
 
   for (const test of tests) {
-    // Reset CPU and memory for each test
+    // Reset CPU & memory for each test
     for (let addr = 0; addr < 0x10000; addr++) checkWriteOffset(addr, 0);
-    CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
+    CPUregisters.A = 0; CPUregisters.X = 0; CPUregisters.Y = 0;
     CPUregisters.S = 0xFF;
     CPUregisters.P = { C: 0, Z: 0, I: 0, D: 0, B: 0, V: 0, N: 0 };
     CPUregisters.PC = 0x8000;
 
-    // Load test code bytes into memory at PC
+    // Load test code at $8000 (assuming prgRom[0] is mapped to CPU $8000)
     for (let i = 0; i < test.code.length; i++) {
-      prgRom[0x0000 + i, test.code[i]];
+      prgRom[i] = test.code[i];
     }
 
-    // Apply preconditions if any
+    // Preconditions
     if (test.pre) {
       if (test.pre.A != null) CPUregisters.A = test.pre.A;
       if (test.pre.X != null) CPUregisters.X = test.pre.X;
@@ -2172,25 +2255,38 @@ function runBrkAndNopsTests() {
       if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
 
-    // Snapshot before execution
-    const flagsBefore = { ...CPUregisters.P };
-    const cpuBefore = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
-    const pcBefore = CPUregisters.PC;
-    const cyclesBefore = cpuCycles;
+    // Sanity: ensure the opcode is actually at $8000
+    console.assert(prgRom[0x00] === test.code[0], "Test byte not at $8000");
 
-    // Execute one instruction step
+    // Snapshots
+    const flagsBefore = { ...CPUregisters.P };
+    const cpuBefore   = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
+    const pcBefore    = CPUregisters.PC;
+    const cyclesBefore= cpuCycles;
+
+    // Execute one instruction
     step();
 
-    // Snapshot after execution
-    const flagsAfter = { ...CPUregisters.P };
-    const cpuAfter = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
-    const pcAfter = CPUregisters.PC;
+    // After
+    const flagsAfter  = { ...CPUregisters.P };
+    const cpuAfter    = { A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S };
+    const pcAfter     = CPUregisters.PC;
     const cyclesAfter = cpuCycles;
 
     const cyclesUsed = cyclesAfter - cyclesBefore;
     const expectedCycles = test.expectedCycles || 0;
 
-    // Check expected results
+    // Expected PC:
+    // BRK is special: PC behaves as if the opcode had a 2-byte length for the pushed return address.
+    // For all others, expect + code.length (opcode + operands).
+    let expectedPC;
+    if (test.code[0] === 0x00) {
+      expectedPC = pcBefore + 2;
+    } else {
+      expectedPC = pcBefore + test.code.length;
+    }
+
+    // Assertions
     let pass = true;
     const reasons = [];
 
@@ -2209,52 +2305,27 @@ function runBrkAndNopsTests() {
       }
     }
 
-    // For NOPs, expected is mostly cycles and PC increment
-
-   // initial test calculated expected offset as + opcodes length, BRK is +2 but opcode length 1, fixed
-  let expectedPC;
-  if (test.code[0] === 0x00) { // 0x00 is BRK
-    expectedPC = pcBefore + 2;
-  } else {
-    expectedPC = pcBefore + test.code.length;
-  }
-
-if (pcAfter !== expectedPC) {
-  pass = false;
-  reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${expectedPC.toString(16)}`);
-}
+    if (pcAfter !== expectedPC) {
+      pass = false;
+      reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${expectedPC.toString(16)}`);
+    }
 
     if (cyclesUsed !== expectedCycles) {
       pass = false;
       reasons.push(`cycles=${cyclesUsed}≠${expectedCycles}`);
     }
 
-    // Build opcode hex string
     const opcodeHex = test.code.map(b => b.toString(16).padStart(2, "0")).join(" ");
-
-    // Build flags string for before and after
-    function flagsBin(f) {
-      return [
-        f.N ? "N" : ".",
-        f.V ? "V" : ".",
-        f.B ? "B" : ".",
-        f.D ? "D" : ".",
-        f.I ? "I" : ".",
-        f.Z ? "Z" : ".",
-        f.C ? "C" : "."
-      ].join("");
-    }
-    const flagsBeforeStr = flagsBin(flagsBefore);
-    const flagsAfterStr = flagsBin(flagsAfter);
+    const flagsStr = f => [f.N?"N":".",f.V?"V":".",f.B?"B":".",f.D?"D":".",f.I?"I":".",f.Z?"Z":".",f.C?"C":"."].join("");
 
     html += `
       <tr style="background:${pass ? "#113311" : "#331111"}">
         <td>${test.name}</td>
         <td>${opcodeHex}</td>
-        <td>${flagsBeforeStr}</td>
-        <td>${flagsAfterStr}</td>
+        <td>${flagsStr(flagsBefore)}</td>
+        <td>${flagsStr(flagsAfter)}</td>
         <td>A=${cpuBefore.A} X=${cpuBefore.X} Y=${cpuBefore.Y} S=${cpuBefore.S}</td>
-        <td>A=${cpuAfter.A} X=${cpuAfter.X} Y=${cpuAfter.Y} S=${cpuAfter.S}</td>
+        <td>A=${cpuAfter.A}  X=${cpuAfter.X}  Y=${cpuAfter.Y}  S=${cpuAfter.S}</td>
         <td>0x${pcBefore.toString(16)}</td>
         <td>0x${pcAfter.toString(16)}</td>
         <td>${cyclesUsed}</td>
@@ -2266,8 +2337,9 @@ if (pcAfter !== expectedPC) {
   html += "</tbody></table>";
   document.body.insertAdjacentHTML("beforeend", html);
 
-  CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
+  // Restore ROM byte that triggers your suite, if you need it afterward.
+  CPUregisters.PC = 0x8000;
+  prgRom[0] = 0x02;
   CPUregisters.PC = 0x8000;
 }
 
