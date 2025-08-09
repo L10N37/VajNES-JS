@@ -1063,106 +1063,6 @@ function ORA_INDY() {
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
 }
 
-// --------- Branches (REL) ---------------
-
-function BCC_REL() {
-  const offset = checkReadOffset(CPUregisters.PC + 1);
-  const signed = offset < 0x80 ? offset : offset - 0x100;
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
-  if (!CPUregisters.P.C) {
-    const dest = (CPUregisters.PC + signed) & 0xFFFF;
-    cpuCycles += 1;
-    if ((CPUregisters.PC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
-    CPUregisters.PC = dest;
-  }
-}
-
-function BCS_REL() {
-  const offset = checkReadOffset(CPUregisters.PC + 1);
-  const signed = offset < 0x80 ? offset : offset - 0x100;
-  const oldPC = CPUregisters.PC;
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF; // advance past opcode+operand
-
-  if (CPUregisters.P.C) {
-    const dest = (CPUregisters.PC + signed) & 0xFFFF;
-    cpuCycles += 1;
-    if ((CPUregisters.PC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
-    CPUregisters.PC = dest;
-  }
-}
-
-function BEQ_REL() {
-  const offset = checkReadOffset(CPUregisters.PC + 1);
-  const signed = offset < 0x80 ? offset : offset - 0x100;
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
-  if (CPUregisters.P.Z) {
-    const dest = (CPUregisters.PC + signed) & 0xFFFF;
-    cpuCycles += 1;
-    if ((CPUregisters.PC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
-    CPUregisters.PC = dest;
-  }
-}
-
-function BNE_REL() {
-  const offset = checkReadOffset(CPUregisters.PC + 1);
-  const signed = offset < 0x80 ? offset : offset - 0x100;
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
-  if (!CPUregisters.P.Z) {
-    const dest = (CPUregisters.PC + signed) & 0xFFFF;
-    cpuCycles += 1;
-    if ((CPUregisters.PC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
-    CPUregisters.PC = dest;
-  }
-}
-
-function BMI_REL() {
-  const offset = checkReadOffset(CPUregisters.PC + 1);
-  const signed = offset < 0x80 ? offset : offset - 0x100;
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
-  if (CPUregisters.P.N) {
-    const dest = (CPUregisters.PC + signed) & 0xFFFF;
-    cpuCycles += 1;
-    if ((CPUregisters.PC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
-    CPUregisters.PC = dest;
-  }
-}
-
-function BPL_REL() {
-  const offset = checkReadOffset(CPUregisters.PC + 1);
-  const signed = offset < 0x80 ? offset : offset - 0x100;
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
-  if (!CPUregisters.P.N) {
-    const dest = (CPUregisters.PC + signed) & 0xFFFF;
-    cpuCycles += 1;
-    if ((CPUregisters.PC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
-    CPUregisters.PC = dest;
-  }
-}
-
-function BVC_REL() {
-  const offset = checkReadOffset(CPUregisters.PC + 1);
-  const signed = offset < 0x80 ? offset : offset - 0x100;
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
-  if (!CPUregisters.P.V) {
-    const dest = (CPUregisters.PC + signed) & 0xFFFF;
-    cpuCycles += 1;
-    if ((CPUregisters.PC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
-    CPUregisters.PC = dest;
-  }
-}
-
-function BVS_REL() {
-  const offset = checkReadOffset(CPUregisters.PC + 1);
-  const signed = offset < 0x80 ? offset : offset - 0x100;
-  CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
-  if (CPUregisters.P.V) {
-    const dest = (CPUregisters.PC + signed) & 0xFFFF;
-    cpuCycles += 1;
-    if ((CPUregisters.PC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
-    CPUregisters.PC = dest;
-  }
-}
-
 // --------- BRK (IMP) ---------------
 function BRK_IMP() {
   // compute return address = PC + table.pcIncrement (2)
@@ -1196,79 +1096,108 @@ function BRK_IMP() {
   cpuCycles += 5; //extra 5 on top of base
 }
 
-// ---------- helpers ----------
-function cmpSetFlags(a, m) {
-  const ai = a & 0xFF;
-  const mi = m & 0xFF;
-  const diff = (ai - mi) & 0xFF;
-  CPUregisters.P.C = (ai >= mi) ? 1 : 0;     // no borrow
-  CPUregisters.P.Z = (diff === 0) ? 1 : 0;   // equal
-  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;  // bit 7 of result
+// CMP #imm — 0xC9
+function CMP_IMM() {
+  const m    = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const a    = CPUregisters.A & 0xFF;
+  const diff = (a - m) & 0xFF;
+  CPUregisters.P.C = (a >= m) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
 }
 
-// ---------- CMP ----------
-function CMP_IMM() { // C9
-  const operand = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  cmpSetFlags(CPUregisters.A, operand);
+// CMP $nn — 0xC5
+function CMP_ZP() {
+  const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const m    = checkReadOffset(zp) & 0xFF;
+  const a    = CPUregisters.A & 0xFF;
+  const diff = (a - m) & 0xFF;
+  CPUregisters.P.C = (a >= m) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
 }
 
-function CMP_ZP() { // C5
-  const zp = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const operand = checkReadOffset(zp) & 0xFF;
-  cmpSetFlags(CPUregisters.A, operand);
+// CMP $nn,X — 0xD5
+function CMP_ZPX() {
+  const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
+  const m    = checkReadOffset(addr) & 0xFF;
+  const a    = CPUregisters.A & 0xFF;
+  const diff = (a - m) & 0xFF;
+  CPUregisters.P.C = (a >= m) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
 }
 
-function CMP_ZPX() { // D5
-  const zp = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; // ZP wrap
-  const operand = checkReadOffset(addr) & 0xFF;
-  cmpSetFlags(CPUregisters.A, operand);
-}
-
-function CMP_ABS() { // CD
-  const lo = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const hi = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+// CMP $nnnn — 0xCD
+function CMP_ABS() {
+  const lo   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi   = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
   const addr = ((hi << 8) | lo) & 0xFFFF;
-  const operand = checkReadOffset(addr) & 0xFF;
-  cmpSetFlags(CPUregisters.A, operand);
+  const m    = checkReadOffset(addr) & 0xFF;
+  const a    = CPUregisters.A & 0xFF;
+  const diff = (a - m) & 0xFF;
+  CPUregisters.P.C = (a >= m) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
 }
 
-function CMP_ABSX() { // DD
-  const lo = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const hi = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
-  const base = ((hi << 8) | lo) & 0xFFFF;
-  const addr = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
-  const operand = checkReadOffset(addr) & 0xFF;
-  cmpSetFlags(CPUregisters.A, operand);
+// CMP $nnnn,X — 0xDD
+function CMP_ABSX() {
+  const lo    = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi    = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const base  = ((hi << 8) | lo) & 0xFFFF;
+  const addr  = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  const m     = checkReadOffset(addr) & 0xFF;
+  const a     = CPUregisters.A & 0xFF;
+  const diff  = (a - m) & 0xFF;
+  CPUregisters.P.C = (a >= m) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
 }
 
-function CMP_ABSY() { // D9
-  const lo = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const hi = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+// CMP $nnnn,Y — 0xD9
+function CMP_ABSY() {
+  const lo    = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi    = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const base  = ((hi << 8) | lo) & 0xFFFF;
+  const addr  = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  const m     = checkReadOffset(addr) & 0xFF;
+  const a     = CPUregisters.A & 0xFF;
+  const diff  = (a - m) & 0xFF;
+  CPUregisters.P.C = (a >= m) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
+}
+
+// CMP ($nn,X) — 0xC1
+function CMP_INDX() {
+  const nn   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const ptr  = (nn + (CPUregisters.X & 0xFF)) & 0xFF;      // ZP wrap
+  const lo   = checkReadOffset(ptr) & 0xFF;
+  const hi   = checkReadOffset((ptr + 1) & 0xFF) & 0xFF;   // ZP wrap for hi
+  const addr = ((hi << 8) | lo) & 0xFFFF;
+  const m    = checkReadOffset(addr) & 0xFF;
+  const a    = CPUregisters.A & 0xFF;
+  const diff = (a - m) & 0xFF;
+  CPUregisters.P.C = (a >= m) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
+}
+
+// CMP ($nn),Y — 0xD1
+function CMP_INDY() {
+  const nn   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const lo   = checkReadOffset(nn) & 0xFF;
+  const hi   = checkReadOffset((nn + 1) & 0xFF) & 0xFF;    // ZP wrap for hi
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
-  const operand = checkReadOffset(addr) & 0xFF;
-  cmpSetFlags(CPUregisters.A, operand);
-}
-
-function CMP_INDX() { // C1   ($nn,X)
-  const nn  = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const ptr = (nn + (CPUregisters.X & 0xFF)) & 0xFF;   // ZP wrap
-  const lo  = checkReadOffset(ptr) & 0xFF;
-  const hi  = checkReadOffset((ptr + 1) & 0xFF) & 0xFF; // ZP wrap for hi
-  const addr = ((hi << 8) | lo) & 0xFFFF;
-  const operand = checkReadOffset(addr) & 0xFF;
-  cmpSetFlags(CPUregisters.A, operand);
-}
-
-function CMP_INDY() { // D1   ($nn),Y
-  const nn  = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const lo  = checkReadOffset(nn) & 0xFF;
-  const hi  = checkReadOffset((nn + 1) & 0xFF) & 0xFF; // ZP wrap for hi
-  const base = ((hi << 8) | lo) & 0xFFFF;
-  const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
-  const operand = checkReadOffset(addr) & 0xFF;
-  cmpSetFlags(CPUregisters.A, operand);
+  const m    = checkReadOffset(addr) & 0xFF;
+  const a    = CPUregisters.A & 0xFF;
+  const diff = (a - m) & 0xFF;
+  CPUregisters.P.C = (a >= m) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
 }
 
 // ---------- CPY ----------
@@ -2815,20 +2744,154 @@ function SBX_IMM() {
   CPUregisters.P.N = (CPUregisters.X & 0x80) ? 1 : 0;
 }
 
+// --------- Branches (REL) with PC increment inside handler ---------
+// NOTE: Dispatcher must NOT auto-advance PC for these opcodes.
+
+// BCC — Branch if Carry Clear (0x90)
+function BCC_REL() {
+  const off    = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const rel    = (off < 0x80) ? off : off - 0x100;  // sign-extend
+  const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
+
+  if (!CPUregisters.P.C) {
+    const dest = (nextPC + rel) & 0xFFFF;
+    cpuCycles += 1;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    CPUregisters.PC = dest;
+  } else {
+    CPUregisters.PC = nextPC;
+  }
+
+}
+
+// BCS — Branch if Carry Set (0xB0)
+function BCS_REL() {
+  const pc = CPUregisters.PC & 0xFFFF;
+
+  const off = prgRom[(pc + 1 - 0x8000) & 0xFFFF] & 0xFF;
+  const rel = (off ^ 0x80) - 0x80;
+  const nextPC = (pc + 2) & 0xFFFF;
+
+  if (CPUregisters.P.C) {
+    const dest = (nextPC + rel) & 0xFFFF;
+    cpuCycles += 1; // +1 if branch taken
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1; // +1 if page cross
+    CPUregisters.PC = dest;
+  } else {
+    CPUregisters.PC = nextPC;
+  }
+}
+
+// BEQ — Branch if Zero Set (0xF0)
+function BEQ_REL() {
+  const off    = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const rel    = (off < 0x80) ? off : off - 0x100;
+  const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
+
+  if (CPUregisters.P.Z) {
+    const dest = (nextPC + rel) & 0xFFFF;
+    cpuCycles += 1;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    CPUregisters.PC = dest;
+  } else {
+    CPUregisters.PC = nextPC;
+  }
+}
+
+// BNE — Branch if Zero Clear (0xD0)
+function BNE_REL() {
+  const off    = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const rel    = (off < 0x80) ? off : off - 0x100;
+  const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
+
+  if (!CPUregisters.P.Z) {
+    const dest = (nextPC + rel) & 0xFFFF;
+    cpuCycles += 1;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    CPUregisters.PC = dest;
+  } else {
+    CPUregisters.PC = nextPC;
+  }
+}
+
+// BMI — Branch if Negative Set (0x30)
+function BMI_REL() {
+  const off    = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const rel    = (off < 0x80) ? off : off - 0x100;
+  const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
+
+  if (CPUregisters.P.N) {
+    const dest = (nextPC + rel) & 0xFFFF;
+    cpuCycles += 1;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    CPUregisters.PC = dest;
+  } else {
+    CPUregisters.PC = nextPC;
+  }
+}
+
+// BPL — Branch if Negative Clear (0x10)
+function BPL_REL() {
+  const off    = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const rel    = (off < 0x80) ? off : off - 0x100;
+  const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
+
+  if (!CPUregisters.P.N) {
+    const dest = (nextPC + rel) & 0xFFFF;
+    cpuCycles += 1;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    CPUregisters.PC = dest;
+  } else {
+    CPUregisters.PC = nextPC;
+  }
+}
+
+// BVC — Branch if Overflow Clear (0x50)
+function BVC_REL() {
+  const off    = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const rel    = (off < 0x80) ? off : off - 0x100;
+  const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
+
+  if (!CPUregisters.P.V) {
+    const dest = (nextPC + rel) & 0xFFFF;
+    cpuCycles += 1;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    CPUregisters.PC = dest;
+  } else {
+    CPUregisters.PC = nextPC;
+  }
+}
+
+// BVS — Branch if Overflow Set (0x70)
+function BVS_REL() {
+  const off    = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const rel    = (off < 0x80) ? off : off - 0x100;
+  const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
+
+  if (CPUregisters.P.V) {
+    const dest = (nextPC + rel) & 0xFFFF;
+    cpuCycles += 1;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    CPUregisters.PC = dest;
+  } else {
+    CPUregisters.PC = nextPC;
+  }
+}
+
 //////////////////////// 6502 CPU opcode object ////////////////////////
 const opcodes = {
 
   // ==================== BRANCH/CONTROL FLOW (pcIncrement: 0) ==================== //
-  BCC: { relative: { code: 0x90, length: 2, pcIncrement: 2, func: BCC_REL } },
-  BCS: { relative: { code: 0xB0, length: 2, pcIncrement: 2, func: BCS_REL } },
-  BEQ: { relative: { code: 0xF0, length: 2, pcIncrement: 2, func: BEQ_REL } },
-  BMI: { relative: { code: 0x30, length: 2, pcIncrement: 2, func: BMI_REL } },
-  BNE: { relative: { code: 0xD0, length: 2, pcIncrement: 2, func: BNE_REL } },
-  BPL: { relative: { code: 0x10, length: 2, pcIncrement: 2, func: BPL_REL } },
-  BVC: { relative: { code: 0x50, length: 2, pcIncrement: 2, func: BVC_REL } },
-  BVS: { relative: { code: 0x70, length: 2, pcIncrement: 2, func: BVS_REL } },
+  BCC: { relative: { code: 0x90, length: 2, pcIncrement: 0, func: BCC_REL } },
+  BCS: { relative: { code: 0xB0, length: 2, pcIncrement: 0, func: BCS_REL } },
+  BEQ: { relative: { code: 0xF0, length: 2, pcIncrement: 0, func: BEQ_REL } },
+  BMI: { relative: { code: 0x30, length: 2, pcIncrement: 0, func: BMI_REL } },
+  BNE: { relative: { code: 0xD0, length: 2, pcIncrement: 0, func: BNE_REL } },
+  BPL: { relative: { code: 0x10, length: 2, pcIncrement: 0, func: BPL_REL } },
+  BVC: { relative: { code: 0x50, length: 2, pcIncrement: 0, func: BVC_REL } },
+  BVS: { relative: { code: 0x70, length: 2, pcIncrement: 0, func: BVS_REL } },
   // Unofficial: BRA - Branch Always (0x80)
-  BRA: { relative: { code: 0x80, length: 2, pcIncrement: 2, func: BRA_REL } },
+  BRA: { relative: { code: 0x80, length: 2, pcIncrement: 0, func: BRA_REL } },
 
   JMP: {
     absolute:   { code: 0x4C, length: 3, pcIncrement: 3, func: JMP_ABS }, // 3 or set directly

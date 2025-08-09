@@ -48,23 +48,23 @@ if (test) {
 // ── Single‐step executor ──
 function step() {
 
-  const pc     = CPUregisters.PC;
-  const idx    = pc - 0x8000;        // PRG-ROM base
-  const code   = prgRom[idx];
+  const code = prgRom[(CPUregisters.PC - 0x8000) & 0xFFFF];
   const execFn = opcodeFuncs[code];
 
   if (!execFn) {
-    console.warn(`Unknown opcode ${code.toString(16)} at PC=0x${pc.toString(16)}`);
+    const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
+    console.warn(`Unknown opcode 0x${codeHex}`);
+    console.warn(`at PC=0x${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
     return;
   }
 
-console.log("instr:", `0x${code.toString(16).toUpperCase()}`);
-console.log(`PC=> 0x${pc.toString(16).toUpperCase().padStart(4, "0")}`);
+  console.log("instr:", `0x${code.toString(16).toUpperCase()}`);
+  console.log(`PC=> 0x${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
 
   // Execute instruction
   execFn();
 
   // Advance cycles & PC
   cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF;
-  CPUregisters.PC = (pc + opcodePcIncs[code]) & 0xFFFF;
+  CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]) & 0xFFFF;
 }

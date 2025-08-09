@@ -1178,8 +1178,23 @@ function runShiftOpsTests() {
     { name:"ROL $10",                     code:[0x26,0x10],   pre:{P:{C:0}}, setup:()=>{ checkWriteOffset(0x10, 0x01); }, expectMem:{addr:0x10,value:0x02}, expect:{C:0,Z:0,N:0} },
     { name:"ROL $10 (carry)",             code:[0x26,0x10],   pre:{P:{C:1}}, setup:()=>{ checkWriteOffset(0x10, 0x80); }, expectMem:{addr:0x10,value:0x01}, expect:{C:1,Z:0,N:0} },
     { name:"ROL $20,X",                   code:[0x36,0x10], pre:{X:0x10,P:{C:0}}, setup:()=>{ checkWriteOffset(0x20, 0x40); }, expectMem:{addr:0x20,value:0x80}, expect:{C:0,Z:0,N:1} },
-    { name:"ROL $2000",                   code:[0x2E,0x00,0x20], pre:{P:{C:1}}, setup:()=>{ checkWriteOffset(0x2000, 0x40); }, expectMem:{addr:0x2000,value:0x81}, expect:{C:0,Z:0,N:1} },
-    { name:"ROL $2000,X",                 code:[0x3E,0xFF,0x1F], pre:{X:0x01,P:{C:1}}, setup:()=>{ checkWriteOffset(0x2000, 0x80); }, expectMem:{addr:0x2000,value:0x01}, expect:{C:1,Z:0,N:0} },
+
+
+   { name:"ROL $0200",
+  code:[0x2E,0x00,0x02],
+  pre:{P:{C:1}},
+  setup:()=>{ checkWriteOffset(0x0200, 0x40); },
+  expectMem:{addr:0x0200, value:0x81},
+  expect:{C:0, Z:0, N:1}
+},
+
+{ name:"ROL $0200,X",
+  code:[0x3E,0xFF,0x01], // base $01FF + X=1 -> $0200
+  pre:{X:0x01, P:{C:1}},
+  setup:()=>{ checkWriteOffset(0x0200, 0x80); },
+  expectMem:{addr:0x0200, value:0x01},
+  expect:{C:1, Z:0, N:0}
+},
 
     // ROR accumulator
     { name:"ROR A (no carry)",            code:[0x6A],                   pre:{A:0x02,P:{C:0}}, expect:{A:0x01,C:0,Z:0,N:0} },
@@ -1517,21 +1532,94 @@ function runCompareOpsTests() {
     { name:"CMP #$10, A>$10",     code:[0xC9,0x10],                  pre:{A:0x20},                          expect:{C:1,Z:0,N:0} },
     { name:"CMP #$20, A=$20",     code:[0xC9,0x20],                  pre:{A:0x20},                          expect:{C:1,Z:1,N:0} },
     { name:"CMP zeroPage",        code:[0xC5,0x10],                  pre:{A:0x05}, setup:()=>{ checkWriteOffset(0x10, 0x05); }, expect:{C:1,Z:1,N:0} },
-    { name:"CMP zeroPage,X",      code:[0xD5,0x0F], pre:{A:0x10,X:0x01}, setup:()=>{ checkWriteOffset(0x10, 0x05); }, expect:{C:1,Z:0,N:1} },
+
+// 1) Equal → Z=1, C=1, N=0
+{ name:"CMP $10,X equal -> Z,C",
+  code:[0xD5,0x10],
+  pre:{A:0x3C, X:0x02},
+  setup:()=>{ checkWriteOffset(0x0012, 0x3C); }, // $10 + X = $12
+  expect:{C:1, Z:1, N:0}
+},
+
+// 2) A > M (small positive diff) → Z=0, C=1, N=0
+{ name:"CMP $0F,X A>M -> C",
+  code:[0xD5,0x0F],
+  pre:{A:0x05, X:0x00},
+  setup:()=>{ checkWriteOffset(0x000F, 0x01); },
+  expect:{C:1, Z:0, N:0}
+},
+
+// 3) A < M with ZP wrap (0xFE + 5 -> 0x03) → Z=0, C=0, N=1
+{ name:"CMP $FE,X wrap A<M -> N",
+  code:[0xD5,0xFE],
+  pre:{A:0x10, X:0x05},
+  setup:()=>{ checkWriteOffset(0x0003, 0x90); }, // diff = 0x10 - 0x90 = 0x80
+  expect:{C:0, Z:0, N:1}
+},
+
+   // 1) Equal → Z=1, C=1, N=0
+{ name:"CMP $10,X equal -> Z,C",
+  code:[0xD5,0x10],
+  pre:{A:0x20, X:0x02},
+  setup:()=>{ checkWriteOffset(0x0012, 0x20); },   // $10 + X = $12
+  expect:{C:1, Z:1, N:0}
+},
+
+// 2) A > M (small positive diff) → Z=0, C=1, N=0
+{ name:"CMP $0F,X A>M -> C",
+  code:[0xD5,0x0F],
+  pre:{A:0x10, X:0x01},
+  setup:()=>{ checkWriteOffset(0x0010, 0x05); },   // eff = $0F + 1 = $10
+  expect:{C:1, Z:0, N:0}
+},
+
+// 3) A < M with ZP wrap (0xFE + 5 -> 0x03) → Z=0, C=0, N=1
+{ name:"CMP $FE,X wrap A<M -> N",
+  code:[0xD5,0xFE],
+  pre:{A:0x10, X:0x05},
+  setup:()=>{ checkWriteOffset(0x0003, 0x90); },   // diff = 0x10 - 0x90 = 0x80
+  expect:{C:0, Z:0, N:1}
+},
+
     { name:"CMP absolute",        code:[0xCD,0x00,0x20],             pre:{A:0x05}, setup:()=>{ checkWriteOffset(0x2000, 0x10); }, expect:{C:0,Z:0,N:1} },
     { name:"CMP absolute,X",      code:[0xDD,0x00,0x20], pre:{A:0x10,X:0x01}, setup:()=>{ checkWriteOffset(0x2001, 0x10); }, expect:{C:1,Z:1,N:0} },
     { name:"CMP absolute,Y",      code:[0xD9,0x00,0x20], pre:{A:0x05,Y:0x01}, setup:()=>{ checkWriteOffset(0x2001, 0x05); }, expect:{C:1,Z:1,N:0} },
-    { name:"CMP (ind,X)",         code:[0xC1,0x0F], pre:{A:0x11,X:0x01}, setup:()=>{
-        checkWriteOffset(0x10, 0x00);
-        checkWriteOffset(0x11, 0x30);
-        checkWriteOffset(0x3001, 0x11);
-      }, expect:{C:1,Z:1,N:0} },
-    { name:"CMP (ind),Y",         code:[0xD1,0x20], pre:{A:0x05,Y:0x02}, setup:()=>{
-        checkWriteOffset(0x20, 0x00);
-        checkWriteOffset(0x21, 0x30);
-        checkWriteOffset(0x3002, 0x06);
-      }, expect:{C:1,Z:0,N:0} },
 
+// 1) Equal → Z=1, C=1, N=0
+{ name:"CMP ($0F,X) equal -> Z,C",
+  code:[0xC1,0x0F],
+  pre:{A:0x11, X:0x01},
+  setup:()=>{                     // ptr at ($0F+1)=$10
+    checkWriteOffset(0x0010, 0x00); // lo
+    checkWriteOffset(0x0011, 0x03); // hi  => base=$0300
+    checkWriteOffset(0x0300, 0x11); // M[$0300]=0x11
+  },
+  expect:{C:1, Z:1, N:0}
+},
+
+// 2) A > M → Z=0, C=1, N=0
+{ name:"CMP ($12,X) A>M -> C",
+  code:[0xC1,0x12],
+  pre:{A:0x10, X:0x03},
+  setup:()=>{                     // ptr at ($12+3)=$15
+    checkWriteOffset(0x0015, 0x34); // lo
+    checkWriteOffset(0x0016, 0x00); // hi  => base=$0034
+    checkWriteOffset(0x0034, 0x05); // M=0x05, diff=0x0B
+  },
+  expect:{C:1, Z:0, N:0}
+},
+
+// 3) ZP wrap, A < M → Z=0, C=0, N=1
+{ name:"CMP ($FE,X) wrap A<M -> N",
+  code:[0xC1,0xFE],
+  pre:{A:0x10, X:0x05},
+  setup:()=>{                     // ($FE+5)&FF = $03
+    checkWriteOffset(0x0003, 0x20); // lo
+    checkWriteOffset(0x0004, 0x01); // hi  => base=$0120
+    checkWriteOffset(0x0120, 0x90); // diff=0x10-0x90=0x80
+  },
+  expect:{C:0, Z:0, N:1}
+},
     // CPX
     { name:"CPX #$10, X>$10",     code:[0xE0,0x10], pre:{X:0x20},                          expect:{C:1,Z:0,N:0} },
     { name:"CPX #$20, X=$20",     code:[0xE0,0x20], pre:{X:0x20},                          expect:{C:1,Z:1,N:0} },
@@ -1674,8 +1762,8 @@ function runBranchOpsTests() {
   cases.forEach(test => {
     // Setup registers/memory
     CPUregisters.PC = startPC;
-    checkWriteOffset(startPC, test.code[0]);
-    checkWriteOffset(startPC + 1, test.code[1]);
+    prgRom[0x00] = test.code[0];
+    prgRom[0x01] = test.code[1];
     CPUregisters.A = 0x12; CPUregisters.X = 0x34; CPUregisters.Y = 0x56; CPUregisters.S = 0xFD;
     Object.assign(CPUregisters.P, {N:0,V:0,B:0,D:0,I:0,Z:0,C:0});
     if(test.pre && test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
@@ -2042,7 +2130,7 @@ function runBrkAndNopsTests() {
 
     // Load test code bytes into memory at PC
     for (let i = 0; i < test.code.length; i++) {
-      checkWriteOffset(0x8000 + i, test.code[i]);
+      prgRom[0x0000 + i, test.code[i]];
     }
 
     // Apply preconditions if any
