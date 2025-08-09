@@ -1935,22 +1935,46 @@ function runJumpAndSubRoutinesTests() {
   CPUregisters.PC = 0x8000;
 }
 
-  function runStackOpsTests(){
+function runStackOpsTests() {
+  // --- tiny helpers (self-contained) ---
+  const hex8  = v => '0x' + (v & 0xFF).toString(16).toUpperCase().padStart(2,'0');
+  const hex16 = v => '0x' + (v & 0xFFFF).toString(16).toUpperCase().padStart(4,'0');
+  const flagsStr = P => (P.N? 'N':'-')+(P.V? 'V':'-')+'-'+(P.B? 'B':'-')+(P.D? 'D':'-')+(P.I? 'I':'-')+(P.Z? 'Z':'-')+(P.C? 'C':'-');
 
   // ===== STACK OPS (PHA, PHP, PLA, PLP) =====
+  // Notes:
+  //  - PHA/PHP write to $0100|S THEN S--; address is the *original* S.
+  //  - PLA/PLP do S++ THEN read from $0100|S (the incremented S).
   const tests = [
+    // --- PHA ---
+    { name:"PHA pushes A (S=FF)", code:[0x48], pre:{A:0x37,S:0xFF}, expectMem:{addr:0x01FF,value:0x37}, expect:{S:0xFE} },
+    { name:"PHA pushes A (S=80)", code:[0x48], pre:{A:0xAB,S:0x80}, expectMem:{addr:0x0180,value:0xAB}, expect:{S:0x7F} },
 
+    // --- PHP (bit5=1, B=0 expected in pushed value; only checking C here) ---
+    { name:"PHP pushes P (C=1,S=FF)", code:[0x08], pre:{P:{C:1},S:0xFF}, expectMem:{addr:0x01FF,value:0x21}, expect:{S:0xFE} },
+    { name:"PHP pushes P (C=0,S=80)", code:[0x08], pre:{P:{C:0},S:0x80}, expectMem:{addr:0x0180,value:0x20}, expect:{S:0x7F} },
 
-    { name:"PHA pushes A",    code:[0x48], pre:{A:0x37,S:0xFF},                                     expectMem:{addr:0x01FF,value:0x37}, expect:{S:0xFE} },
+    // --- PLA (sets Z/N from pulled A) ---
+    // Prepare stack slot at $01FF, S=FE -> PLA will S++ to FF, read $01FF
+    { name:"PLA pulls A (Z=0,N=0)", code:[0x68], pre:{S:0xFE}, setup:()=>{ checkWriteOffset(0x01FF, 0x44); },
+      expect:{A:0x44,Z:0,N:0,S:0xFF} },
+    // S=7E -> PLA will S++ to 7F, read $017F
+    { name:"PLA pulls A (Z=1)", code:[0x68], pre:{S:0x7E}, setup:()=>{ checkWriteOffset(0x017F, 0x00); },
+      expect:{A:0x00,Z:1,N:0,S:0x7F} },
+    // Negative
+    { name:"PLA pulls A (N=1)", code:[0x68], pre:{S:0x7E}, setup:()=>{ checkWriteOffset(0x017F, 0x80); },
+      expect:{A:0x80,Z:0,N:1,S:0x7F} },
 
-
-
-    { name:"PHP pushes P",    code:[0x08], pre:{P:{C:1},S:0xFF},                                    expectMem:{addr:0x01FF,value:0x21}, expect:{S:0xFE} },
-    { name:"PLA pulls A",     code:[0x68], pre:{S:0xFE},   setup:()=>{ checkWriteOffset(0x01FF, 0x44); }, expect:{A:0x44,Z:0,N:0,S:0xFF} },
-    { name:"PLP pulls P",     code:[0x28], pre:{S:0xFE},   setup:()=>{ checkWriteOffset(0x01FF, 0x21); }, expect:{S:0xFF,C:1} }
+    // --- PLP (pulls P; we only assert flags we care about) ---
+    // S=FE -> PLP S++ => FF, read $01FF
+    { name:"PLP pulls P (C=1)", code:[0x28], pre:{S:0xFE}, setup:()=>{ checkWriteOffset(0x01FF, 0x21); },
+      expect:{S:0xFF,C:1} },
+    { name:"PLP pulls P (C=0)", code:[0x28], pre:{S:0x7E}, setup:()=>{ checkWriteOffset(0x017F, 0x20); },
+      expect:{S:0x7F,C:0} },
+    // Mixed flags example: N=1, Z=1, C=1
+    { name:"PLP pulls P (N,Z,C)", code:[0x28], pre:{S:0x7E}, setup:()=>{ checkWriteOffset(0x017F, 0xA3); }, // 0b1010_0011
+      expect:{S:0x7F,N:1,Z:1,C:1} },
   ];
-
-setupTests(tests);
 
   // ── build HTML table ──
   let html =
@@ -1959,102 +1983,108 @@ setupTests(tests);
      </div>
      <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
        <thead><tr style="background:#222">
-         <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-         <th>CPU<br>Before</th><th>CPU<br>After</th><th>PPU<br>Before</th><th>PPU<br>After</th>
-         <th>Addr</th><th>Expected</th><th>Result</th><th>Intercept</th><th>Status</th>
+         <th style="text-align:left;padding:6px;border:1px solid #444;">Test</th>
+         <th style="text-align:left;padding:6px;border:1px solid #444;">Op</th>
+         <th style="text-align:left;padding:6px;border:1px solid #444;">CPU Before</th>
+         <th style="text-align:left;padding:6px;border:1px solid #444;">Flags Before</th>
+         <th style="text-align:left;padding:6px;border:1px solid #444;">CPU After</th>
+         <th style="text-align:left;padding:6px;border:1px solid #444;">Flags After</th>
+         <th style="text-align:left;padding:6px;border:1px solid #444;">Addr</th>
+         <th style="text-align:left;padding:6px;border:1px solid #444;">Expected</th>
+         <th style="text-align:left;padding:6px;border:1px solid #444;">Result</th>
+         <th style="text-align:left;padding:6px;border:1px solid #444;">Status</th>
        </tr></thead><tbody>`;
 
-  tests.forEach(test=>{
-    let intr={flag:false,addr:null}, orig=checkReadOffset;
-    checkReadOffset = a=>{ intr.flag=true; intr.addr = a&0xFFFF; return orig(a); };
+  tests.forEach(test => {
+    // Reset PC and seed opcode in PRG at $8000
+    CPUregisters.PC = 0x8000;
+    prgRom[(CPUregisters.PC - 0x8000) & 0xFFFF] = test.code[0] & 0xFF;
 
-    const fb={...CPUregisters.P},
-          cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pb={...PPUregister};
+    // Clear regs/flags (only the ones we care about)
+    CPUregisters.A = 0; CPUregisters.X = 0; CPUregisters.Y = 0;
+    Object.assign(CPUregisters.P, {N:0,V:0,B:0,D:0,I:0,Z:0,C:0});
+    CPUregisters.S = 0xFF;
 
-    if(test.pre){
-      if(test.pre.A!=null) CPUregisters.A=test.pre.A;
-      if(test.pre.S!=null) CPUregisters.S=test.pre.S;
-      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+    // Apply pre
+    if (test.pre) {
+      if (test.pre.A != null) CPUregisters.A = test.pre.A & 0xFF;
+      if (test.pre.S != null) CPUregisters.S = test.pre.S & 0xFF;
+      if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
-    if(test.setup) test.setup();
 
+    const fb = {...CPUregisters.P};
+    const cb = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
+
+    if (test.setup) test.setup();
+
+    // Run one instruction
     step();
-    checkReadOffset = orig;
 
-    const fa={...CPUregisters.P},
-          ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S},
-          pa={...PPUregister};
+    const fa = {...CPUregisters.P};
+    const ca = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
 
-    let reasons=[], pass=true;
+    // Validate
+    let reasons = [], pass = true;
     const exp = test.expect || {};
 
-    // check registers & flags
+    // Registers/flags expectations
     ["A","X","Y","S"].forEach(r=>{
-      if(exp[r]!==undefined && ca[r]!==exp[r]){
-        reasons.push(`${r}=${hex(ca[r])}≠${hex(exp[r])}`); pass=false;
-      }
+      if (exp[r] !== undefined && ca[r] !== exp[r]) { reasons.push(`${r}=${hex8(ca[r])}≠${hex8(exp[r])}`); pass = false; }
     });
-    ["C","Z","N","V"].forEach(f=>{
-      if(exp[f]!==undefined && CPUregisters.P[f]!==exp[f]){
-        reasons.push(`${f}=${CPUregisters.P[f]}≠${exp[f]}`); pass=false;
-      }
+    ["C","Z","N","V","D","I","B"].forEach(f=>{
+      if (exp[f] !== undefined && fa[f] !== exp[f]) { reasons.push(`${f}=${fa[f]}≠${exp[f]}`); pass = false; }
     });
 
-    // check memory writes
-    if(test.expectMem){
-      const got = [test.expectMem.addr];
-      if(got !== test.expectMem.value){
-        reasons.push(`$${test.expectMem.addr.toString(16).padStart(4,"0")}=${hex(got)}≠${hex(test.expectMem.value)}`);
-        pass=false;
+    // Memory write/read expectations
+    let addrLabel = "", expectedLabel = "", resultLabel = "";
+    if (test.expectMem) {
+      const addr = test.expectMem.addr & 0xFFFF;
+      const gotVal = checkReadOffset(addr) & 0xFF; // <-- FIX: read bus at addr
+      addrLabel = hex16(addr);
+      expectedLabel = hex8(test.expectMem.value);
+      resultLabel = hex8(gotVal);
+      if (gotVal !== (test.expectMem.value & 0xFF)) {
+        reasons.push(`${addrLabel}=${resultLabel}≠${expectedLabel}`);
+        pass = false;
       }
+    } else {
+      // If no memory check, show the expected vs actual registers/flags we asserted
+      expectedLabel = Object.entries(exp).map(([k,v]) => `${k}=${hex8(v)}`).join(" ");
+      resultLabel = Object.entries(exp).map(([k])=>{
+        const val = (k in ca) ? ca[k] : fa[k];
+        return `${k}=${hex8(val)}`;
+      }).join(" ");
     }
-
-    const interceptCell = intr.flag
-      ? dropdown(`$${intr.addr.toString(16).padStart(4,"0")}`, getMirrors(intr.addr).map(a=>`$${a.toString(16).padStart(4,"0")}`))
-      : "no";
-    const addrLabel = test.expectMem ? `$${test.expectMem.addr.toString(16).padStart(4,"0")}` : "";
-
-    const expectedLabel = test.expectMem
-      ? hex(test.expectMem.value)
-      : Object.entries(exp).map(([k,v])=>`${k}=${testSuiteHex(v)}`).join(" ");
-    const resultLabel = test.expectMem
-      ? hex([test.expectMem.addr])
-      : Object.entries(exp).map(([k])=>{
-          const val = k in ca ? ca[k] : CPUregisters.P[k];
-          return `${k}=${hex(val)}`;
-        }).join(" ");
 
     const statusCell = pass
       ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
-      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>`+
-        `<ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
+      : `<details><summary style="color:#ff4444;font-weight:bold;cursor:pointer;">❌</summary>
+           <ul style="margin:0 0 0 18px;color:#ff4444;">${reasons.map(r=>`<li>${r}</li>`).join("")}</ul>
+         </details>`;
 
     html += `
-      <tr style="background:${pass?"#113311":"#331111"}">
+      <tr style="background:${pass ? "#113311" : "#331111"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
         <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
-        <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pb).map(([k,v])=>`${k}=${testSuiteHex(v)}`).join(" ")}</td>
-        <td style="border:1px solid #444;padding:6px;">${Object.entries(pa).map(([k,v])=>`${k}=${testSuiteHex(v)}`).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hex8(cb.A)} X=${hex8(cb.X)} Y=${hex8(cb.Y)} S=${hex8(cb.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsStr(fb)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hex8(ca.A)} X=${hex8(ca.X)} Y=${hex8(ca.Y)} S=${hex8(ca.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">${flagsStr(fa)}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${addrLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
-        <td style="border:1px solid #444;padding:6px;">${interceptCell}</td>
         <td style="border:1px solid #444;padding:6px;">${statusCell}</td>
       </tr>`;
   });
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
-CPUregisters.PC = 0x8000;
 
-  }
+  // reset PC and a harmless byte so subsequent steps don't run garbage
+  CPUregisters.PC = 0x8000;
+  prgRom[(CPUregisters.PC - 0x8000) & 0xFFFF] = 0x02; // (NOP-equivalent in your table maybe?)
+}
+
 
 function runBrkAndNopsTests() {
   const tests = [

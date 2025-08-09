@@ -1637,28 +1637,55 @@ function TXA_IMP() {
 }
 
 // PHP - Push Processor Status on stack (implied)
+// PHP (0x08) — push status with bit5=1, B=0 (not BRK)
 function PHP_IMP() {
-  systemMemory[0x100 + CPUregisters.S] = CPUregisters.SR | 0x10; // set break flag in pushed status
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  // Build processor status byte: N V 1 B D I Z C
+  let p = 0;
+  p |= (CPUregisters.P.N & 1) << 7;
+  p |= (CPUregisters.P.V & 1) << 6;
+  p |= 1 << 5;                        // bit 5 always 1 when pushed
+  p |= 0 << 4;                        // B=0 for PHP (BRK would push B=1)
+  p |= (CPUregisters.P.D & 1) << 3;
+  p |= (CPUregisters.P.I & 1) << 2;
+  p |= (CPUregisters.P.Z & 1) << 1;
+  p |= (CPUregisters.P.C & 1) << 0;
+
+  const spAddr = 0x0100 | (CPUregisters.S & 0xFF);
+  checkWriteOffset(spAddr, p & 0xFF); // push P
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;     // post-decrement
+  // flags unchanged; base cycles from table
 }
 
 // PLP - Pull Processor Status from stack (implied)
 function PLP_IMP() {
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  CPUregisters.SR = systemMemory[0x100 + CPUregisters.S] & 0xEF; // clear break flag on pull
+    CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
+    let val = cpuRead(0x0100 | CPUregisters.S);
+    // Ignore the break flag bits in storage (bits 4 & 5 handling per NES behaviour)
+    CPUregisters.P.C = (val & 0x01) ? 1 : 0;
+    CPUregisters.P.Z = (val & 0x02) ? 1 : 0;
+    CPUregisters.P.I = (val & 0x04) ? 1 : 0;
+    CPUregisters.P.D = (val & 0x08) ? 1 : 0;
+    CPUregisters.P.B = 0; // B flag not actually stored in P register
+    CPUregisters.P.V = (val & 0x40) ? 1 : 0;
+    CPUregisters.P.N = (val & 0x80) ? 1 : 0;
 }
 
+
 // PHA - Push Accumulator (implied)
+// PHA (0x48)
 function PHA_IMP() {
-  systemMemory[0x100 + CPUregisters.S] = CPUregisters.A;
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  const spAddr = 0x0100 | (CPUregisters.S & 0xFF);
+  checkWriteOffset(spAddr, CPUregisters.A & 0xFF);  // push A
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;     // post-decrement
+  // flags unchanged; base cycles from table
 }
 
 // PLA - Pull Accumulator (implied)
 function PLA_IMP() {
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  CPUregisters.A = systemMemory[0x100 + CPUregisters.S];
-  CPUregisters.SR = (CPUregisters.SR & 0x7D) | (CPUregisters.A === 0 ? 0x02 : 0) | (CPUregisters.A & 0x80 ? 0x80 : 0);
+    CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
+    CPUregisters.A = cpuRead(0x0100 | CPUregisters.S);
+    CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
+    CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
 }
 
 // RTI - Return from Interrupt (implied) --- object set to zero for PC inc, done here
