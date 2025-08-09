@@ -2089,7 +2089,7 @@ function RRA_ZP() {
   }
   
   function LAX_ZP() {
-  const address = systemMemory[CPUregisters.PC + 1];
+  const address = prgRom[CPUregisters.PC + 1 - 0x8000];// always zero page (no handler)
   const value = checkReadOffset(address);
   CPUregisters.A = value;
   CPUregisters.X = value;
@@ -2158,13 +2158,13 @@ function LAX_INDY() {
 }
 
 function SAX_ZP() {
-  const address = systemMemory[CPUregisters.PC + 1];
+  const address = prgRom[CPUregisters.PC + 1 - 0x8000]; // always zp (no handler)
   checkWriteOffset(address, CPUregisters.A & CPUregisters.X);
 }
 
 function SAX_ABS() {
-  const lo = systemMemory[CPUregisters.PC + 1];
-  const hi = systemMemory[CPUregisters.PC + 2];
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
   const address = (hi << 8) | lo;
   checkWriteOffset(address, CPUregisters.A & CPUregisters.X);
 }
@@ -2193,7 +2193,7 @@ function SAX_ZPY() {
 }
 
 function DCP_ZP() {
-  const address = systemMemory[CPUregisters.PC + 1];
+  const address = prgRom[CPUregisters.PC + 1 - 0x8000];
   let value = (checkReadOffset(address) - 1) & 0xFF;
   checkWriteOffset(address, value);
 
@@ -2204,8 +2204,8 @@ function DCP_ZP() {
 }
 
 function DCP_ABS() {
-  const lo = systemMemory[CPUregisters.PC + 1];
-  const hi = systemMemory[CPUregisters.PC + 2];
+  const lo = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const hi = prgRom[CPUregisters.PC + 2 - 0x8000];
   const address = (hi << 8) | lo;
 
   let value = (checkReadOffset(address) - 1) & 0xFF;
@@ -2341,7 +2341,7 @@ function ISC_INDY() {
 }
 
 function SLO_ZP() {
-  const address = systemMemory[CPUregisters.PC + 1];
+  const address = prgRom[CPUregisters.PC + 1 - 0x8000];
   let value = checkReadOffset(address);
   CPUregisters.P.C = (((value & 0x80) !== 0)) ? 1 : 0;
   value = (value << 1) & 0xFF;
@@ -2352,8 +2352,8 @@ function SLO_ZP() {
 }
 
 function SLO_ABS() {
-  const lo = systemMemory[CPUregisters.PC + 1];
-  const hi = systemMemory[CPUregisters.PC + 2];
+  const lo = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const hi = prgRom[CPUregisters.PC + 2 - 0x8000];
   const address = (hi << 8) | lo;
   let value = checkReadOffset(address);
   CPUregisters.P.C = (((value & 0x80) !== 0)) ? 1 : 0;
@@ -2430,7 +2430,7 @@ function SLO_ZPX() {
 }
 
 function ISC_ZP() {
-  const address = systemMemory[CPUregisters.PC + 1];
+  const address = prgRom[CPUregisters.PC + 1 - 0x8000];
   // increment memory at ZP address
   const newVal = (checkReadOffset(address) + 1) & 0xFF;
   checkWriteOffset(address, newVal);
@@ -2445,8 +2445,8 @@ function ISC_ZP() {
 }
 
 function ISC_ABS() {
-  const lo = systemMemory[CPUregisters.PC + 1];
-  const hi = systemMemory[CPUregisters.PC + 2];
+  const lo = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const hi = prgRom[CPUregisters.PC + 2 - 0x8000];
   const address = (hi << 8) | lo;
   // increment memory at ABS address
   const newVal = (checkReadOffset(address) + 1) & 0xFF;
@@ -2462,7 +2462,7 @@ function ISC_ABS() {
 }
 
 function RLA_ZP() {
-  const address = systemMemory[CPUregisters.PC + 1];
+  const address = prgRom[CPUregisters.PC + 1 - 0x8000];
   let value = checkReadOffset(address);
   // rotate left through C
   const carryIn = CPUregisters.P.C;
@@ -2477,8 +2477,8 @@ function RLA_ZP() {
 }
 
 function RLA_ABS() {
-  const lo = systemMemory[CPUregisters.PC + 1];
-  const hi = systemMemory[CPUregisters.PC + 2];
+  const lo = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const hi = prgRom[CPUregisters.PC + 2 - 0x8000];
   const address = (hi << 8) | lo;
   let value = checkReadOffset(address);
   // rotate left through C
@@ -2562,7 +2562,7 @@ function RLA_ZPX() {
 }
 
 function SRE_ZP() {
-  const address = systemMemory[CPUregisters.PC + 1];
+  const address = prgRom[CPUregisters.PC + 1 - 0x8000];
   let value = checkReadOffset(address);
   CPUregisters.P.C = (((value & 0x01) !== 0)) ? 1 : 0;
   value = (value >> 1) & 0xFF;
@@ -2573,8 +2573,8 @@ function SRE_ZP() {
 }
 
 function SRE_ABS() {
-  const lo = systemMemory[CPUregisters.PC + 1];
-  const hi = systemMemory[CPUregisters.PC + 2];
+  const lo = prgRom[CPUregisters.PC + 1 - 0x8000];;
+  const hi = prgRom[CPUregisters.PC + 2 - 0x8000];
   const address = (hi << 8) | lo;
   let value = checkReadOffset(address);
   CPUregisters.P.C = (((value & 0x01) !== 0)) ? 1 : 0;
@@ -2644,7 +2644,7 @@ function SRE_ZPX() {
 }
 
 function ANC_IMM() {
-  const value = systemMemory[CPUregisters.PC + 1];
+  const value = prgRom[CPUregisters.PC + 1 - 0x8000];
   CPUregisters.A &= value;
   CPUregisters.P.C = (((CPUregisters.A & 0x80) !== 0)) ? 1 : 0;
   CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
