@@ -641,119 +641,382 @@ function runRegisterTransfersAndFlagsTest() {
 
 function runAluAndLogicOpsTests() {
   // ===== ALU & LOGIC OPS (ADC, SBC, INC, DEC, AND, ORA, EOR, BIT) =====
-  const tests = 
-[
+const tests = [
 // ==== AND (8 variants) ====
-{ name:"AND #$F0",       code:[0x29,0xF0],    pre:{A:0xAA},                          expect:{A:0xA0,Z:0,N:1} },
-{ name:"AND $10",        code:[0x25,0x10],    pre:{A:0xF0}, setup:()=>{checkWriteOffset(0x10,0x0F);},      expect:{A:0x00,Z:1,N:0} },
-{ name:"AND $10,X",      code:[0x35,0x0E],    pre:{A:0xF0,X:0x02}, setup:()=>{checkWriteOffset(0x10,0xFF);}, expect:{A:0xF0,Z:0,N:1} },
-{ name:"AND $2345",      code:[0x2D,0x45,0x23], pre:{A:0x5A}, setup:()=>{checkWriteOffset(0x2345,0x3C);}, expect:{A:0x18,Z:0,N:0} },
-{ name:"AND $2345,X",    code:[0x3D,0x40,0x23], pre:{A:0xFF,X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x80);}, expect:{A:0x80,Z:0,N:1} },
-{ name:"AND $2345,Y",    code:[0x39,0x44,0x23], pre:{A:0xF0,Y:0x01}, setup:()=>{checkWriteOffset(0x2345,0xAA);}, expect:{A:0xA0,Z:0,N:1} },
-{ name:"AND ($20,X)",    code:[0x21,0x10],   pre:{A:0x0F,X:0x05}, setup:()=>{checkWriteOffset(0x15,0x30);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1230,0x0A);}, expect:{A:0x0A,Z:0,N:0} },
-{ name:"AND ($20),Y",    code:[0x31,0x12],   pre:{A:0xF0,Y:0x01}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x0F);}, expect:{A:0x00,Z:1,N:0} },
+
+// Z=1, N=0 — immediate forces zero
+{ name:"AND #$00 -> Z", code:[0x29,0x00], pre:{A:0xFF}, expect:{A:0x00,Z:1,N:0} },
+
+// N=1, Z=0 — immediate sets bit7
+{ name:"AND #$80 -> N", code:[0x29,0x80], pre:{A:0xFF}, expect:{A:0x80,Z:0,N:1} },
+
+// Z=0, N=0 — clears N from a negative A
+{ name:"AND #$7F clears N", code:[0x29,0x7F], pre:{A:0x81}, expect:{A:0x01,Z:0,N:0} },
+
+// Z=1, N=0 — zero page read
+{ name:"AND $10 -> Z", code:[0x25,0x10], pre:{A:0x01},
+  setup:()=>{ checkWriteOffset(0x0010,0x00); },
+  expect:{A:0x00,Z:1,N:0} },
+
+// Z=0, N=1 — zero page,X with wrap (0xFE + X=5 -> 0x03)
+{ name:"AND $FE,X (wrap) -> N", code:[0x35,0xFE], pre:{A:0xF0,X:0x05},
+  setup:()=>{ checkWriteOffset(0x0003,0xF0); },
+  expect:{A:0xF0,Z:0,N:1} },
+
+// Z=1, N=0 — absolute (moved from $2345 -> $0345)
+{ name:"AND $0345 -> Z", code:[0x2D,0x45,0x03], pre:{A:0x80},
+  setup:()=>{ checkWriteOffset(0x0345,0x7F); },
+  expect:{A:0x00,Z:1,N:0} },
+
+// Z=0, N=1 — absolute,X (base $0340 + X=5 -> $0345)
+{ name:"AND $0340,X -> N", code:[0x3D,0x40,0x03], pre:{A:0xFF,X:0x05},
+  setup:()=>{ checkWriteOffset(0x0345,0x80); },
+  expect:{A:0x80,Z:0,N:1} },
+
+// Z=0, N=1 — absolute,Y (base $0344 + Y=1 -> $0345)
+{ name:"AND $0344,Y -> N", code:[0x39,0x44,0x03], pre:{A:0xF0,Y:0x01},
+  setup:()=>{ checkWriteOffset(0x0345,0xAA); },
+  expect:{A:0xA0,Z:0,N:1} },
+
+// AND ($10,X)
+{ name:"AND ($10,X) -> A=1",
+  code:[0x21,0x10],
+  pre:{A:0x01,X:0x04},
+  setup:()=>{ checkWriteOffset(0x0014,0x30); checkWriteOffset(0x0015,0x12); checkWriteOffset(0x1230,0x01); },
+  expect:{A:0x01,Z:0,N:0}
+},
+
+// AND ($80),Y -> Z  (base $0300 + Y=$10 -> $0310)
+{ name:"AND ($80),Y -> Z", code:[0x31,0x80], pre:{A:0xFF,Y:0x10},
+  setup:()=>{ checkWriteOffset(0x0080,0x00); checkWriteOffset(0x0081,0x03); checkWriteOffset(0x0310,0x00); },
+  expect:{A:0x00,Z:1,N:0} },
+
+// === AND ($nn),Y — varied results & edge cases ===
+
+// Z=0, N=0  (simple non-zero)  base $0300 + Y=1 -> $0301
+{ name:"AND ($20),Y -> 0x04",
+  code:[0x31,0x20],
+  pre:{A:0x3C,Y:0x01},
+  setup:()=>{ checkWriteOffset(0x0020,0x00); checkWriteOffset(0x0021,0x03); checkWriteOffset(0x0301,0x05); },
+  expect:{A:0x04,Z:0,N:0}
+},
+
+// Z=0, N=1  (bit 7 set)  base $1234 + Y=2 -> $1236  (already < $2000, safe)
+{ name:"AND ($30),Y -> N",
+  code:[0x31,0x30],
+  pre:{A:0xF0,Y:0x02},
+  setup:()=>{ checkWriteOffset(0x0030,0x34); checkWriteOffset(0x0031,0x12); checkWriteOffset(0x1236,0x80); },
+  expect:{A:0x80,Z:0,N:1}
+},
+
+// Z=1, N=0  (zero)  base $00A0 + Y=$10 -> $00B0
+{ name:"AND ($40),Y -> Z",
+  code:[0x31,0x40],
+  pre:{A:0x0F,Y:0x10},
+  setup:()=>{ checkWriteOffset(0x0040,0xA0); checkWriteOffset(0x0041,0x00); checkWriteOffset(0x00B0,0xF0); },
+  expect:{A:0x00,Z:1,N:0}
+},
+
+// ZP hi wrap: ($FF) uses hi from $0000 — base $01F0 (+Y=$0F) -> $01FF
+{ name:"AND ($FF),Y with ZP wrap (hi) -> 0x01",
+  code:[0x31,0xFF],
+  pre:{A:0x03,Y:0x0F},
+  setup:()=>{ checkWriteOffset(0x00FF,0xF0); checkWriteOffset(0x0000,0x01); checkWriteOffset(0x01FF,0x01); },
+  expect:{A:0x01,Z:0,N:0}
+},
+
+// Page cross in RAM: base $01F0 + Y=$20 -> $0210
+{ name:"AND ($10),Y page-cross -> N",
+  code:[0x31,0x10],
+  pre:{A:0xFF,Y:0x20},
+  setup:()=>{ checkWriteOffset(0x0010,0xF0); checkWriteOffset(0x0011,0x01); checkWriteOffset(0x0210,0xC0); },
+  expect:{A:0xC0,Z:0,N:1}
+},
+
+// Z=1 with A!=0  base $0300 + Y=$05 -> $0305
+{ name:"AND ($60),Y -> Z (A!=0)",
+  code:[0x31,0x60],
+  pre:{A:0x55,Y:0x05},
+  setup:()=>{ checkWriteOffset(0x0060,0x00); checkWriteOffset(0x0061,0x03); checkWriteOffset(0x0305,0xAA); },
+  expect:{A:0x00,Z:1,N:0}
+},
+
+// Y=0 exact base: base $5678 (safe? 0x5678 > $1FFF — move to $0678)
+{ name:"AND ($70),Y with Y=0 -> 0x05",
+  code:[0x31,0x70],
+  pre:{A:0xA5,Y:0x00},
+  setup:()=>{ checkWriteOffset(0x0070,0x78); checkWriteOffset(0x0071,0x06); checkWriteOffset(0x0678,0x0F); },
+  expect:{A:0x05,Z:0,N:0}
+},
+
+// Clear N from negative A (small positive)  base $4000 -> move to $0400; +Y=1 -> $0401
+{ name:"AND ($22),Y clears N",
+  code:[0x31,0x22],
+  pre:{A:0x81,Y:0x01},
+  setup:()=>{ checkWriteOffset(0x0022,0x00); checkWriteOffset(0x0023,0x04); checkWriteOffset(0x0401,0x7F); },
+  expect:{A:0x01,Z:0,N:0}
+},
+
+// Page-cross + zero result  base $12FF -> move to $02FF; +Y=2 -> $0301
+{ name:"AND ($50),Y page-cross -> Z",
+  code:[0x31,0x50],
+  pre:{A:0xFF,Y:0x02},
+  setup:()=>{ checkWriteOffset(0x0050,0xFF); checkWriteOffset(0x0051,0x02); checkWriteOffset(0x0301,0x00); },
+  expect:{A:0x00,Z:1,N:0}
+},
+
+{ name:"AND ($33),Y -> mid value",
+  code:[0x31,0x33],
+  pre:{A:0x7E, Y:0x10},
+  setup:()=>{ 
+    checkWriteOffset(0x0033,0x10); 
+    checkWriteOffset(0x0034,0x04); 
+    checkWriteOffset(0x0420,0x3C); // <-- base $0410 + Y $10 = $0420
+  },
+  expect:{A:0x3C, Z:0, N:0}
+},
+
 
 // ==== ORA (8 variants) ====
 { name:"ORA #$0F",       code:[0x09,0x0F],    pre:{A:0x10},                          expect:{A:0x1F,Z:0,N:0} },
 { name:"ORA $10",        code:[0x05,0x10],    pre:{A:0x80}, setup:()=>{checkWriteOffset(0x10,0x01);},      expect:{A:0x81,Z:0,N:1} },
 { name:"ORA $10,X",      code:[0x15,0x0E],    pre:{A:0x80,X:0x02}, setup:()=>{checkWriteOffset(0x10,0x70);}, expect:{A:0xF0,Z:0,N:1} },
-{ name:"ORA $2345",      code:[0x0D,0x45,0x23], pre:{A:0x00}, setup:()=>{checkWriteOffset(0x2345,0xC0);}, expect:{A:0xC0,Z:0,N:1} },
-{ name:"ORA $2345,X",    code:[0x1D,0x40,0x23], pre:{A:0x01,X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x10);}, expect:{A:0x11,Z:0,N:0} },
-{ name:"ORA $2345,Y",    code:[0x19,0x44,0x23], pre:{A:0x0F,Y:0x01}, setup:()=>{checkWriteOffset(0x2345,0xF0);}, expect:{A:0xFF,Z:0,N:1} },
-{ name:"ORA ($20,X)",    code:[0x01,0x10],   pre:{A:0xF0,X:0x05}, setup:()=>{checkWriteOffset(0x15,0x40);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1240,0x0C);}, expect:{A:0xFC,Z:0,N:1} },
-{ name:"ORA ($20),Y",    code:[0x11,0x12],   pre:{A:0x00,Y:0x01}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x01);}, expect:{A:0x01,Z:0,N:0} },
+
+// absolute moved from $2345 -> $0345
+{ name:"ORA $0345",      code:[0x0D,0x45,0x03], pre:{A:0x00}, setup:()=>{checkWriteOffset(0x0345,0xC0);}, expect:{A:0xC0,Z:0,N:1} },
+
+// absolute,X moved base $0340 + X=5 -> $0345
+{ name:"ORA $0340,X",    code:[0x1D,0x40,0x03], pre:{A:0x01,X:0x05}, setup:()=>{checkWriteOffset(0x0345,0x10);}, expect:{A:0x11,Z:0,N:0} },
+
+// absolute,Y moved base $0344 + Y=1 -> $0345
+{ name:"ORA $0344,Y",    code:[0x19,0x44,0x03], pre:{A:0x0F,Y:0x01}, setup:()=>{checkWriteOffset(0x0345,0xF0);}, expect:{A:0xFF,Z:0,N:1} },
+
+{ name:"ORA ($20,X)",    code:[0x01,0x10],   pre:{A:0xF0,X:0x05},
+  setup:()=>{checkWriteOffset(0x0015,0x40);checkWriteOffset(0x0016,0x12);checkWriteOffset(0x1240,0x0C);},
+  expect:{A:0xFC,Z:0,N:1} },
+
+// ($20),Y now points to $0300 + Y=1 -> $0301
+{ name:"ORA ($20),Y",    code:[0x11,0x12],   pre:{A:0x00,Y:0x01},
+  setup:()=>{checkWriteOffset(0x0012,0x00);checkWriteOffset(0x0013,0x03);checkWriteOffset(0x0301,0x01);},
+  expect:{A:0x01,Z:0,N:0} },
 
 // ==== EOR (8 variants) ====
 { name:"EOR #$FF",       code:[0x49,0xFF],   pre:{A:0x55},                          expect:{A:0xAA,Z:0,N:1} },
 { name:"EOR $10",        code:[0x45,0x10],   pre:{A:0x0F}, setup:()=>{checkWriteOffset(0x10,0xF0);},      expect:{A:0xFF,Z:0,N:1} },
 { name:"EOR $10,X",      code:[0x55,0x0E],   pre:{A:0xF0,X:0x02}, setup:()=>{checkWriteOffset(0x10,0xF0);}, expect:{A:0x00,Z:1,N:0} },
-{ name:"EOR $2345",      code:[0x4D,0x45,0x23], pre:{A:0xA5}, setup:()=>{checkWriteOffset(0x2345,0x5A);}, expect:{A:0xFF,Z:0,N:1} },
-{ name:"EOR $2345,X",    code:[0x5D,0x40,0x23], pre:{A:0xFF,X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x55);}, expect:{A:0xAA,Z:0,N:1} },
-{ name:"EOR $2345,Y",    code:[0x59,0x44,0x23], pre:{A:0x0F,Y:0x01}, setup:()=>{checkWriteOffset(0x2345,0xF0);}, expect:{A:0xFF,Z:0,N:1} },
-{ name:"EOR ($20,X)",    code:[0x41,0x10],  pre:{A:0x0F,X:0x05}, setup:()=>{checkWriteOffset(0x15,0x30);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1230,0xF0);}, expect:{A:0xFF,Z:0,N:1} },
-{ name:"EOR ($20),Y",    code:[0x51,0x12],  pre:{A:0xF0,Y:0x01}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x0F);}, expect:{A:0xFF,Z:0,N:1} },
+
+// absolute moved to $0345
+{ name:"EOR $0345",      code:[0x4D,0x45,0x03], pre:{A:0xA5}, setup:()=>{checkWriteOffset(0x0345,0x5A);}, expect:{A:0xFF,Z:0,N:1} },
+
+// absolute,X base $0340 + X=5 -> $0345
+{ name:"EOR $0340,X",    code:[0x5D,0x40,0x03], pre:{A:0xFF,X:0x05}, setup:()=>{checkWriteOffset(0x0345,0x55);}, expect:{A:0xAA,Z:0,N:1} },
+
+// absolute,Y base $0344 + Y=1 -> $0345
+{ name:"EOR $0344,Y",    code:[0x59,0x44,0x03], pre:{A:0x0F,Y:0x01}, setup:()=>{checkWriteOffset(0x0345,0xF0);}, expect:{A:0xFF,Z:0,N:1} },
+
+{ name:"EOR ($20,X)",    code:[0x41,0x10],  pre:{A:0x0F,X:0x05},
+  setup:()=>{checkWriteOffset(0x0015,0x30);checkWriteOffset(0x0016,0x12);checkWriteOffset(0x1230,0xF0);},
+  expect:{A:0xFF,Z:0,N:1} },
+
+// ($20),Y -> $0301
+{ name:"EOR ($20),Y",    code:[0x51,0x12],  pre:{A:0xF0,Y:0x01},
+  setup:()=>{checkWriteOffset(0x0012,0x00);checkWriteOffset(0x0013,0x03);checkWriteOffset(0x0301,0x0F);},
+  expect:{A:0xFF,Z:0,N:1} },
 
 // ==== BIT (2 variants) ====
-{ name:"BIT $20",        code:[0x24,0x20],   setup:()=>{CPUregisters.A=0x0F; checkWriteOffset(0x20,0xF0);}, expectFlags:{Z:0,V:1,N:1} },
-{ name:"BIT $2345",      code:[0x2C,0x45,0x23], setup:()=>{CPUregisters.A=0x00; checkWriteOffset(0x2345,0x00);}, expectFlags:{Z:1,V:0,N:0} },
+
+{ name:"BIT $20",
+  code:[0x24,0x20],
+  setup:()=>{ CPUregisters.A = 0x0F; checkWriteOffset(0x20, 0xF0); },
+  expectFlags:{ Z:1, V:1, N:1 } // <-- Z should be 1, not 0
+},
+
+// absolute moved to $0345
+{ name:"BIT $0345",      code:[0x2C,0x45,0x03], setup:()=>{CPUregisters.A=0x00; checkWriteOffset(0x0345,0x00);}, expectFlags:{Z:1,V:0,N:0} },
 
 // ==== ADC (8 variants) ====
 { name:"ADC #$01",       code:[0x69,0x01],   pre:{A:0x01,P:{C:0}},                 expect:{A:0x02,C:0,Z:0,N:0,V:0} },
 { name:"ADC $10",        code:[0x65,0x10],   pre:{A:0x80,P:{C:0}}, setup:()=>{checkWriteOffset(0x10,0x80);}, expect:{A:0x00,C:1,Z:1,N:0,V:1} },
 { name:"ADC $10,X",      code:[0x75,0x0E],   pre:{A:0x10,X:0x02,P:{C:1}}, setup:()=>{checkWriteOffset(0x10,0x10);}, expect:{A:0x21,C:0,Z:0,N:0,V:0} },
-{ name:"ADC $2345",      code:[0x6D,0x45,0x23], pre:{A:0x7F,P:{C:0}}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{A:0x80,C:0,Z:0,N:1,V:1} },
-{ name:"ADC $2345,X",    code:[0x7D,0x40,0x23], pre:{A:0x01,X:0x05,P:{C:0}}, setup:()=>{checkWriteOffset(0x2345,0x02);}, expect:{A:0x03,C:0,Z:0,N:0,V:0} },
-{ name:"ADC $2345,Y",    code:[0x79,0x44,0x23], pre:{A:0x80,Y:0x01,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x80);}, expect:{A:0x01,C:1,Z:0,N:0,V:1} },
-{ name:"ADC ($20,X)",    code:[0x61,0x10],  pre:{A:0x20,X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x15,0x30);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1230,0x10);}, expect:{A:0x31,C:0,Z:0,N:0,V:0} },
-{ name:"ADC ($20),Y",    code:[0x71,0x12],  pre:{A:0x70,Y:0x01,P:{C:1}}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x90);}, expect:{A:0x01,C:1,Z:0,N:0,V:1} },
+
+// absolute moved to $0345
+{ name:"ADC $0345",      code:[0x6D,0x45,0x03], pre:{A:0x7F,P:{C:0}}, setup:()=>{checkWriteOffset(0x0345,0x01);}, expect:{A:0x80,C:0,Z:0,N:1,V:1} },
+
+// absolute,X base $0340 + X=5 -> $0345
+{ name:"ADC $0340,X",    code:[0x7D,0x40,0x03], pre:{A:0x01,X:0x05,P:{C:0}}, setup:()=>{checkWriteOffset(0x0345,0x02);}, expect:{A:0x03,C:0,Z:0,N:0,V:0} },
+
+// absolute,Y base $0344 + Y=1 -> $0345
+{ name:"ADC $0344,Y",    code:[0x79,0x44,0x03], pre:{A:0x80,Y:0x01,P:{C:1}}, setup:()=>{checkWriteOffset(0x0345,0x80);}, expect:{A:0x01,C:1,Z:0,N:0,V:1} },
+
+
+
+{ name:"ADC ($20,X)",
+  code:[0x61,0x10],
+  pre:{A:0x20, X:0x05, P:{C:1}},
+  setup:()=>{ checkWriteOffset(0x0015,0x30); checkWriteOffset(0x0016,0x12); checkWriteOffset(0x1230,0x10); },
+  expect:{A:0x31, C:0, Z:0, N:0, V:0}
+},
+
+
+
+
+{ name:"ADC ($20),Y",
+  code:[0x71,0x12],
+  pre:{A:0x70,Y:0x01,P:{C:1}},
+  setup:()=>{ checkWriteOffset(0x0012,0x00); checkWriteOffset(0x0013,0x03); checkWriteOffset(0x0301,0x90); },
+  expect:{A:0x01,C:1,Z:0,N:0,V:0}
+},
+
+
+
 
 // ==== SBC (8 variants) ====
 { name:"SBC #$01",       code:[0xE9,0x01],   pre:{A:0x03,P:{C:1}},                 expect:{A:0x02,C:1,Z:0,N:0,V:0} },
 { name:"SBC $10",        code:[0xE5,0x10],   pre:{A:0x00,P:{C:0}}, setup:()=>{checkWriteOffset(0x10,0x01);}, expect:{A:0xFE,C:0,Z:0,N:1,V:0} },
 { name:"SBC $10,X",      code:[0xF5,0x0E],   pre:{A:0x0F,X:0x02,P:{C:1}}, setup:()=>{checkWriteOffset(0x10,0x01);}, expect:{A:0x0E,C:1,Z:0,N:0,V:0} },
-{ name:"SBC $2345",      code:[0xED,0x45,0x23], pre:{A:0x80,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{A:0x7F,C:1,Z:0,N:0,V:1} },
-{ name:"SBC $2345,X",    code:[0xFD,0x40,0x23], pre:{A:0x03,X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x02);}, expect:{A:0x01,C:1,Z:0,N:0,V:0} },
-{ name:"SBC $2345,Y",    code:[0xF9,0x44,0x23], pre:{A:0x01,Y:0x01,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{A:0x00,C:1,Z:1,N:0,V:0} },
-{ name:"SBC ($20,X)",    code:[0xE1,0x10],  pre:{A:0x05,X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x15,0x30);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1230,0x02);}, expect:{A:0x03,C:1,Z:0,N:0,V:0} },
-{ name:"SBC ($20),Y",    code:[0xF1,0x12],  pre:{A:0x20,Y:0x01,P:{C:1}}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x10);}, expect:{A:0x10,C:1,Z:0,N:0,V:0} },
+
+// absolute -> $0345
+{ name:"SBC $0345",      code:[0xED,0x45,0x03], pre:{A:0x80,P:{C:1}}, setup:()=>{checkWriteOffset(0x0345,0x01);}, expect:{A:0x7F,C:1,Z:0,N:0,V:1} },
+
+// absolute,X base $0340 + X=5 -> $0345
+{ name:"SBC $0340,X",    code:[0xFD,0x40,0x03], pre:{A:0x03,X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x0345,0x02);}, expect:{A:0x01,C:1,Z:0,N:0,V:0} },
+
+// absolute,Y base $0344 + Y=1 -> $0345
+{ name:"SBC $0344,Y",    code:[0xF9,0x44,0x03], pre:{A:0x01,Y:0x01,P:{C:1}}, setup:()=>{checkWriteOffset(0x0345,0x01);}, expect:{A:0x00,C:1,Z:1,N:0,V:0} },
+
+{ name:"SBC ($20,X)",    code:[0xE1,0x10],  pre:{A:0x05,X:0x05,P:{C:1}},
+  setup:()=>{checkWriteOffset(0x0015,0x30);checkWriteOffset(0x0016,0x12);checkWriteOffset(0x1230,0x02);},
+  expect:{A:0x03,C:1,Z:0,N:0,V:0} },
+
+// ($20),Y -> $0301
+{ name:"SBC ($20),Y",    code:[0xF1,0x12],  pre:{A:0x20,Y:0x01,P:{C:1}},
+  setup:()=>{checkWriteOffset(0x0012,0x00);checkWriteOffset(0x0013,0x03);checkWriteOffset(0x0301,0x10);},
+  expect:{A:0x10,C:1,Z:0,N:0,V:0} },
 
 // ==== CMP (8 variants) ====
 { name:"CMP #$10",       code:[0xC9,0x10],   pre:{A:0x10},                          expect:{C:1,Z:1,N:0} },
 { name:"CMP $10",        code:[0xC5,0x10],   pre:{A:0x0F}, setup:()=>{checkWriteOffset(0x10,0x01);},      expect:{C:1,Z:0,N:0} },
 { name:"CMP $10,X",      code:[0xD5,0x0E],   pre:{A:0x00,X:0x02}, setup:()=>{checkWriteOffset(0x10,0x01);}, expect:{C:0,Z:0,N:1} },
-{ name:"CMP $2345",      code:[0xCD,0x45,0x23], pre:{A:0xFF}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{C:1,Z:0,N:1} },
-{ name:"CMP $2345,X",    code:[0xDD,0x40,0x23], pre:{A:0x05,X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x02);}, expect:{C:1,Z:0,N:0} },
-{ name:"CMP $2345,Y",    code:[0xD9,0x44,0x23], pre:{A:0x01,Y:0x01}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{C:1,Z:1,N:0} },
-{ name:"CMP ($20,X)",    code:[0xC1,0x10],  pre:{A:0x0F,X:0x05}, setup:()=>{checkWriteOffset(0x15,0x30);checkWriteOffset(0x16,0x12);checkWriteOffset(0x1230,0x10);}, expect:{C:0,Z:0,N:1} },
-{ name:"CMP ($20),Y",    code:[0xD1,0x12],  pre:{A:0x10,Y:0x01}, setup:()=>{checkWriteOffset(0x12,0x00);checkWriteOffset(0x13,0x20);checkWriteOffset(0x2001,0x20);}, expect:{C:0,Z:0,N:1} },
+
+// absolute -> $0345
+{ name:"CMP $0345",      code:[0xCD,0x45,0x03], pre:{A:0xFF}, setup:()=>{checkWriteOffset(0x0345,0x01);}, expect:{C:1,Z:0,N:1} },
+
+// absolute,X base $0340 + X=5 -> $0345
+{ name:"CMP $0340,X",    code:[0xDD,0x40,0x03], pre:{A:0x05,X:0x05}, setup:()=>{checkWriteOffset(0x0345,0x02);}, expect:{C:1,Z:0,N:0} },
+
+// absolute,Y base $0344 + Y=1 -> $0345
+{ name:"CMP $0344,Y",    code:[0xD9,0x44,0x03], pre:{A:0x01,Y:0x01}, setup:()=>{checkWriteOffset(0x0345,0x01);}, expect:{C:1,Z:1,N:0} },
+
+{ name:"CMP ($20,X)",    code:[0xC1,0x10],  pre:{A:0x0F,X:0x05},
+  setup:()=>{checkWriteOffset(0x0015,0x30);checkWriteOffset(0x0016,0x12);checkWriteOffset(0x1230,0x10);},
+  expect:{C:0,Z:0,N:1} },
+
+// ($20),Y -> $0301
+{ name:"CMP ($20),Y",    code:[0xD1,0x12],  pre:{A:0x10,Y:0x01},
+  setup:()=>{checkWriteOffset(0x0012,0x00);checkWriteOffset(0x0013,0x03);checkWriteOffset(0x0301,0x20);},
+  expect:{C:0,Z:0,N:1} },
 
 // ==== CPX (3 variants) ====
 { name:"CPX #$10",       code:[0xE0,0x10],   pre:{X:0x10},                          expect:{C:1,Z:1,N:0} },
 { name:"CPX $10",        code:[0xE4,0x10],   pre:{X:0x0F}, setup:()=>{checkWriteOffset(0x10,0x01);},      expect:{C:1,Z:0,N:0} },
-{ name:"CPX $2345",      code:[0xEC,0x45,0x23], pre:{X:0xFF}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{C:1,Z:0,N:1} },
+{ name:"CPX $0345",      code:[0xEC,0x45,0x03], pre:{X:0xFF}, setup:()=>{checkWriteOffset(0x0345,0x01);}, expect:{C:1,Z:0,N:1} },
 
 // ==== CPY (3 variants) ====
 { name:"CPY #$10",       code:[0xC0,0x10],   pre:{Y:0x10},                          expect:{C:1,Z:1,N:0} },
 { name:"CPY $10",        code:[0xC4,0x10],   pre:{Y:0x0F}, setup:()=>{checkWriteOffset(0x10,0x01);},      expect:{C:1,Z:0,N:0} },
-{ name:"CPY $2345",      code:[0xCC,0x45,0x23], pre:{Y:0xFF}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expect:{C:1,Z:0,N:1} },
+{ name:"CPY $0345",      code:[0xCC,0x45,0x03], pre:{Y:0xFF}, setup:()=>{checkWriteOffset(0x0345,0x01);}, expect:{C:1,Z:0,N:1} },
 
 // ==== INC (3 variants) ====
 { name:"INC $10",        code:[0xE6,0x10],   setup:()=>{checkWriteOffset(0x10,0x01);},      expectMem:{addr:0x10,value:0x02}, expectFlags:{Z:0,N:0} },
 { name:"INC $10,X",      code:[0xF6,0x0E],   pre:{X:0x02}, setup:()=>{checkWriteOffset(0x10,0xFF);}, expectMem:{addr:0x12,value:0x00}, expectFlags:{Z:1,N:0} },
-{ name:"INC $2345",      code:[0xEE,0x45,0x23], setup:()=>{checkWriteOffset(0x2345,0x7F);}, expectMem:{addr:0x2345,value:0x80}, expectFlags:{Z:0,N:1} },
+
+// absolute -> $0345
+{ name:"INC $0345",      code:[0xEE,0x45,0x03], setup:()=>{checkWriteOffset(0x0345,0x7F);}, expectMem:{addr:0x0345,value:0x80}, expectFlags:{Z:0,N:1} },
 
 // ==== DEC (3 variants) ====
 { name:"DEC $10",        code:[0xC6,0x10],   setup:()=>{checkWriteOffset(0x10,0x01);},      expectMem:{addr:0x10,value:0x00}, expectFlags:{Z:1,N:0} },
-{ name:"DEC $10,X",      code:[0xD6,0x0E],   pre:{X:0x02}, setup:()=>{checkWriteOffset(0x10,0x00);}, expectMem:{addr:0x12,value:0xFF}, expectFlags:{Z:0,N:1} },
-{ name:"DEC $2345",      code:[0xCE,0x45,0x23], setup:()=>{checkWriteOffset(0x2345,0x01);}, expectMem:{addr:0x2345,value:0x00}, expectFlags:{Z:1,N:0} },
+
+
+
+{ name:"DEC $10,X",
+  code:[0xD6,0x10],               // <-- operand 0x10
+  pre:{X:0x02},
+  setup:()=>{ checkWriteOffset(0x0012, 0x00); },  // $10 + X = $12
+  expectMem:{addr:0x0012, value:0xFF},
+  expectFlags:{Z:0,N:1}
+},
+
+
+
+
+
+
+// absolute -> $0345
+{ name:"DEC $0345",      code:[0xCE,0x45,0x03], setup:()=>{checkWriteOffset(0x0345,0x01);}, expectMem:{addr:0x0345,value:0x00}, expectFlags:{Z:1,N:0} },
 
 // ==== ASL (5 variants) ====
 { name:"ASL A",          code:[0x0A],        pre:{A:0x40},                          expect:{A:0x80,C:0,Z:0,N:1} },
-{ name:"ASL $10",        code:[0x06,0x10],   setup:()=>{checkWriteOffset(0x10,0x80);},      expectMem:{addr:0x10,value:0x00}, expect:{C:1,Z:1,N:0} },
+
+{ name:"ASL $10,X",
+  code:[0x16,0x10],
+  pre:{X:0x02},
+  setup:()=>{ checkWriteOffset(0x0012, 0x40); },
+  expectMem:{addr:0x0012, value:0x80},
+  expect:{C:0,Z:0,N:1}
+},
+
 { name:"ASL $10,X",      code:[0x16,0x0E],   pre:{X:0x02}, setup:()=>{checkWriteOffset(0x10,0x40);}, expectMem:{addr:0x12,value:0x80}, expect:{C:0,Z:0,N:1} },
-{ name:"ASL $2345",      code:[0x0E,0x45,0x23], setup:()=>{checkWriteOffset(0x2345,0xFF);}, expectMem:{addr:0x2345,value:0xFE}, expect:{C:1,Z:0,N:1} },
-{ name:"ASL $2345,X",    code:[0x1E,0x40,0x23], pre:{X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x10);}, expectMem:{addr:0x234A,value:0x20}, expect:{C:0,Z:0,N:0} },
+
+// absolute -> $0345 / $034A
+{ name:"ASL $0345",      code:[0x0E,0x45,0x03], setup:()=>{checkWriteOffset(0x0345,0xFF);}, expectMem:{addr:0x0345,value:0xFE}, expect:{C:1,Z:0,N:1} },
+{ name:"ASL $0340,X",    code:[0x1E,0x40,0x03], pre:{X:0x05}, setup:()=>{checkWriteOffset(0x0345,0x10);}, expectMem:{addr:0x0345,value:0x20}, expect:{C:0,Z:0,N:0} },
 
 // ==== LSR (5 variants) ====
 { name:"LSR A",          code:[0x4A],        pre:{A:0x01},                          expect:{A:0x00,C:1,Z:1,N:0} },
 { name:"LSR $10",        code:[0x46,0x10],   setup:()=>{checkWriteOffset(0x10,0x03);},      expectMem:{addr:0x10,value:0x01}, expect:{C:1,Z:0,N:0} },
-{ name:"LSR $10,X",      code:[0x56,0x0E],   pre:{X:0x02}, setup:()=>{checkWriteOffset(0x10,0x02);}, expectMem:{addr:0x12,value:0x01}, expect:{C:0,Z:0,N:0} },
-{ name:"LSR $2345",      code:[0x4E,0x45,0x23], setup:()=>{checkWriteOffset(0x2345,0x80);}, expectMem:{addr:0x2345,value:0x40}, expect:{C:0,Z:0,N:0} },
-{ name:"LSR $2345,X",    code:[0x5E,0x40,0x23], pre:{X:0x05}, setup:()=>{checkWriteOffset(0x2345,0x01);}, expectMem:{addr:0x234A,value:0x00}, expect:{C:1,Z:1,N:0} },
+
+
+{ name:"LSR $10,X",
+  code:[0x56,0x10],
+  pre:{X:0x02},
+  setup:()=>{ checkWriteOffset(0x0012, 0x03); },  // 0x03 >> 1 = 0x01
+  expectMem:{addr:0x0012, value:0x01},
+  expect:{C:1,Z:0,N:0}
+},
+
+
+// absolute -> $0345 / $034A
+{ name:"LSR $0345",      code:[0x4E,0x45,0x03], setup:()=>{checkWriteOffset(0x0345,0x80);}, expectMem:{addr:0x0345,value:0x40}, expect:{C:0,Z:0,N:0} },
+{ name:"LSR $0340,X",    code:[0x5E,0x40,0x03], pre:{X:0x05}, setup:()=>{checkWriteOffset(0x0345,0x01);}, expectMem:{addr:0x0345,value:0x00}, expect:{C:1,Z:1,N:0} },
 
 // ==== ROL (5 variants) ====
 { name:"ROL A",          code:[0x2A],        pre:{A:0x40,P:{C:1}},                  expect:{A:0x81,C:0,Z:0,N:1} },
 { name:"ROL $10",        code:[0x26,0x10],   pre:{P:{C:1}}, setup:()=>{checkWriteOffset(0x10,0x80);},      expectMem:{addr:0x10,value:0x01}, expect:{C:1,Z:0,N:0} },
-{ name:"ROL $10,X",      code:[0x36,0x0E],   pre:{X:0x02,P:{C:0}}, setup:()=>{checkWriteOffset(0x10,0x40);}, expectMem:{addr:0x12,value:0x80}, expect:{C:0,Z:0,N:1} },
-{ name:"ROL $2345",      code:[0x2E,0x45,0x23], pre:{P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0xFF);}, expectMem:{addr:0x2345,value:0xFF}, expect:{C:1,Z:0,N:1} },
-{ name:"ROL $2345,X",    code:[0x3E,0x40,0x23], pre:{X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x00);}, expectMem:{addr:0x234A,value:0x01}, expect:{C:0,Z:0,N:0} },
+
+
+{ name:"ROL $10,X",
+  code:[0x36,0x10],                 // operand must be 0x10
+  pre:{X:0x02, P:{C:0}},            // ensure carry-in = 0
+  setup:()=>{ checkWriteOffset(0x0012, 0x40); }, // $10 + X = $12
+  expectMem:{addr:0x0012, value:0x80},
+  expect:{C:0,Z:0,N:1}
+},
+
+
+
+
+// absolute -> $0345 / $034A
+{ name:"ROL $0345",      code:[0x2E,0x45,0x03], pre:{P:{C:1}}, setup:()=>{checkWriteOffset(0x0345,0xFF);}, expectMem:{addr:0x0345,value:0xFF}, expect:{C:1,Z:0,N:1} },
+{ name:"ROL $0340,X",    code:[0x3E,0x40,0x03], pre:{X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x0345,0x00);}, expectMem:{addr:0x0345,value:0x01}, expect:{C:0,Z:0,N:0} },
 
 // ==== ROR (5 variants) ====
 { name:"ROR A",          code:[0x6A],        pre:{A:0x01,P:{C:1}},                  expect:{A:0x80,C:1,Z:0,N:1} },
 { name:"ROR $10",        code:[0x66,0x10],   pre:{P:{C:0}}, setup:()=>{checkWriteOffset(0x10,0x02);},      expectMem:{addr:0x10,value:0x01}, expect:{C:0,Z:0,N:0} },
 { name:"ROR $10,X",      code:[0x76,0x0E],   pre:{X:0x02,P:{C:1}}, setup:()=>{checkWriteOffset(0x10,0x01);}, expectMem:{addr:0x12,value:0x80}, expect:{C:1,Z:0,N:1} },
-{ name:"ROR $2345",      code:[0x6E,0x45,0x23], pre:{P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x00);}, expectMem:{addr:0x2345,value:0x80}, expect:{C:0,Z:0,N:1} },
-{ name:"ROR $2345,X",    code:[0x7E,0x40,0x23], pre:{X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x2345,0x02);}, expectMem:{addr:0x234A,value:0x81}, expect:{C:0,Z:0,N:1} },
+
+// absolute -> $0345 / $034A
+{ name:"ROR $0345",      code:[0x6E,0x45,0x03], pre:{P:{C:1}}, setup:()=>{checkWriteOffset(0x0345,0x00);}, expectMem:{addr:0x0345,value:0x80}, expect:{C:0,Z:0,N:1} },
+{ name:"ROR $0340,X",    code:[0x7E,0x40,0x03], pre:{X:0x05,P:{C:1}}, setup:()=>{checkWriteOffset(0x0345,0x02);}, expectMem:{addr:0x0345,value:0x81}, expect:{C:0,Z:0,N:1} },
 ];
 
   setupTests(tests);
@@ -770,15 +1033,26 @@ function runAluAndLogicOpsTests() {
        </tr></thead><tbody>`;
 
   tests.forEach(test => {
-    const fb = {...CPUregisters.P}, cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
+    // --------- PATCH: Reset ALL CPU status flags before each test ----------
+    CPUregisters.P = {C:0,Z:0,I:0,D:0,B:0,U:1,V:0,N:0};
 
-    if(test.pre){
-      if(test.pre.A!=null) CPUregisters.A=test.pre.A;
-      if(test.pre.X!=null) CPUregisters.X=test.pre.X;
-      if(test.pre.Y!=null) CPUregisters.Y=test.pre.Y;
-      if(test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
+    // Registers
+    CPUregisters.A = 0;
+    CPUregisters.X = 0;
+    CPUregisters.Y = 0;
+    CPUregisters.S = 0xFF;
+
+    if (test.pre) {
+      if (test.pre.A != null) CPUregisters.A = test.pre.A;
+      if (test.pre.X != null) CPUregisters.X = test.pre.X;
+      if (test.pre.Y != null) CPUregisters.Y = test.pre.Y;
+      if (test.pre.S != null) CPUregisters.S = test.pre.S;
+      if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
-    if(test.setup) test.setup();
+    if (test.setup) test.setup();
+
+    const fb = {...CPUregisters.P},
+          cb = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
 
     // Store a snapshot of relevant memory before
     let memBefore = undefined;
@@ -787,15 +1061,15 @@ function runAluAndLogicOpsTests() {
     // Execute instruction
     step();
 
-    // Check effective address (for memory ops) - use test.expectMem.addr if present
+    // Check effective address (for memory ops)
     let ea = test.expectMem?.addr !== undefined ? test.expectMem.addr : null;
     const mirrors = ea !== null ? getMirrors(ea).filter(a=>a<0x10000) : [];
 
-    // Build table cells
-    const fa = {...CPUregisters.P}, ca = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
+    const fa = {...CPUregisters.P},
+          ca = {A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
 
-    let reasons=[], pass=true;
-    // Register/flag checks
+    let reasons = [], pass = true;
+
     if (test.expect) {
       ["A","X","Y","S"].forEach(r=>{
         if (test.expect[r] !== undefined && ca[r] !== test.expect[r]) {
@@ -830,7 +1104,6 @@ function runAluAndLogicOpsTests() {
       });
     }
 
-    // Dropdown mirrors
     const mirrorLabel = ea !== null ? `$${ea.toString(16).padStart(4,"0")}` : "";
     const dropdownMirrors = ea !== null
       ? dropdown(mirrorLabel, mirrors.map(a=>`$${a.toString(16).padStart(4,"0")}`))
@@ -861,7 +1134,7 @@ function runAluAndLogicOpsTests() {
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
         <td style="border:1px solid #444;padding:6px;">A=${hexTwo(cb.A)} X=${hexTwo(cb.X)} Y=${hexTwo(cb.Y)} S=${hexTwo(cb.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hexTwo(ca.A)} X=${hexTwo(ca.X)} Y=${hexTwo(ca.Y)} S=${hex(ca.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hexTwo(ca.A)} X=${hexTwo(ca.X)} Y=${hexTwo(ca.Y)} S=${hexTwo(ca.S)}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${dropdownMirrors}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${expectedLabel}</td>
         <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${resultLabel}</td>
@@ -874,6 +1147,7 @@ function runAluAndLogicOpsTests() {
   CPUregisters.PC = 0x8000;    
   prgRom[CPUregisters.PC - 0x8000] = 0x02;
 }
+
 function runShiftOpsTests() {
   // ===== SHIFT OPS (ASL, LSR, ROL, ROR, all modes) =====
   const tests = [

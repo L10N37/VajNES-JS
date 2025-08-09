@@ -350,30 +350,6 @@ function ADC_ZP() {
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
 }
 
-function EOR_INX() {
-  const operand = checkReadOffset(CPUregisters.PC + 1);
-  const lowByteaddress = (operand + CPUregisters.X) & 0xFF;
-  const highByteaddress = (operand + CPUregisters.X + 1) & 0xFF;
-  const addressess = (checkReadOffset(highByteaddress) << 8) | checkReadOffset(lowByteaddress);
-  const value = checkReadOffset(addressess);
-  CPUregisters.A ^= value;
-
-  CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-}
-
-function EOR_INY() {
-  const operand = checkReadOffset(CPUregisters.PC + 1);
-  const lowByteaddress = operand & 0xFF;
-  const highByteaddress = (operand + 1) & 0xFF;
-  const addressess = ((checkReadOffset(highByteaddress) << 8) | checkReadOffset(lowByteaddress)) + CPUregisters.Y;
-  const value = checkReadOffset(addressess);
-  CPUregisters.A ^= value;
-
-  CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-}
-
 function CLC_IMP() { CPUregisters.P.C = (0) ? 1 : 0; }
 function SEC_IMP() { CPUregisters.P.C = (1) ? 1 : 0; }
 function CLI_IMP() { CPUregisters.P.I = (0) ? 1 : 0; }
@@ -601,40 +577,76 @@ function ADC_ABS() {
   CPUregisters.A = result & 0xFF;
 }
 
-function ADC_ABSX() {
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
-  const baseaddressess = (high << 8) | low;
-  const addressess = (baseaddressess + CPUregisters.X) & 0xFFFF;
-  const value = checkReadOffset(addressess);
-  const carryIn = CPUregisters.P.C ? 1 : 0;
-  const result = CPUregisters.A + value + carryIn;
+// Shared core: do 8-bit add with carry in either binary or BCD.
+// Mirrors classic 6502 behavior: V computed from binary add even in BCD.
+function adc_core(a, val, carryIn, decimal) {
+  const ai = a & 0xFF, bi = val & 0xFF, ci = carryIn & 1;
 
-  CPUregisters.P.C = (result > 0xFF) ? 1 : 0;
-  CPUregisters.P.Z = ((result & 0xFF) === 0) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
-  CPUregisters.P.V = ((~(CPUregisters.A ^ value) & (CPUregisters.A ^ result) & 0x80) !== 0) ? 1 : 0;
-  CPUregisters.A = result & 0xFF;
+  if (!decimal) {
+    const sum = ai + bi + ci;
+    const res = sum & 0xFF;
+    CPUregisters.P.V = ((~(ai ^ bi) & (ai ^ res) & 0x80) !== 0) ? 1 : 0;
+    CPUregisters.P.C = (sum > 0xFF) ? 1 : 0;
+    CPUregisters.P.Z = (res === 0) ? 1 : 0;
+    CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+    return res;
+  }
+
+  // BCD (NMOS 6502 style)
+  let lo = (ai & 0x0F) + (bi & 0x0F) + ci;
+  let hi = (ai & 0xF0) + (bi & 0xF0);
+  if (lo > 9) { lo += 6; hi += 0x10; }
+  let sum = (lo & 0x0F) | (hi & 0xF0);
+  let carry = (hi > 0x90) ? 1 : 0;
+  if ((hi & 0xF0) > 0x90) sum += 0x60;
+
+  const res = sum & 0xFF;
+
+  // Flags: V still from binary add, C from BCD carry-out
+  const binSum = ai + bi + ci;
+  CPUregisters.P.V = ((~(ai ^ bi) & (ai ^ (binSum & 0xFF)) & 0x80) !== 0) ? 1 : 0;
+  CPUregisters.P.C = carry;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+  return res;
+}
+
+function ADC_ABSX() {
+  const lo   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi   = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const base = (hi << 8) | lo;
+  const addr = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+
+  const val  = checkReadOffset(addr) & 0xFF;
+  const dec  = (CPUregisters.P.D === 1);      // if you emulate decimal
+  const cin  = CPUregisters.P.C & 1;
+
+  const res = adc_core(CPUregisters.A, val, cin, dec);
+  CPUregisters.A = res;
+
+  // timing (+1 on page cross
+  if ((addr & 0xFF00) !== (base & 0xFF00)) cpuCycles += 1;
 }
 
 function ADC_ABSY() {
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
-  const baseaddressess = (high << 8) | low;
-  const addressess = (baseaddressess + CPUregisters.Y) & 0xFFFF;
-  const value = checkReadOffset(addressess);
-  const carryIn = CPUregisters.P.C ? 1 : 0;
-  const result = CPUregisters.A + value + carryIn;
+  const lo   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi   = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const base = ((hi << 8) | lo) & 0xFFFF;
+  const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
 
-  CPUregisters.P.C = (result > 0xFF) ? 1 : 0;
-  CPUregisters.P.Z = ((result & 0xFF) === 0) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
-  CPUregisters.P.V = ((~(CPUregisters.A ^ value) & (CPUregisters.A ^ result) & 0x80) !== 0) ? 1 : 0;
-  CPUregisters.A = result & 0xFF;
+  const val  = checkReadOffset(addr) & 0xFF;             // <-- bus-aware read
+  const cin  = CPUregisters.P.C & 1;
+  const dec  = !!CPUregisters.P.D && !!CPU_FEATURE_DECIMAL; // gate for NES
+
+  const res = adc_core(CPUregisters.A, val, cin, dec);
+  CPUregisters.A = res;
+
+  // timing (+1 cycle if page crossed)
+  if ((addr & 0xFF00) !== (base & 0xFF00)) cpuCycles += 1;
 }
 
 function ADC_INDX() {
-  const operand = systemMemory[CPUregisters.PC + 1];
+  const operand = prgRom[CPUregisters.PC + 1 - 0x8000];;
   const ptr = (operand + CPUregisters.X) & 0xFF;
   const low = checkReadOffset(ptr);
   const high = checkReadOffset((ptr + 1) & 0xFF);
@@ -651,7 +663,7 @@ function ADC_INDX() {
 }
 
 function ADC_INDY() {
-  const operand = systemMemory[CPUregisters.PC + 1];
+  const operand = prgRom[CPUregisters.PC + 1 - 0x8000];
   const low = checkReadOffset(operand & 0xFF);
   const high = checkReadOffset((operand + 1) & 0xFF);
   const baseaddressess = (high << 8) | low;
@@ -667,26 +679,46 @@ function ADC_INDY() {
   CPUregisters.A = result & 0xFF;
 }
 
+/*
+Execution steps
+Fetch operand address from the next byte after the opcode.
+
+Example: if the instruction is AND $10, CPU fetches $10.
+
+Read value from memory location $0010 (zero page).
+
+Bitwise AND the accumulator with this value:
+
+Update flags:
+
+Z (zero flag) = 1 if the result is 0
+
+N (negative flag) = bit 7 of result
+
+V and others are unaffected.
+*/
+
 function AND_ZP() {
-  const addressess = systemMemory[CPUregisters.PC + 1];
-  const value = checkReadOffset(addressess);
-  CPUregisters.A &= value;
-  CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+let operand = prgRom[CPUregisters.PC + 1 - 0x8000];
+let val = systemMemory[operand] & 0xFF;// skip offset handler, always zero page
+let result =CPUregisters.A & val & 0xFF;
+CPUregisters.A = result
+if (CPUregisters.A === 0x00) CPUregisters.P.Z = 1;
+if (CPUregisters & 0x80) CPUregisters.P.N = 1;
 }
 
 function AND_ZPX() {
-  const baseaddress = systemMemory[CPUregisters.PC + 1];
-  const addressess = (baseaddress + CPUregisters.X) & 0xFF;
-  const value = checkReadOffset(addressess);
-  CPUregisters.A &= value;
-  CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  const addr = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const effAddr = (addr + CPUregisters.X) & 0xFF;
+  const val = systemMemory[effAddr]; //skip offset handler, always zero page
+  CPUregisters.A = CPUregisters.A & val;
+  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
 }
 
 function AND_ABS() {
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
+  const low = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const high = prgRom[CPUregisters.PC + 2 - 0x8000];
   const addressess = (high << 8) | low;
   const value = checkReadOffset(addressess);
   CPUregisters.A &= value;
@@ -695,8 +727,8 @@ function AND_ABS() {
 }
 
 function AND_ABSX() {
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
+  const low = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const high = prgRom[CPUregisters.PC + 2 - 0x8000];
   const baseaddressess = (high << 8) | low;
   const addressess = (baseaddressess + CPUregisters.X) & 0xFFFF;
   const value = checkReadOffset(addressess);
@@ -706,8 +738,8 @@ function AND_ABSX() {
 }
 
 function AND_ABSY() {
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
+  const low = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const high = prgRom[CPUregisters.PC + 2 - 0x8000];
   const baseaddressess = (high << 8) | low;
   const addressess = (baseaddressess + CPUregisters.Y) & 0xFFFF;
   const value = checkReadOffset(addressess);
@@ -716,28 +748,43 @@ function AND_ABSY() {
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
 }
 
+// AND ($nn,X) — 0x21 — 6 cycles, no page-cross penalty
 function AND_INDX() {
-  const operand = systemMemory[CPUregisters.PC + 1];
-  const ptr = (operand + CPUregisters.X) & 0xFF;
-  const low = checkReadOffset(ptr);
-  const high = checkReadOffset((ptr + 1) & 0xFF);
-  const addressess = (high << 8) | low;
-  const value = checkReadOffset(addressess);
-  CPUregisters.A &= value;
-  CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const ptr  = (zp + (CPUregisters.X & 0xFF)) & 0xFF;     // ZP index (wrap)
+  const lo   = checkReadOffset(ptr) & 0xFF;
+  const hi   = checkReadOffset((ptr + 1) & 0xFF) & 0xFF;  // ZP wrap for hi
+  const addr = ((hi << 8) | lo) & 0xFFFF;
+  const val  = checkReadOffset(addr) & 0xFF;
+
+  const res = (CPUregisters.A & val) & 0xFF;
+  CPUregisters.A   = res;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+
+  cpuCycles += 6; // base cycles
 }
 
+// AND ($nn),Y — opcode 0x31
 function AND_INDY() {
-  const operand = systemMemory[CPUregisters.PC + 1];
-  const low = checkReadOffset(operand & 0xFF);
-  const high = checkReadOffset((operand + 1) & 0xFF);
-  const baseaddressess = (high << 8) | low;
-  const addressess = (baseaddressess + CPUregisters.Y) & 0xFFFF;
-  const value = checkReadOffset(addressess);
-  CPUregisters.A &= value;
-  CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  const nn   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;  // operand byte in PRG
+  const lo   = checkReadOffset(nn) & 0xFF;                     // ZP pointer lo
+  const hi   = checkReadOffset((nn + 1) & 0xFF) & 0xFF;        // ZP wrap for hi
+  const base = ((hi << 8) | lo) & 0xFFFF;
+
+  const y    = CPUregisters.Y & 0xFF;
+  const addr = (base + y) & 0xFFFF;
+
+  const val  = checkReadOffset(addr) & 0xFF;
+  const res  = (CPUregisters.A & val) & 0xFF;
+
+  CPUregisters.A   = res;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+
+  cpuCycles += 5;
+  if ((addr & 0xFF00) !== (base & 0xFF00)) cpuCycles += 1;
+  // PC increment (2) handled by your dispatcher/table
 }
 
 function ASL_ACC() {
@@ -755,67 +802,79 @@ function ASL_ACC() {
   CPUregisters.P.N = ((result & 0x80) >>> 7) ? 1 : 0;
 }
 
+// ASL $nn  (0x06) — ZP
 function ASL_ZP() {
-  const addressess = systemMemory[CPUregisters.PC + 1];
-  const value = checkReadOffset(addressess);
-  const carryOut = (value & 0x80) !== 0;
-  const result = (value << 1) & 0xFF;
-  systemMemory[addressess] = result;
-  CPUregisters.P.C = (carryOut) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+  const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;   // operand byte
+  const old  = checkReadOffset(zp) & 0xFF;
+  const carry= (old & 0x80) ? 1 : 0;
+  const res  = (old << 1) & 0xFF;
+
+  checkWriteOffset(zp, res);
+  CPUregisters.P.C = carry;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+
+  cpuCycles += 5; // ZP: 5 cycles
 }
 
+// ASL $nn,X  (0x16) — ZP,X (wrap)
 function ASL_ZPX() {
-  const baseaddress = systemMemory[CPUregisters.PC + 1];
-  const addressess = (baseaddress + CPUregisters.X) & 0xFF;
-  const value = checkReadOffset(addressess);
-  const carryOut = (value & 0x80) !== 0;
-  const result = (value << 1) & 0xFF;
-  systemMemory[addressess] = result;
-  CPUregisters.P.C = (carryOut) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+  const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;           // zero-page wrap
+  const old  = checkReadOffset(addr) & 0xFF;
+  const carry= (old & 0x80) ? 1 : 0;
+  const res  = (old << 1) & 0xFF;
+
+  checkWriteOffset(addr, res);
+  CPUregisters.P.C = carry;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+
+  cpuCycles += 6; // ZP,X: 6 cycles
 }
 
+// ASL $nnnn  (0x0E) — ABS
 function ASL_ABS() {
-  // Fetch the two‑byte addressess
-  const lo   = systemMemory[CPUregisters.PC + 1];
-  const hi   = systemMemory[CPUregisters.PC + 2];
-  const address = (hi << 8) | lo;
+  const lo   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi   = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const addr = ((hi << 8) | lo) & 0xFFFF;
 
-  // Read, shift, and compute carry
-  const oldVal = checkReadOffset(address) & 0xFF;
-  const result = (oldVal << 1) & 0xFF;
-  const carry  = (oldVal & 0x80) >>> 7;
+  const old  = checkReadOffset(addr) & 0xFF;
+  const carry= (old & 0x80) ? 1 : 0;
+  const res  = (old << 1) & 0xFF;
 
-  // Write back and update flags as 0/1
-  checkWriteOffset(address, result);
-  CPUregisters.P.C = (carry) ? 1 : 0;                    // 1 if bit 7 was set
-  CPUregisters.P.Z = (result === 0 ? 1 : 0) ? 1 : 0;      // 1 if result==0
-  CPUregisters.P.N = ((result & 0x80) >>> 7) ? 1 : 0;     // bit 7 of the result
+  checkWriteOffset(addr, res);
+  CPUregisters.P.C = carry;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+
+  cpuCycles += 6; // ABS: 6 cycles
 }
 
+// ASL $nnnn,X  (0x1E) — ABS,X
 function ASL_ABSX() {
+  const lo    = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi    = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const base  = ((hi << 8) | lo) & 0xFFFF;
+  const addr  = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
 
-  const lo = checkReadOffset(CPUregisters.PC + 1);
-  const hi = checkReadOffset(CPUregisters.PC + 2);
-  const base = (hi << 8) | lo;
-  const addr = (base + CPUregisters.X) & 0xFFFF;
+  const old   = checkReadOffset(addr) & 0xFF;
+  const carry = (old & 0x80) ? 1 : 0;
+  const res   = (old << 1) & 0xFF;
 
-  let value = checkReadOffset(addr);
-  CPUregisters.P.C = (value >> 7) & 1;
-  value = (value << 1) & 0xFF;
-  CPUregisters.P.Z = value === 0 ? 1 : 0;
-  CPUregisters.P.N = (value & 0x80) !== 0 ? 1 : 0;
-  checkWriteOffset(addr, value);
-  cpuCycles += 3; // Always 7 cycles for abs,X RMW, base + 3 , POST data manipulation, PPU may need data
+  checkWriteOffset(addr, res);
+  CPUregisters.P.C = carry;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+
+  cpuCycles += 7; // ABS,X: 7 cycles (no extra page-cross penalty for RMW)
 }
+
 
 function BIT_ZP() {
   // Zero‑page addressessing
-  const zpaddress = systemMemory[CPUregisters.PC + 1] & 0xFF;
-  const m      = checkReadOffset(zpaddress) & 0xFF;
+  const operand = prgRom[CPUregisters.PC + 1 - 0x8000] & 0xFF;
+  const m      = checkReadOffset(operand) & 0xFF;
   const res    = CPUregisters.A & m;
 
   // Z = (A & M) == 0
@@ -828,8 +887,8 @@ function BIT_ZP() {
 
 function BIT_ABS() {
   // Absolute addressessing
-  const lo   = systemMemory[CPUregisters.PC + 1];
-  const hi   = systemMemory[CPUregisters.PC + 2];
+  const lo   = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const hi   = prgRom[CPUregisters.PC + 2 - 0x8000];
   const address = ((hi << 8) | lo) & 0xFFFF;
   const m    = checkReadOffset(address) & 0xFF;
   const res  = CPUregisters.A & m;
@@ -853,59 +912,71 @@ function LSR_ACC() {
   CPUregisters.P.N = (0) ? 1 : 0;
 }
 
-// LSR on zero page
+// LSR $nn  (0x46) — Zero Page
 function LSR_ZP() {
-  const zpaddress = systemMemory[CPUregisters.PC + 1] & 0xFF;
-  const oldVal = checkReadOffset(zpaddress) & 0xFF;
-  const result = (oldVal >>> 1) & 0xFF;
-  CPUregisters.P.C = (oldVal & 0x01) ? 1 : 0;
-  checkWriteOffset(zpaddress, result);
-  CPUregisters.P.Z = (result === 0 ? 1 : 0) ? 1 : 0;
-  CPUregisters.P.N = (0) ? 1 : 0;
+  const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const old  = checkReadOffset(zp) & 0xFF;
+  const res  = (old >>> 1) & 0xFF;
+
+  CPUregisters.P.C = (old & 0x01) ? 1 : 0;
+  checkWriteOffset(zp, res);
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = 0;
+
+   cpuCycles += 5; // ZP: 5 cycles
 }
 
-// LSR on zero page, X‑indexed
+// LSR $nn,X  (0x56) — Zero Page,X (wrap)
 function LSR_ZPX() {
-  const base   = systemMemory[CPUregisters.PC + 1] & 0xFF;
-  const address   = (base + CPUregisters.X) & 0xFF;
-  const oldVal = checkReadOffset(address) & 0xFF;
-  const result = (oldVal >>> 1) & 0xFF;
-  CPUregisters.P.C = (oldVal & 0x01) ? 1 : 0;
-  checkWriteOffset(address, result);
-  CPUregisters.P.Z = (result === 0 ? 1 : 0) ? 1 : 0;
-  CPUregisters.P.N = (0) ? 1 : 0;
+  const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
+  const old  = checkReadOffset(addr) & 0xFF;
+  const res  = (old >>> 1) & 0xFF;
+
+  CPUregisters.P.C = (old & 0x01) ? 1 : 0;
+  checkWriteOffset(addr, res);
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = 0;
+
+   cpuCycles += 6; // ZP,X: 6 cycles
 }
 
-// LSR on absolute addressess
+// LSR $nnnn  (0x4E) — Absolute
 function LSR_ABS() {
-  const lo   = systemMemory[CPUregisters.PC + 1];
-  const hi   = systemMemory[CPUregisters.PC + 2];
-  const address = ((hi << 8) | lo) & 0xFFFF;
-  const oldVal = checkReadOffset(address) & 0xFF;
-  const result = (oldVal >>> 1) & 0xFF;
-  CPUregisters.P.C = (oldVal & 0x01) ? 1 : 0;
-  checkWriteOffset(address, result);
-  CPUregisters.P.Z = (result === 0 ? 1 : 0) ? 1 : 0;
-  CPUregisters.P.N = (0) ? 1 : 0;
+  const lo   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi   = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const addr = ((hi << 8) | lo) & 0xFFFF;
+  const old  = checkReadOffset(addr) & 0xFF;
+  const res  = (old >>> 1) & 0xFF;
+
+  CPUregisters.P.C = (old & 0x01) ? 1 : 0;
+  checkWriteOffset(addr, res);
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = 0;
+
+   cpuCycles += 6; // ABS: 6 cycles
 }
 
-// LSR on absolute addressess with X‑offset
+// LSR $nnnn,X  (0x5E) — Absolute,X
 function LSR_ABSX() {
-  const lo   = systemMemory[CPUregisters.PC + 1];
-  const hi   = systemMemory[CPUregisters.PC + 2];
-  const base = ((hi << 8) | lo) & 0xFFFF;
-  const address = (base + CPUregisters.X) & 0xFFFF;
-  const oldVal = checkReadOffset(address) & 0xFF;
-  const result = (oldVal >>> 1) & 0xFF;
-  CPUregisters.P.C = (oldVal & 0x01) ? 1 : 0;
-  checkWriteOffset(address, result);
-  CPUregisters.P.Z = (result === 0 ? 1 : 0) ? 1 : 0;
-  CPUregisters.P.N = (0) ? 1 : 0;
+  const lo    = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi    = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const base  = ((hi << 8) | lo) & 0xFFFF;
+  const addr  = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  const old   = checkReadOffset(addr) & 0xFF;
+  const res   = (old >>> 1) & 0xFF;
+
+  CPUregisters.P.C = (old & 0x01) ? 1 : 0;
+  checkWriteOffset(addr, res);
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = 0;
+
+   cpuCycles += 7; // ABS,X: 7 cycles (RMW)
 }
 
 function ORA_IMM() {
   // Fetch immediate operand
-  const value  = systemMemory[CPUregisters.PC + 1] & 0xFF;
+  const value  = prgRom[CPUregisters.PC + 1 -0x8000] & 0xFF;
   // Compute result
   const result = (CPUregisters.A | value) & 0xFF;
   // Store back into A
@@ -917,7 +988,7 @@ function ORA_IMM() {
 }
 
 function ORA_ZP() {
-  const addressess = systemMemory[CPUregisters.PC + 1];
+  const addressess = prgRom[CPUregisters.PC + 1 -0x8000] & 0xFF;
   const value = checkReadOffset(addressess);
   CPUregisters.A |= value;
 
@@ -926,7 +997,7 @@ function ORA_ZP() {
 }
 
 function ORA_ZPX() {
-  const addressess = (systemMemory[CPUregisters.PC + 1] + CPUregisters.X) & 0xFF;
+  const addressess = (prgRom[CPUregisters.PC + 1 - 0x8000] + CPUregisters.X) & 0xFF;
   const value = checkReadOffset(addressess);
   CPUregisters.A |= value;
 
@@ -935,8 +1006,8 @@ function ORA_ZPX() {
 }
 
 function ORA_ABS() {
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
+  const low = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const high = prgRom[CPUregisters.PC + 2 - 0x8000];
   const addressess = (high << 8) | low;
   const value = checkReadOffset(addressess);
   CPUregisters.A |= value;
@@ -946,8 +1017,8 @@ function ORA_ABS() {
 }
 
 function ORA_ABSX() {
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
+  const low = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const high = prgRom[CPUregisters.PC + 2 - 0x8000];
   const addressess = ((high << 8) | low) + CPUregisters.X;
   const value = checkReadOffset(addressess);
   CPUregisters.A |= value;
@@ -957,8 +1028,8 @@ function ORA_ABSX() {
 }
 
 function ORA_ABSY() {
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
+  const low = prgRom[CPUregisters.PC + 1 - 0x8000];
+  const high = prgRom[CPUregisters.PC + 2 - 0x8000];
   const addressess = ((high << 8) | low) + CPUregisters.Y;
   const value = checkReadOffset(addressess);
   CPUregisters.A |= value;
@@ -968,7 +1039,7 @@ function ORA_ABSY() {
 }
 
 function ORA_INDX() {
-  const operand = systemMemory[CPUregisters.PC + 1];
+  const operand = prgRom[CPUregisters.PC + 1 - 0x8000];
   const ptr = (operand + CPUregisters.X) & 0xFF;
   const low = checkReadOffset(ptr);
   const high = checkReadOffset((ptr + 1) & 0xFF);
@@ -981,7 +1052,7 @@ function ORA_INDX() {
 }
 
 function ORA_INDY() {
-  const operand = systemMemory[CPUregisters.PC + 1];
+  const operand = prgRom[CPUregisters.PC + 1 - 0x8000];
   const low = checkReadOffset(operand);
   const high = checkReadOffset((operand + 1) & 0xFF);
   const addressess = ((high << 8) | low) + CPUregisters.Y;
@@ -1125,111 +1196,110 @@ function BRK_IMP() {
   cpuCycles += 5; //extra 5 on top of base
 }
 
-function CMP_IMM() {
-  const operand = checkReadOffset(CPUregisters.PC + 1);
-  const result  = (CPUregisters.A - operand) & 0xFF;
-
-  CPUregisters.P.C = (CPUregisters.A >= operand) ? 1 : 0;       // Carry = no borrow
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;                  // Zero  = equal
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;            // Negative = bit7 of result
+// ---------- helpers ----------
+function cmpSetFlags(a, m) {
+  const ai = a & 0xFF;
+  const mi = m & 0xFF;
+  const diff = (ai - mi) & 0xFF;
+  CPUregisters.P.C = (ai >= mi) ? 1 : 0;     // no borrow
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;   // equal
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;  // bit 7 of result
 }
 
-function CMP_ZP() {
-  const addressess = systemMemory[CPUregisters.PC + 1];
-  const operand = systemMemory[addressess];
-  const result = (CPUregisters.A - operand) & 0xFF;
-  CPUregisters.P.C = (CPUregisters.A >= operand) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+// ---------- CMP ----------
+function CMP_IMM() { // C9
+  const operand = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  cmpSetFlags(CPUregisters.A, operand);
 }
 
-function CMP_ZPX() {
-  const addressess = (systemMemory[CPUregisters.PC + 1] + CPUregisters.X) & 0xFF;
-  const operand = systemMemory[addressess];
-  const result = (CPUregisters.A - operand) & 0xFF;
-  CPUregisters.P.C = (CPUregisters.A >= operand) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+function CMP_ZP() { // C5
+  const zp = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const operand = checkReadOffset(zp) & 0xFF;
+  cmpSetFlags(CPUregisters.A, operand);
 }
 
-function CMP_ABS() {
-  const addressess = (systemMemory[CPUregisters.PC + 2] << 8) | systemMemory[CPUregisters.PC + 1];
-  const operand = systemMemory[addressess];
-  const result = (CPUregisters.A - operand) & 0xFF;
-  CPUregisters.P.C = (CPUregisters.A >= operand) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+function CMP_ZPX() { // D5
+  const zp = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; // ZP wrap
+  const operand = checkReadOffset(addr) & 0xFF;
+  cmpSetFlags(CPUregisters.A, operand);
 }
 
-function CMP_ABSX() {
-  const baseaddressess = (systemMemory[CPUregisters.PC + 2] << 8) | systemMemory[CPUregisters.PC + 1];
-  const addressess = (baseaddressess + CPUregisters.X) & 0xFFFF;
-  const operand = systemMemory[addressess];
-  const result = (CPUregisters.A - operand) & 0xFF;
-  CPUregisters.P.C = (CPUregisters.A >= operand) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+function CMP_ABS() { // CD
+  const lo = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const addr = ((hi << 8) | lo) & 0xFFFF;
+  const operand = checkReadOffset(addr) & 0xFF;
+  cmpSetFlags(CPUregisters.A, operand);
 }
 
-function CMP_ABSY() {
-  const baseaddressess = (systemMemory[CPUregisters.PC + 2] << 8) | systemMemory[CPUregisters.PC + 1];
-  const addressess = (baseaddressess + CPUregisters.Y) & 0xFFFF;
-  const operand = systemMemory[addressess];
-  const result = (CPUregisters.A - operand) & 0xFF;
-  CPUregisters.P.C = (CPUregisters.A >= operand) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+function CMP_ABSX() { // DD
+  const lo = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const base = ((hi << 8) | lo) & 0xFFFF;
+  const addr = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  const operand = checkReadOffset(addr) & 0xFF;
+  cmpSetFlags(CPUregisters.A, operand);
 }
 
-function CMP_INDX() {
-  const zpaddress = (systemMemory[CPUregisters.PC + 1] + CPUregisters.X) & 0xFF;
-  const lowByte = systemMemory[zpaddress];
-  const highByte = systemMemory[(zpaddress + 1) & 0xFF];
-  const addressess = (highByte << 8) | lowByte;
-  const operand = systemMemory[addressess];
-  const result = (CPUregisters.A - operand) & 0xFF;
-  CPUregisters.P.C = (CPUregisters.A >= operand) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+function CMP_ABSY() { // D9
+  const lo = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const base = ((hi << 8) | lo) & 0xFFFF;
+  const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  const operand = checkReadOffset(addr) & 0xFF;
+  cmpSetFlags(CPUregisters.A, operand);
 }
 
-function CMP_INDY() {
-  const zpaddress = systemMemory[CPUregisters.PC + 1];
-  const lowByte = systemMemory[zpaddress];
-  const highByte = systemMemory[(zpaddress + 1) & 0xFF];
-  const addressess = ((highByte << 8) | lowByte) + CPUregisters.Y;
-  const operand = systemMemory[addressess & 0xFFFF];
-  const result = (CPUregisters.A - operand) & 0xFF;
-  CPUregisters.P.C = (CPUregisters.A >= operand) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+function CMP_INDX() { // C1   ($nn,X)
+  const nn  = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const ptr = (nn + (CPUregisters.X & 0xFF)) & 0xFF;   // ZP wrap
+  const lo  = checkReadOffset(ptr) & 0xFF;
+  const hi  = checkReadOffset((ptr + 1) & 0xFF) & 0xFF; // ZP wrap for hi
+  const addr = ((hi << 8) | lo) & 0xFFFF;
+  const operand = checkReadOffset(addr) & 0xFF;
+  cmpSetFlags(CPUregisters.A, operand);
 }
 
-function CPY_IMM() {
-  const operand = systemMemory[CPUregisters.PC + 1];
-  const result = (CPUregisters.Y - operand) & 0xFF;
-  CPUregisters.P.C = (CPUregisters.Y >= operand) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+function CMP_INDY() { // D1   ($nn),Y
+  const nn  = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const lo  = checkReadOffset(nn) & 0xFF;
+  const hi  = checkReadOffset((nn + 1) & 0xFF) & 0xFF; // ZP wrap for hi
+  const base = ((hi << 8) | lo) & 0xFFFF;
+  const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  const operand = checkReadOffset(addr) & 0xFF;
+  cmpSetFlags(CPUregisters.A, operand);
 }
 
-function CPY_ZP() {
-  const addressess = systemMemory[CPUregisters.PC + 1];
-  const operand = systemMemory[addressess];
-  const result = (CPUregisters.Y - operand) & 0xFF;
-  CPUregisters.P.C = (CPUregisters.Y >= operand) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+// ---------- CPY ----------
+function CPY_IMM() { // C0
+  const operand = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const diff = (CPUregisters.Y - operand) & 0xFF;
+  CPUregisters.P.C = ((CPUregisters.Y & 0xFF) >= operand) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
 }
 
-function CPY_ABS() {
-  const addressess = (systemMemory[CPUregisters.PC + 2] << 8) | systemMemory[CPUregisters.PC + 1];
-  const operand = systemMemory[addressess];
-  const result = (CPUregisters.Y - operand) & 0xFF;
-  CPUregisters.P.C = (CPUregisters.Y >= operand) ? 1 : 0;
-  CPUregisters.P.Z = ((result === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
+function CPY_ZP() { // C4
+  const zp = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const operand = checkReadOffset(zp) & 0xFF;
+  const diff = (CPUregisters.Y - operand) & 0xFF;
+  CPUregisters.P.C = ((CPUregisters.Y & 0xFF) >= operand) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
 }
+
+function CPY_ABS() { // CC
+  const lo = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const addr = ((hi << 8) | lo) & 0xFFFF;
+  const operand = checkReadOffset(addr) & 0xFF;
+  const diff = (CPUregisters.Y - operand) & 0xFF;
+  CPUregisters.P.C = ((CPUregisters.Y & 0xFF) >= operand) ? 1 : 0;
+  CPUregisters.P.Z = (diff === 0) ? 1 : 0;
+  CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
+}
+
 
 function DEC_ZP() {
   // 1. Fetch address from instruction
@@ -1244,51 +1314,51 @@ function DEC_ZP() {
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val & 0x80) ? 1 : 0;
 }
-
-
+// DEC $nn,X  (opcode 0xD6)
 function DEC_ZPX() {
-  const addressess = (systemMemory[CPUregisters.PC + 1] + CPUregisters.X) & 0xFF;
-  const value = (systemMemory[addressess] - 1) & 0xFF;
-  systemMemory[addressess] = value;
-  CPUregisters.P.Z = ((value === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
+  const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;        // zero-page wrap
+  const val  = (checkReadOffset(addr) - 1) & 0xFF;
+  checkWriteOffset(addr, val);
+  CPUregisters.P.Z = (val === 0) ? 1 : 0;
+  CPUregisters.P.N = (val & 0x80) ? 1 : 0;
+  // cycles: 6 (add in your dispatcher if you track timing)
 }
 
+// DEC $nnnn  (opcode 0xCE)
 function DEC_ABS() {
-  const addressess = (systemMemory[CPUregisters.PC + 2] << 8) | systemMemory[CPUregisters.PC + 1];
-  const value = (systemMemory[addressess] - 1) & 0xFF;
-  systemMemory[addressess] = value;
-  CPUregisters.P.Z = ((value === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
+  const lo   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi   = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const addr = ((hi << 8) | lo) & 0xFFFF;
+  const val  = (checkReadOffset(addr) - 1) & 0xFF;
+  checkWriteOffset(addr, val);
+  CPUregisters.P.Z = (val === 0) ? 1 : 0;
+  CPUregisters.P.N = (val & 0x80) ? 1 : 0;
+  // cycles: 6
 }
 
-function DEC_ABX() {
-  const addressess = ((systemMemory[CPUregisters.PC + 2] << 8) | systemMemory[CPUregisters.PC + 1]) + CPUregisters.X;
-  const value = (systemMemory[addressess] - 1) & 0xFF;
-  systemMemory[addressess] = value;
-  CPUregisters.P.Z = ((value === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
-}
-
+// Keep one; mapping 0xDE -> this function.
 function DEC_ABSX() {
-  const addressess = (((checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1)) + CPUregisters.X) & 0xFFFF;
-  let value = (checkReadOffset(addressess) - 1) & 0xFF;
-  checkWriteOffset(addressess, value);
-
-  CPUregisters.P.Z = ((value === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
-  cpuCycles +=3 // quirk, add 3 to base cycles, after data manipulation for PPU's 3:1 tick ratio
+  const lo    = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
+  const hi    = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
+  const base  = ((hi << 8) | lo) & 0xFFFF;
+  const addr  = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  const val   = (checkReadOffset(addr) - 1) & 0xFF;
+  checkWriteOffset(addr, val);
+  CPUregisters.P.Z = (val === 0) ? 1 : 0;
+  CPUregisters.P.N = (val & 0x80) ? 1 : 0;
+  // cycles: 7 (no page-cross penalty)
 }
 
 function EOR_IMM() {
-  const value = systemMemory[CPUregisters.PC + 1];
+  const value = prgRom[CPUregisters.PC + 1 - 0x8000];
   CPUregisters.A ^= value;
   CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
 }
 
 function EOR_ZP() {
-  const addressess = systemMemory[CPUregisters.PC + 1];
+  const addressess = prgRom[CPUregisters.PC + 1 - 0x8000];
   const value = systemMemory[addressess];
   CPUregisters.A ^= value;
   CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
@@ -1296,7 +1366,7 @@ function EOR_ZP() {
 }
 
 function EOR_ZPX() {
-  const addressess = (systemMemory[CPUregisters.PC + 1] + CPUregisters.X) & 0xFF;
+  const addressess = (prgRom[CPUregisters.PC + 1 - 0x8000] + CPUregisters.X) & 0xFF;
   const value = systemMemory[addressess];
   CPUregisters.A ^= value;
   CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
@@ -1304,7 +1374,7 @@ function EOR_ZPX() {
 }
 
 function EOR_ABS() {
-  const addressess = (systemMemory[CPUregisters.PC + 2] << 8) | systemMemory[CPUregisters.PC + 1];
+  const addressess = (prgRom[CPUregisters.PC + 2 - 0x8000] << 8) | prgRom[CPUregisters.PC + 1 - 0x8000];
   const value = systemMemory[addressess];
   CPUregisters.A ^= value;
   CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
@@ -1312,7 +1382,7 @@ function EOR_ABS() {
 }
 
 function EOR_ABX() {
-  const addressess = (((systemMemory[CPUregisters.PC + 2] << 8) | systemMemory[CPUregisters.PC + 1]) + CPUregisters.X) & 0xFFFF;
+  const addressess = (((prgRom[CPUregisters.PC + 2 - 0x8000] << 8) | prgRom[CPUregisters.PC + 1 - 0x8000]) + CPUregisters.X) & 0xFFFF;
   const value = systemMemory[addressess];
   CPUregisters.A ^= value;
   CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
@@ -1320,18 +1390,7 @@ function EOR_ABX() {
 }
 
 function EOR_ABY() {
-  const addressess = (((systemMemory[CPUregisters.PC + 2] << 8) | systemMemory[CPUregisters.PC + 1]) + CPUregisters.Y) & 0xFFFF;
-  const value = systemMemory[addressess];
-  CPUregisters.A ^= value;
-  CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-}
-
-function EOR_INX() {
-  const operand = systemMemory[CPUregisters.PC + 1];
-  const lowByteaddress = (operand + CPUregisters.X) & 0xFF;
-  const highByteaddress = (operand + CPUregisters.X + 1) & 0xFF;
-  const addressess = (systemMemory[highByteaddress] << 8) | systemMemory[lowByteaddress];
+  const addressess = (((prgRom[CPUregisters.PC + 2 - 0x8000] << 8) | prgRom[CPUregisters.PC + 1 - 0x8000]) + CPUregisters.Y) & 0xFFFF;
   const value = systemMemory[addressess];
   CPUregisters.A ^= value;
   CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
@@ -1339,7 +1398,7 @@ function EOR_INX() {
 }
 
 function EOR_INY() {
-  const operand = systemMemory[CPUregisters.PC + 1];
+  const operand = prgRom[CPUregisters.PC + 1 - 0x8000];
   const lowByteaddress = operand & 0xFF;
   const highByteaddress = (operand + 1) & 0xFF;
   const addressess = (((systemMemory[highByteaddress] << 8) | systemMemory[lowByteaddress]) + CPUregisters.Y) & 0xFFFF;
@@ -1368,13 +1427,30 @@ function EOR_ABSY() {
 }
 
 function EOR_INDX() {
-  const zpaddress = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
-  const addressess = checkReadOffset(zpaddress) | (checkReadOffset((zpaddress + 1) & 0xFF) << 8);
-  const value = checkReadOffset(addressess);
-  CPUregisters.A ^= value;
 
-  CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  checkWriteOffset(0x0015,0x30);
+checkWriteOffset(0x0016,0x12);
+checkWriteOffset(0x1230,0xF0);
+console.log(
+  'lo=',  checkReadOffset(0x0015).toString(16), // expect "30"
+  'hi=',  checkReadOffset(0x0016).toString(16), // expect "12"
+  'val=', checkReadOffset(0x1230).toString(16)  // expect "f0"
+);
+
+  const nn   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF; // operand from PRG
+  const ptr  = (nn + (CPUregisters.X & 0xFF)) & 0xFF;         // ZP index (wrap)
+  const lo   = checkReadOffset(ptr) & 0xFF;
+  const hi   = checkReadOffset((ptr + 1) & 0xFF) & 0xFF;      // ZP wrap for hi
+  const addr = ((hi << 8) | lo) & 0xFFFF;
+
+  const val  = checkReadOffset(addr) & 0xFF;
+  const res  = (CPUregisters.A ^ val) & 0xFF;
+
+  CPUregisters.A   = res;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+
+  cpuCycles += 6; // fixed for INDX
 }
 
 function EOR_INDY() {
@@ -2856,8 +2932,8 @@ const opcodes = {
     absolute:   { code: 0x4D, length: 3, pcIncrement: 3, func: EOR_ABS },
     absoluteX:  { code: 0x5D, length: 3, pcIncrement: 3, func: EOR_ABX },
     absoluteY:  { code: 0x59, length: 3, pcIncrement: 3, func: EOR_ABY },
-    indirectX:  { code: 0x41, length: 2, pcIncrement: 2, func: EOR_INX },
-    indirectY:  { code: 0x51, length: 2, pcIncrement: 2, func: EOR_INY }
+    indirectX:  { code: 0x41, length: 2, pcIncrement: 2, func: EOR_INDX },
+    indirectY:  { code: 0x51, length: 2, pcIncrement: 2, func: EOR_INDY }
   },
 
   // ======================= SHIFT/ROTATE ======================= //
