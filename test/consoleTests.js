@@ -969,6 +969,7 @@ const tests = [
 
 // absolute -> $0345 / $034A
 { name:"ASL $0345",      code:[0x0E,0x45,0x03], setup:()=>{checkWriteOffset(0x0345,0xFF);}, expectMem:{addr:0x0345,value:0xFE}, expect:{C:1,Z:0,N:1} },
+
 { name:"ASL $0340,X",    code:[0x1E,0x40,0x03], pre:{X:0x05}, setup:()=>{checkWriteOffset(0x0345,0x10);}, expectMem:{addr:0x0345,value:0x20}, expect:{C:0,Z:0,N:0} },
 
 // ==== LSR (5 variants) ====
@@ -1158,9 +1159,24 @@ function runShiftOpsTests() {
     { name:"ASL $20",                     code:[0x06,0x20],              setup:()=>{ checkWriteOffset(0x20, 0x03); }, expectMem:{addr:0x20,value:0x06}, expect:{C:0,Z:0,N:0} },
     { name:"ASL $20 (carry)",             code:[0x06,0x20],              setup:()=>{ checkWriteOffset(0x20, 0x80); }, expectMem:{addr:0x20,value:0x00}, expect:{C:1,Z:1,N:0} },
     { name:"ASL $10,X",                   code:[0x16,0x10],   pre:{X:0x10}, setup:()=>{ checkWriteOffset(0x20, 0x02); }, expectMem:{addr:0x20,value:0x04}, expect:{C:0,Z:0,N:0} },
-    { name:"ASL $1234",                   code:[0x0E,0x34,0x12],         setup:()=>{ checkWriteOffset(0x1234, 0x01); }, expectMem:{addr:0x1234,value:0x02}, expect:{C:0,Z:0,N:0} },
-    { name:"ASL $1234,X",                 code:[0x1E,0x34,0x12], pre:{X:0x10}, setup:()=>{ checkWriteOffset(0x1244, 0x80); }, expectMem:{addr:0x1244,value:0x00}, expect:{C:1,Z:1,N:0} },
+{
+  name: "ASL $1234 (ABS)",
+  code: [0x0E, 0x34, 0x12],                 // ASL $1234
+  setup: () => { checkWriteOffset(0x1234, 0x01); },
+  expectMem: { addr: 0x1234, value: 0x02 },
+  expect: { P: { C: 0, Z: 0, N: 0 } },      // flags from result 0x02
+  expectedCycles: 6                          // RMW ABS = 6
+},
 
+{
+  name: "ASL $1234,X (RMW abs,X)",
+  code: [0x1E, 0x34, 0x12],
+  pre: { X: 0x10 },
+  setup: () => { checkWriteOffset(0x1244, 0x80); }, // 0x1234 + X = 0x1244
+  expectMem: { addr: 0x1244, value: 0x00 },        // 0x80 << 1 = 0x00
+  expect: { P: { C: 1, Z: 1, N: 0 } },             // carry from bit7, zero set, negative clear
+  expectedCycles: 7
+},
     // LSR accumulator
     { name:"LSR A (no carry)",            code:[0x4A],                   pre:{A:0x02,P:{C:0}}, expect:{A:0x01,C:0,Z:0,N:0} },
     { name:"LSR A (carry & zero)",        code:[0x4A],                   pre:{A:0x01,P:{C:0}}, expect:{A:0x00,C:1,Z:1,N:0} },
@@ -3447,7 +3463,42 @@ function runStoresTests() {
     { name: "STA absolute,Y",       code: [0x99, 0x00, 0x07],        setup: () => { CPUregisters.Y = 3; CPUregisters.A = 0xFE; }, expectMem: { addr: 0x0703, value: 0xFE } },
     { name: "STX zeroPage",         code: [0x86, 0x30],              setup: () => { CPUregisters.X = 0x55; },   expectMem: { addr: 0x0030, value: 0x55 } },
     { name: "STX zeroPage,Y",       code: [0x96, 0x40],              setup: () => { CPUregisters.X = 0xAA; CPUregisters.Y = 2; }, expectMem: { addr: 0x0042, value: 0xAA } },
-    { name: "STX absolute",         code: [0x8E, 0x12, 0x34],        setup: () => { CPUregisters.X = 0x77; },   expectMem: { addr: 0x3412, value: 0x77 } },
+    { // STA abs → WRAM
+  name: "STA absolute → WRAM",
+  code: [0x8D, 0x00, 0x02],           // STA $0200
+  setup: () => { CPUregisters.A = 0x5A; },
+  expectMem: { addr: 0x0200, value: 0x5A },
+  expectedCycles: 4
+},
+{
+  name: "STY absolute → WRAM",
+  code: [0x8C, 0x10, 0x01],           // STY $0110
+  setup: () => { CPUregisters.Y = 0xCC; },
+  expectMem: { addr: 0x0110, value: 0xCC },
+  expectedCycles: 4
+},
+{
+  name: "STA zero page",
+  code: [0x85, 0x80],
+  setup: () => { CPUregisters.A = 0x99; },
+  expectMem: { addr: 0x0080, value: 0x99 },
+  expectedCycles: 3
+},
+{
+  name: "STA abs,X → WRAM",
+  code: [0x9D, 0x40, 0x03],           // STA $0340,X
+  setup: () => { CPUregisters.A = 0x22; CPUregisters.X = 0x05; },
+  expectMem: { addr: 0x0345, value: 0x22 },
+  expectedCycles: 5                    // abs,X store = 5 cycles
+},
+{
+  name: "STA abs,Y → WRAM",
+  code: [0x99, 0x40, 0x03],
+  setup: () => { CPUregisters.A = 0x33; CPUregisters.Y = 0x05; },
+  expectMem: { addr: 0x0345, value: 0x33 },
+  expectedCycles: 5,
+},
+
     { name: "STY zeroPage",         code: [0x84, 0x50],              setup: () => { CPUregisters.Y = 0x44; },   expectMem: { addr: 0x0050, value: 0x44 } },
     { name: "STY zeroPage,X",       code: [0x94, 0x60],              setup: () => { CPUregisters.Y = 0x88; CPUregisters.X = 3; }, expectMem: { addr: 0x0063, value: 0x88 } },
     { name: "STY absolute",         code: [0x8C, 0xAB, 0xCD],        setup: () => { CPUregisters.Y = 0x99; },   expectMem: { addr: 0xCDAB, value: 0x99 } }

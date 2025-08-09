@@ -66,5 +66,5 @@ function step() {
 
   // Advance cycles & PC
   cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF;
-  CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]) & 0xFFFF;
+  CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]);
 }

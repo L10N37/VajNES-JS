@@ -19,7 +19,7 @@ anyway, it would have had to be optimised into look up tables either way, but it
 things the original way. Even with all the UI and debug stuff shaved off, the old code chewed through far more opcodes per
 second
 */
-
+//to do: remove all prgRom references, along with 0x8000, use checkReadOffset
 let cpuCycles = 0;
 let CPUregisters = {
   A: 0x00,
@@ -395,16 +395,32 @@ function INC_ABSX() {
 }
 
 function JMP_ABS() {
-  CPUregisters.PC = (checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1);
+  const pc0 = CPUregisters.PC & 0xFFFF;                         // snapshot
+
+  const lo  = checkReadOffset((pc0 + 1) & 0xFFFF) & 0xFF;       // operand low
+  const hi  = checkReadOffset((pc0 + 2) & 0xFFFF) & 0xFF;       // operand high
+  const tgt = ((hi << 8) | lo) & 0xFFFF;
+
+  CPUregisters.PC = tgt;                                        // set PC directly
 }
 
 function JMP_IND() {
-  const pointer = (checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1);
-  const lowByte = checkReadOffset(pointer);
-  const highByte = (pointer & 0xFF) === 0xFF
-    ? checkReadOffset(pointer & 0xFF00)
-    : checkReadOffset(pointer + 1);
-  CPUregisters.PC = (highByte << 8) | lowByte;
+  const pc0 = CPUregisters.PC & 0xFFFF;
+  const opc = checkReadOffset(pc0) & 0xFF;        // expect 0x6C
+
+  const ptrLo = checkReadOffset((pc0 + 1) & 0xFFFF) & 0xFF;
+  const ptrHi = checkReadOffset((pc0 + 2) & 0xFFFF) & 0xFF;
+  const ptr   = (ptrHi << 8) | ptrLo;
+
+  // NMOS 6502 page-wrap bug: high byte fetch wraps within the same page
+  const bugAddr = (ptr & 0xFF00) | ((ptr + 1) & 0x00FF);
+
+  const lo = checkReadOffset(ptr)     & 0xFF;
+  const hi = checkReadOffset(bugAddr) & 0xFF;
+  const tgt = ((hi << 8) | lo) & 0xFFFF;
+
+  // Set PC directly; dispatcher must NOT add +3 after this
+  CPUregisters.PC = tgt;  
 }
 
 function ROL_ACC() {
@@ -851,25 +867,28 @@ function ASL_ABS() {
   cpuCycles += 6; // ABS: 6 cycles
 }
 
-// ASL $nnnn,X  (0x1E) — ABS,X
 function ASL_ABSX() {
-  const lo    = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const hi    = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
-  const base  = ((hi << 8) | lo) & 0xFFFF;
-  const addr  = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  // Fetch operands from PC+1/+2, but DO NOT change PC here.
+  const lo   = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  const hi   = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
 
-  const old   = checkReadOffset(addr) & 0xFF;
-  const carry = (old & 0x80) ? 1 : 0;
-  const res   = (old << 1) & 0xFF;
+  const base = (hi << 8) | lo;
+  const ea   = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  const fea  = foldMirrors(ea);
 
-  checkWriteOffset(addr, res);
-  CPUregisters.P.C = carry;
+  const old = checkReadOffset(fea) & 0xFF;
+  const res = (old << 1) & 0xFF;
+
+  CPUregisters.P.C = (old >>> 7) & 1;
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
-  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+  CPUregisters.P.N = (res >>> 7) & 1;
 
-  cpuCycles += 7; // ABS,X: 7 cycles (no extra page-cross penalty for RMW)
+  // True 6502 RMW sequence
+  checkWriteOffset(fea, old); // dummy
+  checkWriteOffset(fea, res); // final
+
+  // No PC increment here.
 }
-
 
 function BIT_ZP() {
   // Zero‑page addressessing
@@ -2924,8 +2943,8 @@ const opcodes = {
   BRA: { relative: { code: 0x80, length: 2, pcIncrement: 0, func: BRA_REL } },
 
   JMP: {
-    absolute:   { code: 0x4C, length: 3, pcIncrement: 3, func: JMP_ABS }, // 3 or set directly
-    indirect:   { code: 0x6C, length: 3, pcIncrement: 3, func: JMP_IND }  // 3 or set directly
+    absolute:   { code: 0x4C, length: 0, pcIncrement: 0, func: JMP_ABS }, // 3 or set directly
+    indirect:   { code: 0x6C, length: 0, pcIncrement: 0, func: JMP_IND }  // 3 or set directly
   },
   JSR: { absolute: { code: 0x20, length: 3, pcIncrement: 3, func: JSR_ABS } }, // 3 or set directly
   RTS: { implied: { code: 0x60, length: 1, pcIncrement: 0, func: RTS_IMP } }, // PC from stack

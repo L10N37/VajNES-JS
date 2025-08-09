@@ -50,9 +50,10 @@ function ppuWrite(addr, value) {
     case 0x2001: PPUregister.MASK = value;      cpuOpenBus = value; break;
 
 
-    case 0x2002: /* read-only */ //window.alert("attempt made to write to PPU status (read only register)"); 
+    case 0x2002: /* read-only */ 
+    //window.alert("attempt made to write to PPU status (read only register)"); 
     
-    PPUregister.STATUS = value; // for test suite only
+    //PPUregister.STATUS = value; // for test suite only
     
     break;
 

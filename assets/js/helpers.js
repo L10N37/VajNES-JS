@@ -1,3 +1,22 @@
+
+/*
+// Usage:
+const snap0345 = watchWRAMBase(0x0345);
+// ...run an instruction...
+snap0345("after ASL");
+*/
+function watchWRAMBase(base){
+  const b = base & 0x1FFF;
+  const isWRAM = b < 0x2000;
+  console.log(`[WATCH] ${hex16(b)} (${isWRAM ? "WRAM" : "not WRAM"})`);
+  const addrs = isWRAM ? [b & 0x07FF, (b&0x07FF)+0x0800, (b&0x07FF)+0x1000, (b&0x07FF)+0x1800] : [b];
+  return function snapshot(tag=""){
+    const vals = addrs.map(a => checkReadOffset(a) & 0xFF);
+    console.log(`[WATCH ${tag}] ${addrs.map(hex16).join(",")} = ${vals.map(hex8).join(",")}`);
+  };
+}
+
+
 // takes array variable as a parameter, logs to console with offsets in a table
 // for debugging
 function hexDump(array) {
@@ -25,6 +44,11 @@ function flagsEqual(a, b) {
 }
 
 // hex output helpers, ToDO, combine into one, edit all calls to pass correct parameters for output
+// Minimal fixed-width helpers
+function hex8(n)  { return "0x" + ((n & 0xFF)    ).toString(16).toUpperCase().padStart(2, "0"); }
+function hex16(n) { return "0x" + ((n & 0xFFFF)  ).toString(16).toUpperCase().padStart(4, "0"); }
+function hex32(n) { return "0x" + ((n >>> 0)     ).toString(16).toUpperCase().padStart(8, "0"); }
+
 function testSuiteHex(v, len = 2) {
   if (v == null || typeof v.toString !== "function") return "--";
   return "0x" + v.toString(16).toUpperCase().padStart(len, "0");
@@ -85,7 +109,7 @@ for(let i=0; i<256; ++i) {
     "PC+": opcodePcIncs[i],
     Cycles: opcodeCyclesInc[i],
     //Len: opcodeLengths[i],
-    Hex: opcodeHex[i] || ""
+    //Hex: opcodeHex[i] || ""
   });
 }
 
