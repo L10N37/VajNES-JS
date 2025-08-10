@@ -126,3 +126,5 @@ function updateDebugTables() {
   cpuStatusRegisterPopulate();
   ppuRegisterBitsPopulate();
 }
+
+function resetSystem(){resetCPU(), ppuResetCounters();}

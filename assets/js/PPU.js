@@ -140,8 +140,74 @@ function ppuRead(addr) {
   }
 }
 
+//================================= PPU per tick Emulation section =================================
 
-function ppuTick(){
+// ── PPU timing state
+const PPUclock = {
+  scanline:   261,    // pre-render scanline
+  dot:        0,      // 0..340
+  frame:      0,      // running counter
+  odd:        0,      // 0 even, 1 odd
+  //nmiPending: false,  // bit 7 of PPUCTRL, now global
+  ticks:      0       // total PPU ticks since start
+};
+
+// Reset counters & status
+function ppuResetCounters() {
+  PPUclock.scanline   = 261;
+  PPUclock.dot        = 0;
+  PPUclock.frame      = 0;
+  PPUclock.odd        = 0;
+  PPUclock.ticks      = 0;
+
+  // Clear bits 7..5 of STATUS, reset $2005/$2006 latch
+  PPUregister.STATUS &= 0x1F;
+  PPUregister.writeToggle = false;
+}
+
+// Advance one PPU tick
+function ppuTick() {
+  PPUclock.ticks++;
+
+  // ---- VBLANK start ----
+  if (PPUclock.scanline === 241 && PPUclock.dot === 1) {
+    PPUregister.STATUS |= 0x80; // set vblank flag
+    if (PPUregister.CTRL & 0x80) { // check bit 7 PPUCTRL
+      // service NMI next CPU step (servicing directly here could cause edge case bugs (test roms))
+      nmiPending = true;
+    }
+    if (debugLogging) {
+      console.log(`[PPU] Enter VBLANK frame=${PPUclock.frame} ticks=${PPUclock.ticks}`);
+    }
+  }
+
+  // ---- VBLANK clear ----
+  if (PPUclock.scanline === 261 && PPUclock.dot === 1) {
+    PPUregister.STATUS &= 0x1F; // clear vblank/sprite0/overflow
+    PPUregister.writeToggle = false;
+    if (debugLogging) {
+      console.log(`[PPU] Leave VBLANK frame=${PPUclock.frame} ticks=${PPUclock.ticks}`);
+    }
+  }
+
+  // ---- optional heartbeat ----
+  if (debugLogging && (PPUclock.ticks % 10000 === 0)) {
+    console.log(`[PPU] tick=${PPUclock.ticks} scanline=${PPUclock.scanline} dot=${PPUclock.dot}`);
+  }
+
+  // ---- advance counters ----
+  PPUclock.dot++;
+  if (PPUclock.dot > 340) {
+    PPUclock.dot = 0;
+    PPUclock.scanline++;
+    if (PPUclock.scanline > 261) {
+      PPUclock.scanline = 0;
+      PPUclock.frame++;
+      PPUclock.odd ^= 1;
+    }
+  }
+}
+
   /*
   ============================================================
   NES PPU TICK OVERVIEW  (called once per PPU dot / pixel)
@@ -168,7 +234,7 @@ function ppuTick(){
     - loopy regs:  v (current VRAM addr), t (temp VRAM addr), x (fine X), w (write toggle)
     - shifters:    bg pattern shifters + attribute shifters (can add after you see tiles)
     - sprites:     secondary OAM, sprite eval state (add later)
-    - nmiPending:  boolean latch to request NMI on the CPU
+    - nmiPending:  boolean latch to request NMI on the CPU - sorted
     - spriteZeroHit, spriteOverflow: status bits you’ll set later
 
   ============================================
@@ -185,7 +251,7 @@ function ppuTick(){
   ============================================
   - When scanline == 241 and dot == 1:
       set PPUSTATUS bit 7 (VBLANK) = 1
-      if (PPUCTRL bit 7 "NMI enable" == 1) set nmiPending = true
+      if (PPUCTRL bit 7 "NMI enable" == 1) set nmiPending = true  - sorted
       (CPU will service NMI at/after the next instruction boundary.)
   - When scanline == 261 (pre-render) and dot == 1:
       clear PPUSTATUS bit 7 (VBLANK) = 0
@@ -276,20 +342,19 @@ function ppuTick(){
   ============================================
   10) NMI DELIVERY (simple model)
   ============================================
-  - If PPUCTRL bit 7 is 1 when VBLANK is set, set nmiPending = true.
+  - If PPUCTRL bit 7 is 1 when VBLANK is set, set nmiPending = true - sorted
   - The CPU should check nmiPending between instructions; if true,
-    push PC+P to stack and jump to the NMI vector ($FFFA/FFFB), then clear nmiPending.
+    push PC+P to stack and jump to the NMI vector ($FFFA/FFFB), then clear nmiPending - sorted
   - Exact-cycle NMI suppression/cancellation quirks exist; ignore them for now.
 
   ============================================================
   IMPLEMENTATION ORDER (pragmatic bring-up)
   ============================================================
-  A) Implement counters (scanline/dot/frame), VBLANK set/clear, nmiPending.   <-- this breaks your loop
+  A) Implement counters (scanline/dot/frame), VBLANK set/clear, nmiPending.      (done)
   B) Implement loopy w/t/v/x rules for $2005/$2006 and the copy points.
   C) Implement $2007 VRAM increment (1/32) (you likely did already).
   D) Add odd-frame skip later.
   E) Add background shifters, then sprites, then exact palette/bus nuances.
 
   */
-}
 

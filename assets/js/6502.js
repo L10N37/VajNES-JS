@@ -19,7 +19,9 @@ anyway, it would have had to be optimised into look up tables either way, but it
 things the original way. Even with all the UI and debug stuff shaved off, the old code chewed through far more opcodes per
 second
 */
+
 //to do: remove all prgRom references, along with 0x8000, use checkReadOffset
+
 let cpuCycles = 0;
 let CPUregisters = {
   A: 0x00,
@@ -79,7 +81,6 @@ function opCodeTest(){
     "%c🟢 TEST MODAL TRIGGERED by OPCODE 0x02 🟢",
     "background: yellow; color: black; font-weight: bold; font-size: 20px; padding: 6px 12px; border: 2px solid black;"
   );
-
 }
 
 /*
@@ -146,7 +147,7 @@ function IRQ() {
   CPUregisters.PC = lo | (hi << 8);
 
   // Consume 7 cycles for IRQ handling
-  cpuCycles += 7;
+  cpuCycles = (cpuCycles + 7) & 0xFFFF;
 }
 
 function SEI_IMP() {
@@ -262,7 +263,7 @@ function LDA_ABSX() {
 
   // Detect page boundary crossing ONLY for this data fetch:
   if ((base & 0xFF00) !== (address & 0xFF00)) {
-    cpuCycles++; // Add extra cycle
+      cpuCycles = (cpuCycles + 1) & 0xFFFF;
   }
 
 }
@@ -279,7 +280,7 @@ function LDA_ABSY() {
 
   // Detect page boundary crossing
   if ((base & 0xFF00) !== (address & 0xFF00)) {
-  cpuCycles++;
+    cpuCycles = (cpuCycles + 1) & 0xFFFF;
   }
 }
 
@@ -302,7 +303,7 @@ function LDA_INDY() {
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
     // Add a cycle if page boundary is crossed when adding Y
-  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles++;
+  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function STA_ZP() {
@@ -391,7 +392,7 @@ function INC_ABSX() {
 
   CPUregisters.P.Z = ((value === 0)) ? 1 : 0;
   CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
-  cpuCycles +=3 // quirk, add 3 to base cycles
+  cpuCycles = (cpuCycles + 3) & 0xFFFF; // quirk, add 3 to base cycles
 }
 
 function JMP_ABS() {
@@ -548,7 +549,7 @@ function LDX_ABSY() {
   CPUregisters.P.Z = (CPUregisters.X === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.X & 0x80) !== 0) ? 1 : 0;
     // Add cycle if page crossed (standard quirk)
-  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles++;
+  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function ADC_ZP() {
@@ -641,7 +642,7 @@ function ADC_ABSX() {
   CPUregisters.A = res;
 
   // timing (+1 on page cross
-  if ((addr & 0xFF00) !== (base & 0xFF00)) cpuCycles += 1;
+  if ((addr & 0xFF00) !== (base & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function ADC_ABSY() {
@@ -658,7 +659,7 @@ function ADC_ABSY() {
   CPUregisters.A = res;
 
   // timing (+1 cycle if page crossed)
-  if ((addr & 0xFF00) !== (base & 0xFF00)) cpuCycles += 1;
+  if ((addr & 0xFF00) !== (base & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function ADC_INDX() {
@@ -778,7 +779,7 @@ function AND_INDX() {
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = (res & 0x80) ? 1 : 0;
 
-  cpuCycles += 6; // +add 6 to 1 base cycles, total 7 for this opcode
+  cpuCycles = (cpuCycles + 6) & 0xFFFF; // +add 6 to 1 base cycles, total 7 for this opcode
 }
 
 // AND ($nn),Y — opcode 0x31
@@ -798,9 +799,8 @@ function AND_INDY() {
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = (res & 0x80) ? 1 : 0;
 
-  cpuCycles += 5;
-  if ((addr & 0xFF00) !== (base & 0xFF00)) cpuCycles += 1;
-  // PC increment (2) handled by your dispatcher/table
+  cpuCycles = (cpuCycles + 5) & 0xFFFF;
+  if ((addr & 0xFF00) !== (base & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 // ---------- ASL (Accumulator) total = 2 cycles → extra = 0 ----------
@@ -812,9 +812,6 @@ function ASL_ACC() {
   CPUregisters.A   = result;
   CPUregisters.P.Z = (result === 0) ? 1 : 0;
   CPUregisters.P.N = (result >>> 7) & 1;
-
-  // Dispatcher already added baseCycles.accumulator (2). Extra = 0.
-  // cpuCycles += 0;
 }
 
 // ---------- ASL $nn  (ZP) total = 5 cycles → extra = +2 ----------
@@ -831,7 +828,7 @@ function ASL_ZP() {
   CPUregisters.P.N = (res >>> 7) & 1;
   checkWriteOffset(ea, res);                // final write
 
-  cpuCycles += 2; // base(3) + 2 = 5
+  cpuCycles = (cpuCycles + 2) & 0xFFFF; // base(3) + 2 = 5
 }
 
 // ---------- ASL $nn,X (ZP,X) total = 6 cycles → extra = +2 ----------
@@ -848,7 +845,7 @@ function ASL_ZPX() {
   CPUregisters.P.N = (res >>> 7) & 1;
   checkWriteOffset(ea, res);                // final
 
-  cpuCycles += 2; // base(4) + 2 = 6
+ cpuCycles = (cpuCycles + 2) & 0xFFFF; // base(4) + 2 = 6
 }
 
 // ---------- ASL $nnnn (ABS) total = 6 cycles → extra = +2 ----------
@@ -866,7 +863,7 @@ function ASL_ABS() {
   CPUregisters.P.N = (res >>> 7) & 1;
   checkWriteOffset(ea, res);                // final
 
-  cpuCycles += 2; // base(4) + 2 = 6
+ cpuCycles = (cpuCycles + 2) & 0xFFFF; // base(4) + 2 = 6
 }
 
 // ---------- ASL $nnnn,X (ABS,X) total = 7 cycles → extra = +3 ----------
@@ -884,7 +881,7 @@ function ASL_ABSX() {
   CPUregisters.P.N = (res >>> 7) & 1;
   checkWriteOffset(ea, res);                // final
 
-  cpuCycles += 3; // base(4) + 3 = 7 (fixed; no page-cross add for RMW)
+  cpuCycles = (cpuCycles + 3) & 0xFFFF; // base(4) + 3 = 7 (fixed; no page-cross add for RMW)
 }
 
 function BIT_ZP() {
@@ -939,7 +936,7 @@ function LSR_ZP() {
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = 0;
 
-   cpuCycles += 5; // ZP: 5 cycles
+  cpuCycles = (cpuCycles + 5) & 0xFFFF; // ZP: 5 cycles
 }
 
 // LSR $nn,X  (0x56) — Zero Page,X (wrap)
@@ -954,7 +951,7 @@ function LSR_ZPX() {
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = 0;
 
-   cpuCycles += 6; // ZP,X: 6 cycles
+  cpuCycles = (cpuCycles + 6) & 0xFFFF;// ZP,X: 6 cycles
 }
 
 // LSR $nnnn  (0x4E) — Absolute
@@ -970,7 +967,7 @@ function LSR_ABS() {
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = 0;
 
-   cpuCycles += 6; // ABS: 6 cycles
+  cpuCycles = (cpuCycles + 6) & 0xFFFF; // ABS: 6 cycles
 }
 
 // LSR $nnnn,X  (0x5E) — Absolute,X
@@ -987,7 +984,7 @@ function LSR_ABSX() {
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = 0;
 
-   cpuCycles += 7; // ABS,X: 7 cycles (RMW)
+  cpuCycles = (cpuCycles + 7) & 0xFFFF; // ABS,X: 7 cycles (RMW)
 }
 
 function ORA_IMM() {
@@ -1117,7 +1114,7 @@ function BRK_IMP() {
 
   //CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
 
-  cpuCycles += 5;
+  cpuCycles = (cpuCycles + 5) & 0xFFFF;
 }
 
 // CMP #imm — 0xC9
@@ -1275,7 +1272,7 @@ function DEC_ZPX() {
   checkWriteOffset(addr, val);
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val & 0x80) ? 1 : 0;
-  cpuCycles += 2;  // add two to base of 4 for Absolute addressing, 6 total for this opcode
+  cpuCycles = (cpuCycles + 2) & 0xFFFF;  // add two to base of 4 for Absolute addressing, 6 total for this opcode
 }
 
 // DEC $nnnn  (opcode 0xCE)
@@ -1287,7 +1284,7 @@ function DEC_ABS() {
   checkWriteOffset(addr, val);
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val & 0x80) ? 1 : 0;
-  cpuCycles += 2; // add two to base of 4 for Absolute addressing, 6 total for this opcode
+  cpuCycles = (cpuCycles + 2) & 0xFFFF; // add two to base of 4 for Absolute addressing, 6 total for this opcode
 }
 
 function DEC_ABSX() {
@@ -1310,7 +1307,7 @@ function DEC_ABSX() {
   CPUregisters.P.N = (val >>> 7) & 1;
 
   // Timing: base(absX)=4 added by dispatcher; add +3 here -> total 7
-  cpuCycles += 3;
+  cpuCycles = (cpuCycles + 3) & 0xFFFF;
 }
 
 function EOR_IMM() {
@@ -1404,7 +1401,7 @@ function EOR_INDX() {
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = (res & 0x80) ? 1 : 0;
 
-  cpuCycles += 6; // fixed for INDX
+  cpuCycles = (cpuCycles + 6) & 0xFFFF;// fixed for INDX
 }
 
 function EOR_INDY() {
@@ -1499,7 +1496,7 @@ function LDY_ABSX() {
   CPUregisters.P.N = ((CPUregisters.Y & 0x80) !== 0) ? 1 : 0;
 
   // Add cycle if page crossed — always do cycle logic *after* memory ops!
-  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles++;
+  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function SBC_IMM() {
@@ -1742,7 +1739,7 @@ function NOP_ZPY() {
   // dummy read from (ZP + Y) but do nothing else
   const zp = checkReadOffset(CPUregisters.PC + 1);
   checkReadOffset((zp + CPUregisters.Y) & 0xFF);
-  cpuCycles++; // +1 for this opcode
+  cpuCycles = (cpuCycles + 1) & 0xFFFF; // +1 for this opcode
 }
 
 function NOP(){}
@@ -1776,7 +1773,7 @@ function NOP_ABSX() {
   const base = lo | (hi << 8);
   const eff = (base + CPUregisters.X) & 0xFFFF;
   checkReadOffset(eff);
-  if ((base & 0xFF00) !== (eff & 0xFF00)) cpuCycles += 1; // Add cycle if page crossed
+  if ((base & 0xFF00) !== (eff & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF; // Add cycle if page crossed
 }
 
 function SKB_IMM() {
@@ -2147,7 +2144,7 @@ function LAX_ABSY() {
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
   CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
   // Add extra cycle if page boundary is crossed, post data manipulation
-  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles++;
+  if ((base & 0xFF00) !== (address & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function LAX_INDX() {
@@ -2393,7 +2390,7 @@ function SLO_ABSX() {
   CPUregisters.A |= value;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-  cpuCycles += 3; // add 3 to the base, this opcode always chews 7 cycles
+  cpuCycles = (cpuCycles + 3) & 0xFFFF; // add 3 to the base, this opcode always chews 7 cycles
 }
 
 function SLO_ABSY() {
@@ -2740,7 +2737,7 @@ function BRA_REL() {
   const oldPC = CPUregisters.PC;
   const newPC = (CPUregisters.PC + 2 + signed) & 0xFFFF;
   // Page boundary cross penalty (+1 cycle)
-  if (((oldPC + 2) & 0xFF00) !== (newPC & 0xFF00)) cpuCycles++;
+  if (((oldPC + 2) & 0xFF00) !== (newPC & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
   CPUregisters.PC = newPC;
 }
 
@@ -2803,8 +2800,8 @@ function BCC_REL() {
 
   if (!CPUregisters.P.C) {
     const dest = (nextPC + rel) & 0xFFFF;
-    cpuCycles += 1;
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2822,8 +2819,8 @@ function BCS_REL() {
 
   if (CPUregisters.P.C) {
     const dest = (nextPC + rel) & 0xFFFF;
-    cpuCycles += 1; // +1 if branch taken
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1; // +1 if page cross
+    cpuCycles = (cpuCycles + 1) & 0xFFFF; // +1 if branch taken
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF; // +1 if page cross
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2838,8 +2835,8 @@ function BEQ_REL() {
 
   if (CPUregisters.P.Z) {
     const dest = (nextPC + rel) & 0xFFFF;
-    cpuCycles += 1;
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2854,8 +2851,8 @@ function BNE_REL() {
 
   if (!CPUregisters.P.Z) {
     const dest = (nextPC + rel) & 0xFFFF;
-    cpuCycles += 1;
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2870,8 +2867,8 @@ function BMI_REL() {
 
   if (CPUregisters.P.N) {
     const dest = (nextPC + rel) & 0xFFFF;
-    cpuCycles += 1;
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2886,8 +2883,8 @@ function BPL_REL() {
 
   if (!CPUregisters.P.N) {
     const dest = (nextPC + rel) & 0xFFFF;
-    cpuCycles += 1;
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2902,8 +2899,8 @@ function BVC_REL() {
 
   if (!CPUregisters.P.V) {
     const dest = (nextPC + rel) & 0xFFFF;
-    cpuCycles += 1;
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2918,8 +2915,8 @@ function BVS_REL() {
 
   if (CPUregisters.P.V) {
     const dest = (nextPC + rel) & 0xFFFF;
-    cpuCycles += 1;
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles += 1;
+    cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -3351,4 +3348,3 @@ for (const opname in opcodes) for (const variant in opcodes[opname]) {
 //  - STA/STX/STY/SHY/SHX/SAX do NOT add cycles for page cross (quirk vs. LDA etc)
 //
 //  - JMP (indirect) is always 5 cycles, never adds a cycle for page wrap bug
-//

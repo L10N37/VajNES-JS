@@ -1,13 +1,13 @@
-let debugLogging = true;
-
 const test = false; // only true to run console benchmarks
-let lastFetched = null;
 
 //easier to patch up my cycles for the test suite, then adjust test suite (some suites now false failing due to cycles)
 let ppuTicksToRun;
 let lastCpuCycleCount;
 
 let running = false;
+let debugLogging = true;
+// pending NMI tracker
+let nmiPending = false;
 
 function run() {
   if (running) return;    // already running?
@@ -51,8 +51,42 @@ if (test) {
   opcodeFuncs[0x02] = () => { /* no-op */ };
 }
 
+function serviceNMI() {
+  // Push PC and P (with B=0, bit5=1), set I, then jump to $FFFA/$FFFB
+  const pc = CPUregisters.PC & 0xFFFF;
+
+  // push PCH
+  cpuWrite(0x0100 + (CPUregisters.S & 0xFF), (pc >>> 8) & 0xFF);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // push PCL
+  cpuWrite(0x0100 + (CPUregisters.S & 0xFF), pc & 0xFF);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // push P with B=0, bit5=1
+  const pushedP = ((CPUregisters.P & ~0x10) | 0x20) & 0xFF;
+  cpuWrite(0x0100 + (CPUregisters.S & 0xFF), pushedP);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // set I flag
+  CPUregisters.P = (CPUregisters.P | 0x04) & 0xFF;
+
+  // fetch vector $FFFA/$FFFB (use full bus so harness writes work)
+  const lo = checkReadOffset(0xFFFA) & 0xFF;
+  const hi = checkReadOffset(0xFFFB) & 0xFF;
+  CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
+
+  // 6502 NMI entry latency
+  cpuCycles = (cpuCycles + 7) & 0xFFFF;
+
+  // clear latch(es)
+  nmiPending = false;
+  // keep PPU-side bookkeeping consistent if you use it anywhere
+  if (typeof PPUclock !== "undefined") PPUclock.nmiPending = false;
+}
+
 // ── Single‐step executor ──
-function step() {
+function step(serviceNmi) {
 
   const code = prgRom[(CPUregisters.PC - 0x8000) & 0xFFFF];
   const execFn = opcodeFuncs[code];
@@ -79,10 +113,14 @@ function step() {
   lastCpuCycleCount = cpuCycles & 0xFFFF;
   cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF;
   ppuTicksToRun = (cpuCycles - lastCpuCycleCount) * 3;
+  // run 3 ppuTicks per cpu Cycle (obtained after one CPU 'step', gives decent timing but not step locked cycles)
+  for (let i = 0; i < ppuTicksToRun; i++) ppuTick();
 
-  for (let i = 0; i < ppuTicksToRun; i++) {
-    ppuTick();
-    //console.log("PPU Ticks:",i+1);
-    //console.log("of:",ppuTicksToRun);
+    if (nmiPending) {
+    nmiPending = false;
+    serviceNMI();
   }
+
+
 }
+  
