@@ -1,4 +1,5 @@
-let chrRom = null; // Usually 8KB, sometimes more, null if CHR-RAM
+
+let isRomLoaded = false;
 
 function readFile(input) {
   const file = input.files[0];
@@ -77,6 +78,7 @@ function readFile(input) {
     mapper(romBytes.slice(0, 16)); // Just pass the header
 
     updateDebugTables();
+    isRomLoaded = true; // only used atm for fuzzy audio to be cut off
   };
 
   reader.onerror = function () {

@@ -67,6 +67,7 @@ function checkWriteOffset(address, value) {
       const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
       const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
       switch (base) {
+
         case 0x2000: console.log(`[$2000 PPUCTRL   W] ${h8(value)}`); break;
         case 0x2001: console.log(`[$2001 PPUMASK   W] ${h8(value)}`); break;
         case 0x2003: console.log(`[$2003 OAMADDR   W] ${h8(value)}`); break;

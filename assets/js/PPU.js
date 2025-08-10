@@ -5,6 +5,72 @@
 //   coarse Y: bits 9..5  (YYYYY)
 //   coarse X: bits 4..0  (XXXXX)
 
+/*
+==============================================================================
+Background render pipeline state (PPUregister.BG)
+------------------------------------------------------------------------------
+These are **internal** (non-MMIO) fields the PPU uses to produce background
+pixels one dot at a time. They mirror the NES PPU’s 8-dot fetch + 1-dot shift
+cadence and work alongside your scroll machinery (VRAM_ADDR, t, fineX).
+
+Fields
+------
+bgShiftLo : uint16
+  16-bit shift register for the pattern **low** bit-plane.
+  • Each visible dot: shift left by 1.
+  • At the end of each 8-dot fetch group (phase 7): load the lower 8 bits from
+    `tileLo` (freshly fetched), keep the upper 8 bits (already in flight).
+  • The pixel’s low bit (p0) is sampled from bit position (15 - fineX).
+
+bgShiftHi : uint16
+  16-bit shift register for the pattern **high** bit-plane.
+  • Same timing/behavior as bgShiftLo.
+  • The pixel’s high bit (p1) is sampled from bit position (15 - fineX).
+
+ntByte : uint8
+  Latched nametable tile index for the **next** tile to render.
+  • Fetched at fetch phase 0 from address: $2000 | (VRAM_ADDR & $0FFF).
+  • Used to build the pattern table addresses for tileLo/tileHi.
+
+atBits : uint8 (logical 2-bit value 0..3)
+  Attribute quadrant (palette select) for the **next** 8 pixels.
+  • Derived at fetch phase 2 from the attribute byte covering the tile:
+      - Attribute base: $23C0 within the selected nametable.
+      - Select the 2-bit quadrant using coarseX/coarseY (VRAM_ADDR).
+  • Constant across the 8 pixels of the tile; no per-dot shifting needed.
+  • Contributes the top two bits of the background palette index:
+      paletteIndex = ( (atBits & 2) << 2 ) | ( (atBits & 1) << 2 )
+                      | (p1 << 1) | p0   // => 0..15 before $3F00 lookup
+
+tileLo : uint8
+  Latched **low** pattern byte for the upcoming tile row.
+  • Fetched at fetch phase 4 from:
+      base = (CTRL & $10) ? $1000 : $0000   // BG pattern table select
+      addr = base + (ntByte << 4) + fineY
+  • Loaded into the low 8 bits of bgShiftLo at fetch phase 7.
+
+tileHi : uint8
+  Latched **high** pattern byte for the upcoming tile row.
+  • Fetched at fetch phase 6 from (addr + 8) using the same base/ntByte/fineY.
+  • Loaded into the low 8 bits of bgShiftHi at fetch phase 7.
+
+Lifecycle / Timing (context)
+---------------------------
+• Visible dots 1..256: shift bgShiftLo/Hi each dot; emit a pixel using fineX.
+• Every 8 dots: run the fetch sequence (NT, AT, PT-low, PT-high, then reload).
+• Dot 256: vertical increment (fineY++ / coarseY+NTY handling).
+• Dot 257: horizontal copy (t → VRAM_ADDR: coarseX + NTX).
+• Pre-render scanline (261), dots 280..304: vertical copy (t → VRAM_ADDR: fineY/coarseY + NTY).
+• Pre-fetch window 321..336: same 8-dot fetch cadence to prime the next scanline.
+
+Reset expectations
+------------------
+• Safe to clear all BG fields on PPU reset and/or VBLANK start; not required by
+  hardware, but keeps first-line output deterministic in emulation.
+==============================================================================
+*/
+
+
 let PPUregister = {
   CTRL:      0x00, // $2000 (PPUCTRL, write-only): NMI enable, VRAM inc (1/32), sprite/bg pattern tbl, sprite size, base nametable
   MASK:      0x00, // $2001 (PPUMASK, write-only): rendering/grayscale/emphasis enables

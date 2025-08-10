@@ -1,72 +1,51 @@
+// --- Grille + transparency + test-image toggle ------------------------------
+// Keeps your existing UI logic but avoids resizing the main canvas.
+// The goal is simply: draw effects that follow whatever size applyScale() set.
 
-// adjust transparency of main screen cavnas, this allows simulated scanline effect to show through
 const transparencySlider = document.getElementById('transparency-slider');
-
-transparencySlider.addEventListener('input', function() {
+transparencySlider.addEventListener('input', () => {
   const opacity = transparencySlider.value / 100;
   systemScreen.style.opacity = opacity;
 });
 
-// adjust the grille canvas to change the intensity of the scanline effect from the grille
+// Grille intensity is just CSS opacity on the grille canvas
 const intensitySlider = document.getElementById('intensity-slider');
-
 function handleIntensityChange() {
   const intensity = intensitySlider.value / 100;
   grilleCanvas.style.opacity = intensity;
 }
-
 intensitySlider.addEventListener('input', handleIntensityChange);
 
-// Get the scanlines modal
+// Open/close the scanlines settings modal
 let scanlinesModal = document.querySelector('.scanlinesModal');
+let scanlinesLink  = document.querySelector('li:nth-child(2)');
+scanlinesLink.addEventListener('click', () => { scanlinesModal.style.display = 'block'; });
 
-// Get the 'Scanlines' LI element
-let scanlinesLink = document.querySelector('li:nth-child(2)');
-
-// When the 'Scanlines' link is clicked, show the scanlines modal
-scanlinesLink.addEventListener('click', function() {
-  scanlinesModal.style.display = 'block';
-});
-
-// When the 'OK' button is clicked, hide the scanlines modal
 let grilleOkButton = document.querySelector('#ok-button');
-grilleOkButton.addEventListener('click', function() {
-  scanlinesModal.style.display = 'none';
-});
+grilleOkButton.addEventListener('click', () => { scanlinesModal.style.display = 'none'; });
 
+// ---- Test image: KEEP feature, but don’t resize the canvas. ----------------
 const testImageCheckbox = document.getElementById('test-image-checkbox');
-
-testImageCheckbox.addEventListener('click', function() {
-  // load test image
+testImageCheckbox.addEventListener('click', () => {
   if (testImageCheckbox.checked) {
-    stopAnimation();
-    const img = new Image();
-    img.src = 'assets/images/test/tmnt.png'; // set the source of the image
-    img.onload = function() {
-      // set canvas size to match image size
-      canvas.width = img.width;
-      canvas.height = img.height;
-      // draw the image on the canvas which is now automatically scaled to fit.
-      ctx.drawImage(img, 0, 0);
-    };
-  }
-  // else play RF fuzz again
-  else {
-    animate();
+    // turn on test image without touching canvas dims
+    enableTestImage('assets/images/test/tmnt.png');
+  } else {
+    // back to RF fuzz
+    disableTestImage();
   }
 });
 
+// ---- Optional grille patterns ----------------------------------------------
 function clearGrilleCanvas() {
   grille_ctx.clearRect(0, 0, grilleCanvas.width, grilleCanvas.height);
 }
 
 function drawShadowMask() {
-  // Clear the grille canvas
   grille_ctx.clearRect(0, 0, grilleCanvas.width, grilleCanvas.height);
-
-  // Draw the shadow mask
   grille_ctx.fillStyle = 'black';
   grille_ctx.fillRect(0, 0, grilleCanvas.width, grilleCanvas.height);
+
   grille_ctx.fillStyle = 'rgb(30,30,30)';
   for (let i = 0; i < grilleCanvas.width; i += 8) {
     for (let j = 0; j < grilleCanvas.height; j += 8) {
@@ -82,10 +61,7 @@ function drawShadowMask() {
 }
 
 function drawApertureGrille() {
-  // Clear the grille canvas
   grille_ctx.clearRect(0, 0, grilleCanvas.width, grilleCanvas.height);
-
-  // Draw the aperture grille
   grille_ctx.fillStyle = 'black';
   grille_ctx.fillRect(0, 0, grilleCanvas.width, grilleCanvas.height);
   grille_ctx.fillStyle = 'white';
@@ -94,43 +70,50 @@ function drawApertureGrille() {
   }
 }
 
-  const grilleTypeRadios = document.getElementsByName('grille-type');
-  
-  // Add event listeners to grille type radios
-  grilleTypeRadios.forEach(function(radio) {
-    radio.addEventListener('click', function() {
-      // Check which radio is selected and set current grille type accordingly
-      if (radio.value === 'aperture-grille') {
-        drawApertureGrille();
-      } else if (radio.value === 'shadow-mask') {
-        currentGrilleType = drawShadowMask();
-      } else if (radio.value === 'none') {
-        currentGrilleType = clearGrilleCanvas();;
-      }
-
-    });
-  });
-
-  function drawScanlines(canvas, intensity) {
-    const ctx = canvas.getContext('2d');
-    const lineHeight = 2;
-    const gap = 2;
-    const alpha = intensity / 100;
-  
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-  
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
-  
-    for (let y = 0; y < canvas.height; y += lineHeight + gap) {
-      ctx.fillRect(0, y, canvas.width, lineHeight);
+const grilleTypeRadios = document.getElementsByName('grille-type');
+grilleTypeRadios.forEach((radio) => {
+  radio.addEventListener('click', () => {
+    if (radio.value === 'aperture-grille') {
+      drawApertureGrille();
+    } else if (radio.value === 'shadow-mask') {
+      drawShadowMask();
+    } else {
+      clearGrilleCanvas();
     }
-  }
-  
-const scanlineIntensitySlider = document.getElementById('scanlines-intensity-slider');
-
-scanlineIntensitySlider.addEventListener('input', () => {
-  const intensity = parseInt(scanlineIntensitySlider.value);
-  drawScanlines(scanlineCanvas, intensity);
+  });
 });
+
+/*
+// ---- Simple drawn scanlines (separate from PNG overlays) --------------------
+// using the PNG overlay from scanlines.js you can ignore this.
+// Left in because you were experimenting with both approaches.
+function drawScanlines(canvasRef, intensity) {
+  const g = canvasRef.getContext('2d');
+  const alpha = intensity / 100;
+
+  g.clearRect(0, 0, canvasRef.width, canvasRef.height);
+  g.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+
+  // 2px on, 2px off — tune to taste.
+  const lineHeight = 2, gap = 2;
+  for (let y = 0; y < canvasRef.height; y += lineHeight + gap) {
+    g.fillRect(0, y, canvasRef.width, lineHeight);
+  }
+}
+*/
+
+const scanlineIntensitySlider = document.getElementById('scanlines-intensity-slider');
+scanlineIntensitySlider.addEventListener('input', () => {
+  drawScanlines(scanlineCanvas, parseInt(scanlineIntensitySlider.value, 10) || 0);
+});
+
+// ---- Scale hooks so overlays/grilles re-draw after size changes ------------
+function _resyncGrilleAfterScale() {
+  // If a grille pattern is active, redraw it at the new size.
+  const checked = Array.from(grilleTypeRadios).find(r => r.checked)?.value;
+  if (checked === 'aperture-grille') drawApertureGrille();
+  else if (checked === 'shadow-mask') drawShadowMask();
+  // Redraw drawn scanlines using current intensity slider
+  const current = parseInt(scanlineIntensitySlider.value, 10) || 0;
+  drawScanlines(scanlineCanvas, current);
+}
