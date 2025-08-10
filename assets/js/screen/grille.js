@@ -83,10 +83,6 @@ grilleTypeRadios.forEach((radio) => {
   });
 });
 
-/*
-// ---- Simple drawn scanlines (separate from PNG overlays) --------------------
-// using the PNG overlay from scanlines.js you can ignore this.
-// Left in because you were experimenting with both approaches.
 function drawScanlines(canvasRef, intensity) {
   const g = canvasRef.getContext('2d');
   const alpha = intensity / 100;
@@ -100,7 +96,6 @@ function drawScanlines(canvasRef, intensity) {
     g.fillRect(0, y, canvasRef.width, lineHeight);
   }
 }
-*/
 
 const scanlineIntensitySlider = document.getElementById('scanlines-intensity-slider');
 scanlineIntensitySlider.addEventListener('input', () => {
