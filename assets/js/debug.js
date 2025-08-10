@@ -45,6 +45,12 @@ if (test) {
   opcodeFuncs[0x02] = () => { /* no-op */ };
 }
 
+
+// dummy function for 3:1 pseudo
+function ppuStep(){
+  
+}
+
 // ── Single‐step executor ──
 function step() {
 
@@ -65,6 +71,17 @@ function step() {
   execFn();
 
   // Advance cycles & PC
-  cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF;
   CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]);
+
+  
+  // pseudo 3:1 PPU with cycles
+  cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF; // &'ing unncessary, reset per step
+
+  for (let i = 0; i < cpuCycles; i++) {
+    ppuStep();
+    //console.log("PPU Steps:",i+1);
+    //console.log("of:",cpuCycles);
+  }
+  cpuCycles = 0;
 }
+
