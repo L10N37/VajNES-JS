@@ -15,11 +15,21 @@ let PPUregister = {
   SCROLL_Y:  0x00, // $2005 second write: scroll Y (fine Y + coarse Y to t)
   ADDR_HIGH: 0x00, // $2006 first write: high 6 bits of v (t[14..8]), also clears/sets writeToggle
   ADDR_LOW:  0x00, // $2006 second write: low 8 bits of v (t[7..0]); on this write t -> v
-  VRAM_ADDR: 0x0000, // current VRAM addr if you keep a mirror
-  VRAM_DATA: 0x00, // $2007 read buffer (reads are buffered except $3F00–$3FFF palette; writes go to v then v += inc)
-  t:         0x0000, // “loopy t”: temp VRAM address (same bit layout as v), receives $2000/$2005/$2006 writes
-  fineX:     0,     // 3-bit fine X scroll latch (0..7), from $2005 first write; not stored in v/t
-  writeToggle:false, // $2005/$2006 write latch: false = next write is first, true = next write is second
+  VRAM_ADDR: 0x0000,  // current VRAM addr if you keep a mirror
+  VRAM_DATA: 0x00,    // $2007 read buffer (reads are buffered except $3F00–$3FFF palette; writes go to v then v += inc)
+  t:         0x0000,  // “loopy t”: temp VRAM address (same bit layout as v), receives $2000/$2005/$2006 writes
+  fineX:     0,       // 3-bit fine X scroll latch (0..7), from $2005 first write; not stored in v/t
+  writeToggle:false,  // $2005/$2006 write latch: false = next write is first, true = next write is second
+
+  /* variables for drawing the background */
+  BG: { 
+  bgShiftLo: 0x0000,  // (16-bit) – pattern low shifter
+  bgShiftHi: 0x0000,  // (16-bit) – pattern high shifter
+  ntByte: 0x00, // (8-bit) – latched nametable tile index
+  atBits: 0x00, // (2-bit value 0..3) – attribute quadrant for the next 8 pixels (no need to shift it each dot)
+  tileLo: 0x00, // (8-bit) – latched pattern low byte for the incoming tile
+  tileHi: 0x00  // (8-bit) – latched pattern high byte for the incoming tile
+  }
 };
 
 /*
@@ -518,7 +528,7 @@ function ppuTick() {
   A) Implement counters (scanline/dot/frame), VBLANK set/clear, nmiPending.      (done)
   B) Implement loopy w/t/v/x rules for $2005/$2006 and the copy points. (done)
   C) Implement $2007 VRAM increment (1/32) (you likely did already). (done)
-  
+
   D) Add odd-frame skip later.
 
   E) Add background shifters, then sprites, then exact palette/bus nuances.
