@@ -1,18 +1,53 @@
 // PPU Registers
+// v/t bit layout (15 bits total): yyy NN YYYYY XXXXX
+//   fine Y: bits 14..12 (yyy)
+//   nametable: bits 11..10 (NN)
+//   coarse Y: bits 9..5  (YYYYY)
+//   coarse X: bits 4..0  (XXXXX)
+
 let PPUregister = {
-  CTRL:      0x00, // $2000
-  MASK:      0x00, // $2001
-  STATUS:    0x00, // $2002
-  OAMADDR:   0x00, // $2003
-  OAMDATA:   0x00, // $2004
-  SCROLL_X:  0x00, // $2005 (first write)
-  SCROLL_Y:  0x00, // $2005 (second write)
-  ADDR_HIGH: 0x00, // $2006 (first write)
-  ADDR_LOW:  0x00, // $2006 (second write)
-  VRAM_ADDR: 0x0000, // 15-bit current VRAM address
-  VRAM_DATA: 0x00, // Read buffer for $2007
-  writeToggle: false
+  CTRL:      0x00, // $2000 (PPUCTRL, write-only): NMI enable, VRAM inc (1/32), sprite/bg pattern tbl, sprite size, base nametable
+  MASK:      0x00, // $2001 (PPUMASK, write-only): rendering/grayscale/emphasis enables
+  STATUS:    0x00, // $2002 (PPUSTATUS, read-only): VBlank (bit7), sprite 0 hit (bit6), sprite overflow (bit5); read clears VBlank & write toggle
+  OAMADDR:   0x00, // $2003 (write-only): OAM (sprite RAM) address
+  OAMDATA:   0x00, // $2004 (read/write): OAM data port (auto-increments OAMADDR on write)
+  SCROLL_X:  0x00, // $2005 first write: scroll X (coarse X to t, fine X to fineX)
+  SCROLL_Y:  0x00, // $2005 second write: scroll Y (fine Y + coarse Y to t)
+  ADDR_HIGH: 0x00, // $2006 first write: high 6 bits of v (t[14..8]), also clears/sets writeToggle
+  ADDR_LOW:  0x00, // $2006 second write: low 8 bits of v (t[7..0]); on this write t -> v
+  VRAM_ADDR: 0x0000, // current VRAM addr if you keep a mirror
+  VRAM_DATA: 0x00, // $2007 read buffer (reads are buffered except $3F00–$3FFF palette; writes go to v then v += inc)
+  t:         0x0000, // “loopy t”: temp VRAM address (same bit layout as v), receives $2000/$2005/$2006 writes
+  fineX:     0,     // 3-bit fine X scroll latch (0..7), from $2005 first write; not stored in v/t
+  writeToggle:false, // $2005/$2006 write latch: false = next write is first, true = next write is second
 };
+
+/*
+Bit layout reminder for t (15 bits):
+
+bits 0–4: coarse X
+
+bits 5–9: coarse Y
+
+bits 10–11: nametable select (from $2000 write)
+
+bits 12–14: fine Y
+
+v (current VRAM addr, “loopy v”) — 15 bits
+bits: 14   13   12   11   10    9    8    7    6    5    4    3    2    1    0
+      y2   y1   y0   N1   N0   Y4   Y3   Y2   Y1   Y0   X4   X3   X2   X1   X0
+
+t (temp VRAM addr, “loopy t”) — same 15-bit layout as v
+bits: 14..12 = fine Y (y2..y0)
+      11..10 = nametable select (N1..N0)
+       9..5  = coarse Y (Y4..Y0)
+       4..0  = coarse X (X4..X0)
+
+fineX (“x” latch) — 3 bits
+bits: 2..0 = fine X (0–7)
+
+
+*/
 
 function dmaTransfer(value) {
     // value = page number (upper 8 bits of source address)
@@ -42,101 +77,214 @@ window.ppuPalette = new Uint8Array(0x20);
 // OAM (sprite memory)
 let PPU_OAM = new Uint8Array(256);
 
-// Handles all writes to PPU registers ($2000–$2007 only, receive base/ folded address)
+// ---------------------------------------------------------------------------
+// Handles all writes to PPU registers ($2000–$2007 only, addr is already folded)
+// ---------------------------------------------------------------------------
 function ppuWrite(addr, value) {
   value &= 0xFF;
+
   switch (addr) {
-    case 0x2000: PPUregister.CTRL = value;      cpuOpenBus = value; break;
-    case 0x2001: PPUregister.MASK = value;      cpuOpenBus = value; break;
 
+    // $2000 — PPUCTRL (write-only)
+    //   bit 7: NMI on VBLANK
+    //   bit 2: VRAM increment (0:+1, 1:+32)
+    //   bits 1..0: base nametable -> copied to t[11:10]
+    case 0x2000: {
+      PPUregister.CTRL = value;
+      // Copy nametable select into t (loopy rule): t[11:10] = NN
+      PPUregister.t = (PPUregister.t & 0xF3FF) | ((value & 0x03) << 10);
+      cpuOpenBus = value;
+      break;
+    }
 
-    case 0x2002: /* read-only */ 
-    //window.alert("attempt made to write to PPU status (read only register)"); 
-    
-    //PPUregister.STATUS = value; // for test suite only
-    
-    break;
+    // $2001 — PPUMASK (write-only)
+    case 0x2001: {
+      PPUregister.MASK = value;
+      cpuOpenBus = value;
+      break;
+    }
 
+    // $2002 — PPUSTATUS (read-only)
+    // Ignored on write; keep a commented line here for test harnesses if needed.
+    case 0x2002: {
+      // PPUregister.STATUS = value; // (test-only) allow forcing status
+      break;
+    }
 
+    // $2003 — OAMADDR (write-only)
+    case 0x2003: {
+      PPUregister.OAMADDR = value;
+      cpuOpenBus = value;
+      break;
+    }
 
-
-    case 0x2003: PPUregister.OAMADDR = value;   cpuOpenBus = value; break;
-    case 0x2004:
+    // $2004 — OAMDATA (read/write)
+    // Write: store byte at current OAMADDR, then OAMADDR++
+    case 0x2004: {
       PPU_OAM[PPUregister.OAMADDR] = value;
-      PPUregister.OAMDATA = value;
+      PPUregister.OAMDATA = value;                 // mirror of the last written value
       PPUregister.OAMADDR = (PPUregister.OAMADDR + 1) & 0xFF;
       cpuOpenBus = value;
       break;
-    case 0x2005:
-      if (!PPUregister.writeToggle) PPUregister.SCROLL_X = value;
-      else                          PPUregister.SCROLL_Y = value;
-      PPUregister.writeToggle = !PPUregister.writeToggle;
-      cpuOpenBus = value;
-      break;
-    case 0x2006:
+    }
+
+    // $2005 — PPUSCROLL (write-only, two writes)
+    //  1st write: fine X (x = d0..2), coarse X -> t[4:0] = d3..7
+    //  2nd write: fine Y -> t[14:12] = d0..2, coarse Y -> t[9:5] = d3..7
+    case 0x2005: {
       if (!PPUregister.writeToggle) {
-        PPUregister.ADDR_HIGH = value;
-        PPUregister.VRAM_ADDR = ((value & 0x3F) << 8) | (PPUregister.VRAM_ADDR & 0xFF);
+        // First write
+        PPUregister.SCROLL_X = value;              // optional mirror for UI
+        PPUregister.fineX = value & 0x07;          // x = d0..2
+        PPUregister.t = (PPUregister.t & ~0x001F)  // t[4:0] = d3..7
+                      | ((value >> 3) & 0x1F);
+        PPUregister.writeToggle = true;
       } else {
-        PPUregister.ADDR_LOW = value;
-        PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR & 0x3F00) | value;
+        // Second write
+        PPUregister.SCROLL_Y = value;              // optional mirror for UI
+        PPUregister.t = (PPUregister.t & ~(0x7000 | 0x03E0))   // clear fineY + coarseY
+                      | (((value & 0x07) << 12)                // t[14:12] = d0..2 (fineY)
+                      |  (((value >> 3) & 0x1F) << 5));        // t[9:5]   = d3..7 (coarseY)
+        PPUregister.writeToggle = false;
       }
-      PPUregister.writeToggle = !PPUregister.writeToggle;
-      cpuOpenBus = value;
-      break;
-    case 0x2007: {
-      let v = PPUregister.VRAM_ADDR & 0x3FFF;
-      if      (v < 0x2000)  ppuCHR[v] = value; // CHR-ROM/RAM
-      else if (v < 0x3F00)  ppuNT[v & 0x0FFF] = value; // Nametables
-      else if (v < 0x4000) {
-        let palAddr = v & 0x1F;
-        if ([0x10, 0x14, 0x18, 0x1C].includes(palAddr)) palAddr &= ~0x10;
-        ppuPalette[palAddr] = value;
-      }
-      // VRAM increment: 1 or 32
-      const step = (PPUregister.CTRL & 0x04) ? 32 : 1;
-      PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR + step) & 0x3FFF;
       cpuOpenBus = value;
       break;
     }
-    default: break;
+
+    // $2006 — PPUADDR (write-only, two writes)
+    //  1st write (high): t = (t & 0x00FF) | ((value & 0x3F) << 8) ; w=1
+    //  2nd write (low):  t = (t & 0x7F00) | value ; VRAM_ADDR = t & 0x3FFF ; w=0
+    // We **do not** use PPUregister.v; we drive the bus address with VRAM_ADDR.
+    case 0x2006: {
+      if (!PPUregister.writeToggle) {
+        PPUregister.ADDR_HIGH = value;                    // optional mirror for UI
+        PPUregister.t = (PPUregister.t & 0x00FF) | ((value & 0x3F) << 8);
+        PPUregister.writeToggle = true;
+      } else {
+        PPUregister.ADDR_LOW = value;                     // optional mirror for UI
+        PPUregister.t = (PPUregister.t & 0x7F00) | value;
+        // Load current VRAM address from t (bus uses 14-bit space 0x0000–0x3FFF)
+        PPUregister.VRAM_ADDR = PPUregister.t & 0x3FFF;
+        PPUregister.writeToggle = false;
+      }
+      cpuOpenBus = value;
+      break;
+    }
+
+    // $2007 — PPUDATA (read/write)
+    // WRITE path here; READ path is in ppuRead($2007).
+    // On write: store to CHR/NT/Palette depending on VRAM_ADDR, then increment VRAM_ADDR by 1 or 32.
+    case 0x2007: {
+      const addr = PPUregister.VRAM_ADDR & 0x3FFF;
+      const val  = value; // already &0xFF above
+
+      if (addr < 0x2000) {
+        // Pattern tables (CHR). Writes only take effect if CHR-RAM; harmless otherwise.
+        ppuCHR[addr] = val;
+      } else if (addr < 0x3F00) {
+        // Nametables (mirroring handled by the 4KB backing via &0x0FFF)
+        ppuNT[addr & 0x0FFF] = val;
+      } else {
+        // Palette RAM with mirrors for $3F10/$3F14/$3F18/$3F1C -> $3F00/$3F04/$3F08/$3F0C
+        let palAddr = addr & 0x1F;
+        if (palAddr === 0x10 || palAddr === 0x14 || palAddr === 0x18 || palAddr === 0x1C) {
+          palAddr &= ~0x10;
+        }
+        // NES palette entries are 6-bit values; mask if you’re storing raw indices.
+        ppuPalette[palAddr] = val & 0x3F;
+      }
+
+      // Post-write VRAM increment: +1 or +32 depending on CTRL bit 2
+      const step = (PPUregister.CTRL & 0x04) ? 32 : 1;
+      PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR + step) & 0x3FFF;
+
+      cpuOpenBus = value;
+      break;
+    }
+
+    default:
+      // Any other writes to 0x2000–0x2007 range should be impossible after folding,
+      // but if they sneak through, treat as open bus sink.
+      cpuOpenBus = value;
+      break;
   }
 }
 
-// Handles all reads from PPU registers ($2000–$2007 only, receive base/ folded address)
+// ---------------------------------------------------------------------------
+// Handles all reads from PPU registers ($2000–$2007 only, addr is already folded)
+// ---------------------------------------------------------------------------
 function ppuRead(addr) {
   switch (addr) {
-    case 0x2002: { // PPUSTATUS
-      let status = PPUregister.STATUS;
-      PPUregister.STATUS &= 0x7F;
+
+    // $2002 — PPUSTATUS (read)
+    // Reading returns current STATUS, then:
+    //   - clears VBLANK flag (bit 7 -> 0)
+    //   - resets the $2005/$2006 write toggle (w = 0)
+    case 0x2002: {
+      const ret = PPUregister.STATUS & 0xFF;
+      PPUregister.STATUS &= 0x7F;     // clear VBL
       PPUregister.writeToggle = false;
-      cpuOpenBus = status;
-      return status;
-    }
-    case 0x2004: { // OAMDATA
-      let val = PPU_OAM[PPUregister.OAMADDR];
-      cpuOpenBus = val;
-      return val;
-    }
-    case 0x2007: {
-      let v = PPUregister.VRAM_ADDR & 0x3FFF, ret;
-      if      (v < 0x2000) { ret = PPUregister.VRAM_DATA; PPUregister.VRAM_DATA = ppuCHR[v]; }
-      else if (v < 0x3F00) { ret = PPUregister.VRAM_DATA; PPUregister.VRAM_DATA = ppuNT[v & 0x0FFF]; }
-      else if (v < 0x4000) {
-        let palAddr = v & 0x1F;
-        if ([0x10, 0x14, 0x18, 0x1C].includes(palAddr)) palAddr &= ~0x10;
-        ret = ppuPalette[palAddr];
-        PPUregister.VRAM_DATA = ppuPalette[palAddr];
-      }
-      // VRAM increment: 1 or 32
-      const step = (PPUregister.CTRL & 0x04) ? 32 : 1;
-      PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR + step) & 0x3FFF;
       cpuOpenBus = ret;
       return ret;
     }
-    // All other registers return open bus (including write-only regs)
-    default:
-      return cpuOpenBus;
+
+    // $2004 — OAMDATA (read)
+    // Reads do NOT increment OAMADDR on the NES.
+    case 0x2004: {
+      const val = PPU_OAM[PPUregister.OAMADDR] & 0xFF;
+      cpuOpenBus = val;
+      return val;
+    }
+
+    // $2007 — PPUDATA (read)
+    // Buffered read semantics:
+    //   - For addr < $3F00 (CHR + nametables): return the **old** buffer,
+    //     then refill the buffer from the bus at addr.
+    //   - For $3F00–$3FFF (palette): return palette **immediately** (no delay).
+    //     Buffer is refilled from the underlying nametable/CHR at (addr & $2FFF).
+    // After the read, VRAM_ADDR increments by +1 or +32 (CTRL bit 2).
+    case 0x2007: {
+      const addr = PPUregister.VRAM_ADDR & 0x3FFF;
+      let ret;
+
+      if (addr < 0x3F00) {
+        // Return previous buffer value, then fetch new data into the buffer
+        ret = (PPUregister.VRAM_DATA & 0xFF);
+        if (addr < 0x2000) {
+          PPUregister.VRAM_DATA = ppuCHR[addr] & 0xFF;
+        } else {
+          PPUregister.VRAM_DATA = ppuNT[addr & 0x0FFF] & 0xFF;
+        }
+      } else {
+        // Palette read: direct return with internal mirroring
+        let palAddr = addr & 0x1F;
+        if (palAddr === 0x10 || palAddr === 0x14 || palAddr === 0x18 || palAddr === 0x1C) {
+          palAddr &= ~0x10;
+        }
+        ret = ppuPalette[palAddr] & 0xFF;
+
+        // Refill buffer with underlying nametable/CHR at addr & $2FFF
+        // (This matches NES quirk: palette reads don't populate buffer with palette.)
+        const under = addr & 0x2FFF;
+        if (under < 0x2000) {
+          PPUregister.VRAM_DATA = ppuCHR[under] & 0xFF;
+        } else {
+          PPUregister.VRAM_DATA = ppuNT[under & 0x0FFF] & 0xFF;
+        }
+      }
+
+      // Post-read VRAM increment: +1 or +32
+      const step = (PPUregister.CTRL & 0x04) ? 32 : 1;
+      PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR + step) & 0x3FFF;
+
+      cpuOpenBus = ret & 0xFF;
+      return ret & 0xFF;
+    }
+
+    // All other registers (including write-only ones) read as open bus.
+    default: {
+      return cpuOpenBus & 0xFF;
+    }
   }
 }
 
@@ -160,14 +308,31 @@ function ppuResetCounters() {
   PPUclock.odd        = 0;
   PPUclock.ticks      = 0;
 
-  // Clear bits 7..5 of STATUS, reset $2005/$2006 latch
-  PPUregister.STATUS &= 0x1F;
+  // loopy registers (15-bit v/t), fine X, write toggle (w)
+  PPUregister.t = 0;
+  PPUregister.fineX = 0;
+  PPUregister.VRAM_ADDR = 0x0000;
+ 
+  PPUregister.STATUS = 0x00;
   PPUregister.writeToggle = false;
 }
 
 // Advance one PPU tick
 function ppuTick() {
   PPUclock.ticks++;
+
+    // Horizontal copy (t -> current) at dot 257 on visible & pre-render scanlines
+  if (PPUclock.dot === 257) {
+    // copy coarse X (bits 0..4) and nametable X (bit 10)
+    PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR & ~0x041F) | (PPUregister.t & 0x041F);
+  }
+
+  // Vertical copy (t -> current) on pre-render scanline, dots 280..304 inclusive
+  if (PPUclock.scanline === 261 && PPUclock.dot >= 280 && PPUclock.dot <= 304) {
+    // copy fine Y (14..12), coarse Y (9..5), nametable Y (11)
+    PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR & ~0x7BE0) | (PPUregister.t & 0x7BE0);
+  }
+
 
   // ---- VBLANK start ----
   if (PPUclock.scanline === 241 && PPUclock.dot === 1) {
@@ -351,9 +516,11 @@ function ppuTick() {
   IMPLEMENTATION ORDER (pragmatic bring-up)
   ============================================================
   A) Implement counters (scanline/dot/frame), VBLANK set/clear, nmiPending.      (done)
-  B) Implement loopy w/t/v/x rules for $2005/$2006 and the copy points.
-  C) Implement $2007 VRAM increment (1/32) (you likely did already).
+  B) Implement loopy w/t/v/x rules for $2005/$2006 and the copy points. (done)
+  C) Implement $2007 VRAM increment (1/32) (you likely did already). (done)
+  
   D) Add odd-frame skip later.
+
   E) Add background shifters, then sprites, then exact palette/bus nuances.
 
   */

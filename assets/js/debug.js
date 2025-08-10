@@ -81,12 +81,10 @@ function serviceNMI() {
 
   // clear latch(es)
   nmiPending = false;
-  // keep PPU-side bookkeeping consistent if you use it anywhere
-  if (typeof PPUclock !== "undefined") PPUclock.nmiPending = false;
 }
 
 // ── Single‐step executor ──
-function step(serviceNmi) {
+function step() {
 
   const code = prgRom[(CPUregisters.PC - 0x8000) & 0xFFFF];
   const execFn = opcodeFuncs[code];
