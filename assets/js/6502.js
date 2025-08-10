@@ -1418,8 +1418,8 @@ function EOR_INDY() {
 
 function JSR_ABS() {
   // Fetch target addressess from next two bytes (little endian)
-  const low = systemMemory[CPUregisters.PC + 1];
-  const high = systemMemory[CPUregisters.PC + 2];
+  const low = checkReadOffset(CPUregisters.PC +1);
+  const high = checkReadOffset(CPUregisters.PC +2);
   const target = (high << 8) | low;
 
   // Compute return addressess = PC + 2 (last byte of JSR instruction)
@@ -2944,7 +2944,7 @@ const opcodes = {
     absolute:   { code: 0x4C, length: 0, pcIncrement: 0, func: JMP_ABS }, // 3 or set directly
     indirect:   { code: 0x6C, length: 0, pcIncrement: 0, func: JMP_IND }  // 3 or set directly
   },
-  JSR: { absolute: { code: 0x20, length: 3, pcIncrement: 3, func: JSR_ABS } }, // 3 or set directly
+  JSR: { absolute: { code: 0x20, length: 3, pcIncrement: 0, func: JSR_ABS } }, // PC handled by opc. handler
   RTS: { implied: { code: 0x60, length: 1, pcIncrement: 0, func: RTS_IMP } }, // PC from stack
   RTI: { implied: { code: 0x40, length: 1, pcIncrement: 0, func: RTI_IMP } }, // PC from stack
   BRK: { implied: { code: 0x00, length: 1, pcIncrement: 2, func: BRK_IMP } }, // quirk, single byte opcode / increment PC +2

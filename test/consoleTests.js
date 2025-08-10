@@ -1897,32 +1897,81 @@ function runBranchOpsTests() {
 function runJumpAndSubRoutinesTests() {
 
   // ===== JUMP & SUBROUTINES (JMP, JSR, RTI, RTS) =====
-  const tests = [
-    // JMP
-    { name:"JMP absolute",   code:[0x4C,0x00,0x20] },
-    { name:"JMP indirect",   code:[0x6C,0x10,0x00], setup:()=>{
-        checkWriteOffset(0x0010, 0x34);
-        checkWriteOffset(0x0011, 0x12);
-      } },
-    // Subroutines
-    { name:"JSR absolute",   code:[0x20,0x05,0x80] },
-    { name:"RTS return",     code:[0x60], setup:()=>{
-        // simulate a return address pushed at $01FD/$01FE
-        CPUregisters.S = 0xFC;
-        checkWriteOffset(0x01FD, 0x00);
-        checkWriteOffset(0x01FE, 0x90);
-      } },
-    // Interrupt return
-    { name:"RTI return",     code:[0x40], setup:()=>{
-        // simulate status & PC pushed at $01FB–$01FD
-        CPUregisters.S = 0xFD;
-        checkWriteOffset(0x01FB, 0b00101101);   // P after BRK
-        checkWriteOffset(0x01FC, 0x00);         // PCL
-        checkWriteOffset(0x01FD, 0x80);         // PCH
-      } }
-  ];
 
-  setupTests(tests);
+  // --- DMA-safe reset (avoid touching $4000–$401F; $4014 triggers OAM DMA) ---
+  function clearForTest() {
+    // WRAM ($0000–$1FFF) mirrors
+    for (let a = 0x0000; a <= 0x1FFF; a++) checkWriteOffset(a, 0);
+    // PRG-RAM ($6000–$7FFF) if present
+    if (typeof prgRam !== "undefined" && prgRam) {
+      for (let a = 0x6000; a <= 0x7FFF; a++) checkWriteOffset(a, 0);
+    }
+    // Leave PPU/APU/IO alone to avoid side effects.
+  }
+
+  // --- Write bytes into PRG window ($8000+) without bus side-effects ---
+  function writeCodeToROM(cpuAddr, bytes) {
+    for (let i = 0; i < bytes.length; i++) {
+      const a = (cpuAddr + i) & 0xFFFF;
+      if (a < 0x8000) {
+        // If ever testing code < $8000, fall back to bus write
+        checkWriteOffset(a, bytes[i] & 0xFF);
+      } else {
+        // Mapper 0 assumption; adjust if you have banking
+        prgRom[(a - 0x8000) & (prgRom.length - 1)] = bytes[i] & 0xFF;
+      }
+    }
+  }
+
+  // --- Small helpers for pretty output ---
+  const hx16 = v => "0x" + ((v & 0xFFFF).toString(16).padStart(4, "0"));
+  const hx8  = v => "0x" + ((v & 0xFF).toString(16).padStart(2, "0"));
+
+  // ---- Tests (targets now in $8000+) ----
+  const tests = [
+    // JMP absolute → $9000 (low,high = 00,90)
+    { name: "JMP absolute", code: [0x4C, 0x00, 0x90], expectPC: 0x9000 },
+
+    // JMP indirect ($0010) → $8034  (write $34, $80 at $0010/$0011)
+    { name: "JMP indirect",
+      code: [0x6C, 0x10, 0x00],
+      setup: () => {
+        checkWriteOffset(0x0010, 0x34);
+        checkWriteOffset(0x0011, 0x80);
+      },
+      expectPC: 0x8034
+    },
+
+    // JSR absolute → $8005
+    // JSR pushes (PC+2-1) to stack, then sets PC to the target.
+    { name: "JSR absolute", code: [0x20, 0x05, 0x80], expectPC: 0x8005 },
+
+    // RTS: with S=0xFC and stack[$01FD]=$00 (low), $01FE=$90 (high) → PC=$9000+1=$9001
+    { name: "RTS return",
+      code: [0x60],
+      setup: () => {
+        CPUregisters.S = 0xFC;
+        checkWriteOffset(0x01FD, 0x00); // low
+        checkWriteOffset(0x01FE, 0x90); // high
+      },
+      expectPC: 0x9001
+    },
+
+    // RTI: pick S=0xFC so the pulls are: P  from $01FD, PCL from $01FE, PCH from $01FF.
+    // Push image should have bit5=1; B in the *pushed* copy is typically 1 for BRK/PHP, 0 for IRQ/NMI.
+    // We only care about PC here, so set P to some sane value (e.g., 0b00101101).
+    // Target: $8000 → PCL=$00 at $01FE, PCH=$80 at $01FF.
+    { name: "RTI return",
+      code: [0x40],
+      setup: () => {
+        CPUregisters.S = 0xFC;
+        checkWriteOffset(0x01FD, 0b00101101); // P (pushed copy)
+        checkWriteOffset(0x01FE, 0x00);       // PCL
+        checkWriteOffset(0x01FF, 0x80);       // PCH
+      },
+      expectPC: 0x8000
+    }
+  ];
 
   let html =
     `<div style="background:black;color:white;font-size:1.1em;font-weight:bold;padding:6px;">
@@ -1930,50 +1979,89 @@ function runJumpAndSubRoutinesTests() {
      </div>
      <table style="width:98%;margin:8px auto;border-collapse:collapse;background:black;color:white;">
        <thead><tr style="background:#222">
-         <th>Test</th><th>Op</th><th>Flags<br>Before</th><th>Flags<br>After</th>
-         <th>CPU<br>Before</th><th>CPU<br>After</th>
-         <th>Target PC</th><th>Status</th>
+         <th>Test</th>
+         <th>Op</th>
+         <th>Flags<br>Before</th>
+         <th>Flags<br>After</th>
+         <th>CPU<br>Before</th>
+         <th>CPU<br>After</th>
+         <th>Target PC</th>
+         <th>Status</th>
        </tr></thead><tbody>`;
 
-  tests.forEach(test=>{
-    const fb={...CPUregisters.P},
-          cb={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
+  for (const test of tests) {
+    // Fresh environment for each test
+    clearForTest();
+    cpuCycles = 0;
 
-    if(test.pre){
-      if(test.pre.A!=null) CPUregisters.A=test.pre.A;
-      if(test.pre.X!=null) CPUregisters.X=test.pre.X;
-      if(test.pre.Y!=null) CPUregisters.Y=test.pre.Y;
-      if(test.pre.S!=null) CPUregisters.S=test.pre.S;
-      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+    // CPU baseline
+    CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
+    CPUregisters.S = 0xFF;
+    CPUregisters.P = { C:0, Z:0, I:0, D:0, B:0, V:0, N:0 };
+    CPUregisters.PC = 0x8000;
+
+    // Pre-case overrides (if any)
+    if (test.pre) {
+      if (test.pre.A != null) CPUregisters.A = test.pre.A & 0xFF;
+      if (test.pre.X != null) CPUregisters.X = test.pre.X & 0xFF;
+      if (test.pre.Y != null) CPUregisters.Y = test.pre.Y & 0xFF;
+      if (test.pre.S != null) CPUregisters.S = test.pre.S & 0xFF;
+      if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
+      if (test.pre.PC != null) CPUregisters.PC = test.pre.PC & 0xFFFF;
     }
-    if(test.setup) test.setup();
 
+    // Install code at current PC and run optional setup
+    writeCodeToROM(CPUregisters.PC, test.code);
+    if (test.setup) test.setup();
+
+    // Snap before
+    const fb = { ...CPUregisters.P };
+    const cb = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
+
+    // Execute one instruction
     step();
 
-    const fa={...CPUregisters.P},
-          ca={A:CPUregisters.A,X:CPUregisters.X,Y:CPUregisters.Y,S:CPUregisters.S};
+    // Snap after
+    const fa = { ...CPUregisters.P };
+    const ca = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
+    const targetPC = CPUregisters.PC & 0xFFFF;
 
-    // Target PC (after jump/return)
-    let targetPC = hex(CPUregisters.PC);
+    // Pass/fail
+    let pass = true, reasons = [];
+    if (typeof test.expectPC === "number") {
+      const want = test.expectPC & 0xFFFF;
+      if (targetPC !== want) {
+        pass = false;
+        reasons.push(`PC=${hx16(targetPC)}≠${hx16(want)}`);
+      }
+    }
+
+    const opBytes = test.code.map(b => b.toString(16).padStart(2, "0")).join(" ");
+    const status = pass
+      ? `<span style="color:#7fff7f;font-weight:bold;">✔️</span>`
+      : `<details style="color:#ff4444;cursor:pointer;"><summary>❌ Show Details</summary><ul>${
+          reasons.map(r=>`<li>${r}</li>`).join("")
+        }</ul></details>`;
 
     html += `
-      <tr style="background:#113311">
+      <tr style="background:${pass ? "#113311" : "#331111"}">
         <td style="border:1px solid #444;padding:6px;">${test.name}</td>
-        <td style="border:1px solid #444;padding:6px;">${test.code.map(b=>b.toString(16).padStart(2,'0')).join(" ")}</td>
+        <td style="border:1px solid #444;padding:6px;">${opBytes}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fb)}</td>
         <td style="border:1px solid #444;padding:6px;">${flagsBin(fa)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(cb.A)} X=${hex(cb.X)} Y=${hex(cb.Y)} S=${hex(cb.S)}</td>
-        <td style="border:1px solid #444;padding:6px;">A=${hex(ca.A)} X=${hex(ca.X)} Y=${hex(ca.Y)} S=${hex(ca.S)}</td>
-        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${targetPC}</td>
-        <td style="border:1px solid #444;padding:6px;"><span style="color:#7fff7f;font-weight:bold;">✔️</span></td>
+        <td style="border:1px solid #444;padding:6px;">A=${hx8(cb.A)} X=${hx8(cb.X)} Y=${hx8(cb.Y)} S=${hx8(cb.S)}</td>
+        <td style="border:1px solid #444;padding:6px;">A=${hx8(ca.A)} X=${hx8(ca.X)} Y=${hx8(ca.Y)} S=${hx8(ca.S)}</td>
+        <td style="border:1px solid #444;padding:6px;color:#7fff7f;">${hx16(targetPC)}</td>
+        <td style="border:1px solid #444;padding:6px;">${status}</td>
       </tr>`;
-  });
+  }
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-  CPUregisters.PC = 0x8000;    
-  prgRom[CPUregisters.PC - 0x8000] = 0x02;
+
+  // Restore predictable environment for whatever runs next
   CPUregisters.PC = 0x8000;
+  writeCodeToROM(0x8000, [0x02]); // optional "magic" byte if your harness expects it
 }
 
 function runStackOpsTests() {
@@ -2825,9 +2913,9 @@ prgRom[CPUregisters.PC - 0x8000] = 0x02;
 function runPageCrossAndQuirksTests() {
   // ========= 6502 PAGE CROSS & CYCLE QUIRK SUITE =========
 
-  // Helper to decorate tests
-  const cross = (desc, test) => Object.assign(test, {desc, cross:true});
-  const nocross = (desc, test) => Object.assign(test, {desc, cross:false});
+  // Helper labelers
+  const cross   = (desc, test) => Object.assign(test, { desc, cross: true  });
+  const nocross = (desc, test) => Object.assign(test, { desc, cross: false });
 
   // Helper: [mnemonic, addressing] for each case
   const testLookup = {
@@ -2865,54 +2953,86 @@ function runPageCrossAndQuirksTests() {
     const lookup = testLookup[testDesc];
     if (!lookup) throw new Error(`No testLookup mapping for "${testDesc}"`);
     const [mnemonic, addressing] = lookup;
-    return opcodes[mnemonic][addressing].cycles;
+    return opcodes[mnemonic][addressing].cycles; // total cycles for this opcode+mode
   }
 
-  // --- TRUE PAGE CROSSING LOGIC FOR EACH ADDRESSING MODE ---
+  // --- DMA-safe test memory init: avoid $4000-$401F (OAM DMA at $4014) ---
+  function clearForTest() {
+    // WRAM ($0000–$1FFF) mirrors
+    for (let a = 0x0000; a <= 0x1FFF; a++) checkWriteOffset(a, 0);
+    // PRG-RAM ($6000–$7FFF) if present
+    if (typeof prgRam !== "undefined" && prgRam) {
+      for (let a = 0x6000; a <= 0x7FFF; a++) checkWriteOffset(a, 0);
+    }
+    // Leave PPU/APU/IO ($2000–$5FFF and $4000–$401F) alone to avoid side-effects.
+    // PRG-ROM is injected via writeCodeToROM below.
+  }
+
+  // --- Write bytes into PRG-ROM window ($8000–) without bus side-effects ---
+  function writeCodeToROM(cpuAddr, bytes) {
+    for (let i = 0; i < bytes.length; i++) {
+      const a = (cpuAddr + i) & 0xFFFF;
+      if (a < 0x8000) {
+        // If ever testing code < $8000, fall back to bus write
+        checkWriteOffset(a, bytes[i] & 0xFF);
+      } else {
+        // Mapper 0 assumptions; adjust if you have a mapper layer
+        prgRom[(a - 0x8000) & (prgRom.length - 1)] = bytes[i] & 0xFF;
+      }
+    }
+  }
+
+  // --- TRUE page crossing logic (pure, no side-effects) ---
   function didPageCross(test) {
-    const op = test.code?.[0];
-    // --- Branches (relative)
+    if (!test.code || test.code.length === 0) return false;
+
+    // Branches (relative)
     if (test.opcodeFn && test.opcodeFn.endsWith("_REL")) {
-      const offset = test.code[1];
+      const offset = test.code[1] & 0xFF;
       const signed = offset < 0x80 ? offset : offset - 0x100;
-      const base = ((test.pre?.PC ?? 0x8000) + 2) & 0xFFFF;
-      const dest = (base + signed) & 0xFFFF;
-      // Only if branch is taken (Z=0 for BNE etc)
-      let taken = false;
-      if (/BNE/.test(test.opcodeFn)) taken = (test.pre?.P?.Z === 0);
-      if (/BEQ/.test(test.opcodeFn)) taken = (test.pre?.P?.Z === 1);
-      if (/BCC/.test(test.opcodeFn)) taken = (test.pre?.P?.C === 0);
-      if (/BCS/.test(test.opcodeFn)) taken = (test.pre?.P?.C === 1);
-      if (/BPL/.test(test.opcodeFn)) taken = (test.pre?.P?.N === 0);
-      if (/BMI/.test(test.opcodeFn)) taken = (test.pre?.P?.N === 1);
-      if (/BVC/.test(test.opcodeFn)) taken = (test.pre?.P?.V === 0);
-      if (/BVS/.test(test.opcodeFn)) taken = (test.pre?.P?.V === 1);
+      const base = (((test.pre?.PC) ?? 0x8000) + 2) & 0xFFFF;
+
+      // Taken?
+      const P = test.pre?.P ?? {};
+      const taken =
+        (/BNE/.test(test.opcodeFn) && (P.Z === 0)) ||
+        (/BEQ/.test(test.opcodeFn) && (P.Z === 1)) ||
+        (/BCC/.test(test.opcodeFn) && (P.C === 0)) ||
+        (/BCS/.test(test.opcodeFn) && (P.C === 1)) ||
+        (/BPL/.test(test.opcodeFn) && (P.N === 0)) ||
+        (/BMI/.test(test.opcodeFn) && (P.N === 1)) ||
+        (/BVC/.test(test.opcodeFn) && (P.V === 0)) ||
+        (/BVS/.test(test.opcodeFn) && (P.V === 1));
+
       if (!taken) return false;
+
+      const dest = (base + signed) & 0xFFFF;
       return (base & 0xFF00) !== (dest & 0xFF00);
     }
-    // --- Absolute,X / Absolute,Y / absx2
-    if (test.opcodeFn && /(ABSX|ABSY|absx2)/.test(test.opcodeFn)) {
-      const base = test.code[1] | (test.code[2] << 8);
-      let index = 0;
-      if (/ABSX|absx2/.test(test.opcodeFn)) index = test.pre?.X ?? 0;
-      if (/ABSY/.test(test.opcodeFn)) index = test.pre?.Y ?? 0;
-      const eff = (base + index) & 0xFFFF;
+
+    // Absolute,X / Absolute,Y
+    if (test.opcodeFn && /(ABSX|ABSY)/.test(test.opcodeFn)) {
+      const base = (test.code[1] | (test.code[2] << 8)) & 0xFFFF;
+      const index = /ABSX/.test(test.opcodeFn)
+        ? (test.pre?.X ?? 0)
+        : (test.pre?.Y ?? 0);
+      const eff = (base + (index & 0xFF)) & 0xFFFF;
       return (base & 0xFF00) !== (eff & 0xFF00);
     }
-    // --- Indirect,Y
+
+    // Indirect,Y
     if (test.opcodeFn && /INDY/.test(test.opcodeFn)) {
-      const zp = test.code[1];
-      const low = test.setup
-        ? (() => { let v=0; test.setup(); v=[zp]; return v; })()
-        : [zp];
-      const high = [(zp + 1) & 0xFF];
-      const ptr = low | (high << 8);
-      const y = test.pre?.Y ?? 0;
-      const eff = (ptr + y) & 0xFFFF;
+      const zp = test.code[1] & 0xFF;
+      // Read ZP pointer bytes without calling test.setup() again
+      const low  = checkReadOffset(zp) & 0xFF;
+      const high = checkReadOffset((zp + 1) & 0xFF) & 0xFF;
+      const ptr  = (high << 8) | low;
+      const y    = test.pre?.Y ?? 0;
+      const eff  = (ptr + (y & 0xFF)) & 0xFFFF;
       return (ptr & 0xFF00) !== (eff & 0xFF00);
     }
-    // Not a page-crossing mode
-    return false;
+
+    return false; // Not a page-crossing addressing mode
   }
 
   // ---- TEST CASES ----
@@ -2937,36 +3057,9 @@ function runPageCrossAndQuirksTests() {
     nocross("DEC $1200,X no cross (RMW always +1)",{code:[0xDE,0x00,0x12], opcodeFn:"DEC_ABSX", pre:{X:0}, setup:()=>{checkWriteOffset(0x1200, 0x01);}, expectMem:{addr:0x1200,value:0x00}, baseCycles:getBaseCycles("DEC $1200,X no cross (RMW always +1)"), extra:3}),
     cross("STA $12FF,X cross (NO +1, store quirk)",{code:[0x9D,0xFF,0x12], opcodeFn:"STA_ABSX", pre:{A:0xAB,X:1}, expectMem:{addr:0x1300,value:0xAB}, baseCycles:getBaseCycles("STA $12FF,X cross (NO +1, store quirk)"), extra:0}),
     cross("STA ($10),Y cross (NO +1, store quirk)",{code:[0x91,0x10], opcodeFn:"STA_INDY", pre:{A:0xBA,Y:1}, setup:()=>{checkWriteOffset(0x10, 0xFF);checkWriteOffset(0x11, 0x12);}, expectMem:{addr:0x1300,value:0xBA}, baseCycles:getBaseCycles("STA ($10),Y cross (NO +1, store quirk)"), extra:0}),
-    
-    cross("BNE branch taken, cross", {
-      code: [0xD0, 0x03],           // BNE +3
-      opcodeFn: "BNE_REL",
-      pre: { P: { Z: 0 }, PC: 0x80FD },
-      setup: ()=>{},
-      expectPC: 0x8102,
-      baseCycles: getBaseCycles("BNE branch taken, cross"),
-      extra: 2
-    }),
-
-
-    nocross("BNE branch taken, no cross", {
-      code: [0xD0, 0x02],
-      opcodeFn: "BNE_REL",
-      pre: { P: { Z: 0 }, PC: 0x8000 },
-      setup: ()=>{},
-      expectPC: 0x8004,
-      baseCycles: getBaseCycles("BNE branch taken, no cross"),
-      extra: 1
-    }),
-    nocross("BNE not taken", {
-      code: [0xD0, 0x02],
-      opcodeFn: "BNE_REL",
-      pre: { P: { Z: 1 }, PC: 0x8000 },
-      setup: ()=>{},
-      expectPC: 0x8002,
-      baseCycles: getBaseCycles("BNE not taken"),
-      extra: 0
-    }),
+    cross("BNE branch taken, cross", { code: [0xD0, 0x03], opcodeFn: "BNE_REL", pre: { P: { Z: 0 }, PC: 0x80FD }, setup: ()=>{}, expectPC: 0x8102, baseCycles: getBaseCycles("BNE branch taken, cross"), extra: 2 }),
+    nocross("BNE branch taken, no cross", { code: [0xD0, 0x02], opcodeFn: "BNE_REL", pre: { P: { Z: 0 }, PC: 0x8000 }, setup: ()=>{}, expectPC: 0x8004, baseCycles: getBaseCycles("BNE branch taken, no cross"), extra: 1 }),
+    nocross("BNE not taken", { code: [0xD0, 0x02], opcodeFn: "BNE_REL", pre: { P: { Z: 1 }, PC: 0x8000 }, setup: ()=>{}, expectPC: 0x8002, baseCycles: getBaseCycles("BNE not taken"), extra: 0 }),
     cross("JMP ($02FF) indirect, page wrap",{code:[0x6C,0xFF,0x02], opcodeFn:"JMP_IND", setup:()=>{checkWriteOffset(0x02FF, 0x00);checkWriteOffset(0x0200, 0x80);}, expectPC:0x8000, baseCycles:getBaseCycles("JMP ($02FF) indirect, page wrap"), extra:0}),
     cross("NOP $12FF,X cross (illegal)",{code:[0x3C,0xFF,0x12], opcodeFn:"NOP_ABSX", pre:{X:1}, baseCycles:getBaseCycles("NOP $12FF,X cross (illegal)"), extra:1}),
     nocross("NOP $1200,X no cross (illegal)",{code:[0x3C,0x00,0x12], opcodeFn:"NOP_ABSX", pre:{X:0}, baseCycles:getBaseCycles("NOP $1200,X no cross (illegal)"), extra:0}),
@@ -2998,79 +3091,94 @@ function runPageCrossAndQuirksTests() {
       </tr></thead><tbody>`;
 
   for (const test of cases) {
-    // --- Setup ---
-    for(let a=0;a<0x10000;a++) checkWriteOffset(a, 0);
+    // --- Setup (DMA-safe) ---
+    clearForTest();
     cpuCycles = 0;
+
     CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
     CPUregisters.S = 0xFF;
-    CPUregisters.P = {C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-    CPUregisters.PC = test.pre && test.pre.PC !== undefined ? test.pre.PC : 0x8000;
-    if(test.pre){
-      if(test.pre.A!=null) CPUregisters.A = test.pre.A;
-      if(test.pre.X!=null) CPUregisters.X = test.pre.X;
-      if(test.pre.Y!=null) CPUregisters.Y = test.pre.Y;
-      if(test.pre.S!=null) CPUregisters.S = test.pre.S;
-      if(test.pre.P) Object.assign(CPUregisters.P,test.pre.P);
+    CPUregisters.P = { C:0, Z:0, I:0, D:0, B:0, V:0, N:0 };
+    CPUregisters.PC = (test.pre && test.pre.PC !== undefined) ? test.pre.PC : 0x8000;
+
+    if (test.pre) {
+      if (test.pre.A != null) CPUregisters.A = test.pre.A & 0xFF;
+      if (test.pre.X != null) CPUregisters.X = test.pre.X & 0xFF;
+      if (test.pre.Y != null) CPUregisters.Y = test.pre.Y & 0xFF;
+      if (test.pre.S != null) CPUregisters.S = test.pre.S & 0xFF;
+      if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
     }
-    if(test.setup) test.setup();
+
+    if (test.setup) test.setup();
 
     // --- State snapshot ---
-    const fb = {...CPUregisters.P};
-    const cb = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
-    const pcBefore = CPUregisters.PC;
-    const beforeCycles = cpuCycles;
+    const fb = { ...CPUregisters.P };
+    const cb = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
+    const pcBefore = CPUregisters.PC & 0xFFFF;
+    const beforeCycles = cpuCycles | 0;
 
-    // --- Load code at PC ---
-    if(test.code && test.code.length){
-      test.code.forEach((b,i)=>{ checkWriteOffset(CPUregisters.PC+i, b); });
-      step(); // run one instruction
+    // --- Load code & run one instruction ---
+    if (test.code && test.code.length) {
+      writeCodeToROM(CPUregisters.PC, test.code);
+      step();
     }
 
-    // --- State snapshot after ---
-    const afterCycles = cpuCycles;
-    const usedCycles = afterCycles - beforeCycles;
-    const fa = {...CPUregisters.P};
-    const ca = {A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S};
-    const pcAfter = CPUregisters.PC;
+    // --- After snapshot ---
+    const afterCycles = cpuCycles | 0;
+    const usedCycles  = (afterCycles - beforeCycles) | 0;
+    const fa = { ...CPUregisters.P };
+    const ca = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
+    const pcAfter = CPUregisters.PC & 0xFFFF;
 
-    // --- Page Crossed? (NESdev-accurate) ---
-    let pageCrossed = didPageCross(test)
+    // --- Page crossed? ---
+    const pageCrossed = didPageCross(test)
       ? `<span style="color:orange;">Yes</span>`
       : `<span style="color:lightgreen;">No</span>`;
 
-    // --- Result/Check logic ---
+    // --- Checks ---
     let pass = true, reasons = [];
-    if(test.expect){
-      for(const r in test.expect) {
+
+    if (test.expect) {
+      for (const r in test.expect) {
         const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
-        if(actual!==test.expect[r]){ pass=false; reasons.push(`${r}=${actual}≠${test.expect[r]}`); }
+        if (actual !== test.expect[r]) {
+          pass = false;
+          reasons.push(`${r}=${actual}≠${test.expect[r]}`);
+        }
       }
     }
-    if(test.expectMem){
-      const val = [test.expectMem.addr];
-      if(val!==test.expectMem.value){
-        pass=false; reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${val}≠${test.expectMem.value}`);
+
+    if (test.expectMem) {
+      const memVal = checkReadOffset(test.expectMem.addr) & 0xFF; // FIX: read memory, not the address
+      if (memVal !== (test.expectMem.value & 0xFF)) {
+        pass = false;
+        reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${memVal}≠${test.expectMem.value}`);
       }
     }
-    if(test.expectPC!==undefined && pcAfter!==test.expectPC){
-      pass=false; reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${test.expectPC.toString(16)}`);
+
+    if (test.expectPC !== undefined && pcAfter !== (test.expectPC & 0xFFFF)) {
+      pass = false;
+      reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${(test.expectPC & 0xFFFF).toString(16)}`);
     }
-    const cycleTarget = test.baseCycles + test.extra;
-    if(usedCycles!==cycleTarget){
-      pass=false; reasons.push(`cycles=${usedCycles}≠${cycleTarget}`);
+
+    const cycleTarget = (test.baseCycles + test.extra) | 0;
+    if (usedCycles !== cycleTarget) {
+      pass = false;
+      reasons.push(`cycles=${usedCycles}≠${cycleTarget}`);
     }
 
     // --- Render row ---
-    const opLabel = (test.code||[]).map(b=>b.toString(16).padStart(2,'0')).join(" ");
+    const opLabel = (test.code || []).map(b => b.toString(16).padStart(2,'0')).join(" ");
     const status = pass
       ? `<span style="color:#7fff7f;">✔️</span>`
-      : `<details style="color:#ff4444;cursor:pointer;"><summary>❌ Show Details</summary><ul>${reasons.map(r=>`<li>${r}</li>`).join("")}</ul></details>`;
+      : `<details style="color:#ff4444;cursor:pointer;"><summary>❌ Show Details</summary><ul>${
+          reasons.map(r => `<li>${r}</li>`).join("")
+        }</ul></details>`;
 
     html += `
-      <tr style="background:${pass?"#113311":"#331111"}">
+      <tr style="background:${pass ? "#113311" : "#331111"}">
         <td>${test.desc}</td>
         <td>${opLabel}</td>
-        <td>${test.opcodeFn||""}</td>
+        <td>${test.opcodeFn || ""}</td>
         <td>${flagsBin(fb)}</td>
         <td>${flagsBin(fa)}</td>
         <td>A=${cb.A} X=${cb.X} Y=${cb.Y} S=${cb.S}</td>
@@ -3084,11 +3192,16 @@ function runPageCrossAndQuirksTests() {
         <td>${status}</td>
       </tr>`;
   }
+
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
-  CPUregisters.PC = 0x8000;    
-prgRom[CPUregisters.PC - 0x8000] = 0x02;
+
+  // Restore to a predictable state for whatever runs next
+  CPUregisters.PC = 0x8000;
+  // If your harness expects a magic byte at $8000, write it safely:
+  writeCodeToROM(0x8000, [0x02]);
 }
+
 
 function runExtensiveDecimalModeTests() { // http://www.6502.org/tutorials/decimal_mode.html#B
   // ======= Extensive 6502 Decimal Mode (BCD) ADC & SBC Tests =======
