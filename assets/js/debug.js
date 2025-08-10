@@ -1,6 +1,10 @@
 const test = false; // only true to run console benchmarks
 let lastFetched = null;
 
+//easier to patch up my cycles for the test suite, then adjust test suite (some suites now false failing due to cycles)
+let ppuTicksToRun;
+let lastCpuCycleCount;
+
 let running = false;
 
 function run() {
@@ -47,7 +51,7 @@ if (test) {
 
 
 // dummy function for 3:1 pseudo
-function ppuStep(){
+function ppuTick(){
   
 }
 
@@ -73,15 +77,15 @@ function step() {
   // Advance cycles & PC
   CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]);
 
-  
   // pseudo 3:1 PPU with cycles
-  cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF; // &'ing unncessary, reset per step
+  lastCpuCycleCount = cpuCycles & 0xFFFF;
+  cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF;
+  ppuTicksToRun = (cpuCycles - lastCpuCycleCount) * 3;
 
-  for (let i = 0; i < cpuCycles * 3; i++) {
-    ppuStep();
-    console.log("PPU Steps:",i+1);
-    console.log("of:",cpuCycles * 3);
+  for (let i = 0; i < ppuTicksToRun; i++) {
+    ppuTick();
+    console.log("PPU Ticks:",i+1);
+    console.log("of:",ppuTicksToRun);
   }
-  cpuCycles = 0;
 }
 
