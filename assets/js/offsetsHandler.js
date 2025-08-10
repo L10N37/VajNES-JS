@@ -1,18 +1,10 @@
-// Routes all CPU reads/writes to their proper handler after folding for mirrors.
-// Always update cpuOpenBus on every read/write.
-
 function checkReadOffset(address) {
   const addr = foldMirrors(address) & 0xFFFF;
   let value;
 
   if (addr < 0x2000) { // CPU RAM
     value = cpuRead(addr);
-
-    if (debugLogging && (addr < 0x0800)) {
-      const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
-      const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
-      console.log(`[RAM R] ${h16(addr)} -> ${h8(value)}`);
-    }
+    // no logging
   }
   else if (addr < 0x4000) { // PPU registers (mirrored every 8)
     value = ppuRead(addr);
@@ -44,36 +36,19 @@ function checkReadOffset(address) {
       }
     }
   }
-  else if (addr < 0x6000) { // Expansion, mapper-dependent, treat as open bus by default
-    value = openBusRead(addr);
-
-    if (debugLogging) {
-      // const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
-      // const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
-      // console.log(`[EXP R] ${h16(addr)} -> ${h8(value)} (open bus)`);
-    }
+  else if (addr < 0x6000) { // Expansion
+    return cpuOpenBus & 0xFF;
+    
   }
-  else if (addr >= 0x8000 && addr <= 0xFFFF) { // ======== CARTRIDGE READING ========
-    // strip off the $8000 base and pull straight from PRG-ROM buffer
+  else if (addr >= 0x8000 && addr <= 0xFFFF) { // PRG-ROM
     value = prgRom[addr - 0x8000];
-
-    if (debugLogging) {
-      // const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
-      // const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
-      // console.log(`[PRG R] ${h16(addr)} -> ${h8(value)}`);
-    }
+    
   }
   else {
-    value = openBusRead(addr);
-
-    if (debugLogging) {
-      // const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
-      // const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
-      // console.log(`[OPENBUS R] ${h16(addr)} -> ${h8(value)}`);
-    }
+    return cpuOpenBus & 0xFF;
+    
   }
 
-  // Always update open bus on every read
   cpuOpenBus = value & 0xFF;
   return value & 0xFF;
 }
@@ -84,12 +59,7 @@ function checkWriteOffset(address, value) {
 
   if (addr < 0x2000) { // CPU RAM
     cpuWrite(addr, value);
-
-    if (debugLogging && (addr < 0x0800)) {
-      const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
-      const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
-      console.log(`[RAM W] ${h16(addr)} <= ${h8(value)}`);
-    }
+    // no logging
   }
   else if (addr < 0x4000) { // PPU registers
     if (debugLogging) {
@@ -109,61 +79,30 @@ function checkWriteOffset(address, value) {
     }
     ppuWrite(addr, value);
   }
-  else if (addr === 0x4014) { // OAM DMA
+  else if (addr === 0x4014) { // OAM DMA (PPU-related, keep logging)
     if (debugLogging) {
       const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
       const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
       console.log(`[OAMDMA $4014 W] page=${h8(value)} src=${h16(value<<8)}..${h16((value<<8)|0xFF)}`);
     }
-    dmaTransfer(value); // <--- DMA handler here
+    dmaTransfer(value);
   }
   else if (addr < 0x4020) { // APU & I/O
-    if (debugLogging) {
-      const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
-      const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
-      if (addr === 0x4015) {
-        console.log(`[APU $4015 W] ${h8(value)}`);
-      } else if (addr === 0x4016 || addr === 0x4017) {
-        console.log(`[CTRL ${h16(addr)} W] ${h8(value)}`);
-      } else {
-        // console.log(`[APU/IO W] ${h16(addr)} <= ${h8(value)}`);
-      }
-    }
+    // writes are NOT logged per request
     apuWrite(addr, value);
   }
-  else if (addr < 0x6000) { // Expansion, mapper-dependent
-    openBusWrite(addr, value);
-
-    if (debugLogging) {
-      // const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
-      // const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
-      // console.log(`[EXP W] ${h16(addr)} <= ${h8(value)} (ignored/open bus)`);
-    }
+  else if (addr < 0x6000) { // Expansion
+    cpuOpenBus = value & 0xFF; // not handled, still write value to openBus
+    
   }
-  else if (addr < 0x8000) {          // PRG-RAM (GAME SAVES)
+  else if (addr < 0x8000) { // PRG-RAM
     prgRam[addr - 0x6000] = value;
-
-    if (debugLogging) {
-      // const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
-      // const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
-      // console.log(`[PRG-RAM W] ${h16(addr)} <= ${h8(value)}`);
-    }
+    
   }
-  else if (addr <= 0xFFFF) {         // PRG-ROM (for tests), probably not required
+  else if (addr <= 0xFFFF) { // PRG-ROM (test harness may poke here)
     prgRom[addr - 0x8000] = value;
-
-    if (debugLogging) {
-      const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
-      const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
-      console.warn(`[PRG-ROM W] ${h16(addr)} <= ${h8(value)} (TEST PATH)`);
-    }
+    
   }
-  // else do nothing
 
-  // Always update open bus
   cpuOpenBus = value & 0xFF;
 }
-
-// Fallback open bus read/write handlers
-function openBusRead(addr) { return cpuOpenBus; }
-function openBusWrite(addr, value) { /* no-op */ }

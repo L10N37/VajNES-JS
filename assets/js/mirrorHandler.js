@@ -9,6 +9,7 @@ function foldMirrors(address) {
     if (address >= 0x2000 && address <= 0x3FFF)
         return 0x2000 + ((address - 0x2000) % 8);
 
+    /*
     // 3. Palette RAM ($3F00-$3FFF, mirrored every $20 with aliasing)
     if (address >= 0x3F00 && address <= 0x3FFF) {
         let palAddr = 0x3F00 + (address & 0x1F);
@@ -17,7 +18,7 @@ function foldMirrors(address) {
             palAddr &= ~0x10;
         return palAddr;
     }
-
+*/
     // 4. APU and I/O ($4000-$401F): not mirrored, pass through
 
     // 5. Cartridge space ($4020-$FFFF): not mirrored, pass through

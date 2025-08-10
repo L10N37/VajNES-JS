@@ -28,3 +28,4 @@ function cpuWrite(addr, value) {
   systemMemory[addr & 0x7FF] = value & 0xFF;
   cpuOpenBus = value & 0xFF;
 }
+
