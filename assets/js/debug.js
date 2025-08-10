@@ -84,8 +84,7 @@ function step() {
 
   for (let i = 0; i < ppuTicksToRun; i++) {
     ppuTick();
-    console.log("PPU Ticks:",i+1);
-    console.log("of:",ppuTicksToRun);
+    //console.log("PPU Ticks:",i+1);
+    //console.log("of:",ppuTicksToRun);
   }
 }
-

@@ -28,14 +28,14 @@ function setupTests(tests) {
 // ────────────────────────────────────────────────────────────────────────────────
 
 function runEdgeCaseTests() {
-  // ========= 6502 EDGE CASE TEST SUITE =========
+  // ========= 6502 EDGE CASE TEST SUITE (fixed) =========
 
-  // Helper to decorate tests
-  const cross = (desc, test) => Object.assign(test, {desc, cross:true});
-  const nocross = (desc, test) => Object.assign(test, {desc, cross:false});
+  // ---- Small helpers (scoped to the suite) ----
+  const cross   = (desc, test) => Object.assign(test, { desc, cross: true  });
+  const nocross = (desc, test) => Object.assign(test, { desc, cross: false });
 
-  // Helper: [mnemonic, addressing] for each test case
-const testLookup = {
+  // Map test description → [mnemonic, addressing] so we can pull base cycles from your opcode table.
+  const testLookup = {
   "JMP ($02FF) page-wrap bug": ["JMP", "indirect"],
   "STA $FF,X wraps": ["STA", "zeroPageX"],
   "BNE crosses page": ["BNE", "relative"],
@@ -46,8 +46,9 @@ const testLookup = {
   "PHA wraps SP": ["PHA", "implied"],
   "PHP/PLP order": ["PHP", "implied"],
   "Self-mod IMM": ["LDA", "immediate"],
+  "Self-mod IMM (console ops with full checks)": ["LDA", "immediate"], // <— add this line
   "BRK sets B": ["BRK", "implied"],
-  "IRQ leaves B": [null, null], // special case, no opcode mnemonic
+  "IRQ leaves B": [null, null],
 };
 
   function getBaseCycles(testDesc) {
@@ -55,51 +56,83 @@ const testLookup = {
     const lookup = testLookup[testDesc];
     if (!lookup) throw new Error(`No testLookup mapping for "${testDesc}"`);
     const [mnemonic, addressing] = lookup;
+    // Use your already-built opcodes table
     return opcodes[mnemonic]?.[addressing]?.cycles ?? 0;
   }
 
-  // Page crossing detection for branches and indexed modes where it matters
+  // DMA-safe memory clear for tests:
+  // - Clear WRAM ($0000–$1FFF mirrors) and PRG-RAM ($6000–$7FFF)
+  // - DO NOT touch $4000–$401F (APU/IO; $4014 triggers OAM DMA)
+  // - Leave PRG-ROM alone; we will patch code bytes directly
+  function clearForTest() {
+    for (let a = 0x0000; a <= 0x1FFF; a++) checkWriteOffset(a, 0);
+    if (typeof prgRam !== "undefined" && prgRam) {
+      for (let a = 0x6000; a <= 0x7FFF; a++) checkWriteOffset(a, 0);
+    }
+  }
+
+  // Directly write bytes into PRG-ROM window for test code (bypasses IO side-effects)
+  function writeCodeToROM(cpuAddr, bytes) {
+    for (let i = 0; i < bytes.length; i++) {
+      const a = (cpuAddr + i) & 0xFFFF;
+      if (a < 0x8000) {
+        // If you ever want to test code < $8000, fall back to bus write:
+        checkWriteOffset(a, bytes[i] & 0xFF);
+      } else {
+        // Mapper 0 / simple PRG windowing assumed: index from $8000
+        prgRom[(a - 0x8000) & (prgRom.length - 1)] = bytes[i] & 0xFF;
+      }
+    }
+  }
+
+  // Page crossing detection (purely analytical; no side effects)
   function didPageCross(test) {
     if (!test.code || test.code.length === 0) return false;
+
     // Branches (relative)
     if (test.opcodeFn && test.opcodeFn.endsWith("_REL")) {
-      const offset = test.code[1];
+      const offset = test.code[1] & 0xFF;
       const signed = offset < 0x80 ? offset : offset - 0x100;
-      const base = ((test.pre?.PC ?? 0x8000) + 2) & 0xFFFF;
-      const dest = (base + signed) & 0xFFFF;
-      // Branch taken flags
-      let taken = false;
-      if (/BNE/.test(test.opcodeFn)) taken = (test.pre?.P?.Z === 0);
-      else if (/BEQ/.test(test.opcodeFn)) taken = (test.pre?.P?.Z === 1);
-      else if (/BCC/.test(test.opcodeFn)) taken = (test.pre?.P?.C === 0);
-      else if (/BCS/.test(test.opcodeFn)) taken = (test.pre?.P?.C === 1);
-      else if (/BPL/.test(test.opcodeFn)) taken = (test.pre?.P?.N === 0);
-      else if (/BMI/.test(test.opcodeFn)) taken = (test.pre?.P?.N === 1);
-      else if (/BVC/.test(test.opcodeFn)) taken = (test.pre?.P?.V === 0);
-      else if (/BVS/.test(test.opcodeFn)) taken = (test.pre?.P?.V === 1);
+      const basePC = ( (test.pre?.PC ?? 0x8000) + 2 ) & 0xFFFF;
+
+      // Determine if branch is taken from pre-flags
+      const P = test.pre?.P ?? {};
+      const taken =
+        (/BNE/.test(test.opcodeFn) && (P.Z === 0)) ||
+        (/BEQ/.test(test.opcodeFn) && (P.Z === 1)) ||
+        (/BCC/.test(test.opcodeFn) && (P.C === 0)) ||
+        (/BCS/.test(test.opcodeFn) && (P.C === 1)) ||
+        (/BPL/.test(test.opcodeFn) && (P.N === 0)) ||
+        (/BMI/.test(test.opcodeFn) && (P.N === 1)) ||
+        (/BVC/.test(test.opcodeFn) && (P.V === 0)) ||
+        (/BVS/.test(test.opcodeFn) && (P.V === 1));
+
       if (!taken) return false;
-      return (base & 0xFF00) !== (dest & 0xFF00);
+
+      const dest = (basePC + signed) & 0xFFFF;
+      return (basePC & 0xFF00) !== (dest & 0xFF00);
     }
-    // Absolute,X and Absolute,Y with index
+
+    // Absolute,X and Absolute,Y
     if (test.opcodeFn && /(ABSX|ABSY)/.test(test.opcodeFn)) {
-      const base = test.code[1] | (test.code[2] << 8);
-      let index = 0;
-      if (/ABSX/.test(test.opcodeFn)) index = test.pre?.X ?? 0;
-      if (/ABSY/.test(test.opcodeFn)) index = test.pre?.Y ?? 0;
-      const eff = (base + index) & 0xFFFF;
+      const base = (test.code[1] | (test.code[2] << 8)) & 0xFFFF;
+      const index = /ABSX/.test(test.opcodeFn) ? (test.pre?.X ?? 0) : (test.pre?.Y ?? 0);
+      const eff = (base + (index & 0xFF)) & 0xFFFF;
       return (base & 0xFF00) !== (eff & 0xFF00);
     }
+
     // Indirect,Y
     if (test.opcodeFn && /INDY/.test(test.opcodeFn)) {
-      const zp = test.code[1];
-      if (test.setup) test.setup();
-      const low = [zp];
-      const high = [(zp + 1) & 0xFF];
-      const ptr = low | (high << 8);
+      const zp = test.code[1] & 0xFF;
+      // Read zp pointer bytes (no side effects)
+      const low  = checkReadOffset(zp) & 0xFF;
+      const high = checkReadOffset((zp + 1) & 0xFF) & 0xFF;
+      const ptr = (high << 8) | low;
       const y = test.pre?.Y ?? 0;
-      const eff = (ptr + y) & 0xFFFF;
+      const eff = (ptr + (y & 0xFF)) & 0xFFFF;
       return (ptr & 0xFF00) !== (eff & 0xFF00);
     }
+
     return false;
   }
 
@@ -109,163 +142,131 @@ const testLookup = {
       code: [0x6C, 0xFF, 0x02],
       opcodeFn: "JMP_IND",
       setup: () => {
-        checkWriteOffset(0x02FF, 0x00);
-        checkWriteOffset(0x0200, 0x80);
+        checkWriteOffset(0x02FF, 0x00); // low target byte
+        checkWriteOffset(0x0200, 0x80); // high target byte via wrap bug
       },
       expectPC: 0x8000,
       baseCycles: getBaseCycles("JMP ($02FF) page-wrap bug"),
       extra: 0
     }),
+
     nocross("STA $FF,X wraps", {
       code: [0x95, 0xFF],
       pre: { A: 0x42, X: 0x01 },
       opcodeFn: "STA_ZPX",
-      expectMem: { addr: 0x0000, value: 0x42 },
+      expectMem: { addr: 0x0000, value: 0x42 }, // $00FF + X wraps to $0000
       baseCycles: getBaseCycles("STA $FF,X wraps"),
       extra: 0
     }),
+
     cross("BNE crosses page", {
-      code: [0xD0, 0x03],         // Branch +3
-      pre: { P: { Z: 0 }, PC: 0x80FD }, // PC near end of page 0x80
+      code: [0xD0, 0x03],
+      pre: { P: { Z: 0 }, PC: 0x80FD }, // starting at $80FD (end of page)
       opcodeFn: "BNE_REL",
-      expectPC: 0x8102,           // Crosses from 0x80FD+2=0x80FF to 0x8102
+      expectPC: 0x8102,                 // ($80FD + 2) + 3 = $8102 (crossed)
       baseCycles: getBaseCycles("BNE crosses page"),
-      extra: 2
+      extra: 2                          // taken + crossed page (+2 total)
     }),
+
     nocross("ADC BCD half-carry", {
       code: [0x69, 0x15],
-      pre: { A: 0x27, P: { D: 1, C: 0 } },
+      pre: { A: 0x27, P: { D: 1, C: 0 } }, // decimal mode set; NES ignores BCD but we test flags math edge
       opcodeFn: "ADC_IMM",
-      expect: { A: 0x42, C: 0 },
+      expect: { A: 0x42, C: 0 },           // per the described expectation in your notes
       baseCycles: getBaseCycles("ADC BCD half-carry"),
       extra: 0
     }),
 
-
-
     /*
-    verified @ https://skilldrick.github.io/easy6502/
+      verified @ https://skilldrick.github.io/easy6502/
 
-    SED           ; set decimal mode
-    CLC           ; clear carry (borrow)
-    LDA #$42      ; load A with 0x42
-    SBC #$15      ; subtract 0x15 with borrow
-    BRK           ; break to stop program
+      SED ; set decimal
+      CLC ; clear carry (borrow)
+      LDA #$42
+      SBC #$15
+      BRK
 
-    result:
-    A=$26 X=$00 Y=$00
-    SP=$ff PC=$0607
-    NV-BDIZC
-    00111001
+      result:
+      A=$26, C=1 (per your corrected note)
     */
     nocross("SBC BCD borrow", {
       code: [0xE9, 0x15],
       pre: { A: 0x42, P: { D: 1, C: 0 } },
       opcodeFn: "SBC_IMM",
-      expect: { A: 0x26, C: 1 }, //corrected to 0x26 from 0x27, and C: 0 to C:1
+      expect: { A: 0x26, C: 1 },
       baseCycles: getBaseCycles("SBC BCD borrow"),
       extra: 0
     }),
 
-
     nocross("BIT $80 dummy-read", {
       code: [0x24, 0x80],
-      setup: () => {
-        checkWriteOffset(0x0080, 0xFF);
-      },
+      setup: () => { checkWriteOffset(0x0080, 0xFF); },
       pre: { A: 0x00 },
       opcodeFn: "BIT_ZP",
       expectFlags: { Z: 1, V: 1, N: 1 },
       baseCycles: getBaseCycles("BIT $80 dummy-read"),
       extra: 0
     }),
+
     nocross("ASL $10 dummy-read", {
       code: [0x06, 0x10],
-      setup: () => {
-        checkWriteOffset(0x0010, 0x01);
-      },
+      setup: () => { checkWriteOffset(0x0010, 0x01); },
       opcodeFn: "ASL_ZP",
-      expectMem: { addr: 0x10, value: 0x02 },
+      expectMem: { addr: 0x0010, value: 0x02 },
       baseCycles: getBaseCycles("ASL $10 dummy-read"),
-      extra: 0
+      extra: 2 // 5 cycles for this opcode, not 2 (3 is ZP base)
     }),
+
     nocross("PHA wraps SP", {
       code: [0x48],
-      pre: { A: 0x99, S: 0x00 },
+      pre: { A: 0x99, S: 0x00 },            // pushing at S=$00 should wrap to $01FF, then S=$FF
       opcodeFn: "PHA_IMP",
-      expectMem: { addr: 0x0100, value: 0x99 },
+      expectMem: { addr: 0x0100, value: 0x99 }, // write goes to $0100 + S after decrement sequence
       expect: { S: 0xFF },
       baseCycles: getBaseCycles("PHA wraps SP"),
       extra: 0
     }),
+
     nocross("PHP/PLP order", {
-      code: [0x08, 0x28],
+      code: [0x08, 0x28], // PHP then PLP
       pre: { P: { C: 1, D: 1, I: 0, Z: 1 }, S: 0xFF },
-      opcodeFn: "PHP_IMP",
-      setup: () => {
-        checkWriteOffset(0x01FF, 0b00101101); // Simulate PHP pushing flags
-      },
+      opcodeFn: "PHP_IMP",                 // first op is PHP; PLP will pop the pushed flags
+      setup: () => { checkWriteOffset(0x01FF, 0b00101101); }, // emulate existing top-of-stack content
       expectFlags: { C: 1, Z: 1, I: 0, D: 1, B: 0, V: 0, N: 0 },
       baseCycles: getBaseCycles("PHP/PLP order"),
       extra: 0
     }),
 
-    /* 
-      this seems like the most stupid test ever, the operand is originally 0x00, then we just patch it to 0x77
-      so -of course- it's going to return 0x77... but after some research, apparently some emulators will prefetch 
-      the opcode+operand and store them prior to the opcodes execution, hence it would return 0x00 in this case.
-      (as in, because the prefetched values changed before the opcode executed)
+    // Self-mod immediate: ensure operand is read at runtime, not pre-fetched/cached.
+    nocross("Self-mod IMM (console ops with full checks)", {
+      code: [0xA9, 0x00],
+      pre: { A: 0x00, PC: 0x8000 },
+      opcodeFn: "LDA_IMM",
+      // No baseCycles field here; we'll compute inside run() against "Self-mod IMM" lookup
+      extra: 0,
+      run: () => {
+        // Install opcode+operand into PRG-ROM directly
+        writeCodeToROM(0x8000, [0xA9, 0x00]);
+        // Patch operand after write to simulate self-modification
+        writeCodeToROM(0x8001, [0x77]);
 
-      This weird edge case is simply checking that I don't try and return the operand byte until RUNTIME of the 
-      opcode function. Which, we don't, as the way the app was written is it always executes operands from
-      , at runtime, so regardless of changes we will always execute the value there at runtime. 
+        // Setup CPU state
+        CPUregisters.A  = 0x00;
+        CPUregisters.PC = 0x8000;
 
-      I feel stupid even noting this for future reference, and it doesn't make the code below any less silly at all,
-      in fact, its still stupid code, and i guess its more knowing how the app processes opcodes/operands , but hey, we 
-      get a pass :P
+        const before = cpuCycles;
+        step(); // run exactly one instruction
 
-      more research shows that some may try and optimise code to do away with runtime processing - 
-      i.e. hey, why not grab the next batch of 10/20 opcodes+operands while we have a chance,
-      store them, execute them when required and top our prefetch list back up when we aren't busy with critical 
-      code execution. This would break the 'self-mod immediate' as it's operand changed after the fetch.
+        const aOK  = (CPUregisters.A === 0x77);
+        const pcOK = (CPUregisters.PC === 0x8002);
+        const used = cpuCycles - before;
+        const expect = getBaseCycles("Self-mod IMM") + 0;
 
-    */
-nocross("Self-mod IMM (console ops with full checks)", {
-  code: [0xA9, 0x00],
-  pre: { A: 0x00, PC: 0x8000 },
-  opcodeFn: "LDA_IMM",
-  baseCycles: getBaseCycles("Self-mod IMM"),
-  extra: 0,
-  run: () => {
-    // Write opcode + initial operand
-    checkWriteOffset(0x8000, 0xA9);
-    checkWriteOffset(0x8001, 0x00);
+        console.log(`[Self-mod IMM] A=${hex8(CPUregisters.A)} PC=${hex16(CPUregisters.PC)} usedCycles=${used}`);
 
-    // Patch operand after opcode bytes written to simulate self-mod
-    checkWriteOffset(0x8001, 0x77);
-
-    // Setup CPU state before step
-    CPUregisters.A = 0x00;
-    CPUregisters.PC = 0x8000;
-    const flagsBefore = { ...CPUregisters.P };
-    const cyclesBefore = cpuCycles;
-
-    // Step CPU once
-    step();
-
-    // Checks
-    const aCorrect = CPUregisters.A === 0x77;
-    const pcCorrect = CPUregisters.PC === 0x8002;  // LDA_IMM is 2 bytes
-    const cyclesElapsed = cpuCycles - cyclesBefore;
-    const cyclesExpected = (getBaseCycles("Self-mod IMM") + 0); // adjust if extra cycles needed
-    const cyclesCorrect = cyclesElapsed === cyclesExpected;
-
-    // Log for debugging
-    console.log(`After step: A=0x${CPUregisters.A.toString(16)}, PC=0x${CPUregisters.PC.toString(16)}, Cycles used=${cyclesElapsed}`);
-
-    return aCorrect && pcCorrect && cyclesCorrect;
-  }
-}),
+        return aOK && pcOK && (used === expect);
+      }
+    }),
 
     nocross("BRK sets B", {
       code: [0x00],
@@ -273,8 +274,9 @@ nocross("Self-mod IMM (console ops with full checks)", {
       opcodeFn: "BRK_IMP",
       expectFlags: { B: 1, I: 1 },
       baseCycles: getBaseCycles("BRK sets B"),
-      extra: 0
+      extra: 5 // expect extra 5 over base of 2 for this opcode
     }),
+
     nocross("IRQ leaves B", {
       code: [],
       pre: { P: { I: 0, B: 0 } },
@@ -285,6 +287,7 @@ nocross("Self-mod IMM (console ops with full checks)", {
     }),
   ];
 
+  // ---- Table UI header ----
   let html = `
     <div style="background:darkblue;color:white;padding:7px 6px 7px 6px;font-weight:bold;">
       6502 EDGE CASE TEST SUITE
@@ -309,111 +312,133 @@ nocross("Self-mod IMM (console ops with full checks)", {
         </tr>
       </thead><tbody>`;
 
+  // ---- Execute tests ----
   for (const test of cases) {
-  // Reset memory and CPU state for all tests
-  for(let a = 0; a < 0x10000; a++) checkWriteOffset(a, 0);
-  CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
-  CPUregisters.S = 0xFF;
-  CPUregisters.P = {C:0,Z:0,I:0,D:0,B:0,V:0,N:0};
-  CPUregisters.PC = test.pre?.PC ?? 0x8000;
-  if (test.pre) {
-    if (test.pre.A != null) CPUregisters.A = test.pre.A;
-    if (test.pre.X != null) CPUregisters.X = test.pre.X;
-    if (test.pre.Y != null) CPUregisters.Y = test.pre.Y;
-    if (test.pre.S != null) CPUregisters.S = test.pre.S;
-    if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
-  }
-  if (test.setup) test.setup();
+    // Fresh, DMA-safe memory init
+    clearForTest();
 
-  // Snapshots before
-  const fb = {...CPUregisters.P};
-  const cb = {A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S};
-  const pcBefore = CPUregisters.PC;
-  const beforeCycles = cpuCycles;
+    // CPU baseline
+    CPUregisters.A = CPUregisters.X = CPUregisters.Y = 0;
+    CPUregisters.S = 0xFF;
+    CPUregisters.P = { C:0, Z:0, I:0, D:0, B:0, V:0, N:0 };
+    CPUregisters.PC = test.pre?.PC ?? 0x8000;
 
-  if (testLookup[test.desc] && testLookup[test.desc][0] === null) {
-    // Special IRQ test — call IRQ handler directly
-    IRQ();
-  } else {
-    // Normal test: load code and step
-    if (test.code && test.code.length) {
-      test.code.forEach((b, i) => prgRom[CPUregisters.PC + i - 0x8000, b]);
+    // Apply pre-state
+    if (test.pre) {
+      if (test.pre.A != null) CPUregisters.A = test.pre.A & 0xFF;
+      if (test.pre.X != null) CPUregisters.X = test.pre.X & 0xFF;
+      if (test.pre.Y != null) CPUregisters.Y = test.pre.Y & 0xFF;
+      if (test.pre.S != null) CPUregisters.S = test.pre.S & 0xFF;
+      if (test.pre.P) Object.assign(CPUregisters.P, test.pre.P);
+    }
+
+    // Per-test setup (may write memory, but won’t hit DMA because we skipped IO)
+    if (test.setup) test.setup();
+
+    // Snapshots BEFORE
+    const fb = { ...CPUregisters.P };
+    const cb = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
+    const pcBefore = CPUregisters.PC & 0xFFFF;
+    const beforeCycles = cpuCycles | 0;
+
+    // Special IRQ test — call IRQ directly (no code injection)
+    if (testLookup[test.desc] && testLookup[test.desc][0] === null) {
+      IRQ();
+    } else if (test.run) {
+      // A self-contained runner (Self-mod IMM)
+      test.run();
+    } else if (test.code && test.code.length) {
+      // Normal case: install test code at current PC and execute one instruction
+      writeCodeToROM(CPUregisters.PC, test.code);
       step();
     }
-  }
 
-  // Snapshots after
-  const fa = {...CPUregisters.P};
-  const ca = {A: CPUregisters.A, X: CPUregisters.X, Y: CPUregisters.Y, S: CPUregisters.S};
-  const pcAfter = CPUregisters.PC;
-  const afterCycles = cpuCycles;
-  const usedCycles = afterCycles - beforeCycles;
+    // Snapshots AFTER
+    const fa = { ...CPUregisters.P };
+    const ca = { A:CPUregisters.A, X:CPUregisters.X, Y:CPUregisters.Y, S:CPUregisters.S };
+    const pcAfter = CPUregisters.PC & 0xFFFF;
+    const afterCycles = cpuCycles | 0;
+    const usedCycles = (afterCycles - beforeCycles) | 0;
 
-  // Page cross detection
-  let pageCrossed = didPageCross(test)
-    ? `<span style="color:orange;">Yes</span>`
-    : `<span style="color:lightgreen;">No</span>`;
+    // Page-cross display
+    const pageCrossed = didPageCross(test)
+      ? `<span style="color:orange;">Yes</span>`
+      : `<span style="color:lightgreen;">No</span>`;
 
-  // Pass/fail checks (flags, mem, PC, cycles)
-  let pass = true, reasons = [];
-  if (test.expect) {
-    for (const r in test.expect) {
-      const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
-      if (actual !== test.expect[r]) {
-        pass = false;
-        reasons.push(`${r}=${actual}≠${test.expect[r]}`);
+    // ---- Pass/fail checks ----
+    let pass = true, reasons = [];
+
+    if (test.expect) {
+      for (const r in test.expect) {
+        const actual = (r in ca) ? ca[r] : CPUregisters.P[r];
+        if (actual !== test.expect[r]) {
+          pass = false;
+          reasons.push(`${r}=${actual}≠${test.expect[r]}`);
+        }
       }
     }
-  }
-  if (test.expectMem) {
-    const val = [test.expectMem.addr];
-    if (val !== test.expectMem.value) {
-      pass = false;
-      reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${val}≠${test.expectMem.value}`);
+
+    if (test.expectFlags) {
+      for (const f in test.expectFlags) {
+        if ((CPUregisters.P[f] | 0) !== (test.expectFlags[f] | 0)) {
+          pass = false;
+          reasons.push(`P.${f}=${CPUregisters.P[f]|0}≠${test.expectFlags[f]|0}`);
+        }
+      }
     }
-  }
-  if (test.expectPC !== undefined && pcAfter !== test.expectPC) {
-    pass = false;
-    reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${test.expectPC.toString(16)}`);
-  }
-  const cycleTarget = (test.baseCycles ?? 0) + (test.extra ?? 0);
-  if (usedCycles !== cycleTarget) {
-    pass = false;
-    reasons.push(`cycles=${usedCycles}≠${cycleTarget}`);
-  }
 
-  // Render row
-  const opLabel = (test.code || []).map(b => b.toString(16).padStart(2, "0")).join(" ");
-  const status = pass
-    ? `<span style="color:#7fff7f;">✔️</span>`
-    : `<details style="color:#ff4444;cursor:pointer;"><summary>❌ Show Details</summary><ul>`+
-      reasons.map(r => `<li>${r}</li>`).join("") + `</ul></details>`;
+    if (test.expectMem) {
+      const memVal = checkReadOffset(test.expectMem.addr) & 0xFF;
+      if (memVal !== (test.expectMem.value & 0xFF)) {
+        pass = false;
+        reasons.push(`M[0x${test.expectMem.addr.toString(16)}]=${memVal}≠${test.expectMem.value}`);
+      }
+    }
 
-  html += `
-    <tr style="background:${pass ? "#113311" : "#331111"}">
-      <td>${test.desc || test.name}</td>
-      <td>${opLabel}</td>
-      <td>${test.opcodeFn || ""}</td>
-      <td>${flagsBin(fb)}</td>
-      <td>${flagsBin(fa)}</td>
-      <td>A=${cb.A} X=${cb.X} Y=${cb.Y} S=${cb.S}</td>
-      <td>A=${ca.A} X=${ca.X} Y=${ca.Y} S=${ca.S}</td>
-      <td>0x${pcBefore.toString(16)}</td>
-      <td>0x${pcAfter.toString(16)}</td>
-      <td>${pageCrossed}</td>
-      <td>${beforeCycles}</td>
-      <td>${afterCycles}</td>
-      <td>${usedCycles}</td>
-      <td>${status}</td>
-    </tr>`;
-}
+    if (test.expectPC !== undefined && pcAfter !== (test.expectPC & 0xFFFF)) {
+      pass = false;
+      reasons.push(`PC=0x${pcAfter.toString(16)}≠0x${(test.expectPC & 0xFFFF).toString(16)}`);
+    }
+
+    // cycles target: base + extra (from test vector)
+    const cycleTarget = ((test.baseCycles ?? getBaseCycles(test.desc)) + (test.extra ?? 0)) | 0;
+    if (usedCycles !== cycleTarget) {
+      pass = false;
+      reasons.push(`cycles=${usedCycles}≠${cycleTarget}`);
+    }
+
+    // ---- Render row ----
+    const opLabel = (test.code || []).map(b => b.toString(16).padStart(2, "0")).join(" ");
+    const status = pass
+      ? `<span style="color:#7fff7f;">✔️</span>`
+      : `<details style="color:#ff4444;cursor:pointer;"><summary>❌ Show Details</summary><ul>` +
+          reasons.map(r => `<li>${r}</li>`).join("") +
+        `</ul></details>`;
+
+    html += `
+      <tr style="background:${pass ? "#113311" : "#331111"}">
+        <td>${test.desc || test.name}</td>
+        <td>${opLabel}</td>
+        <td>${test.opcodeFn || ""}</td>
+        <td>${flagsBin(fb)}</td>
+        <td>${flagsBin(fa)}</td>
+        <td>A=${cb.A} X=${cb.X} Y=${cb.Y} S=${cb.S}</td>
+        <td>A=${ca.A} X=${ca.X} Y=${ca.Y} S=${ca.S}</td>
+        <td>0x${pcBefore.toString(16)}</td>
+        <td>0x${pcAfter.toString(16)}</td>
+        <td>${pageCrossed}</td>
+        <td>${beforeCycles}</td>
+        <td>${afterCycles}</td>
+        <td>${usedCycles}</td>
+        <td>${status}</td>
+      </tr>`;
+  }
 
   html += `</tbody></table>`;
   document.body.insertAdjacentHTML("beforeend", html);
 
-  // Reset for further testing
-  checkWriteOffset(0x8000, 0x02);
   CPUregisters.PC = 0x8000;
+  prgRom[0x00]= 0x02;
 }
 
 function flagsBin(P) {

@@ -778,7 +778,7 @@ function AND_INDX() {
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = (res & 0x80) ? 1 : 0;
 
-  cpuCycles += 6; // base cycles
+  cpuCycles += 6; // +add 6 to 1 base cycles, total 7 for this opcode
 }
 
 // AND ($nn),Y — opcode 0x31
@@ -803,91 +803,88 @@ function AND_INDY() {
   // PC increment (2) handled by your dispatcher/table
 }
 
+// ---------- ASL (Accumulator) total = 2 cycles → extra = 0 ----------
 function ASL_ACC() {
-  // Capture original A and perform shift
-  const oldA   = CPUregisters.A & 0xFF;
-  const result = (oldA << 1) & 0xFF;
+  const old    = CPUregisters.A & 0xFF;
+  const result = (old << 1) & 0xFF;
 
-  // C = old bit 7
-  CPUregisters.P.C = ((oldA & 0x80) >>> 7) ? 1 : 0;
-  // Store shifted result
+  CPUregisters.P.C = (old >>> 7) & 1;
   CPUregisters.A   = result;
-  // Z = result == 0
-  CPUregisters.P.Z = (result === 0 ? 1 : 0) ? 1 : 0;
-  // N = result bit 7
-  CPUregisters.P.N = ((result & 0x80) >>> 7) ? 1 : 0;
+  CPUregisters.P.Z = (result === 0) ? 1 : 0;
+  CPUregisters.P.N = (result >>> 7) & 1;
+
+  // Dispatcher already added baseCycles.accumulator (2). Extra = 0.
+  // cpuCycles += 0;
 }
 
-// ASL $nn  (0x06) — ZP
+// ---------- ASL $nn  (ZP) total = 5 cycles → extra = +2 ----------
 function ASL_ZP() {
-  const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;   // operand byte
-  const old  = checkReadOffset(zp) & 0xFF;
-  const carry= (old & 0x80) ? 1 : 0;
-  const res  = (old << 1) & 0xFF;
+  const op  = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  const ea  = op; // zero-page address
 
-  checkWriteOffset(zp, res);
-  CPUregisters.P.C = carry;
-  CPUregisters.P.Z = (res === 0) ? 1 : 0;
-  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
+  const old = checkReadOffset(ea) & 0xFF;
+  checkWriteOffset(ea, old);                // dummy write (RMW bus pattern)
 
-  cpuCycles += 5; // ZP: 5 cycles
-}
-
-// ASL $nn,X  (0x16) — ZP,X (wrap)
-function ASL_ZPX() {
-  const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;           // zero-page wrap
-  const old  = checkReadOffset(addr) & 0xFF;
-  const carry= (old & 0x80) ? 1 : 0;
-  const res  = (old << 1) & 0xFF;
-
-  checkWriteOffset(addr, res);
-  CPUregisters.P.C = carry;
-  CPUregisters.P.Z = (res === 0) ? 1 : 0;
-  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
-
-  cpuCycles += 6; // ZP,X: 6 cycles
-}
-
-// ASL $nnnn  (0x0E) — ABS
-function ASL_ABS() {
-  const lo   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const hi   = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
-  const addr = ((hi << 8) | lo) & 0xFFFF;
-
-  const old  = checkReadOffset(addr) & 0xFF;
-  const carry= (old & 0x80) ? 1 : 0;
-  const res  = (old << 1) & 0xFF;
-
-  checkWriteOffset(addr, res);
-  CPUregisters.P.C = carry;
-  CPUregisters.P.Z = (res === 0) ? 1 : 0;
-  CPUregisters.P.N = (res & 0x80) ? 1 : 0;
-
-  cpuCycles += 6; // ABS: 6 cycles
-}
-
-function ASL_ABSX() {
-  // Fetch operands from PC+1/+2, but DO NOT change PC here.
-  const lo   = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-  const hi   = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
-
-  const base = (hi << 8) | lo;
-  const ea   = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
-  const fea  = foldMirrors(ea);
-
-  const old = checkReadOffset(fea) & 0xFF;
   const res = (old << 1) & 0xFF;
-
   CPUregisters.P.C = (old >>> 7) & 1;
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = (res >>> 7) & 1;
+  checkWriteOffset(ea, res);                // final write
 
-  // True 6502 RMW sequence
-  checkWriteOffset(fea, old); // dummy
-  checkWriteOffset(fea, res); // final
+  cpuCycles += 2; // base(3) + 2 = 5
+}
 
-  // No PC increment here.
+// ---------- ASL $nn,X (ZP,X) total = 6 cycles → extra = +2 ----------
+function ASL_ZPX() {
+  const op   = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  const ea   = (op + (CPUregisters.X & 0xFF)) & 0xFF;  // ZP wrap
+
+  const old  = checkReadOffset(ea) & 0xFF;
+  checkWriteOffset(ea, old);                // dummy
+
+  const res  = (old << 1) & 0xFF;
+  CPUregisters.P.C = (old >>> 7) & 1;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res >>> 7) & 1;
+  checkWriteOffset(ea, res);                // final
+
+  cpuCycles += 2; // base(4) + 2 = 6
+}
+
+// ---------- ASL $nnnn (ABS) total = 6 cycles → extra = +2 ----------
+function ASL_ABS() {
+  const lo  = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  const hi  = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
+  const ea  = ((hi << 8) | lo) & 0xFFFF;
+
+  const old = checkReadOffset(ea) & 0xFF;
+  checkWriteOffset(ea, old);                // dummy
+
+  const res = (old << 1) & 0xFF;
+  CPUregisters.P.C = (old >>> 7) & 1;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res >>> 7) & 1;
+  checkWriteOffset(ea, res);                // final
+
+  cpuCycles += 2; // base(4) + 2 = 6
+}
+
+// ---------- ASL $nnnn,X (ABS,X) total = 7 cycles → extra = +3 ----------
+function ASL_ABSX() {
+  const lo   = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  const hi   = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
+  const ea   = (((hi << 8) | lo) + (CPUregisters.X & 0xFF)) & 0xFFFF;
+
+  const old  = checkReadOffset(ea) & 0xFF;
+  checkWriteOffset(ea, old);                // dummy
+
+  const res  = (old << 1) & 0xFF;
+  CPUregisters.P.C = (old >>> 7) & 1;
+  CPUregisters.P.Z = (res === 0) ? 1 : 0;
+  CPUregisters.P.N = (res >>> 7) & 1;
+  checkWriteOffset(ea, res);                // final
+
+  cpuCycles += 3; // base(4) + 3 = 7 (fixed; no page-cross add for RMW)
 }
 
 function BIT_ZP() {
@@ -1110,6 +1107,8 @@ function BRK_IMP() {
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
   // Set I (disable further IRQs)
+  // set B 
+  CPUregisters.P.B = 1;
   CPUregisters.P.I = 1;
 
   // Fetch BRK/IRQ vector (no +0x8000!)
@@ -1120,7 +1119,6 @@ function BRK_IMP() {
 
   cpuCycles += 5;
 }
-
 
 // CMP #imm — 0xC9
 function CMP_IMM() {
