@@ -1253,7 +1253,6 @@ function CPY_ABS() { // CC
   CPUregisters.P.N = (diff & 0x80) ? 1 : 0;
 }
 
-
 function DEC_ZP() {
   // 1. Fetch address from instruction
   const addr = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
@@ -1267,6 +1266,7 @@ function DEC_ZP() {
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val & 0x80) ? 1 : 0;
 }
+
 // DEC $nn,X  (opcode 0xD6)
 function DEC_ZPX() {
   const zp   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
@@ -1275,7 +1275,7 @@ function DEC_ZPX() {
   checkWriteOffset(addr, val);
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val & 0x80) ? 1 : 0;
-  // cycles: 6 (add in your dispatcher if you track timing)
+  cpuCycles += 2;  // add two to base of 4 for Absolute addressing, 6 total for this opcode
 }
 
 // DEC $nnnn  (opcode 0xCE)
@@ -1287,7 +1287,7 @@ function DEC_ABS() {
   checkWriteOffset(addr, val);
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val & 0x80) ? 1 : 0;
-  // cycles: 6
+  cpuCycles += 2; // add two to base of 4 for Absolute addressing, 6 total for this opcode
 }
 
 // Keep one; mapping 0xDE -> this function.
@@ -1300,7 +1300,7 @@ function DEC_ABSX() {
   checkWriteOffset(addr, val);
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val & 0x80) ? 1 : 0;
-  // cycles: 7 (no page-cross penalty)
+  cpuCycles += 4; // 3 base + 4, 7 for this opcode
 }
 
 function EOR_IMM() {
