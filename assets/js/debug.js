@@ -77,10 +77,10 @@ function step() {
   // pseudo 3:1 PPU with cycles
   cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF; // &'ing unncessary, reset per step
 
-  for (let i = 0; i < cpuCycles; i++) {
+  for (let i = 0; i < cpuCycles * 3; i++) {
     ppuStep();
-    //console.log("PPU Steps:",i+1);
-    //console.log("of:",cpuCycles);
+    console.log("PPU Steps:",i+1);
+    console.log("of:",cpuCycles * 3);
   }
   cpuCycles = 0;
 }
