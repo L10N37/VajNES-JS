@@ -1290,17 +1290,27 @@ function DEC_ABS() {
   cpuCycles += 2; // add two to base of 4 for Absolute addressing, 6 total for this opcode
 }
 
-// Keep one; mapping 0xDE -> this function.
 function DEC_ABSX() {
-  const lo    = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF;
-  const hi    = prgRom[(CPUregisters.PC + 2) - 0x8000] & 0xFF;
-  const base  = ((hi << 8) | lo) & 0xFFFF;
-  const addr  = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
-  const val   = (checkReadOffset(addr) - 1) & 0xFF;
-  checkWriteOffset(addr, val);
+  // Fetch operand bytes via bus
+  const lo = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  const hi = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
+
+  // Effective address (absolute,X); page-cross doesn't change timing for RMW
+  const ea = (((hi << 8) | lo) + (CPUregisters.X & 0xFF)) & 0xFFFF;
+
+  // RMW bus pattern: read -> dummy write (old) -> compute -> final write (new)
+  const old = checkReadOffset(ea) & 0xFF;
+  checkWriteOffset(ea, old);                 // dummy write of original value
+
+  const val = (old - 1) & 0xFF;              // modify
+  checkWriteOffset(ea, val);                 // final write
+
+  // Flags
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
-  CPUregisters.P.N = (val & 0x80) ? 1 : 0;
-  cpuCycles += 4; // 3 base + 4, 7 for this opcode
+  CPUregisters.P.N = (val >>> 7) & 1;
+
+  // Timing: base(absX)=4 added by dispatcher; add +3 here -> total 7
+  cpuCycles += 3;
 }
 
 function EOR_IMM() {
