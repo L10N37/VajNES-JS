@@ -139,3 +139,8 @@ function ppuRead(addr) {
       return cpuOpenBus;
   }
 }
+
+
+function ppuTick(){
+  
+}

@@ -1,3 +1,5 @@
+let debugLogging = true;
+
 const test = false; // only true to run console benchmarks
 let lastFetched = null;
 
@@ -49,12 +51,6 @@ if (test) {
   opcodeFuncs[0x02] = () => { /* no-op */ };
 }
 
-
-// dummy function for 3:1 pseudo
-function ppuTick(){
-  
-}
-
 // ── Single‐step executor ──
 function step() {
 
@@ -68,8 +64,10 @@ function step() {
     return;
   }
 
+  if (debugLogging){
   console.log("instr:", `0x${code.toString(16).toUpperCase()}`);
   console.log(`PC=> 0x${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
+  }
 
   // Execute instruction
   execFn();

@@ -1391,15 +1391,6 @@ function EOR_ABSY() {
 
 function EOR_INDX() {
 
-  checkWriteOffset(0x0015,0x30);
-checkWriteOffset(0x0016,0x12);
-checkWriteOffset(0x1230,0xF0);
-console.log(
-  'lo=',  checkReadOffset(0x0015).toString(16), // expect "30"
-  'hi=',  checkReadOffset(0x0016).toString(16), // expect "12"
-  'val=', checkReadOffset(0x1230).toString(16)  // expect "f0"
-);
-
   const nn   = prgRom[(CPUregisters.PC + 1) - 0x8000] & 0xFF; // operand from PRG
   const ptr  = (nn + (CPUregisters.X & 0xFF)) & 0xFF;         // ZP index (wrap)
   const lo   = checkReadOffset(ptr) & 0xFF;
