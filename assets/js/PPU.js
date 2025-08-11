@@ -208,8 +208,8 @@ function copyVert() {
       PPU_OAM[i] = systemMemory[(start + i) & 0x7FF];
     }
     if (cpuCycles % 2 === 0) even = true;
-    if (even) for (let i = 0; i < 513 * 3; i++) ppuTick();
-    else for (let i = 0; i < 514 * 3; i++) ppuTick();
+    if (even) cpuCycles += 513;
+    else cpuCycles += 514;
     if (ppuDebugLogging) console.log(`[PPU] DMA transfer from page ${value.toString(16).padStart(2, "0")}`);
     }
 
@@ -251,6 +251,11 @@ function emitPixel() {
 // PPU Main Tick
 // ============================
 function ppuTick() {
+
+  // do while to save overhead of repeated calls to this function from the outside
+  cpuCycles = cpuCycles*3;
+  do {
+
   const renderingEnabled = (PPUregister.MASK & 0x08) || (PPUregister.MASK & 0x10);
 
   if (PPUclock.scanline === 0 && PPUclock.dot === 0 && ppuDebugLogging) {
@@ -305,6 +310,10 @@ function ppuTick() {
       PPUclock.oddFrame = !PPUclock.oddFrame;
     }
   }
+  cpuCycles--;
+}
+
+while (cpuCycles > 0);
 }
 
 // ============================

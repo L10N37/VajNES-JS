@@ -2,7 +2,7 @@ const test = false; // only true to run console benchmarks
 
 //easier to patch up my cycles for the test suite, then adjust test suite (some suites now false failing due to cycles)
 let ppuTicksToRun;
-let lastCpuCycleCount;
+//let lastCpuCycleCount;
 
 let running = false;
 let debugLogging = true;
@@ -111,18 +111,23 @@ function step() {
   CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]);
 
   // pseudo 3:1 PPU with cycles
-  lastCpuCycleCount = cpuCycles & 0xFFFF;
+  //lastCpuCycleCount = cpuCycles & 0xFFFF;
   cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF;
-  ppuTicksToRun = (cpuCycles - lastCpuCycleCount) * 3;
-  // run 3 ppuTicks per cpu Cycle (obtained after one CPU 'step', gives decent timing but not step locked cycles)
-  for (let i = 0; i < ppuTicksToRun; i++) ppuTick();
+  // ppuTicksToRun = (cpuCycles - lastCpuCycleCount) * 3;
+
+
+
+  // run 3 ppuTicks per cpu Cycle, but only at 700+ CPU cycles (~21000 PPU ticks in batch!)
+
+  // ppuTick will take the cpuCycles count, multiply by 3, and tick over that amount, on return
+  // cpuCycles will be reset to zero
+  if (cpuCycles >= 700) ppuTick(); // tweaked the batch value , nothing helps, we cant afford "per tick" accurate PPU. 
+
 
     if (nmiPending) {
     nmiPending = false;
     serviceNMI();
-    for (let i = 0; i < 7 * 3; i++) ppuTick(); // 7 cycles for NMI, 21 more PPU ticks
+    cpuCycles += 7;// 7 CPU cycles spent for NMI servicing
   }
-
-
 }
   
