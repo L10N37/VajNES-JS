@@ -140,98 +140,118 @@
     </div>
   </div>
 
-  <!-- grille underlay for grille emulation -->
+<!-- Grille underlay for grille emulation -->
 <div id="grille-screen-modal" class="grilleScreenModal">
   <canvas id="grille-canvas"></canvas>
 </div>
-<!-- another underlay for scanline simulation -->
+
+<!-- Another underlay for scanline simulation -->
 <div id="scanline-simulation-modal" class="scanlineSimulationModal">
   <canvas id="scanline-canvas"></canvas>
 </div>
-<!-- solid black underlay to block main page -->
-<div id="black-screen-modal" class="blackScreenModal">
-</div>
 
- <!-- scanline options stuff -->
- <div class="scanlinesModal">
+<!-- Solid black underlay to block main page -->
+<div id="black-screen-modal" class="blackScreenModal"></div>
+
+<!-- Scanline options -->
+<div class="scanlinesModal">
+  <!-- Predefined scanline images -->
   <div>
     <input type="radio" id="scanlines1" name="scanlines" value="scanlines1">
-    <label for="scanlines1">Scanlines 1 (BG image)</label> <br>
+    <label for="scanlines1">Scanlines 1 (BG image)</label><br>
+
     <input type="radio" id="scanlines2" name="scanlines" value="scanlines2">
-    <label for="scanlines2">Scanlines 2 (BG image)</label> <br>
+    <label for="scanlines2">Scanlines 2 (BG image)</label><br>
+
     <input type="radio" id="scanlines3" name="scanlines" value="scanlines3">
-    <label for="scanlines3">Scanlines 3 (BG image)</label> <br>
-  </div>  
+    <label for="scanlines3">Scanlines 3 (BG image)</label><br>
+  </div>
+
+  <!-- Scanlines intensity slider -->
   <div>
-  <br>
-    <label for="scanlines-intensity-slider">Scanlines Intensity (over-rides above options):</label>
+    <br>
+    <label for="scanlines-intensity-slider">Scanlines Intensity (overrides above options):</label>
     <input type="range" id="scanlines-intensity-slider" min="0" max="100" value="50">
-  </div>  
+  </div>
+
+  <!-- Scanlines Tune (code-drawn scanlines) -->
+  <div>
+    <br>
+    <strong>Scanlines Tune</strong><br>
+
+    <label for="scanline-lineheight">Line height (px):</label>
+    <input type="number" id="scanline-lineheight" min="1" max="8" value="2" style="width:64px;"><br>
+
+    <label for="scanline-gap">Gap (px):</label>
+    <input type="number" id="scanline-gap" min="0" max="12" value="2" style="width:64px;"><br>
+
+    <label for="scanline-offset">Offset:</label>
+    <input type="checkbox" id="scanline-offset">
+  </div>
+
+  <!-- Live test sources (mutually exclusive) -->
+  <div>
+    <br>
+    <input type="checkbox" id="test-rgba-checkbox"  name="test-source" value="rgba">
+    <label for="test-rgba-checkbox">Run testRGBAAnim()</label><br>
+
+    <input type="checkbox" id="test-index-checkbox" name="test-source" value="index">
+    <label for="test-index-checkbox">Run testIndexAnim()</label><br>
+
+    <input type="checkbox" id="test-image-checkbox" name="test-source" value="image">
+    <label for="test-image-checkbox">Show Test Image</label>
+  </div>
+
+  <!-- Grille and transparency controls -->
+  <br>
   <div>
     <label for="intensity-slider">Grille Intensity (MUST adjust for retrofx tuning):</label>
     <input type="range" id="intensity-slider" min="0" max="100" value="50">
   </div>
+
   <div>
     <label for="transparency-slider">Screen Transparency (MUST adjust for retrofx tuning):</label>
     <input type="range" id="transparency-slider" min="0" max="100" value="50">
   </div>
+
+  <!-- Grille type selection -->
   <div>
     <input type="radio" id="aperture-grille" name="grille-type" value="aperture-grille">
-    <label for="aperture-grille">Aperture Grille</label> <br>
+    <label for="aperture-grille">Aperture Grille</label><br>
+
     <input type="radio" id="shadow-mask" name="grille-type" value="shadow-mask">
-    <label for="shadow-mask">Shadow Mask</label> <br>
+    <label for="shadow-mask">Shadow Mask</label><br>
+
     <input type="radio" id="none" name="grille-type" value="none">
-    <label for="none">None</label>
+    <label for="none">None</label><br>
   </div>
-  <div>
-    <br>
-    <input type="checkbox" id="test-image-checkbox" name="test-image-checkbox" value="test-image">
-    <label for="test-image-checkbox">Show Test Image</label>
-  </div>
+
+  <!-- Composite blur control -->
   <br>
-  <div>
-    <label for="composite-blur-slider">Composite Blur:</label>
-    <input type="range" id="composite-blur-slider" min="0" max="5" value="0" step="0.1">
-  </div>
+  <label for="composite-blur-slider">Composite Blur:</label>
+  <input type="range" id="composite-blur-slider" min="0" max="5" value="0" step="0.1">
+
+  <!-- OK button -->
   <div>
     <button id="ok-button">OK</button>
   </div>
 </div>
 
- <!-- scale options, F2 is a shortcut, this is for the mouse -->
-  <div id="scale-modal" class="modal">
-    <div class="modal-content">
-      <span class="closeModal">&times;</span>
-      <form>
-        <h2>Scale Factor</h2>
-        <label>
-          <input type="radio" name="scaleFactor" value="2" checked>
-          2x
-        </label>
-        <br>
-        <label>
-          <input type="radio" name="scaleFactor" value="3">
-          3x
-        </label>
-        <br>
-        <label>
-          <input type="radio" name="scaleFactor" value="4">
-          4x
-        </label>
-        <br>
-        <label>
-          <input type="radio" name="scaleFactor" value="5">
-          5x
-        </label>
-        <br>
-        <label>
-          <input type="radio" name="scaleFactor" value="5.4">
-          5.4x
-        </label>
-      </form>
-    </div>
-  </div>
+<!-- Scale options modal (mouse-accessible, F2 shortcut) -->
+<div id="scale-modal" class="modal">
+  <div class="modal-content">
+    <span class="closeModal">&times;</span>
+    <form>
+      <h2>Scale Factor</h2>
 
+      <label><input type="radio" name="scaleFactor" value="2" checked> 2x</label><br>
+      <label><input type="radio" name="scaleFactor" value="3"> 3x</label><br>
+      <label><input type="radio" name="scaleFactor" value="4"> 4x</label><br>
+      <label><input type="radio" name="scaleFactor" value="5"> 5x</label><br>
+      <label><input type="radio" name="scaleFactor" value="5.4"> 5.4x</label>
+    </form>
+  </div>
+</div>
 
 <script src="assets/js/helpers.js"></script>
 <script src="assets/js/6502.js"></script>

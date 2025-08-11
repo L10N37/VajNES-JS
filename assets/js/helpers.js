@@ -128,3 +128,96 @@ function updateDebugTables() {
 }
 
 function resetSystem(){resetCPU(), ppuResetCounters();}
+
+
+
+/* ========================================================== */
+// Screen tests
+
+/*
+testRGBAOnce() / testIndexOnce() for a static frame.
+
+testRGBAAnim() / testIndexAnim() to see continuous updates.
+
+stopTestAnim() to halt.
+
+If your emulator loop is running and you don’t want it stopped by the first test blit, set _firstRealFrameSeen = true before calling these
+*/
+
+
+// ---- quick test helpers ----
+(function () {
+  const W = typeof BASE_W !== 'undefined' ? BASE_W : 256;
+  const H = typeof BASE_H !== 'undefined' ? BASE_H : 240;
+
+  let _animRAF = 0, _phase = 0;
+
+  // RGBA: 8 vertical color bars, phase shifts to animate
+  function genRGBAFrame(w = W, h = H, phase = 0) {
+    const buf = new Uint8ClampedArray(w * h * 4);
+    const colors = [
+      [255, 0, 0], [255, 128, 0], [255, 255, 0], [0, 255, 0],
+      [0, 255, 255], [0, 0, 255], [128, 0, 255], [255, 0, 255]
+    ];
+    const bars = colors.length;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const b = Math.floor((((x + phase) % w) * bars) / w);
+        const off = (y * w + x) * 4;
+        const c = colors[b];
+        buf[off] = c[0]; buf[off + 1] = c[1]; buf[off + 2] = c[2]; buf[off + 3] = 255;
+      }
+    }
+    return buf;
+  }
+
+  // Index: 16x16 checker-ish tiles, cycling palette indices 0..63
+  // Requires _PAL_BYTES (64*4) already defined in your app.
+  function genIndexFrame(w = W, h = H, phase = 0) {
+    const buf = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        // tile bands plus moving phase; wraps to 0..63
+        buf[y * w + x] = (((x >> 4) + (y >> 4) + phase) & 63);
+      }
+    }
+    return buf;
+  }
+
+  // ---- public test API (attach to window for console use) ----
+  window.testRGBAOnce = function () {
+    const frame = genRGBAFrame(W, H, 0);
+    blitNESFrameRGBA(frame, W, H);
+  };
+
+  window.testIndexOnce = function () {
+    const frame = genIndexFrame(W, H, 0);
+    blitNESFramePaletteIndex(frame, W, H);
+  };
+
+  window.testRGBAAnim = function () {
+    cancelAnimationFrame(_animRAF);
+    const step = () => {
+      const frame = genRGBAFrame(W, H, _phase);
+      blitNESFrameRGBA(frame, W, H);
+      _phase = (_phase + 2) % W;
+      _animRAF = requestAnimationFrame(step);
+    };
+    step();
+  };
+
+  window.testIndexAnim = function () {
+    cancelAnimationFrame(_animRAF);
+    const step = () => {
+      const frame = genIndexFrame(W, H, (_phase >> 4) & 63);
+      blitNESFramePaletteIndex(frame, W, H);
+      _phase = (_phase + 2) % (64 * 16);
+      _animRAF = requestAnimationFrame(step);
+    };
+    step();
+  };
+
+  window.stopTestAnim = function () {
+    cancelAnimationFrame(_animRAF);
+  };
+})();
