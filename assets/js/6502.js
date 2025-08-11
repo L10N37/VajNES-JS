@@ -340,17 +340,6 @@ function STA_INDY() {
   checkWriteOffset(address, CPUregisters.A);
 }
 
-function ADC_ZP() {
-  const address = checkReadOffset(CPUregisters.PC + 1);
-  const value = checkReadOffset(address);
-  const sum = CPUregisters.A + value + (CPUregisters.P.C ? 1 : 0);
-  CPUregisters.P.C = (sum > 255) ? 1 : 0;
-  CPUregisters.P.V = (((CPUregisters.A ^ sum) & (value ^ sum) & 0x80) !== 0) ? 1 : 0;
-  CPUregisters.A = sum & 0xFF;
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-}
-
 function CLC_IMP() { CPUregisters.P.C = (0) ? 1 : 0; }
 function SEC_IMP() { CPUregisters.P.C = (1) ? 1 : 0; }
 function CLI_IMP() { CPUregisters.P.I = (0) ? 1 : 0; }
