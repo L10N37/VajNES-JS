@@ -1,603 +1,324 @@
-// PPU Registers
-// v/t bit layout (15 bits total): yyy NN YYYYY XXXXX
-//   fine Y: bits 14..12 (yyy)
-//   nametable: bits 11..10 (NN)
-//   coarse Y: bits 9..5  (YYYYY)
-//   coarse X: bits 4..0  (XXXXX)
+const NES_W = 256;
+const NES_H = 240;
+const DOTS_PER_SCANLINE = 341;
+const SCANLINES_PER_FRAME = 262;
 
-/*
-==============================================================================
-Background render pipeline state (PPUregister.BG)
-------------------------------------------------------------------------------
-These are **internal** (non-MMIO) fields the PPU uses to produce background
-pixels one dot at a time. They mirror the NES PPU’s 8-dot fetch + 1-dot shift
-cadence and work alongside your scroll machinery (VRAM_ADDR, t, fineX).
+let ppuDebugLogging = true; // toggle for debug logs
 
-Fields
-------
-bgShiftLo : uint16
-  16-bit shift register for the pattern **low** bit-plane.
-  • Each visible dot: shift left by 1.
-  • At the end of each 8-dot fetch group (phase 7): load the lower 8 bits from
-    `tileLo` (freshly fetched), keep the upper 8 bits (already in flight).
-  • The pixel’s low bit (p0) is sampled from bit position (15 - fineX).
+// --- Pixel Buffer (stores NES palette indices for the frame) ---
+let pixelColorIndex = new Uint8Array(NES_W * NES_H);
 
-bgShiftHi : uint16
-  16-bit shift register for the pattern **high** bit-plane.
-  • Same timing/behavior as bgShiftLo.
-  • The pixel’s high bit (p1) is sampled from bit position (15 - fineX).
+// --- OAM ---
+let PPU_OAM = new Uint8Array(256);
 
-ntByte : uint8
-  Latched nametable tile index for the **next** tile to render.
-  • Fetched at fetch phase 0 from address: $2000 | (VRAM_ADDR & $0FFF).
-  • Used to build the pattern table addresses for tileLo/tileHi.
-
-atBits : uint8 (logical 2-bit value 0..3)
-  Attribute quadrant (palette select) for the **next** 8 pixels.
-  • Derived at fetch phase 2 from the attribute byte covering the tile:
-      - Attribute base: $23C0 within the selected nametable.
-      - Select the 2-bit quadrant using coarseX/coarseY (VRAM_ADDR).
-  • Constant across the 8 pixels of the tile; no per-dot shifting needed.
-  • Contributes the top two bits of the background palette index:
-      paletteIndex = ( (atBits & 2) << 2 ) | ( (atBits & 1) << 2 )
-                      | (p1 << 1) | p0   // => 0..15 before $3F00 lookup
-
-tileLo : uint8
-  Latched **low** pattern byte for the upcoming tile row.
-  • Fetched at fetch phase 4 from:
-      base = (CTRL & $10) ? $1000 : $0000   // BG pattern table select
-      addr = base + (ntByte << 4) + fineY
-  • Loaded into the low 8 bits of bgShiftLo at fetch phase 7.
-
-tileHi : uint8
-  Latched **high** pattern byte for the upcoming tile row.
-  • Fetched at fetch phase 6 from (addr + 8) using the same base/ntByte/fineY.
-  • Loaded into the low 8 bits of bgShiftHi at fetch phase 7.
-
-Lifecycle / Timing (context)
----------------------------
-• Visible dots 1..256: shift bgShiftLo/Hi each dot; emit a pixel using fineX.
-• Every 8 dots: run the fetch sequence (NT, AT, PT-low, PT-high, then reload).
-• Dot 256: vertical increment (fineY++ / coarseY+NTY handling).
-• Dot 257: horizontal copy (t → VRAM_ADDR: coarseX + NTX).
-• Pre-render scanline (261), dots 280..304: vertical copy (t → VRAM_ADDR: fineY/coarseY + NTY).
-• Pre-fetch window 321..336: same 8-dot fetch cadence to prime the next scanline.
-
-Reset expectations
-------------------
-• Safe to clear all BG fields on PPU reset and/or VBLANK start; not required by
-  hardware, but keeps first-line output deterministic in emulation.
-==============================================================================
-*/
-
-
+// --- Registers ---
 let PPUregister = {
-  CTRL:      0x00, // $2000 (PPUCTRL, write-only): NMI enable, VRAM inc (1/32), sprite/bg pattern tbl, sprite size, base nametable
-  MASK:      0x00, // $2001 (PPUMASK, write-only): rendering/grayscale/emphasis enables
-  STATUS:    0x00, // $2002 (PPUSTATUS, read-only): VBlank (bit7), sprite 0 hit (bit6), sprite overflow (bit5); read clears VBlank & write toggle
-  OAMADDR:   0x00, // $2003 (write-only): OAM (sprite RAM) address
-  OAMDATA:   0x00, // $2004 (read/write): OAM data port (auto-increments OAMADDR on write)
-  SCROLL_X:  0x00, // $2005 first write: scroll X (coarse X to t, fine X to fineX)
-  SCROLL_Y:  0x00, // $2005 second write: scroll Y (fine Y + coarse Y to t)
-  ADDR_HIGH: 0x00, // $2006 first write: high 6 bits of v (t[14..8]), also clears/sets writeToggle
-  ADDR_LOW:  0x00, // $2006 second write: low 8 bits of v (t[7..0]); on this write t -> v
-  VRAM_ADDR: 0x0000,  // current VRAM addr if you keep a mirror
-  VRAM_DATA: 0x00,    // $2007 read buffer (reads are buffered except $3F00–$3FFF palette; writes go to v then v += inc)
-  t:         0x0000,  // “loopy t”: temp VRAM address (same bit layout as v), receives $2000/$2005/$2006 writes
-  fineX:     0,       // 3-bit fine X scroll latch (0..7), from $2005 first write; not stored in v/t
-  writeToggle:false,  // $2005/$2006 write latch: false = next write is first, true = next write is second
+  CTRL: 0x00,
+  MASK: 0x00,
+  STATUS: 0x00,
+  OAMADDR: 0x00,
+  SCROLL_X: 0x00,
+  SCROLL_Y: 0x00,
+  ADDR_HIGH: 0x00,
+  ADDR_LOW: 0x00,
+  VRAM_ADDR: 0x0000,
+  t: 0x0000,
+  fineX: 0,
+  writeToggle: false,
+  VRAM_DATA: 0x00,
 
-  /* variables for drawing the background */
-  BG: { 
-  bgShiftLo: 0x0000,  // (16-bit) – pattern low shifter
-  bgShiftHi: 0x0000,  // (16-bit) – pattern high shifter
-  ntByte: 0x00, // (8-bit) – latched nametable tile index
-  atBits: 0x00, // (2-bit value 0..3) – attribute quadrant for the next 8 pixels (no need to shift it each dot)
-  tileLo: 0x00, // (8-bit) – latched pattern low byte for the incoming tile
-  tileHi: 0x00  // (8-bit) – latched pattern high byte for the incoming tile
+  BG: {
+    bgShiftLo: 0,
+    bgShiftHi: 0,
+    atShiftLo: 0,
+    atShiftHi: 0,
+    ntByte: 0,
+    atByte: 0,
+    tileLo: 0,
+    tileHi: 0
   }
 };
 
-/*
-Bit layout reminder for t (15 bits):
+// --- Clock ---
+const PPUclock = {
+  scanline: 0,
+  dot: 0,
+  frame: 0,
+  oddFrame: false
+};
 
-bits 0–4: coarse X
-
-bits 5–9: coarse Y
-
-bits 10–11: nametable select (from $2000 write)
-
-bits 12–14: fine Y
-
-v (current VRAM addr, “loopy v”) — 15 bits
-bits: 14   13   12   11   10    9    8    7    6    5    4    3    2    1    0
-      y2   y1   y0   N1   N0   Y4   Y3   Y2   Y1   Y0   X4   X3   X2   X1   X0
-
-t (temp VRAM addr, “loopy t”) — same 15-bit layout as v
-bits: 14..12 = fine Y (y2..y0)
-      11..10 = nametable select (N1..N0)
-       9..5  = coarse Y (Y4..Y0)
-       4..0  = coarse X (X4..X0)
-
-fineX (“x” latch) — 3 bits
-bits: 2..0 = fine X (0–7)
-
-
-*/
-
-function dmaTransfer(value) {
-    // value = page number (upper 8 bits of source address)
-    let start = value << 8; // $XX00
-
-    // Copy 256 bytes from CPU RAM to OAM
-    for (let i = 0; i < 256; ++i) {
-        // NES hardware: Only RAM ($0000–$07FF) is directly DMA'able. Mirroring applies.
-        PPU_OAM[i] = systemMemory[(start + i) & 0x7FF];
-    }
-
-    // Add correct cycle penalty:
-    // If CPU is on an **odd** cycle, penalty = 514 cycles
-    // If CPU is on an **even** cycle, penalty = 513 cycles
-    cpuCycles += (cpuCycles & 1) ? 514 : 513;
-}
-
-// VRAM: $0000–$1FFF (pattern tables, usually ROM, sometimes RAM)
-window.ppuCHR = new Uint8Array(0x2000);
-
-// Nametables: $2000–$2FFF (2KB, mirrors handled externally for 4-screen, etc)
-window.ppuNT = new Uint8Array(0x1000); // Nametable RAM (standard NES: 2KB mirrored)
-
-// Palette RAM: $3F00–$3F1F
-window.ppuPalette = new Uint8Array(0x20);
-
-// OAM (sprite memory)
-let PPU_OAM = new Uint8Array(256);
-
-// ---------------------------------------------------------------------------
-// Handles all writes to PPU registers ($2000–$2007 only, addr is already folded)
-// ---------------------------------------------------------------------------
+// ============================
+// CPU <-> PPU Interface
+// ============================
 function ppuWrite(addr, value) {
   value &= 0xFF;
-
   switch (addr) {
-
-    // $2000 — PPUCTRL (write-only)
-    //   bit 7: NMI on VBLANK
-    //   bit 2: VRAM increment (0:+1, 1:+32)
-    //   bits 1..0: base nametable -> copied to t[11:10]
-    case 0x2000: {
+    case 0x2000:
       PPUregister.CTRL = value;
-      // Copy nametable select into t (loopy rule): t[11:10] = NN
       PPUregister.t = (PPUregister.t & 0xF3FF) | ((value & 0x03) << 10);
-      cpuOpenBus = value;
       break;
-    }
-
-    // $2001 — PPUMASK (write-only)
-    case 0x2001: {
+    case 0x2001:
       PPUregister.MASK = value;
-      cpuOpenBus = value;
       break;
-    }
-
-    // $2002 — PPUSTATUS (read-only)
-    // Ignored on write; keep a commented line here for test harnesses if needed.
-    case 0x2002: {
-      // PPUregister.STATUS = value; // (test-only) allow forcing status
-      break;
-    }
-
-    // $2003 — OAMADDR (write-only)
-    case 0x2003: {
+    case 0x2003:
       PPUregister.OAMADDR = value;
-      cpuOpenBus = value;
       break;
-    }
-
-    // $2004 — OAMDATA (read/write)
-    // Write: store byte at current OAMADDR, then OAMADDR++
-    case 0x2004: {
+    case 0x2004:
       PPU_OAM[PPUregister.OAMADDR] = value;
-      PPUregister.OAMDATA = value;                 // mirror of the last written value
       PPUregister.OAMADDR = (PPUregister.OAMADDR + 1) & 0xFF;
-      cpuOpenBus = value;
       break;
-    }
-
-    // $2005 — PPUSCROLL (write-only, two writes)
-    //  1st write: fine X (x = d0..2), coarse X -> t[4:0] = d3..7
-    //  2nd write: fine Y -> t[14:12] = d0..2, coarse Y -> t[9:5] = d3..7
-    case 0x2005: {
+    case 0x2005:
       if (!PPUregister.writeToggle) {
-        // First write
-        PPUregister.SCROLL_X = value;              // optional mirror for UI
-        PPUregister.fineX = value & 0x07;          // x = d0..2
-        PPUregister.t = (PPUregister.t & ~0x001F)  // t[4:0] = d3..7
-                      | ((value >> 3) & 0x1F);
+        PPUregister.SCROLL_X = value;
+        PPUregister.fineX = value & 0x07;
+        PPUregister.t = (PPUregister.t & ~0x001F) | ((value >> 3) & 0x1F);
         PPUregister.writeToggle = true;
       } else {
-        // Second write
-        PPUregister.SCROLL_Y = value;              // optional mirror for UI
-        PPUregister.t = (PPUregister.t & ~(0x7000 | 0x03E0))   // clear fineY + coarseY
-                      | (((value & 0x07) << 12)                // t[14:12] = d0..2 (fineY)
-                      |  (((value >> 3) & 0x1F) << 5));        // t[9:5]   = d3..7 (coarseY)
+        PPUregister.SCROLL_Y = value;
+        PPUregister.t = (PPUregister.t & ~(0x7000 | 0x03E0))
+          | ((value & 0x07) << 12)
+          | (((value >> 3) & 0x1F) << 5);
         PPUregister.writeToggle = false;
       }
-      cpuOpenBus = value;
       break;
-    }
-
-    // $2006 — PPUADDR (write-only, two writes)
-    //  1st write (high): t = (t & 0x00FF) | ((value & 0x3F) << 8) ; w=1
-    //  2nd write (low):  t = (t & 0x7F00) | value ; VRAM_ADDR = t & 0x3FFF ; w=0
-    // We **do not** use PPUregister.v; we drive the bus address with VRAM_ADDR.
-    case 0x2006: {
+    case 0x2006:
       if (!PPUregister.writeToggle) {
-        PPUregister.ADDR_HIGH = value;                    // optional mirror for UI
+        PPUregister.ADDR_HIGH = value;
         PPUregister.t = (PPUregister.t & 0x00FF) | ((value & 0x3F) << 8);
         PPUregister.writeToggle = true;
       } else {
-        PPUregister.ADDR_LOW = value;                     // optional mirror for UI
+        PPUregister.ADDR_LOW = value;
         PPUregister.t = (PPUregister.t & 0x7F00) | value;
-        // Load current VRAM address from t (bus uses 14-bit space 0x0000–0x3FFF)
         PPUregister.VRAM_ADDR = PPUregister.t & 0x3FFF;
         PPUregister.writeToggle = false;
       }
-      cpuOpenBus = value;
       break;
-    }
-
-    // $2007 — PPUDATA (read/write)
-    // WRITE path here; READ path is in ppuRead($2007).
-    // On write: store to CHR/NT/Palette depending on VRAM_ADDR, then increment VRAM_ADDR by 1 or 32.
     case 0x2007: {
-      const addr = PPUregister.VRAM_ADDR & 0x3FFF;
-      const val  = value; // already &0xFF above
-
-      if (addr < 0x2000) {
-        // Pattern tables (CHR). Writes only take effect if CHR-RAM; harmless otherwise.
-        ppuCHR[addr] = val;
-      } else if (addr < 0x3F00) {
-        // Nametables (mirroring handled by the 4KB backing via &0x0FFF)
-        ppuNT[addr & 0x0FFF] = val;
-      } else {
-        // Palette RAM with mirrors for $3F10/$3F14/$3F18/$3F1C -> $3F00/$3F04/$3F08/$3F0C
-        let palAddr = addr & 0x1F;
-        if (palAddr === 0x10 || palAddr === 0x14 || palAddr === 0x18 || palAddr === 0x1C) {
-          palAddr &= ~0x10;
-        }
-        // NES palette entries are 6-bit values; mask if you’re storing raw indices.
-        ppuPalette[palAddr] = val & 0x3F;
-      }
-
-      // Post-write VRAM increment: +1 or +32 depending on CTRL bit 2
+      const addrVRAM = PPUregister.VRAM_ADDR & 0x3FFF;
+      ppuBusWrite(addrVRAM, value);
       const step = (PPUregister.CTRL & 0x04) ? 32 : 1;
       PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR + step) & 0x3FFF;
-
-      cpuOpenBus = value;
       break;
     }
-
-    default:
-      // Any other writes to 0x2000–0x2007 range should be impossible after folding,
-      // but if they sneak through, treat as open bus sink.
-      cpuOpenBus = value;
-      break;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Handles all reads from PPU registers ($2000–$2007 only, addr is already folded)
-// ---------------------------------------------------------------------------
 function ppuRead(addr) {
   switch (addr) {
-
-    // $2002 — PPUSTATUS (read)
-    // Reading returns current STATUS, then:
-    //   - clears VBLANK flag (bit 7 -> 0)
-    //   - resets the $2005/$2006 write toggle (w = 0)
     case 0x2002: {
-      const ret = PPUregister.STATUS & 0xFF;
-      PPUregister.STATUS &= 0x7F;     // clear VBL
+      const ret = PPUregister.STATUS;
+      PPUregister.STATUS &= ~0x80;
       PPUregister.writeToggle = false;
-      cpuOpenBus = ret;
       return ret;
     }
-
-    // $2004 — OAMDATA (read)
-    // Reads do NOT increment OAMADDR on the NES.
-    case 0x2004: {
-      const val = PPU_OAM[PPUregister.OAMADDR] & 0xFF;
-      cpuOpenBus = val;
-      return val;
-    }
-
-    // $2007 — PPUDATA (read)
-    // Buffered read semantics:
-    //   - For addr < $3F00 (CHR + nametables): return the **old** buffer,
-    //     then refill the buffer from the bus at addr.
-    //   - For $3F00–$3FFF (palette): return palette **immediately** (no delay).
-    //     Buffer is refilled from the underlying nametable/CHR at (addr & $2FFF).
-    // After the read, VRAM_ADDR increments by +1 or +32 (CTRL bit 2).
+    case 0x2004:
+      return PPU_OAM[PPUregister.OAMADDR] & 0xFF;
     case 0x2007: {
-      const addr = PPUregister.VRAM_ADDR & 0x3FFF;
+      const addrVRAM = PPUregister.VRAM_ADDR & 0x3FFF;
       let ret;
-
-      if (addr < 0x3F00) {
-        // Return previous buffer value, then fetch new data into the buffer
-        ret = (PPUregister.VRAM_DATA & 0xFF);
-        if (addr < 0x2000) {
-          PPUregister.VRAM_DATA = ppuCHR[addr] & 0xFF;
-        } else {
-          PPUregister.VRAM_DATA = ppuNT[addr & 0x0FFF] & 0xFF;
-        }
+      if (addrVRAM < 0x3F00) {
+        ret = PPUregister.VRAM_DATA;
+        PPUregister.VRAM_DATA = ppuBusRead(addrVRAM);
       } else {
-        // Palette read: direct return with internal mirroring
-        let palAddr = addr & 0x1F;
-        if (palAddr === 0x10 || palAddr === 0x14 || palAddr === 0x18 || palAddr === 0x1C) {
-          palAddr &= ~0x10;
-        }
-        ret = ppuPalette[palAddr] & 0xFF;
-
-        // Refill buffer with underlying nametable/CHR at addr & $2FFF
-        // (This matches NES quirk: palette reads don't populate buffer with palette.)
-        const under = addr & 0x2FFF;
-        if (under < 0x2000) {
-          PPUregister.VRAM_DATA = ppuCHR[under] & 0xFF;
-        } else {
-          PPUregister.VRAM_DATA = ppuNT[under & 0x0FFF] & 0xFF;
-        }
+        ret = ppuBusRead(addrVRAM);
+        PPUregister.VRAM_DATA = ppuBusRead(addrVRAM - 0x1000);
       }
-
-      // Post-read VRAM increment: +1 or +32
       const step = (PPUregister.CTRL & 0x04) ? 32 : 1;
       PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR + step) & 0x3FFF;
-
-      cpuOpenBus = ret & 0xFF;
-      return ret & 0xFF;
+      return ret;
     }
+  }
+  return cpuOpenBus;
+}
 
-    // All other registers (including write-only ones) read as open bus.
-    default: {
-      return cpuOpenBus & 0xFF;
-    }
+// ============================
+// VRAM / Palette Access
+// ============================
+function ppuBusRead(addr) {
+  addr &= 0x3FFF;
+  if (addr < 0x2000) {
+    return chrRom[addr];
+  } else if (addr < 0x3F00) {
+    return systemMemoryVideo[addr - 0x2000];
+  } else {
+    let palAddr = addr & 0x1F;
+    if ((palAddr & 0x13) === 0x10) palAddr &= ~0x10;
+    return systemMemoryVideo[0x3F00 - 0x2000 + palAddr];
   }
 }
 
-//================================= PPU per tick Emulation section =================================
-
-// ── PPU timing state
-const PPUclock = {
-  scanline:   261,    // pre-render scanline
-  dot:        0,      // 0..340
-  frame:      0,      // running counter
-  odd:        0,      // 0 even, 1 odd
-  //nmiPending: false,  // bit 7 of PPUCTRL, now global
-  ticks:      0       // total PPU ticks since start
-};
-
-// Reset counters & status
-function ppuResetCounters() {
-  PPUclock.scanline   = 261;
-  PPUclock.dot        = 0;
-  PPUclock.frame      = 0;
-  PPUclock.odd        = 0;
-  PPUclock.ticks      = 0;
-
-  // loopy registers (15-bit v/t), fine X, write toggle (w)
-  PPUregister.t = 0;
-  PPUregister.fineX = 0;
-  PPUregister.VRAM_ADDR = 0x0000;
- 
-  PPUregister.STATUS = 0x00;
-  PPUregister.writeToggle = false;
+function ppuBusWrite(addr, value) {
+  addr &= 0x3FFF;
+  if (ppuDebugLogging && addr >= 0x2000) {
+    console.log(`[PPU] VRAM write @${addr.toString(16).padStart(4, "0")} = ${value.toString(16).padStart(2, "0")}`);
+  }
+  if (addr < 0x2000) {
+    if (chrIsRAM) chrRom[addr] = value;
+  } else if (addr < 0x3F00) {
+    systemMemoryVideo[addr - 0x2000] = value;
+  } else {
+    let palAddr = addr & 0x1F;
+    if ((palAddr & 0x13) === 0x10) palAddr &= ~0x10;
+    systemMemoryVideo[0x3F00 - 0x2000 + palAddr] = value & 0x3F;
+  }
 }
 
-// Advance one PPU tick
+// ============================
+// Scrolling Helpers
+// ============================
+function incCoarseX() {
+  if ((PPUregister.VRAM_ADDR & 0x001F) === 31) {
+    PPUregister.VRAM_ADDR &= ~0x001F;
+    PPUregister.VRAM_ADDR ^= 0x0400;
+  } else {
+    PPUregister.VRAM_ADDR++;
+  }
+}
+function incY() {
+  if ((PPUregister.VRAM_ADDR & 0x7000) !== 0x7000) {
+    PPUregister.VRAM_ADDR += 0x1000;
+  } else {
+    PPUregister.VRAM_ADDR &= ~0x7000;
+    let y = (PPUregister.VRAM_ADDR & 0x03E0) >> 5;
+    if (y === 29) {
+      y = 0;
+      PPUregister.VRAM_ADDR ^= 0x0800;
+    } else if (y === 31) {
+      y = 0;
+    } else {
+      y++;
+    }
+    PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR & ~0x03E0) | (y << 5);
+  }
+}
+function copyHoriz() {
+  PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR & ~0x041F) | (PPUregister.t & 0x041F);
+}
+function copyVert() {
+  PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR & ~0x7BE0) | (PPUregister.t & 0x7BE0);
+}
+
+// ============================
+// DMA (cycle-accurate)
+// ============================
+    function dmaTransfer(value) {
+    let even = false;
+    let start = value << 8;
+    for (let i = 0; i < 256; ++i) {
+      PPU_OAM[i] = systemMemory[(start + i) & 0x7FF];
+    }
+    if (cpuCycles % 2 === 0) even = true;
+    if (even) for (let i = 0; i < 513 * 3; i++) ppuTick();
+    else for (let i = 0; i < 514 * 3; i++) ppuTick();
+    if (ppuDebugLogging) console.log(`[PPU] DMA transfer from page ${value.toString(16).padStart(2, "0")}`);
+    }
+
+// ============================
+// Rendering Helpers
+// ============================
+function reloadBGShifters() {
+  PPUregister.BG.bgShiftLo = (PPUregister.BG.bgShiftLo & 0xFF00) | PPUregister.BG.tileLo;
+  PPUregister.BG.bgShiftHi = (PPUregister.BG.bgShiftHi & 0xFF00) | PPUregister.BG.tileHi;
+
+  const at = PPUregister.BG.atByte;
+  const palLo = (at & 1) ? 0xFF : 0x00;
+  const palHi = (at & 2) ? 0xFF : 0x00;
+  PPUregister.BG.atShiftLo = (PPUregister.BG.atShiftLo & 0xFF00) | palLo;
+  PPUregister.BG.atShiftHi = (PPUregister.BG.atShiftHi & 0xFF00) | palHi;
+}
+
+function emitPixel() {
+  const x = PPUclock.dot - 1;
+  const y = PPUclock.scanline;
+  if (x < 0 || x >= NES_W || y < 0 || y >= NES_H) return;
+
+  const fineX = PPUregister.fineX;
+  const bit0 = (PPUregister.BG.bgShiftLo >> (15 - fineX)) & 1;
+  const bit1 = (PPUregister.BG.bgShiftHi >> (15 - fineX)) & 1;
+  const bgPixel = (bit1 << 1) | bit0;
+
+  const pal0 = (PPUregister.BG.atShiftLo >> (15 - fineX)) & 1;
+  const pal1 = (PPUregister.BG.atShiftHi >> (15 - fineX)) & 1;
+  const paletteBits = (pal1 << 1) | pal0;
+
+  let paletteIndex = (paletteBits << 2) | bgPixel;
+  if (bgPixel === 0) paletteIndex = 0;
+
+  pixelColorIndex[y * NES_W + x] = paletteIndex & 0x3F;
+}
+
+// ============================
+// PPU Main Tick
+// ============================
 function ppuTick() {
-  PPUclock.ticks++;
+  const renderingEnabled = (PPUregister.MASK & 0x08) || (PPUregister.MASK & 0x10);
 
-    // Horizontal copy (t -> current) at dot 257 on visible & pre-render scanlines
-  if (PPUclock.dot === 257) {
-    // copy coarse X (bits 0..4) and nametable X (bit 10)
-    PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR & ~0x041F) | (PPUregister.t & 0x041F);
+  if (PPUclock.scanline === 0 && PPUclock.dot === 0 && ppuDebugLogging) {
+    console.log(`[PPU] Frame ${PPUclock.frame} start`);
   }
 
-  // Vertical copy (t -> current) on pre-render scanline, dots 280..304 inclusive
-  if (PPUclock.scanline === 261 && PPUclock.dot >= 280 && PPUclock.dot <= 304) {
-    // copy fine Y (14..12), coarse Y (9..5), nametable Y (11)
-    PPUregister.VRAM_ADDR = (PPUregister.VRAM_ADDR & ~0x7BE0) | (PPUregister.t & 0x7BE0);
+  if (PPUclock.scanline >= 0 && PPUclock.scanline < 240) {
+    if (renderingEnabled) {
+      if ((PPUclock.dot >= 1 && PPUclock.dot <= 256) || (PPUclock.dot >= 321 && PPUclock.dot <= 336)) {
+        PPUregister.BG.bgShiftLo <<= 1;
+        PPUregister.BG.bgShiftHi <<= 1;
+        PPUregister.BG.atShiftLo <<= 1;
+        PPUregister.BG.atShiftHi <<= 1;
+
+        switch (PPUclock.dot % 8) {
+          case 1:  PPUregister.BG.ntByte = ppuBusRead(0x2000 | (PPUregister.VRAM_ADDR & 0x0FFF)); break;
+          case 3:  PPUregister.BG.atByte = ppuBusRead(0x23C0 | (PPUregister.VRAM_ADDR & 0x0C00) | ((PPUregister.VRAM_ADDR >> 4) & 0x38) | ((PPUregister.VRAM_ADDR >> 2) & 0x07)); break;
+          case 5:  PPUregister.BG.tileLo = ppuBusRead(((PPUregister.CTRL & 0x10) ? 0x1000 : 0x0000) + (PPUregister.BG.ntByte * 16) + ((PPUregister.VRAM_ADDR >> 12) & 7)); break;
+          case 7:  PPUregister.BG.tileHi = ppuBusRead(((PPUregister.CTRL & 0x10) ? 0x1000 : 0x0000) + (PPUregister.BG.ntByte * 16) + ((PPUregister.VRAM_ADDR >> 12) & 7) + 8); break;
+          case 0:  reloadBGShifters(); incCoarseX(); break;
+        }
+      }
+      if (PPUclock.dot === 256) incY();
+      if (PPUclock.dot === 257) copyHoriz();
+    }
+    if (PPUclock.dot >= 1 && PPUclock.dot <= 256) emitPixel();
   }
 
-
-  // ---- VBLANK start ----
   if (PPUclock.scanline === 241 && PPUclock.dot === 1) {
-    PPUregister.STATUS |= 0x80; // set vblank flag
-    if (PPUregister.CTRL & 0x80) { // check bit 7 PPUCTRL
-      // service NMI next CPU step (servicing directly here could cause edge case bugs (test roms))
-      nmiPending = true;
-    }
-    if (debugLogging) {
-      console.log(`[PPU] Enter VBLANK frame=${PPUclock.frame} ticks=${PPUclock.ticks}`);
-    }
+    PPUregister.STATUS |= 0x80;
+    if (ppuDebugLogging) console.log(`[PPU] VBlank start`);
+    if (PPUregister.CTRL & 0x80) nmiPending = true;
   }
 
-  // ---- VBLANK clear ----
-  if (PPUclock.scanline === 261 && PPUclock.dot === 1) {
-    PPUregister.STATUS &= 0x1F; // clear vblank/sprite0/overflow
-    PPUregister.writeToggle = false;
-    if (debugLogging) {
-      console.log(`[PPU] Leave VBLANK frame=${PPUclock.frame} ticks=${PPUclock.ticks}`);
+  if (PPUclock.scanline === -1 || PPUclock.scanline === 261) {
+    if (PPUclock.dot === 1) {
+      PPUregister.STATUS &= ~0x80;
+      if (ppuDebugLogging) console.log(`[PPU] VBlank end`);
     }
+    if (renderingEnabled && PPUclock.dot >= 280 && PPUclock.dot <= 304) copyVert();
   }
 
-  // ---- optional heartbeat ----
-  if (debugLogging && (PPUclock.ticks % 10000 === 0)) {
-    console.log(`[PPU] tick=${PPUclock.ticks} scanline=${PPUclock.scanline} dot=${PPUclock.dot}`);
-  }
-
-  // ---- advance counters ----
   PPUclock.dot++;
-  if (PPUclock.dot > 340) {
+  if (PPUclock.dot >= DOTS_PER_SCANLINE) {
     PPUclock.dot = 0;
     PPUclock.scanline++;
-    if (PPUclock.scanline > 261) {
-      PPUclock.scanline = 0;
+    if (PPUclock.scanline >= SCANLINES_PER_FRAME) {
+      renderFrame();
+      if (ppuDebugLogging) console.log(`[PPU] Frame ${PPUclock.frame} complete`);
+      PPUclock.scanline = -1;
       PPUclock.frame++;
-      PPUclock.odd ^= 1;
+      PPUclock.oddFrame = !PPUclock.oddFrame;
     }
   }
 }
 
-  /*
-  ============================================================
-  NES PPU TICK OVERVIEW  (called once per PPU dot / pixel)
-  ============================================================
-
-  Timing constants (NTSC):
-    - 3 PPU ticks per 1 CPU cycle. You already call ppuTick() 3× per CPU cycle.
-    - 1 scanline = 341 PPU ticks (a.k.a. "dots" or "cycles")
-    - 1 frame = 262 scanlines:
-        visible:   0..239
-        postrend:  240
-        vblank:    241..260
-        pre-render:261  (often referred to as -1)
-    - Odd-frame cycle skip: when background rendering is enabled,
-      the pre-render scanline (261) has one PPU cycle skipped
-      (the classic “odd frame” shortening by 1 dot). You can add
-      this later; it’s not required to get basic boot working.
-
-  PPU state you should maintain globally:
-    - scanline:    0..261  (use 261 for pre-render)
-    - dot:         0..340  (tick index within scanline)
-    - frameParity: 0 or 1  (even/odd)
-    - registers:   PPUCTRL ($2000), PPUMASK ($2001), PPUSTATUS ($2002)
-    - loopy regs:  v (current VRAM addr), t (temp VRAM addr), x (fine X), w (write toggle)
-    - shifters:    bg pattern shifters + attribute shifters (can add after you see tiles)
-    - sprites:     secondary OAM, sprite eval state (add later)
-    - nmiPending:  boolean latch to request NMI on the CPU - sorted
-    - spriteZeroHit, spriteOverflow: status bits you’ll set later
-
-  ============================================
-  1) PER-TICK COUNTERS AND ODD-FRAME SKIP
-  ============================================
-  - Advance (dot, scanline); wrap at dot==341 -> next scanline, wrap at scanline==262 -> frame++.
-  - If you implement odd-frame skip: on pre-render scanline (261), dot==339,
-    and if rendering is enabled (PPUMASK shows BG or Sprites), skip the dot:
-      - increment to next scanline without producing a tick at 340.
-    (This makes the frame 89341 PPU cycles instead of 89342.)
-
-  ============================================
-  2) VBLANK & NMI TIMING (the thing your ROM waits for)
-  ============================================
-  - When scanline == 241 and dot == 1:
-      set PPUSTATUS bit 7 (VBLANK) = 1
-      if (PPUCTRL bit 7 "NMI enable" == 1) set nmiPending = true  - sorted
-      (CPU will service NMI at/after the next instruction boundary.)
-  - When scanline == 261 (pre-render) and dot == 1:
-      clear PPUSTATUS bit 7 (VBLANK) = 0
-      clear spriteZeroHit (bit 6) and spriteOverflow (bit 5)
-      (A read of $2002 also clears VBLANK and resets the w toggle; you already do that in your bus.)
-
-  ============================================
-  3) VISIBLE SCANLINES (0..239): background/sprite pipeline landmarks
-  ============================================
-  - Dots 1..256:
-      * Output pixels (if rendering enabled in PPUMASK). For first bring-up,
-        you can skip actual drawing until shifters are ready.
-      * Each tick:
-          - shift BG shifters (once you implement them)
-          - fetch pipeline runs on a repeating 8-cycle cadence:
-              1: fetch nametable byte
-              3: fetch attribute byte
-              5: fetch BG pattern low
-              7: fetch BG pattern high
-              8: reload shifters with fetched tile data
-          - increment coarse X each 8 dots (or per-dot with the internal carry rules).
-      * At dot 256:
-          - increment vertical position (fine Y and coarse Y) per the loopy v rules.
-      * At dot 257:
-          - copy horizontal scroll bits from t -> v (coarse X + nametable X).
-  - Dots 257..320:
-      * Sprite evaluation for NEXT scanline: copy up to 8 sprites into secondary OAM.
-        (You can stub this at first; many ROMs will still proceed.)
-  - Dots 321..340:
-      * Fetch the first two background tiles for the NEXT scanline
-        (so shifters are primed when the next scanline starts).
-  - Dot 0:
-      * Idle / internal. (Some docs start from dot 1; you can treat dot 0 as a no-op.)
-
-  ============================================
-  4) POST-RENDER SCANLINE (240)
-  ============================================
-  - No rendering; idle. (Games may do VRAM updates here if rendering is disabled.)
-
-  ============================================
-  5) VBLANK SCANLINES (241..260)
-  ============================================
-  - VBLANK is active. No rendering. NMI may fire once if enabled in PPUCTRL.
-  - Remember: reading $2002 clears VBLANK immediately (your bus does this).
-
-  ============================================
-  6) PRE-RENDER SCANLINE (261)
-  ============================================
-  - This scanline “preps” the next frame.
-  - At dot 1: clear VBLANK, spriteZeroHit, spriteOverflow.
-  - Dots 280..304 (inclusive): copy vertical scroll bits from t -> v
-      (fine Y + coarse Y + nametable Y). This only happens when rendering is enabled.
-  - Dots 321..340: fetch the first two tiles for scanline 0 (same as visible lines).
-
-  ============================================
-  7) SCROLL/COPY RULES (loopy v/t/x/w)
-  ============================================
-  - Writes to $2005/$2006 with the w toggle set up t, x, and v:
-      * $2005 write #1: set fine X (x = value & 7), coarse X (t bits 0..4)
-      * $2005 write #2: set fine Y (t bits 12..14), coarse Y (t bits 5..9)
-      * $2006 write #1: t high byte (t bits 8..13)
-      * $2006 write #2: t low byte  (t bits 0..7), then v = t
-      * Any read of $2002 clears w = 0
-  - During rendering:
-      * Horizontal copy (t->v) at dot 257 of visible & pre-render scanlines.
-      * Vertical copy (t->v) at dots 280..304 of pre-render scanline.
-      * Horizontal increment (coarse X) each tile (every 8 dots).
-      * Vertical increment at dot 256 (fine Y + coarse Y carry).
-
-  ============================================
-  8) $2007 VRAM INCREMENT RULES
-  ============================================
-  - After each CPU read/write of $2007, v += (PPUCTRL bit 2 ? 32 : 1).
-    You’re handling this in your ppuRead/ppuWrite of $2007 (recommended).
-  - $3F00-$3F1F palette reads are special (no read buffer); you can add later.
-
-  ============================================
-  9) HOW THIS UNBLOCKS YOUR VBLANK WAIT LOOP
-  ============================================
-  - Your ROM polls $2002 and branches until bit 7 (VBLANK) is 1.
-  - Make sure ppuTick() sets VBLANK at (scanline==241 && dot==1).
-  - Because you call ppuTick() 3× per CPU cycle, VBLANK will be reached in
-    ~29780 CPU cycles per frame (NTSC). On your first frame, once that milestone is hit,
-    PPUSTATUS bit 7 flips to 1, your `AND #$80` becomes nonzero, and the loop falls through.
-  - On the *read* of $2002, VBLANK is cleared immediately by your bus (correct).
-    That matches hardware and the game proceeds to VRAM upload.
-
-  ============================================
-  10) NMI DELIVERY (simple model)
-  ============================================
-  - If PPUCTRL bit 7 is 1 when VBLANK is set, set nmiPending = true - sorted
-  - The CPU should check nmiPending between instructions; if true,
-    push PC+P to stack and jump to the NMI vector ($FFFA/FFFB), then clear nmiPending - sorted
-  - Exact-cycle NMI suppression/cancellation quirks exist; ignore them for now.
-
-  ============================================================
-  IMPLEMENTATION ORDER (pragmatic bring-up)
-  ============================================================
-  A) Implement counters (scanline/dot/frame), VBLANK set/clear, nmiPending.      (done)
-  B) Implement loopy w/t/v/x rules for $2005/$2006 and the copy points. (done)
-  C) Implement $2007 VRAM increment (1/32) (you likely did already). (done)
-
-  D) Add odd-frame skip later.
-
-  E) Add background shifters, then sprites, then exact palette/bus nuances.
-
-  */
-
+// ============================
+// Batch Render to Canvas
+// ============================
+function renderFrame() {
+  const rgbFrame = new Uint32Array(NES_W * NES_H);
+  for (let i = 0; i < pixelColorIndex.length; i++) {
+    const col = getColorForNESByte(pixelColorIndex[i]);
+    rgbFrame[i] =
+      (255 << 24) |
+      (parseInt(col.substr(1, 2), 16) << 16) |
+      (parseInt(col.substr(3, 2), 16) << 8) |
+      parseInt(col.substr(5, 2), 16);
+  }
+  blitNESFramePaletteIndex(rgbFrame, NES_W, NES_H);
+}

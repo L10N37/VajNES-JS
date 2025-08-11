@@ -3,6 +3,9 @@
 // Always ends up with a flat 32KB PRG-ROM region at $8000-$FFFF
 // Sets the reset vector for the CPU. No header export, just does its job.
 
+
+chrIsRAM = false;
+
 function mapper(nesHeader) {
   const prgBanks = nesHeader[4]; // 1 or 2 usually
   const chrBanks = nesHeader[5];

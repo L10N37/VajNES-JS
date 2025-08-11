@@ -15,10 +15,11 @@ let prgRom = new Uint8Array (32 * 1024);
 prgRom.fill(0x00);
 prgRom[0x00] = 0x02; // magic test suite byte, might have to change it to implement KIL (pointless?!)
 
+// chrRom extracted from game ROM (when game uses one, could be RAM?)
+let chrRom = new Uint8Array(0x2000); // 8KB character rom
+
 // Last value placed on the CPU bus ("open bus" behavior)
 let cpuOpenBus = 0x00;
-
-let chrRom = null; // Usually 8KB, sometimes more, null if CHR-RAM
 
 // CPU RAM read/write (called *after* folding)
 function cpuRead(addr) {

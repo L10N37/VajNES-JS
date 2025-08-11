@@ -6,6 +6,7 @@ let lastCpuCycleCount;
 
 let running = false;
 let debugLogging = true;
+
 // pending NMI tracker
 let nmiPending = false;
 
@@ -51,9 +52,12 @@ if (test) {
   opcodeFuncs[0x02] = () => { /* no-op */ };
 }
 
+// interrupt is called once per full frame
 function serviceNMI() {
-  // Push PC and P (with B=0, bit5=1), set I, then jump to $FFFA/$FFFB
   const pc = CPUregisters.PC & 0xFFFF;
+
+  console.log(`%c[CPU: NMI taken] frame=${PPUclock.frame} PC=$${pc.toString(16).padStart(4, "0").toUpperCase()}`,
+              "background:#004; color:#0ff; font-weight:bold");
 
   // push PCH
   cpuWrite(0x0100 + (CPUregisters.S & 0xFF), (pc >>> 8) & 0xFF);
@@ -71,16 +75,15 @@ function serviceNMI() {
   // set I flag
   CPUregisters.P = (CPUregisters.P | 0x04) & 0xFF;
 
-  // fetch vector $FFFA/$FFFB (use full bus so harness writes work)
+  // fetch vector
   const lo = checkReadOffset(0xFFFA) & 0xFF;
   const hi = checkReadOffset(0xFFFB) & 0xFF;
-  CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
+  const newPC = ((hi << 8) | lo) & 0xFFFF;
 
-  // 6502 NMI entry latency
-  cpuCycles = (cpuCycles + 7) & 0xFFFF;
+  console.log(`%c[CPU: NMI vector → $${newPC.toString(16).padStart(4, "0").toUpperCase()}] frame=${PPUclock.frame}`,
+              "background:#004; color:#0ff; font-weight:bold");
 
-  // clear latch(es)
-  nmiPending = false;
+  CPUregisters.PC = newPC;
 }
 
 // ── Single‐step executor ──
@@ -117,6 +120,7 @@ function step() {
     if (nmiPending) {
     nmiPending = false;
     serviceNMI();
+    for (let i = 0; i < 7 * 3; i++) ppuTick(); // 7 cycles for NMI, 21 more PPU ticks
   }
 
 

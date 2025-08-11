@@ -221,3 +221,19 @@ If your emulator loop is running and you don’t want it stopped by the first te
     cancelAnimationFrame(_animRAF);
   };
 })();
+
+
+function debugDumpPPUFrame() {
+  console.log("%c[PPU Debug Frame Dump]", "background:#222; color:#0f0; font-weight:bold");
+  for (let y = 0; y < NES_H; y++) {
+    let line = "";
+    let styles = [];
+    for (let x = 0; x < NES_W; x++) {
+      const idx = pixelColorIndex[y * NES_W + x];
+      const color = getColorForNESByte(idx);
+      line += "%c  "; // 2 spaces for "pixel"
+      styles.push(`background:${color};`);
+    }
+    console.log(line, ...styles);
+  }
+}
