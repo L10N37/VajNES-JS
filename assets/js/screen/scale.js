@@ -1,7 +1,3 @@
-// --- Scale modal wiring -----------------------------------------------------
-// Uses the same global scaleFactor and the applyScale() from screen.js.
-// No direct canvas fiddling here—one source of truth wins.
-
 let scaleModal = document.getElementById('scale-modal');
 
 // Open the modal (first item in your options bar)

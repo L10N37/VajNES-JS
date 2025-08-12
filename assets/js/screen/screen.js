@@ -60,8 +60,81 @@ screenButton.addEventListener('click', () => {
   scanlineScreen.style.display = 'block';
   NoSignalAudio.setEnabled(true);
 });
+const paletteOption = systemScreen.querySelector('.optionsBar li:nth-child(3)');
+if (paletteOption) {
+  paletteOption.style.cursor = 'pointer';
+  paletteOption.addEventListener('click', openPaletteModal);
+}
 
-const exitOption = systemScreen.querySelector('.optionsBar li:nth-child(3)');
+function openPaletteModal() {
+  // Destroy any existing instance
+  const existing = document.getElementById('palette-modal');
+  if (existing) existing.remove();
+
+  // Modal shell
+  const modal = document.createElement('div');
+  modal.id = 'palette-modal';
+  modal.className = 'palette-modal';
+  modal.innerHTML = `
+    <div class="palette-modal-backdrop"></div>
+    <div class="palette-modal-box" role="dialog" aria-labelledby="paletteModalTitle">
+      <div class="palette-modal-header">
+        <h3 id="paletteModalTitle">Select Palette</h3>
+        <button class="palette-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="palette-modal-body">
+        <label class="pal-opt"><input type="radio" name="palette" value="nesClassic" ${window.currentPaletteName === 'nesClassic' ? 'checked' : ''}> NES Classic</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fceuxDefault" ${window.currentPaletteName === 'fceuxDefault' ? 'checked' : ''}> FCEUX Default</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="smc2005" ${window.currentPaletteName === 'smc2005' ? 'checked' : ''}> SMC 2005</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxMagnum" ${window.currentPaletteName === 'fbxMagnum' ? 'checked' : ''}> FBX Magnum</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxSmooth" ${window.currentPaletteName === 'fbxSmooth' ? 'checked' : ''}> FBX Smooth</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxCompositeDirectFinal" ${window.currentPaletteName === 'fbxCompositeDirectFinal' ? 'checked' : ''}> FBX Composite Direct Final</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxVibrant" ${window.currentPaletteName === 'fbxVibrant' ? 'checked' : ''}> FBX Vibrant</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxSmoothBalancedGreys" ${window.currentPaletteName === 'fbxSmoothBalancedGreys' ? 'checked' : ''}> FBX Smooth Balanced Greys</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxNesClassic" ${window.currentPaletteName === 'fbxNesClassic' ? 'checked' : ''}> FBX NES Classic</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxYuvV3" ${window.currentPaletteName === 'fbxYuvV3' ? 'checked' : ''}> FBX YUV V3</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxUnsaturatedFinal" ${window.currentPaletteName === 'fbxUnsaturatedFinal' ? 'checked' : ''}> FBX Unsaturated Final</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxD93PvmStyle" ${window.currentPaletteName === 'fbxD93PvmStyle' ? 'checked' : ''}> FBX D93 PVM Style</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxD65PvmStyle" ${window.currentPaletteName === 'fbxD65PvmStyle' ? 'checked' : ''}> FBX D65 PVM Style</label>
+        <label class="pal-opt"><input type="radio" name="palette" value="fbxOriginalHardware" ${window.currentPaletteName === 'fbxOriginalHardware' ? 'checked' : ''}> FBX Original Hardware</label>
+      </div>
+      <div class="palette-modal-footer">
+        <button class="palette-apply">Apply</button>
+        <button class="palette-cancel">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const backdrop = modal.querySelector('.palette-modal-backdrop');
+  const closeBtn = modal.querySelector('.palette-close');
+  const cancelBtn = modal.querySelector('.palette-cancel');
+  const applyBtn = modal.querySelector('.palette-apply');
+
+  function close() { modal.remove(); }
+
+  // Apply: set palette + rebuild screen LUT
+  applyBtn.addEventListener('click', () => {
+    const sel = modal.querySelector('input[name="palette"]:checked');
+    if (sel && typeof window.setCurrentPalette === 'function') {
+      window.setCurrentPalette(sel.value);
+    }
+    if (typeof window._rebuildPaletteLUT === 'function') {
+      window._rebuildPaletteLUT();
+    }
+    close();
+  });
+
+  // Cancel/close behaviors
+  cancelBtn.addEventListener('click', close);
+  closeBtn.addEventListener('click', close);
+  backdrop.addEventListener('click', close);
+  document.addEventListener('keydown', function escClose(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escClose); }
+  }, { once: true });
+}
+
+const exitOption = systemScreen.querySelector('.optionsBar li:nth-child(4)');
 exitOption.addEventListener('click', () => {
   systemScreen.style.display   = 'none';
   grilleScreen.style.display   = 'none';
@@ -258,6 +331,11 @@ function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(_offIndex.canvas, 0, 0, width, height, 0, 0, canvas.width, canvas.height);
+
+  // Remember last frame so palette changes can re-blit instantly
+  window._lastIndexFrame = indexUint8Array;
+  window._lastIndexSize  = { w: width, h: height };
+
 }
 
 // Small quality-of-life: a blur slider already exists
@@ -266,3 +344,14 @@ slider.addEventListener('input', (event) => {
   const v = Math.min(Math.max(+event.target.value || 0, 0), 5);
   document.getElementById('screen-canvas').style.filter = `blur(${v.toFixed(1)}px)`;
 });
+
+function redrawWithCurrentPalette() {
+  if (!window._lastIndexFrame || !window._lastIndexSize) return;
+  if (typeof window._rebuildPaletteLUT === 'function') {
+    window._rebuildPaletteLUT(); // Refresh internal colour table from palettes.js
+  }
+  const { w, h } = window._lastIndexSize;
+  blitNESFramePaletteIndex(window._lastIndexFrame, w, h);
+}
+window.redrawWithCurrentPalette = redrawWithCurrentPalette;
+

@@ -183,3 +183,12 @@ function ppuBusWrite(addr, value) {
 function ppuTick(){
   //TODO
 }
+
+/*
+Timing
+------------------------------------------------------------------------------------------------------------
+A Nintendo Entertainment System (NES) Picture Processing Unit (PPU) takes 341 * 262 = 89342 PPU clock cycles 
+to draw a full frame on an NTSC display. Each frame consists of 262 scanlines, and each scanline takes 341 
+PPU clock cycles, according to NesDev.org. 
+------------------------------------------------------------------------------------------------------------
+*/

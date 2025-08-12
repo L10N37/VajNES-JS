@@ -2912,6 +2912,8 @@ function BVS_REL() {
   }
 }
 
+
+/*
 //////////////////////// 6502 CPU opcode object ////////////////////////
 const opcodes = {
 
@@ -3337,3 +3339,4 @@ for (const opname in opcodes) for (const variant in opcodes[opname]) {
 //  - STA/STX/STY/SHY/SHX/SAX do NOT add cycles for page cross (quirk vs. LDA etc)
 //
 //  - JMP (indirect) is always 5 cycles, never adds a cycle for page wrap bug
+*/

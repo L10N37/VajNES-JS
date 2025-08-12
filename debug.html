@@ -31,44 +31,28 @@
     </div>
   </header>
 
-<!-- Tile Viewer Modal -->
-<div id="tileModal" class="TileViewModal">
-  <div class="tileView-modal-box">
-    <div class="modal-header">
-      <h2>NES Tile Viewer</h2>
-      <button id="closeTileModal" class="close-button">&times;</button>
-    </div>
-    <div class="">
-      <div class="canvas-wrapper">
-        <div class="canvas-container">
-          <h3>Background</h3>
-          <canvas id="bgCanvas" width="256" height="256"></canvas>
-        </div>
-        <div class="canvas-container">
-          <h3>Sprites</h3>
-          <canvas id="fgCanvas" width="256" height="256"></canvas>
-        </div>
+  <!-- Tile Viewer Modal -->
+  <div id="tileModal" class="TileViewModal" aria-hidden="true">
+    <div class="tileView-modal-box" role="dialog" aria-labelledby="tileViewerTitle">
+      <div class="modal-header">
+        <h2 id="tileViewerTitle">NES Tile Viewer</h2>
+        <button id="closeTileModal" class="close-button" aria-label="Close">&times;</button>
       </div>
 
-      <!-- palette selector -->
-      <div class="palette-selector">
-        <h3>Select Palette:</h3>
-        <label>
-          <input type="radio" name="palette" value="nesClassic" checked>
-          NES Classic
-        </label>
-        <label>
-          <input type="radio" name="palette" value="fceuxDefault">
-          FCEUX Default
-        </label>
-        <label>
-          <input type="radio" name="palette" value="smc2005">
-          SMC 2005
-        </label>
+      <div class="tileView-content">
+        <div class="canvas-wrapper">
+          <div class="canvas-container">
+            <h3>Background</h3>
+            <canvas id="bgCanvas" width="256" height="256"></canvas>
+          </div>
+          <div class="canvas-container">
+            <h3>Sprites</h3>
+            <canvas id="fgCanvas" width="256" height="256"></canvas>
+          </div>
+        </div>
       </div>
     </div>
   </div>
-</div>
   
   <!-- Modal window -->
   <div id="modal" class="modal">
@@ -129,16 +113,17 @@
 </main>
 
   <!-- the 256 * 240 NTSC screen modal, size set in js file (PAL is 256 * 288) -->
-  <div id="system-screen-modal" class="screenModal">
-    <canvas id="screen-canvas"></canvas>
-    <div class="optionsBar">
-      <ul>
-        <li>Scale</li>
-        <li>Scanlines</li>
-        <li>Exit</li>
-      </ul>
+    <div id="system-screen-modal" class="screenModal">
+      <canvas id="screen-canvas"></canvas>
+      <div class="optionsBar">
+        <ul>
+          <li>Scale</li>
+          <li>Scanlines</li>
+          <li>Palette</li>
+          <li>Exit</li>
+        </ul>
+      </div>
     </div>
-  </div>
 
 <!-- Grille underlay for grille emulation -->
 <div id="grille-screen-modal" class="grilleScreenModal">
@@ -260,6 +245,9 @@
 <script src="assets/js/offsetsHandler.js"></script>
 
 <script src="assets/js/screen/palettes.js"></script>
+
+<script src="test/ppuSimulation/ppu-sim.js"></script>
+
 <script src="assets/js/PPU.js"></script>
 <script src="assets/js/APU.js"></script>
 <script src="assets/js/mapper.js"></script>
