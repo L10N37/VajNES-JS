@@ -1,5 +1,5 @@
 function checkReadOffset(address) {
-  const addr = foldMirrors(address) & 0xFFFF;
+  const addr = address & 0xFFFF;
   let value;
 
   if (addr < 0x2000) { // CPU RAM
@@ -9,7 +9,7 @@ function checkReadOffset(address) {
   else if (addr < 0x4000) { // PPU registers (mirrored every 8)
     value = ppuRead(addr);
 
-    if (debugLogging) {
+    if (ppuDebugLogging) {
       const base = 0x2000 + (addr & 0x0007);
       const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
       const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
@@ -54,7 +54,7 @@ function checkReadOffset(address) {
 }
 
 function checkWriteOffset(address, value) {
-  const addr = (foldMirrors(address) & 0xFFFF);
+  const addr = address & 0xFFFF;
   value = value & 0xFF; // enforce 8-bit
 
   if (addr < 0x2000) { // CPU RAM
@@ -62,7 +62,7 @@ function checkWriteOffset(address, value) {
     // no logging
   }
   else if (addr < 0x4000) { // PPU registers
-    if (debugLogging) {
+    if (ppuDebugLogging) {
       const base = 0x2000 + (addr & 0x0007);
       const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
       const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
@@ -81,7 +81,7 @@ function checkWriteOffset(address, value) {
     ppuWrite(addr, value);
   }
   else if (addr === 0x4014) { // OAM DMA (PPU-related, keep logging)
-    if (debugLogging) {
+    if (ppuDebugLogging) {
       const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
       const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
       console.log(`[OAMDMA $4014 W] page=${h8(value)} src=${h16(value<<8)}..${h16((value<<8)|0xFF)}`);

@@ -29,7 +29,7 @@ let CPUregisters = {
   Y: 0x00,
   // initialized to 0xFF on power-up or reset?
   // https://www.nesdev.org/wiki/Stack
-  S: 0xFF,  // stack: stack operations push/pull to $0100–$01FF (the stack page in RAM), needs a fix
+  S: 0xFF,
   PC: 0x8000, // got sick of loading a dummy rom/ setting in console/ setting in the GUI, lets just start with this
   P: {
       C: 0,    // Carry
