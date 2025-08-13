@@ -1,6 +1,27 @@
-//easier to patch up my cycles for the test suite, then adjust test suite (some suites now false failing due to cycles)
-let ppuTicksToRun;
-//let lastCpuCycleCount;
+
+// Start PPU worker thread to run asynchronously with CPU
+const ppuWorker = new Worker('assets/js/ppu-worker.js');
+
+ppuWorker.postMessage({
+  SAB_CLOCKS: SHARED.SAB_CLOCKS,
+  SAB_EVENTS: SHARED.SAB_EVENTS,
+  SAB_FRAME:  SHARED.SAB_FRAME
+});
+
+/*
+ppuWorker.addEventListener('error', (e) => {
+  console.error('[PPU-Worker ERROR in main]:', e.message, e);
+});
+ppuWorker.addEventListener('messageerror', (e) => {
+  console.error('[PPU-Worker MESSAGEERROR in main]:', e);
+});
+
+ppuWorker.postMessage({
+  SAB_CLOCKS: SHARED.SAB_CLOCKS,
+  SAB_EVENTS: SHARED.SAB_EVENTS,
+  SAB_FRAME:  SHARED.SAB_FRAME
+});
+*/
 
 let running = false;
 let debugLogging = false;
@@ -183,30 +204,31 @@ function step() {
   }
 
   // Execute instruction
-  execFn();
+  execFn(); // this often adds extra cycles (opcode handler)
 
   // Advance cycles & PC
   CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]);
+  cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF; // add base cycles
 
-  // pseudo 3:1 PPU with cycles
-  //lastCpuCycleCount = cpuCycles & 0xFFFF;
-  cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0xFFFF;
-  // ppuTicksToRun = (cpuCycles - lastCpuCycleCount) * 3;
+  // Copy full current CPU cycle count to shared buffer for PPU worker
+  Atomics.store(SHARED.CLOCKS, 0, cpuCycles);
 
+  
+  // AFTER: (bit0 == 1 means NMI requested by PPU worker)
+  const ev = Atomics.load(SHARED.EVENTS, 0) | 0;
+  if (ev & 0b1) {
+    // clear NMI bit
+    Atomics.and(SHARED.EVENTS, 0, ~0b1);
 
-
-  // run 3 ppuTicks per cpu Cycle, but only at 700+ CPU cycles (~21000 PPU ticks in batch!)
-
-  // ppuTick will take the cpuCycles count, multiply by 3, and tick over that amount, on return
-  // cpuCycles will be reset to zero
-
-  if (nmiPending) {
-    nmiPending = false;
     serviceNMI();
-    cpuCycles += 7;// 7 CPU cycles spent for NMI servicing
+
+    // account for NMI CPU cycles
+    cpuCycles = (cpuCycles + 7) & 0x7fffffff;
+    Atomics.add(SHARED.CLOCKS, 0, 7);
   }
 
-  if (cpuCycles >= 500) ppuTick(); // tweaked the batch value , nothing helps, we cant afford "per tick" accurate PPU. 
+  Atomics.add(SHARED.CLOCKS, 1, cpuCycles * 3); // crude test
+  // if (cpuCycles >= 500) ppuTick(); // tweaked the batch value , nothing helps, we cant afford "per tick" accurate PPU. 
 
 }
   

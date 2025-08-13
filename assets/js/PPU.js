@@ -35,17 +35,23 @@ let PPUregister = {
 
 // --- DMA Transfer Handler ---
 
-    function dmaTransfer(value) {
-    let even = false;
-    let start = value << 8;
-    for (let i = 0; i < 256; ++i) {
-      PPU_OAM[i] = systemMemory[(start + i) & 0x7FF];
-    }
-    if (cpuCycles % 2 === 0) even = true;
-    if (even) cpuCycles += 513;
-    else cpuCycles += 514;
-    if (ppuDebugLogging) console.log(`[PPU] DMA transfer from page ${value.toString(16).padStart(2, "0")}`);
-    }
+function dmaTransfer(value) {
+  let even = (cpuCycles & 1) === 0;
+  const start = value << 8;
+  for (let i = 0; i < 256; ++i) {
+    PPU_OAM[i] = systemMemory[(start + i) & 0x7FF];
+  }
+  const add = even ? 513 : 514;
+
+  // legacy
+  cpuCycles = (cpuCycles + add) & 0x7fffffff;
+
+  // shared
+  Atomics.add(SHARED.CLOCKS, 0, add);
+
+  if (ppuDebugLogging) console.log(`[PPU] DMA transfer from page ${value.toString(16).padStart(2, "0")}`);
+}
+
 
 // ============================
 // CPU <-> PPU Interface
@@ -181,7 +187,7 @@ function ppuBusWrite(addr, value) {
 
 
 function ppuTick(){
-  //TODO
+  //TODO - moved to ppu-worker for async/ multithreading
 }
 
 /*

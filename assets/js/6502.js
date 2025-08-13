@@ -22,7 +22,6 @@ second
 
 //to do: remove all prgRom references, along with 0x8000, use checkReadOffset
 
-let cpuCycles = 0;
 let CPUregisters = {
   A: 0x00,
   X: 0x00,
