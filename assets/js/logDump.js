@@ -1,177 +1,226 @@
-// Helper: produce a hex dump string with custom base address, optional marker array
-function hexDumpToString(array, bytesPerRow = 16, baseAddress = 0x0000, markers = null) {
-  const lines = [];
-  const totalRows = Math.ceil(array.length / bytesPerRow);
+// Store last dump values for change tracking
+let lastDump = {};
+
+// ---------- UI HELPERS ----------
+function addSectionHeader(container, title, id) {
+  const wrap = document.createElement('section');
+  wrap.id = id;
+  wrap.className = 'section-wrap';
+
+  const h2 = document.createElement('h2');
+  h2.innerText = title;
+  h2.className = 'section-title';
+
+  wrap.appendChild(h2);
+  container.appendChild(wrap);
+  return wrap; // return the section to append content into
+}
+
+// Hex table generator with change highlighting
+function generateHexTable(title, array, baseAddress = 0x0000) {
+  const table = document.createElement('table');
+  table.className = 'dump-table hex-table';
+
+  const caption = document.createElement('caption');
+  caption.innerText = title;
+  caption.className = 'table-caption';
+  table.appendChild(caption);
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  headRow.appendChild(document.createElement('th'));
+  for (let col = 0; col < 16; col++) {
+    const th = document.createElement('th');
+    th.innerText = col.toString(16).toUpperCase().padStart(2, '0');
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  const totalRows = Math.ceil(array.length / 16);
+  const isROM = title.includes('PRG ROM') || title.includes('CHR ROM');
+
+  if (!lastDump[title]) {
+    lastDump[title] = new Uint8Array(array.length);
+    if (isROM) lastDump[title].set(array);
+  }
+
   for (let row = 0; row < totalRows; row++) {
-    const offset = (baseAddress + (row * bytesPerRow))
-      .toString(16).toUpperCase()
-      .padStart(4, '0');
-    const rowBytes = Array.from(
-      array.slice(row * bytesPerRow, (row + 1) * bytesPerRow),
-      (b, idx) => {
-        const mark = markers && markers[row * bytesPerRow + idx] ? '*' : ' ';
-        return mark + '$' + b.toString(16).padStart(2, '0').toUpperCase();
+    const tr = document.createElement('tr');
+
+    const addr = baseAddress + row * 16;
+    const addrCell = document.createElement('td');
+    addrCell.innerText = addr.toString(16).toUpperCase().padStart(4, '0');
+    addrCell.className = 'addr-cell';
+    tr.appendChild(addrCell);
+
+    for (let col = 0; col < 16; col++) {
+      const idx = row * 16 + col;
+      const td = document.createElement('td');
+      td.className = 'data-cell';
+
+      if (idx < array.length) {
+        const val = array[idx];
+        td.innerText = val.toString(16).toUpperCase().padStart(2, '0');
+
+        if (lastDump[title][idx] !== val) {
+          if (!(isROM && lastDump[title][idx] === 0 && lastDump[title].length === array.length)) {
+            td.classList.add('changed');
+          }
+          lastDump[title][idx] = val;
+        }
+      } else {
+        td.innerText = '';
       }
-    ).join(' ');
-    lines.push(`${offset}: ${rowBytes}`);
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
   }
-  return lines.join('\n');
+  table.appendChild(tbody);
+  return table;
 }
 
-// Pretty-print PPUregister (flat + BG block)
-function dumpPPUregister(reg) {
-  const lines = [];
-  const hex8  = v => '$' + (v & 0xFF).toString(16).toUpperCase().padStart(2,'0');
-  const hex16 = v => '$' + (v & 0xFFFF).toString(16).toUpperCase().padStart(4,'0');
+// Simple key/value register table
+function generateRegisterTable(title, regObject) {
+  const table = document.createElement('table');
+  table.className = 'dump-table kv-table';
 
-  lines.push('CTRL      : ' + hex8(reg.CTRL));
-  lines.push('MASK      : ' + hex8(reg.MASK));
-  lines.push('STATUS    : ' + hex8(reg.STATUS));
-  lines.push('OAMADDR   : ' + hex8(reg.OAMADDR));
-  lines.push('SCROLL_X  : ' + hex8(reg.SCROLL_X));
-  lines.push('SCROLL_Y  : ' + hex8(reg.SCROLL_Y));
-  lines.push('ADDR_HIGH : ' + hex8(reg.ADDR_HIGH));
-  lines.push('ADDR_LOW  : ' + hex8(reg.ADDR_LOW));
-  lines.push('VRAM_ADDR : ' + hex16(reg.VRAM_ADDR));
-  lines.push('t         : ' + hex16(reg.t));
-  lines.push('fineX     : ' + String(reg.fineX));
-  lines.push('writeToggle: ' + String(reg.writeToggle));
-  lines.push('VRAM_DATA : ' + hex8(reg.VRAM_DATA));
-  lines.push('BG: {');
-  lines.push('  bgShiftLo: ' + hex16(reg.BG.bgShiftLo));
-  lines.push('  bgShiftHi: ' + hex16(reg.BG.bgShiftHi));
-  lines.push('  atShiftLo: ' + hex16(reg.BG.atShiftLo));
-  lines.push('  atShiftHi: ' + hex16(reg.BG.atShiftHi));
-  lines.push('  ntByte   : ' + hex8(reg.BG.ntByte));
-  lines.push('  atByte   : ' + hex8(reg.BG.atByte));
-  lines.push('  tileLo   : ' + hex8(reg.BG.tileLo));
-  lines.push('  tileHi   : ' + hex8(reg.BG.tileHi));
-  lines.push('}');
-  return lines.join('\n');
+  const caption = document.createElement('caption');
+  caption.innerText = title;
+  caption.className = 'table-caption';
+  table.appendChild(caption);
+
+  const tbody = document.createElement('tbody');
+  for (const [key, value] of Object.entries(regObject)) {
+    const tr = document.createElement('tr');
+
+    const tdKey = document.createElement('td');
+    tdKey.innerText = key;
+    tdKey.className = 'kv-key';
+    tr.appendChild(tdKey);
+
+    const tdVal = document.createElement('td');
+    tdVal.innerText = '$' + (value & 0xFFFF).toString(16).toUpperCase().padStart(2, '0');
+    tdVal.className = 'kv-val';
+    tr.appendChild(tdVal);
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  return table;
 }
 
+// Controller state table
+function generateControllerTable() {
+  const table = document.createElement('table');
+  table.className = 'dump-table kv-table';
+
+  const caption = document.createElement('caption');
+  caption.innerText = 'Controller State';
+  caption.className = 'table-caption';
+  table.appendChild(caption);
+
+  const tbody = document.createElement('tbody');
+  const states = {
+    joypadStrobe,
+    joypad1State: '0b' + joypad1State.toString(2).padStart(8, '0'),
+    joypad2State: '0b' + joypad2State.toString(2).padStart(8, '0'),
+  };
+
+  for (const [key, value] of Object.entries(states)) {
+    const tr = document.createElement('tr');
+
+    const tdKey = document.createElement('td');
+    tdKey.innerText = key;
+    tdKey.className = 'kv-key';
+    tr.appendChild(tdKey);
+
+    const tdVal = document.createElement('td');
+    tdVal.innerText = value;
+    tdVal.className = 'kv-val';
+    tr.appendChild(tdVal);
+
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  return table;
+}
+
+// ---------- MAIN CLICK HANDLER ----------
 document.getElementById('dumpState').addEventListener('click', () => {
-  // Toggle giant logical PPU dump
-  const includeFullPpuMap = false;
+  // Build report in main page context
+  const report = document.createElement('div');
+  report.className = 'container';
 
-  let dump = '';
-  dump += '=== SYSTEM STATE DUMP ===\n\n';
+  const cpuSec = addSectionHeader(report, 'CPU Memory', 'cpu');
+  cpuSec.appendChild(generateHexTable('CPU RAM ($0000)', systemMemory, 0x0000));
+  cpuSec.appendChild(generateHexTable('PRG ROM ($8000)', prgRom, 0x8000));
 
-  // 1) CPU RAM (fixed base to $0000)
-  dump += '--- CPU RAM (systemMemory, base $0000) ---\n';
-  dump += hexDumpToString(systemMemory, 16, 0x0000) + '\n\n';
+  const chrSec = addSectionHeader(report, 'CHR-ROM', 'chr');
+  chrSec.appendChild(generateHexTable('CHR ROM ($0000)', SHARED.CHR_ROM, 0x0000));
 
-  // 2) PRG ROM (mapped typically at CPU $8000-$FFFF)
-  dump += '--- PRG ROM (prgRom, base $8000) ---\n';
-  if (typeof prgRom !== 'undefined' && prgRom && prgRom.length) {
-    dump += hexDumpToString(prgRom, 16, 0x8000) + '\n\n';
-  } else {
-    dump += '[No PRG ROM]\n\n';
-  }
+  const vramSec = addSectionHeader(report, 'VRAM', 'vram');
+  vramSec.appendChild(generateHexTable('PPU VRAM ($2000)', SHARED.VRAM, 0x2000));
 
-  // 3) PPU Pattern Tables
-  dump += '--- PPU Pattern Tables (CHR ROM/RAM, $0000–$1FFF) ---\n';
-  if (SHARED.CHR_ROM && SHARED.CHR_ROM.length) {
-    dump += hexDumpToString(SHARED.CHR_ROM, 16, 0x0000) + '\n\n';
-  } else {
-    dump += '[No CHR Data]\n\n';
-  }
+  const palSec = addSectionHeader(report, 'Palette RAM', 'pal');
+  palSec.appendChild(generateHexTable('Palette RAM ($3F00)', SHARED.PALETTE_RAM, 0x3F00));
 
-  // 4) VRAM physical ($2000 base)
-  dump += '--- PPU VRAM Physical (SHARED.VRAM, base $2000) ---\n';
-  dump += hexDumpToString(SHARED.VRAM, 16, 0x2000) + '\n\n';
+  const oamSec = addSectionHeader(report, 'OAM', 'oam');
+  oamSec.appendChild(generateHexTable('OAM ($0000)', SHARED.OAM, 0x0000));
 
-  // 5) Palette RAM (print from SHARED.PALETTE_RAM directly)
-  dump += '--- PPU Palette RAM (SHARED.PALETTE_RAM, $3F00–$3F1F) ---\n';
-  if (SHARED.PALETTE_RAM && SHARED.PALETTE_RAM.length === 0x20) {
-    dump += hexDumpToString(SHARED.PALETTE_RAM, 16, 0x3F00) + '\n\n';
-  } else {
-    // fallback: mirror from VRAM if SHARED.PALETTE_RAM not used
-    const paletteData = [];
-    for (let i = 0; i < 32; i++) {
-      const vramIndex = (0x3F00 + i) & 0x07FF;
-      paletteData.push(SHARED.VRAM[vramIndex]);
-    }
-    dump += hexDumpToString(paletteData, 16, 0x3F00) + '  [from VRAM mirror]\n\n';
-  }
+  const regSec = addSectionHeader(report, 'Registers', 'regs');
+  regSec.appendChild(generateRegisterTable('CPU Registers', CPUregisters));
+  regSec.appendChild(generateRegisterTable('PPU Registers', PPUregister));
+  regSec.appendChild(generateRegisterTable('APU Registers', APUregister));
 
-  // 6) PPU OAM
-  dump += '--- PPU OAM (Sprite RAM, $0000–$00FF) ---\n';
-  dump += hexDumpToString(PPU_OAM, 16, 0x0000) + '\n\n';
+  const padSec = addSectionHeader(report, 'Controllers', 'pads');
+  padSec.appendChild(generateControllerTable());
 
-  // 7) (Optional) FULL logical PPU map — trimmed by default
-  if (includeFullPpuMap) {
-    const ppuMap = new Uint8Array(0x4000);
-    const markers = new Array(0x4000).fill(false);
+  // Styled HTML shell with sticky jump bar
+  const styles = `
+    html, body { background: #0f1115; color: #e8eaf0; font-family: sans-serif; margin: 0; padding: 0; scroll-behavior: smooth; }
+    .container { max-width: 1200px; margin: 40px auto 120px auto; padding: 0 16px; }
+    .section-title { font-size: 20px; margin: 0 0 14px 0; padding-left: 6px; border-left: 3px solid #5bd0ff; }
+    .dump-table { border-collapse: collapse; margin: 0 auto 20px auto; font-family: monospace; font-size: 13px; background: #161923; border: 1px solid #2a2f3a; border-radius: 14px; }
+    .dump-table caption { caption-side: top; font-weight: 700; padding: 10px 12px; color: #6cf1b6; text-align: left; background: #182033; border-bottom: 1px solid #2a2f3a; }
+    .dump-table th, .dump-table td { border: 1px solid #2a2f3a; padding: 6px 10px; text-align: center; }
+    .addr-cell { font-weight: 700; color: #a8afc2; background: #171b28; }
+    .data-cell.changed { background: #ff6b6b20; }
+    .kv-key { color: #a8afc2; min-width: 180px; font-weight: 600; }
+    .kv-val { font-weight: 700; }
+    .jumpbar { position: fixed; left: 0; right: 0; bottom: 0; background: rgba(15,17,21,0.85); backdrop-filter: blur(6px); border-top: 1px solid #2a2f3a; padding: 10px 12px; z-index: 9999; }
+    .jumpbar .inner { max-width: 1200px; margin: 0 auto; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+    .jumpbar button { border: 1px solid #2a2f3a; background: #1a1f2c; color: #e8eaf0; padding: 8px 12px; border-radius: 999px; cursor: pointer; font-weight: 600; }
+    .jumpbar button.active { border-color: #5bd0ff; }
+  `;
 
-    if (SHARED.CHR_ROM && SHARED.CHR_ROM.length) {
-      ppuMap.set(SHARED.CHR_ROM.slice(0, 0x2000), 0x0000);
-    }
-    for (let addr = 0x2000; addr <= 0x2FFF; addr++) {
-      ppuMap[addr] = SHARED.VRAM[addr & 0x07FF];
-    }
-    for (let addr = 0x3000; addr <= 0x3EFF; addr++) {
-      ppuMap[addr] = ppuMap[addr - 0x1000];
-    }
-    for (let i = 0; i < 0x20; i++) {
-      const vramIndex = (0x3F00 + i) & 0x07FF;
-      ppuMap[0x3F00 + i] = SHARED.VRAM[vramIndex];
-      markers[0x3F00 + i] = true;
-    }
-    for (let addr = 0x3F20; addr <= 0x3FFF; addr++) {
-      const val = ppuMap[0x3F00 + (addr & 0x1F)];
-      ppuMap[addr] = val;
-      markers[addr] = true;
-    }
-    dump += '--- FULL LOGICAL PPU ADDRESS SPACE ($0000–$3FFF, "*" = palette/mirror) ---\n';
-    dump += hexDumpToString(ppuMap, 16, 0x0000, markers) + '\n\n';
-  }
+  const newTab = window.open('', '_blank');
+  newTab.document.write(`<html><head><title>NES State Dump</title><style>${styles}</style></head><body></body></html>`);
+  newTab.document.body.appendChild(report);
 
-  // 8) PPU Registers
-  dump += '--- PPU Registers ---\n';
-  dump += dumpPPUregister(PPUregister) + '\n\n';
+  // Jump bar
+  const jumpbar = newTab.document.createElement('div');
+  jumpbar.className = 'jumpbar';
+  jumpbar.innerHTML = `
+    <div class="inner">
+      <button data-target="#cpu">CPU Memory</button>
+      <button data-target="#chr">CHR-ROM</button>
+      <button data-target="#vram">VRAM</button>
+      <button data-target="#pal">Palette RAM</button>
+      <button data-target="#oam">OAM</button>
+      <button data-target="#regs">Registers</button>
+      <button data-target="#pads">Controllers</button>
+    </div>
+  `;
+  newTab.document.body.appendChild(jumpbar);
 
-  // 9) CPU Bus / Cycles
-  dump += '--- CPU Open Bus & Cycles ---\n';
-  dump += `cpuOpenBus: $${cpuOpenBus.toString(16).toUpperCase().padStart(2,'0')} (last value on CPU data bus)\n`;
-  dump += `cpuCycles : ${cpuCycles}\n\n`;
-
-  // 10) CPU Registers
-  dump += '--- CPU Registers ---\n';
-  dump += `A  : $${CPUregisters.A.toString(16).toUpperCase().padStart(2,'0')}\n`;
-  dump += `X  : $${CPUregisters.X.toString(16).toUpperCase().padStart(2,'0')}\n`;
-  dump += `Y  : $${CPUregisters.Y.toString(16).toUpperCase().padStart(2,'0')}\n`;
-  dump += `S  : $${CPUregisters.S.toString(16).toUpperCase().padStart(2,'0')}\n`;
-  dump += `PC : $${CPUregisters.PC.toString(16).toUpperCase().padStart(4,'0')}\n\n`;
-
-  // 11) CPU Flags
-  dump += '--- CPU Status Flags ---\n';
-  for (const [f,bit] of Object.entries(CPUregisters.P)) {
-    dump += `${f.padEnd(2)} : ${bit}\n`;
-  }
-  dump += '\n';
-
-  // 12) APU Registers
-  dump += '--- APU Registers ---\n';
-  for (const [k,v] of Object.entries(APUregister)) {
-    dump += `${k.padEnd(12)} : $${v.toString(16).toUpperCase().padStart(2,'0')}\n`;
-  }
-  dump += '\n';
-
-  // 13) Controllers
-  dump += '--- Controller State ---\n';
-  dump += `joypadStrobe : ${joypadStrobe}\n`;
-  dump += `joypad1State : 0b${joypad1State.toString(2).padStart(8,'0')}\n`;
-  dump += `joypad2State : 0b${joypad2State.toString(2).padStart(8,'0')}\n`;
-
-  // Create blob & download
-  const blob = new Blob([dump], { type: 'text/plain' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `nes_state_dump_${Date.now()}.txt`;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  // Bind jump buttons
+  const buttons = newTab.document.querySelectorAll('.jumpbar button');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = newTab.document.querySelector(btn.getAttribute('data-target'));
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
 });

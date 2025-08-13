@@ -1,62 +1,109 @@
-// Start PPU worker thread to run asynchronously with CPU
+
+window.SHARED = {};
+
+// our multithread workers
 const ppuWorker = new Worker('assets/js/ppu-worker.js');
 
+// --- CPU loop control ---
+let cpuRunning = false;
+const CPU_BATCH = 20000; // how many instructions to run per slice
+
+function cpuLoop() {
+  if (!cpuRunning) return;
+  for (let i = 0; i < CPU_BATCH; i++) {
+    step();
+  }
+  setTimeout(cpuLoop, 0); // cooperative async
+}
+
+// start/pause
+function startEmu() {
+  if (!cpuRunning) {
+    cpuRunning = true;
+    cpuLoop(); // kick off CPU execution loop
+  }
+  ppuWorker.postMessage({ type: 'set-running', running: true });
+}
+
+function pauseEmu() {
+  cpuRunning = false;
+  ppuWorker.postMessage({ type: 'set-running', running: false });
+}
+
+// ------------------------------------------------------------
+// Shared state setup
+// ------------------------------------------------------------
+
 // Clocks: [0] = cpuCycles, [1] = ppuCycles
-const SAB_CLOCKS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
-const CLOCKS     = new Int32Array(SAB_CLOCKS);
-CLOCKS[0] = 0; // CPU
-CLOCKS[1] = 0; // PPU
+SHARED.SAB_CLOCKS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
+SHARED.CLOCKS     = new Int32Array(SHARED.SAB_CLOCKS);
+SHARED.CLOCKS[0] = 0; // CPU
+SHARED.CLOCKS[1] = 0; // PPU
+
+// CPU Open Bus
+SHARED.SAB_CPU_OPENBUS = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT);
+SHARED.CPU_OPENBUS = new Uint8Array(SHARED.SAB_CPU_OPENBUS);
+SHARED.CPU_OPENBUS[0] = 0;
 
 // Events bitfield: bit0 = NMI pending
-const SAB_EVENTS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
-const EVENTS     = new Int32Array(SAB_EVENTS);
-EVENTS[0] = 0;
+SHARED.SAB_EVENTS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+SHARED.EVENTS     = new Int32Array(SHARED.SAB_EVENTS);
+SHARED.EVENTS[0] = 0;
 
-// Optional: frame counter (debug/UI)
-const SAB_FRAME = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
-const FRAME     = new Int32Array(SAB_FRAME);
-FRAME[0] = 0;
+// Optional: frame counter
+SHARED.SAB_FRAME = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+SHARED.FRAME     = new Int32Array(SHARED.SAB_FRAME);
+SHARED.FRAME[0] = 0;
 
-// Legacy variable (some code still uses this)
+// Legacy variable
 let cpuCycles = 0;
 
-// Attach to SHARED global
-window.SHARED = { SAB_CLOCKS, CLOCKS, SAB_EVENTS, EVENTS, SAB_FRAME, FRAME };
+// Shared subset of PPU registers
+/*=============== Index mapping: 0=CTRL, 1=MASK, 2=ADDR_HIGH, 3=ADDR_LOW 4=STATUS =============== */
+SHARED.SAB_PPU_REGS = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT * 5);
+SHARED.PPU_REGS = new Uint8Array(SHARED.SAB_PPU_REGS)
 
-// PPU STATUS byte (bit7 = VBlank)
-SHARED.SAB_STATUS = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT);
-SHARED.STATUS = new Uint8Array(SHARED.SAB_STATUS);
-SHARED.STATUS[0] = 0;
-
-// ===============================
 // Shared PPU asset memory
-// ===============================
-
-// CHR-ROM (pattern tables) — start with 8KB default; may be resized by loader
-SHARED.SAB_CHR = new SharedArrayBuffer(0x2000); // 8192 bytes
+SHARED.SAB_CHR = new SharedArrayBuffer(0x2000); // 8 KB
 SHARED.CHR_ROM = new Uint8Array(SHARED.SAB_CHR);
 
-// VRAM (nametable + attribute tables) — 2KB
-SHARED.SAB_VRAM = new SharedArrayBuffer(0x800); // 2048 bytes
+SHARED.SAB_VRAM = new SharedArrayBuffer(0x800); // 2 KB
 SHARED.VRAM = new Uint8Array(SHARED.SAB_VRAM);
 
-// Palette RAM — 32 bytes
-SHARED.SAB_PALETTE = new SharedArrayBuffer(0x20);
+
+/*
+const vramArray = new Uint8Array(SHARED.SAB_VRAM);
+
+
+SHARED.VRAM = new Proxy(vramArray, {
+  set(target, prop, value) {
+    if (!isNaN(prop)) { // filter out weird internal props like 'length'
+      console.warn(
+        `[VRAM WRITE DETECTED] index=${prop} value=$${value.toString(16).padStart(2, "0")}`,
+        new Error().stack // shows where it came from
+      );
+    }
+    target[prop] = value;
+    return true;
+  }
+});
+*/
+
+SHARED.SAB_PALETTE = new SharedArrayBuffer(0x20); // 32 bytes
 SHARED.PALETTE_RAM = new Uint8Array(SHARED.SAB_PALETTE);
 
-// OAM — 256 bytes (64 sprites * 4 bytes)
-SHARED.SAB_OAM = new SharedArrayBuffer(0x100);
+SHARED.SAB_OAM = new SharedArrayBuffer(0x100); // 256 bytes
 SHARED.OAM = new Uint8Array(SHARED.SAB_OAM);
 
-// (Optional) Prefill palette with a rotating index so you see *something* if you blit early
-for (let i = 0; i < SHARED.PALETTE_RAM.length; i++) SHARED.PALETTE_RAM[i] = i & 63;
-
-// Initial handshake to the worker
+// ------------------------------------------------------------
+// Initial handshake to the worker (after SHARED is populated)
+// ------------------------------------------------------------
 ppuWorker.postMessage({
   SAB_CLOCKS: SHARED.SAB_CLOCKS,
-  SAB_STATUS: SHARED.SAB_STATUS,
   SAB_EVENTS: SHARED.SAB_EVENTS,
   SAB_FRAME:  SHARED.SAB_FRAME,
+  SAB_CPU_OPENBUS: SHARED.SAB_CPU_OPENBUS,
+  SAB_PPU_REGS: SHARED.SAB_PPU_REGS,
   SAB_ASSETS: {
     CHR_ROM:     SHARED.SAB_CHR,
     VRAM:        SHARED.SAB_VRAM,
@@ -64,3 +111,6 @@ ppuWorker.postMessage({
     OAM:         SHARED.SAB_OAM,
   },
 });
+
+// ROM gate
+ppuWorker.postMessage({ type: 'romReady' });

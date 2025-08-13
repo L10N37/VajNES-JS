@@ -60,44 +60,44 @@ let APUregister = {
 function apuWrite(address, value) {
   switch (address) {
     // --- Square 1 Registers ---
-    case 0x4000: APUregister.SQ1_VOL = value;   cpuOpenBus = value & 0xFF; break;
-    case 0x4001: APUregister.SQ1_SWEEP = value; cpuOpenBus = value & 0xFF; break;
-    case 0x4002: APUregister.SQ1_LO = value;    cpuOpenBus = value & 0xFF; break;
-    case 0x4003: APUregister.SQ1_HI = value;    cpuOpenBus = value & 0xFF; break;
+    case 0x4000: APUregister.SQ1_VOL = value;   SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x4001: APUregister.SQ1_SWEEP = value; SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x4002: APUregister.SQ1_LO = value;    SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x4003: APUregister.SQ1_HI = value;    SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
 
     // --- Square 2 Registers ---
-    case 0x4004: APUregister.SQ2_VOL = value;   cpuOpenBus = value & 0xFF; break;
-    case 0x4005: APUregister.SQ2_SWEEP = value; cpuOpenBus = value & 0xFF; break;
-    case 0x4006: APUregister.SQ2_LO = value;    cpuOpenBus = value & 0xFF; break;
-    case 0x4007: APUregister.SQ2_HI = value;    cpuOpenBus = value & 0xFF; break;
+    case 0x4004: APUregister.SQ2_VOL = value;   SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x4005: APUregister.SQ2_SWEEP = value; SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x4006: APUregister.SQ2_LO = value;    SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x4007: APUregister.SQ2_HI = value;    SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
 
     // --- Triangle Channel Registers ---
-    case 0x4008: APUregister.TRI_LINEAR = value; cpuOpenBus = value & 0xFF; break;
-    case 0x400A: APUregister.TRI_LO = value;     cpuOpenBus = value & 0xFF; break;
-    case 0x400B: APUregister.TRI_HI = value;     cpuOpenBus = value & 0xFF; break;
+    case 0x4008: APUregister.TRI_LINEAR = value; SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x400A: APUregister.TRI_LO = value;     SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x400B: APUregister.TRI_HI = value;     SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
 
     // --- Noise Channel Registers ---
-    case 0x400C: APUregister.NOISE_VOL = value;  cpuOpenBus = value & 0xFF; break;
-    case 0x400E: APUregister.NOISE_LO = value;   cpuOpenBus = value & 0xFF; break;
-    case 0x400F: APUregister.NOISE_HI = value;   cpuOpenBus = value & 0xFF; break;
+    case 0x400C: APUregister.NOISE_VOL = value;  SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x400E: APUregister.NOISE_LO = value;   SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x400F: APUregister.NOISE_HI = value;   SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
 
     // --- DMC Channel Registers ---
-    case 0x4010: APUregister.DMC_FREQ = value;   cpuOpenBus = value & 0xFF; break;
-    case 0x4011: APUregister.DMC_RAW = value;    cpuOpenBus = value & 0xFF; break;
-    case 0x4012: APUregister.DMC_START = value;  cpuOpenBus = value & 0xFF; break;
-    case 0x4013: APUregister.DMC_LEN = value;    cpuOpenBus = value & 0xFF; break;
+    case 0x4010: APUregister.DMC_FREQ = value;   SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x4011: APUregister.DMC_RAW = value;    SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x4012: APUregister.DMC_START = value;  SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
+    case 0x4013: APUregister.DMC_LEN = value;    SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
 
     // --- Sound Channel Enable / Status ---
-    case 0x4015: APUregister.SND_CHN = value;    cpuOpenBus = value & 0xFF; break;
+    case 0x4015: APUregister.SND_CHN = value;    SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
 
     // --- APU Frame Counter ($4017) ---
-    case 0x4017: APUregister.FRAME_CNT = value;  cpuOpenBus = value & 0xFF; break;
+    case 0x4017: APUregister.FRAME_CNT = value;  SHARED.CPU_OPENBUS[0] = value & 0xFF;; break;
 
     // --- Controller Strobe ($4016) ---
     case 0x4016: 
       // This is a dual-purpose register: writing here controls joypad strobe (handled in controller.js),
       // but writing still updates open bus (needed for test ROMs).
-      cpuOpenBus = value & 0xFF;
+      SHARED.CPU_OPENBUS[0] = value & 0xFF;;
       // If you want to call your joypadWrite here:
       if (typeof joypadWrite === 'function') joypadWrite(address, value);
       break;
@@ -115,7 +115,7 @@ function apuRead(address) {
   switch (address) {
     case 0x4015:
       // $4015: Sound channel status
-      cpuOpenBus = APUregister.SND_CHN; // Update open bus with value read
+      SHARED.CPU_OPENBUS[0] = APUregister.SND_CHN; // Update open bus with value read
       return APUregister.SND_CHN;
 
     // Joypad reads controller.js
@@ -124,7 +124,7 @@ function apuRead(address) {
 
     default:
       // All other addresses are open bus (return last value on the data bus)
-      return cpuOpenBus;
+      return SHARED.CPU_OPENBUS[0];
   }
 }
 

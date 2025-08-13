@@ -11,14 +11,14 @@ function joypadWrite(address, value) {
   if (address === 0x4016) {
     let oldStrobe = joypadStrobe;
     joypadStrobe = value & 1;
-    cpuOpenBus = value;
+    SHARED.CPU_OPENBUS[0] = value & 0xFF;;
     if (oldStrobe && !joypadStrobe) {
       joypad1State = pollController1();
       joypad2State = pollController2();
     }
     JoypadRegister.JOYPAD1 = value;
   } else if (address === 0x4017) {
-    cpuOpenBus = value;
+    SHARED.CPU_OPENBUS[0] = value & 0xFF;;
     JoypadRegister.JOYPAD2 = value;
   }
 }
@@ -29,16 +29,16 @@ function joypadRead(address, pad = null) {
   if (address === 0x4016) {
     result |= joypadStrobe ? (pollController1() & 1) : (joypad1State & 1);
     if (!joypadStrobe) joypad1State = (joypad1State >> 1) | 0x80;
-    cpuOpenBus = result;
+    SHARED.CPU_OPENBUS[0] = result;
     return result;
   }
   if (address === 0x4017) {
     result |= joypadStrobe ? (pollController2() & 1) : (joypad2State & 1);
     if (!joypadStrobe) joypad2State = (joypad2State >> 1) | 0x80;
-    cpuOpenBus = result;
+    SHARED.CPU_OPENBUS[0] = result;
     return result;
   }
-  return cpuOpenBus;
+  return SHARED.CPU_OPENBUS[0];
 }
 
 //dummys

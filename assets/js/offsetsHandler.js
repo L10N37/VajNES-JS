@@ -37,7 +37,7 @@ function checkReadOffset(address) {
     }
   }
   else if (addr < 0x6000) { // Expansion
-    return cpuOpenBus & 0xFF;
+    return SHARED.CPU_OPENBUS[0] & 0xFF;
     
   }
   else if (addr >= 0x8000 && addr <= 0xFFFF) { // PRG-ROM
@@ -45,11 +45,11 @@ function checkReadOffset(address) {
     
   }
   else {
-    return cpuOpenBus & 0xFF;
+    return SHARED.CPU_OPENBUS[0] & 0xFF;
     
   }
 
-  cpuOpenBus = value & 0xFF;
+  SHARED.CPU_OPENBUS[0] = value & 0xFF;
   return value & 0xFF;
 }
 
@@ -93,7 +93,7 @@ function checkWriteOffset(address, value) {
     apuWrite(addr, value);
   }
   else if (addr < 0x6000) { // Expansion
-    cpuOpenBus = value & 0xFF; // not handled, still write value to openBus
+    SHARED.CPU_OPENBUS[0] = value & 0xFF; // not handled, still write value to openBus
     
   }
   else if (addr < 0x8000) { // PRG-RAM
@@ -105,5 +105,5 @@ function checkWriteOffset(address, value) {
     
   }
 
-  cpuOpenBus = value & 0xFF;
+  SHARED.CPU_OPENBUS[0] = value & 0xFF;
 }

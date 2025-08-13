@@ -4,8 +4,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const modal    = document.getElementById('tileModal');
   const closeBtn = document.getElementById('closeTileModal');
 
-  // Per-canvas zoom state
   const zoomState = { bgCanvas: 1, fgCanvas: 1 };
+  const currentSource = { bgCanvas: null, fgCanvas: null };
   const ZMIN = 1, ZMAX = 8, ZSTEP = 1;
 
   openBtn.addEventListener('click', () => {
@@ -14,11 +14,19 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!SHARED.CHR_ROM || !(SHARED.CHR_ROM instanceof Uint8Array) || SHARED.CHR_ROM.length === 0)
         throw new Error("CHR ROM is missing or empty.");
 
-      // Initial draw at current zoom
-      drawTilesToCanvas(SHARED.CHR_ROM, "bgCanvas", zoomState.bgCanvas);
-      drawTilesToCanvas(SHARED.CHR_ROM, "fgCanvas", zoomState.fgCanvas);
+      // Slice the ROM into two halves
+      const bgData  = SHARED.CHR_ROM.subarray(0x0000, 0x1000); // first 4KB
+      const sprData = SHARED.CHR_ROM.subarray(0x1000, 0x2000); // second 4KB
 
-      // Attach zoom controls once (idempotent)
+      // Store sources for zoom/dblclick redraw
+      currentSource.bgCanvas = bgData;
+      currentSource.fgCanvas = sprData;
+
+      // Draw each pane
+      drawTilesToCanvas(bgData,  "bgCanvas", zoomState.bgCanvas);
+      drawTilesToCanvas(sprData, "fgCanvas", zoomState.fgCanvas);
+
+      // Bind zoom once
       attachZoomControls("bgCanvas");
       attachZoomControls("fgCanvas");
     } catch (err) {
@@ -32,40 +40,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function attachZoomControls(canvasId) {
     const canvas = document.getElementById(canvasId);
-    if (canvas.dataset.zoomBound === "1") return; // already bound
+    if (canvas.dataset.zoomBound === "1") return;
     canvas.dataset.zoomBound = "1";
 
-    // Mouse wheel zoom (Ctrl not required)
     canvas.addEventListener('wheel', (ev) => {
       ev.preventDefault();
-      const dir = Math.sign(ev.deltaY); // down = positive
-      const key = canvasId === "bgCanvas" ? "bgCanvas" : "fgCanvas";
+      const dir = Math.sign(ev.deltaY);
+      const key = canvasId;
       const oldZ = zoomState[key];
       const nextZ = clamp(oldZ - (dir * ZSTEP), ZMIN, ZMAX);
       if (nextZ !== oldZ) {
         zoomState[key] = nextZ;
-        drawTilesToCanvas(SHARED.CHR_ROM, canvasId, nextZ);
+        drawTilesToCanvas(currentSource[key], canvasId, nextZ);
       }
     }, { passive: false });
 
-    // Double-click to reset
     canvas.addEventListener('dblclick', () => {
-      const key = canvasId === "bgCanvas" ? "bgCanvas" : "fgCanvas";
+      const key = canvasId;
       zoomState[key] = 1;
-      drawTilesToCanvas(SHARED.CHR_ROM, canvasId, 1);
+      drawTilesToCanvas(currentSource[key], canvasId, 1);
     });
 
-    // Optional: keyboard + / - when canvas focused
     canvas.tabIndex = 0;
     canvas.addEventListener('keydown', (e) => {
       if (e.key !== '+' && e.key !== '-' && e.key !== '=') return;
-      const key = canvasId === "bgCanvas" ? "bgCanvas" : "fgCanvas";
+      const key = canvasId;
       const oldZ = zoomState[key];
       const delta = (e.key === '-') ? -ZSTEP : ZSTEP;
       const nextZ = clamp(oldZ + delta, ZMIN, ZMAX);
       if (nextZ !== oldZ) {
         zoomState[key] = nextZ;
-        drawTilesToCanvas(SHARED.CHR_ROM, canvasId, nextZ);
+        drawTilesToCanvas(currentSource[key], canvasId, nextZ);
       }
     });
   }
@@ -73,10 +78,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 });
 
-// NES greys: 0=black, 3=white
 const NES_GREYS = ["#181818", "#888888", "#c0c0c0", "#fcfcfc"];
 
-// Draws all tiles in CHR-ROM as 8x8, 2bpp greyscale, with integer zoom
 function drawTilesToCanvas(chrData, canvasId, zoom = 1) {
   const canvas = document.getElementById(canvasId);
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -85,14 +88,11 @@ function drawTilesToCanvas(chrData, canvasId, zoom = 1) {
   const tileSize = 8;
   const totalTiles = Math.floor(chrData.length / 16);
 
-  // Base (1x) dimensions
   const baseW = tilesPerRow * tileSize;
   const baseH = Math.ceil(totalTiles / tilesPerRow) * tileSize;
 
-  // Prepare offscreen base render
   const off = drawTilesImageData(chrData, baseW, baseH, tilesPerRow, tileSize);
 
-  // Scale to visible canvas using nearest-neighbor
   canvas.width = baseW * zoom;
   canvas.height = baseH * zoom;
   ctx.imageSmoothingEnabled = false;
@@ -101,7 +101,6 @@ function drawTilesToCanvas(chrData, canvasId, zoom = 1) {
 }
 
 function drawTilesImageData(chrData, baseW, baseH, tilesPerRow, tileSize) {
-  // Render pixels at 1x to an offscreen canvas
   const off = document.createElement('canvas');
   off.width = baseW;
   off.height = baseH;
@@ -110,7 +109,7 @@ function drawTilesImageData(chrData, baseW, baseH, tilesPerRow, tileSize) {
 
   const totalTiles = Math.floor(chrData.length / 16);
   for (let i = 0; i < totalTiles; i++) {
-    const tile = chrData.subarray(i * 16, i * 16 + 16); // no copy
+    const tile = chrData.subarray(i * 16, i * 16 + 16);
     const pixels = decodeTile(tile);
     const tileX = (i % tilesPerRow) * tileSize;
     const tileY = Math.floor(i / tilesPerRow) * tileSize;
@@ -121,7 +120,7 @@ function drawTilesImageData(chrData, baseW, baseH, tilesPerRow, tileSize) {
       const pixelVal = pixels[j] & 0x03;
       const { r, g, b } = HEX_TO_RGB[NES_GREYS[pixelVal]];
       const idx = (y * baseW + x) * 4;
-      imageData.data[idx] = r;
+      imageData.data[idx]     = r;
       imageData.data[idx + 1] = g;
       imageData.data[idx + 2] = b;
       imageData.data[idx + 3] = 255;
@@ -131,7 +130,6 @@ function drawTilesImageData(chrData, baseW, baseH, tilesPerRow, tileSize) {
   return off;
 }
 
-// Decodes a single NES 8x8 tile from 16 bytes (2bpp)
 function decodeTile(tileBytes) {
   const pixels = new Uint8Array(64);
   for (let row = 0; row < 8; row++) {
@@ -146,7 +144,6 @@ function decodeTile(tileBytes) {
   return pixels;
 }
 
-// Tiny cached hex->rgb map to avoid repeated parseInt
 const HEX_TO_RGB = (() => {
   const m = {};
   for (const hex of ["#181818", "#888888", "#c0c0c0", "#fcfcfc"]) {

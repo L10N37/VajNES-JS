@@ -89,7 +89,11 @@ function readFile(input) {
 
     updateDebugTables();
     isRomLoaded = true;
+    // post a message to our multithread worker, ROM is loaded
     ppuWorker.postMessage({ type: 'romReady' });
+    // post a snapshot (top of ppu.js) to our multithread worker
+    postPPUSnapshot();
+
   };
 
   reader.onerror = function () {

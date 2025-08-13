@@ -2,33 +2,57 @@
 // debug.js — CPU control + loop
 // ============================
 
-let running = false;
 let debugLogging = false;
 
 function run() {
-  if (running) return;
-  running = true;
-  loop();
-}
-
-function loop() {
-  if (!running) return;
-  step();
-  setTimeout(loop, 0);
+  if (cpuRunning) return;
+  startEmu();
 }
 
 function pause() {
-  running = false;
+  pauseEmu();
   updateDebugTables();
+}
+
+// ===== NMI handler =====
+function serviceNMI() {
+  const pc = CPUregisters.PC & 0xFFFF;
+
+  // Push PC high
+  checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), (pc >>> 8) & 0xFF);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Push PC low
+  checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), pc & 0xFF);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Push P with B=0, bit5 set
+  const pushedP = ((CPUregisters.P & ~0x10) | 0x20) & 0xFF;
+  checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), pushedP);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Set I flag
+  CPUregisters.P = (CPUregisters.P | 0x04) & 0xFF;
+
+  // Fetch NMI vector
+  const lo = checkReadOffset(0xFFFA) & 0xFF;
+  const hi = checkReadOffset(0xFFFB) & 0xFF;
+  CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
 }
 
 // ============================
 // CPU Step
 // ============================
-function step() {
 
-  if (isRomLoaded) NoSignalAudio.setEnabled(false);
-  
+/*
+Normal emulation: cpuLoop() calls step() without arguments → only runs if cpuRunning is true.
+Manual stepping: Call step(true) from button or console → skips the cpuRunning check and forces one instruction.
+*/
+function step(force = false) {
+  if (!force && !cpuRunning) return;
+
+  NoSignalAudio.setEnabled(false); // wont hurt to loop this until i find somewhere that i can call it once
+
   const code = prgRom[(CPUregisters.PC - 0x8000) & 0x7FFF];
   const execFn = opcodeFuncs[code];
 
@@ -40,22 +64,24 @@ function step() {
   }
 
   if (debugLogging) {
-    console.log("instr:", `0x${code.toString(16).toUpperCase()}`);
-    console.log(`PC=> 0x${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
+    console.log(`0x${code.toString(16).toUpperCase()}`);
+    console.log(`PC=> $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
   }
 
-  execFn(); // may add extra cycles
+  execFn();
   CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]);
   cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0x7fffffff;
-
-  // Publish CPU cycles for the worker (unblocks PPU start when >0)
   Atomics.store(SHARED.CLOCKS, 0, cpuCycles);
+
+  /* too slow, keeping ppureg struct/ original variables for CPU side (UI etc.), assigning elements of shared
+   arrays to regs that need sharing for both CPU/PPU side to see, copy data across to shared elements in cases where required
 
   // Send live PPU register snapshot
   ppuWorker.postMessage({
     type: 'ppuState',
     PPUregister: PPUregister,
   });
+*/
 
   // Handle NMI if requested
   const ev = Atomics.load(SHARED.EVENTS, 0) | 0;
@@ -67,8 +93,22 @@ function step() {
   }
 }
 
+window.run = run;
+window.pause = pause;
+
 // ============================
-// Frame blit from worker
+// Handle messages from main / clock worker
+// ============================
+onmessage = (e) => {
+  const msg = e.data;
+
+  if (msg.type === "cpu-tick") {
+    step();
+  }
+};
+
+// ============================
+// Frame blit from PPU worker
 // ============================
 ppuWorker.onmessage = (e) => {
   const msg = e.data;
