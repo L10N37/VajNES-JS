@@ -377,7 +377,7 @@ const allVramCells = document.querySelectorAll('.vramCells');
 allVramCells.forEach(cell => {
   const match = cell.id.match(/VRAM-CELL-([0-9A-F]{4})/);
   const addr = match ? parseInt(match[1], 16) : 0;
-  const val = systemMemoryVideo[addr & 0x7FF];
+  const val = SHARED.VRAM[addr & 0x7FF];
   cell.innerText = val.toString(16).padStart(2, '0').toUpperCase() + 'h';
   cell.title = `$${addr.toString(16).toUpperCase().padStart(4, '0')}`;
 
@@ -406,7 +406,7 @@ allVramCells.forEach(cell => {
     function commit() {
       let v = parseInt(input.value, 16);
       if (isNaN(v) || v < 0x00 || v > 0xFF) v = 0; // Clamp to byte
-      systemMemoryVideo[addr & 0x7FF] = v; // Store to actual video RAM
+      SHARED.VRAM[addr & 0x7FF] = v; // Store to actual video RAM
       cell.innerText = v.toString(16).padStart(2, '0').toUpperCase() + 'h';
       cell.classList.add('edited-cell'); // mark as edited
     }

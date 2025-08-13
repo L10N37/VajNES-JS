@@ -11,12 +11,12 @@ document.addEventListener('DOMContentLoaded', () => {
   openBtn.addEventListener('click', () => {
     modal.style.display = 'flex';
     try {
-      if (!chrRom || !(chrRom instanceof Uint8Array) || chrRom.length === 0)
+      if (!SHARED.CHR_ROM || !(SHARED.CHR_ROM instanceof Uint8Array) || SHARED.CHR_ROM.length === 0)
         throw new Error("CHR ROM is missing or empty.");
 
       // Initial draw at current zoom
-      drawTilesToCanvas(chrRom, "bgCanvas", zoomState.bgCanvas);
-      drawTilesToCanvas(chrRom, "fgCanvas", zoomState.fgCanvas);
+      drawTilesToCanvas(SHARED.CHR_ROM, "bgCanvas", zoomState.bgCanvas);
+      drawTilesToCanvas(SHARED.CHR_ROM, "fgCanvas", zoomState.fgCanvas);
 
       // Attach zoom controls once (idempotent)
       attachZoomControls("bgCanvas");
@@ -44,7 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const nextZ = clamp(oldZ - (dir * ZSTEP), ZMIN, ZMAX);
       if (nextZ !== oldZ) {
         zoomState[key] = nextZ;
-        drawTilesToCanvas(chrRom, canvasId, nextZ);
+        drawTilesToCanvas(SHARED.CHR_ROM, canvasId, nextZ);
       }
     }, { passive: false });
 
@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
     canvas.addEventListener('dblclick', () => {
       const key = canvasId === "bgCanvas" ? "bgCanvas" : "fgCanvas";
       zoomState[key] = 1;
-      drawTilesToCanvas(chrRom, canvasId, 1);
+      drawTilesToCanvas(SHARED.CHR_ROM, canvasId, 1);
     });
 
     // Optional: keyboard + / - when canvas focused
@@ -65,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const nextZ = clamp(oldZ + delta, ZMIN, ZMAX);
       if (nextZ !== oldZ) {
         zoomState[key] = nextZ;
-        drawTilesToCanvas(chrRom, canvasId, nextZ);
+        drawTilesToCanvas(SHARED.CHR_ROM, canvasId, nextZ);
       }
     });
   }

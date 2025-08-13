@@ -45,7 +45,7 @@ let CPUregisters = {
 let P_VARIABLES = ['C', 'Z', 'I', 'D', 'B', 'U', 'V', 'N'];
 
 function resetCPU() {
-  systemMemoryVideo.fill(0x00);
+  SHARED.VRAM.fill(0x00);
   systemMemory.fill(0x00); // may not happeon on a real system
   CPUregisters.A = 0x00;
   CPUregisters.X = 0x00;

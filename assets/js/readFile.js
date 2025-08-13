@@ -1,4 +1,3 @@
-
 let isRomLoaded = false;
 
 function readFile(input) {
@@ -12,7 +11,8 @@ function readFile(input) {
   reader.readAsArrayBuffer(file);
 
   reader.onload = function () {
-  const romBytes = new Uint8Array(reader.result);
+    const romBytes = new Uint8Array(reader.result);
+    const nesHeader = romBytes.subarray(0, 16);
 
     // ---- Confirm valid NES header (magic number) ----
     if (
@@ -23,19 +23,17 @@ function readFile(input) {
       return;
     }
 
-    // ============================================================================
+    // ========= Header button (live view) =========
     const headerButton = document.getElementById('header-button');
-    // Remove old event if exists to avoid multiple alerts
     headerButton.replaceWith(headerButton.cloneNode(true));
     const freshButton = document.getElementById('header-button');
+    freshButton.addEventListener('click', function () {
+      const prgBanks = nesHeader[4];
+      const chrBanks = nesHeader[5];
+      const mapperNumber = (nesHeader[6] >> 4) | (nesHeader[7] & 0xF0);
+      const mirroring = (nesHeader[6] & 0x01) ? 'Vertical' : 'Horizontal';
 
-    freshButton.addEventListener('click', function() {
-      let prgBanks = nesHeader[4];
-      let chrBanks = nesHeader[5];
-      let mapperNumber = (nesHeader[6] >> 4) | (nesHeader[7] & 0xf0);
-      let mirroring = (nesHeader[6] & 0x01) ? 'Vertical' : 'Horizontal';
-
-      let info =
+      const info =
         'System: NES\n' +
         'PRG ROM Size: ' + prgBanks * 16 + ' KB\n' +
         'CHR ROM Size: ' + chrBanks * 8 + ' KB - ' +
@@ -47,38 +45,51 @@ function readFile(input) {
         'Four Screen VRAM: ' + ((nesHeader[6] & 0x08) ? 'Yes' : 'No') + '\n';
       window.alert(info);
     });
-  // ================================================================================
-
 
     // ---- Extract PRG/CHR sizes from header ----
-    const prgBanks = romBytes[4]; // Number of 16KB PRG-ROM banks
-    const chrBanks = romBytes[5]; // Number of 8KB CHR-ROM banks
-    const prgSize = prgBanks * 0x4000; // 16KB per bank
-    const chrSize = chrBanks * 0x2000; // 8KB per bank
+    const prgBanks = romBytes[4]; // 16KB banks
+    const chrBanks = romBytes[5]; // 8KB banks
+    const prgSize  = prgBanks * 0x4000;
+    const chrSize  = chrBanks * 0x2000;
 
-    // ---- For debugging/validation, log what we see ----
     console.log(`[HEADER] PRG banks: ${prgBanks} (${prgSize} bytes), CHR banks: ${chrBanks} (${chrSize} bytes)`);
     console.log(`[HEADER] Mapper: ${((romBytes[6] >> 4) | (romBytes[7] & 0xF0))}, Mirroring: ${romBytes[6] & 0x01 ? 'Vertical' : 'Horizontal'}`);
 
     // ---- Slice out PRG-ROM ----
     prgRom = romBytes.slice(16, 16 + prgSize);
 
-    // ---- Slice out CHR-ROM, if present ----
+    // ---- Load CHR (ROM or RAM) into SHARED SAB ----
     if (chrSize > 0) {
-      chrRom = romBytes.slice(16 + prgSize, 16 + prgSize + chrSize);
+      // Ensure SAB matches cart size
+      if (!SHARED.SAB_CHR || SHARED.CHR_ROM.byteLength !== chrSize) {
+        SHARED.SAB_CHR = new SharedArrayBuffer(chrSize);
+        SHARED.CHR_ROM = new Uint8Array(SHARED.SAB_CHR);
+        // Inform worker of new CHR buffer
+        ppuWorker.postMessage({ type: 'assetsUpdate', SAB_ASSETS: { CHR_ROM: SHARED.SAB_CHR } });
+      }
+      const chrStart = 16 + prgSize;
+      SHARED.CHR_ROM.set(romBytes.subarray(chrStart, chrStart + chrSize));
+      window.chrIsRAM = false;
     } else {
-      chrRom = null; // Game uses CHR-RAM, not ROM (rare for early games)
+      // CHR-RAM cart (writes to $0000-$1FFF allowed)
+      if (!SHARED.SAB_CHR || SHARED.CHR_ROM.byteLength !== 0x2000) {
+        SHARED.SAB_CHR = new SharedArrayBuffer(0x2000);
+        SHARED.CHR_ROM = new Uint8Array(SHARED.SAB_CHR);
+        ppuWorker.postMessage({ type: 'assetsUpdate', SAB_ASSETS: { CHR_ROM: SHARED.SAB_CHR } });
+      }
+      SHARED.CHR_ROM.fill(0x00);
+      window.chrIsRAM = true;
     }
 
-    // --- More debugging, sizes
     console.log(`[Loader] Loaded PRG-ROM: ${prgRom.length} bytes`);
-    console.log(`[Loader] Loaded CHR-ROM: ${chrRom ? chrRom.length : 0} bytes`);
+    console.log(`[Loader] CHR is ${window.chrIsRAM ? 'RAM' : 'ROM'}; size=${SHARED.CHR_ROM.byteLength} bytes`);
 
-    // --- Kick off the mapper to finish PRG-ROM setup (mirroring)
-    mapper(romBytes.slice(0, 16)); // Just pass the header
+    // --- Kick off mapper to finish PRG-ROM setup (mirroring, reset vector)
+    mapper(romBytes.slice(0, 16)); // pass header only
 
     updateDebugTables();
-    isRomLoaded = true; // only used atm for fuzzy audio to be cut off
+    isRomLoaded = true;
+    ppuWorker.postMessage({ type: 'romReady' });
   };
 
   reader.onerror = function () {

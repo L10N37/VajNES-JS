@@ -33,9 +33,9 @@ function generateFakePPUMemory() {
     attributeTable[i] = i % 4;
   }
 
-  // NOTE: paletteRAM is NOT redeclared — uses global
-  for (let i = 0; i < paletteRAM.length; i++) {
-    paletteRAM[i] = i % 64;
+  // NOTE: SHARED.PALETTE_RAM is NOT redeclared — uses global
+  for (let i = 0; i < SHARED.PALETTE_RAM.length; i++) {
+    SHARED.PALETTE_RAM[i] = i % 64;
   }
 }
 
@@ -81,7 +81,7 @@ function renderSimFrame() {
       const paletteNumber = attributeTable[attrIndex];
 
       const paletteBase   = paletteNumber * 4;
-      const paletteIndex  = paletteRAM[paletteBase + pixelValue];
+      const paletteIndex  = SHARED.PALETTE_RAM[paletteBase + pixelValue];
 
       frameBuffer[y][x] = paletteIndex;
     }

@@ -71,26 +71,26 @@ document.getElementById('dumpState').addEventListener('click', () => {
 
   // 3) PPU Pattern Tables
   dump += '--- PPU Pattern Tables (CHR ROM/RAM, $0000–$1FFF) ---\n';
-  if (chrRom && chrRom.length) {
-    dump += hexDumpToString(chrRom, 16, 0x0000) + '\n\n';
+  if (SHARED.CHR_ROM && SHARED.CHR_ROM.length) {
+    dump += hexDumpToString(SHARED.CHR_ROM, 16, 0x0000) + '\n\n';
   } else {
     dump += '[No CHR Data]\n\n';
   }
 
   // 4) VRAM physical ($2000 base)
-  dump += '--- PPU VRAM Physical (systemMemoryVideo, base $2000) ---\n';
-  dump += hexDumpToString(systemMemoryVideo, 16, 0x2000) + '\n\n';
+  dump += '--- PPU VRAM Physical (SHARED.VRAM, base $2000) ---\n';
+  dump += hexDumpToString(SHARED.VRAM, 16, 0x2000) + '\n\n';
 
-  // 5) Palette RAM (print from paletteRAM directly)
-  dump += '--- PPU Palette RAM (paletteRAM, $3F00–$3F1F) ---\n';
-  if (paletteRAM && paletteRAM.length === 0x20) {
-    dump += hexDumpToString(paletteRAM, 16, 0x3F00) + '\n\n';
+  // 5) Palette RAM (print from SHARED.PALETTE_RAM directly)
+  dump += '--- PPU Palette RAM (SHARED.PALETTE_RAM, $3F00–$3F1F) ---\n';
+  if (SHARED.PALETTE_RAM && SHARED.PALETTE_RAM.length === 0x20) {
+    dump += hexDumpToString(SHARED.PALETTE_RAM, 16, 0x3F00) + '\n\n';
   } else {
-    // fallback: mirror from VRAM if paletteRAM not used
+    // fallback: mirror from VRAM if SHARED.PALETTE_RAM not used
     const paletteData = [];
     for (let i = 0; i < 32; i++) {
       const vramIndex = (0x3F00 + i) & 0x07FF;
-      paletteData.push(systemMemoryVideo[vramIndex]);
+      paletteData.push(SHARED.VRAM[vramIndex]);
     }
     dump += hexDumpToString(paletteData, 16, 0x3F00) + '  [from VRAM mirror]\n\n';
   }
@@ -104,18 +104,18 @@ document.getElementById('dumpState').addEventListener('click', () => {
     const ppuMap = new Uint8Array(0x4000);
     const markers = new Array(0x4000).fill(false);
 
-    if (chrRom && chrRom.length) {
-      ppuMap.set(chrRom.slice(0, 0x2000), 0x0000);
+    if (SHARED.CHR_ROM && SHARED.CHR_ROM.length) {
+      ppuMap.set(SHARED.CHR_ROM.slice(0, 0x2000), 0x0000);
     }
     for (let addr = 0x2000; addr <= 0x2FFF; addr++) {
-      ppuMap[addr] = systemMemoryVideo[addr & 0x07FF];
+      ppuMap[addr] = SHARED.VRAM[addr & 0x07FF];
     }
     for (let addr = 0x3000; addr <= 0x3EFF; addr++) {
       ppuMap[addr] = ppuMap[addr - 0x1000];
     }
     for (let i = 0; i < 0x20; i++) {
       const vramIndex = (0x3F00 + i) & 0x07FF;
-      ppuMap[0x3F00 + i] = systemMemoryVideo[vramIndex];
+      ppuMap[0x3F00 + i] = SHARED.VRAM[vramIndex];
       markers[0x3F00 + i] = true;
     }
     for (let addr = 0x3F20; addr <= 0x3FFF; addr++) {

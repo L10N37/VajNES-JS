@@ -58,10 +58,10 @@ function testPpuMemorySuite() {
   if (typeof chrIsRAM !== "undefined" && chrIsRAM) {
     const addr = 0x0000;
     const testVal = 0xAA;
-    const orig = chrRom[addr];
-    chrRom[addr] = testVal;
-    logTest("Pattern [$0000]", testVal, chrRom[addr]);
-    chrRom[addr] = orig; // restore
+    const orig = SHARED.CHR_ROM[addr];
+    SHARED.CHR_ROM[addr] = testVal;
+    logTest("Pattern [$0000]", testVal, SHARED.CHR_ROM[addr]);
+    SHARED.CHR_ROM[addr] = orig; // restore
   } else {
     console.log("%cPattern [$0000]: SKIPPED (CHR-ROM read-only)", "color: gray;");
   }
