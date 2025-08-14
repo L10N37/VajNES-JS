@@ -117,38 +117,6 @@ function opCodeTest(){
   Prioritise implementing IRQ support for popular mappers like MMC3 (4), MMC5 (5), and VRC6 (22).
 */
 
-function IRQ() {
-  // Push return address (current PC) on stack
-  systemMemory[0x100 + CPUregisters.S] = (CPUregisters.PC >> 8) & 0xFF;
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  systemMemory[0x100 + CPUregisters.S] = CPUregisters.PC & 0xFF;
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Build status byte with B flag cleared (0)
-  let status = 0x20; // unused bit always set
-  if (CPUregisters.P.N) status |= 0x80;
-  if (CPUregisters.P.V) status |= 0x40;
-  if (CPUregisters.P.D) status |= 0x08;
-  if (CPUregisters.P.I) status |= 0x04;
-  if (CPUregisters.P.Z) status |= 0x02;
-  if (CPUregisters.P.C) status |= 0x01;
-
-  // Push status on stack
-  systemMemory[0x100 + CPUregisters.S] = status;
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Disable further interrupts
-  CPUregisters.P.I = 1;
-
-  // Read IRQ vector and set PC
-  const lo = systemMemory[0xFFFC];
-  const hi = systemMemory[0xFFFD];
-  CPUregisters.PC = lo | (hi << 8);
-
-  // Consume 7 cycles for IRQ handling
-  cpuCycles = (cpuCycles + 7) & 0xFFFF;
-}
-
 function SEI_IMP() {
   CPUregisters.P.I = (1) ? 1 : 0;
 }
@@ -1062,47 +1030,6 @@ function ORA_INDY() {
 
   CPUregisters.P.Z = ((CPUregisters.A === 0)) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-}
-
-// --------- BRK (IMP) ---------------
-// BRK (0x00) — force interrupt
-function BRK_IMP() {
-  // Return address is PC+2 per 6502 (opcode + padding byte)
-  const ret = (CPUregisters.PC + 2 - 0x8000) & 0xFFFF;
-
-  // Push PCH, then PCL
-  checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), (ret >> 8) & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), ret & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Build status byte with bit5=1 and B=1 for BRK
-  let p = 0;
-  p |= (CPUregisters.P.N & 1) << 7;
-  p |= (CPUregisters.P.V & 1) << 6;
-  p |= 1 << 5;                  // bit 5 always set when pushed
-  p |= 1 << 4;                  // B=1 for BRK (IRQ/NMI would push B=0)
-  p |= (CPUregisters.P.D & 1) << 3;
-  p |= (CPUregisters.P.I & 1) << 2;
-  p |= (CPUregisters.P.Z & 1) << 1;
-  p |= (CPUregisters.P.C & 1) << 0;
-
-  checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), p & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Set I (disable further IRQs)
-  // set B 
-  CPUregisters.P.B = 1;
-  CPUregisters.P.I = 1;
-
-  // Fetch BRK/IRQ vector (no +0x8000!)
-  const lo = checkReadOffset(0xFFFE) & 0xFF;
-  const hi = checkReadOffset(0xFFFF) & 0xFF;
-
-  //CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
-
-  cpuCycles = (cpuCycles + 5) & 0xFFFF;
 }
 
 // CMP #imm — 0xC9

@@ -1,5 +1,3 @@
-let isRomLoaded = false;
-
 function readFile(input) {
   const file = input.files[0];
   if (!file || file.name.split('.').pop().toLowerCase() !== 'nes') {
@@ -14,7 +12,7 @@ function readFile(input) {
     const romBytes = new Uint8Array(reader.result);
     const nesHeader = romBytes.subarray(0, 16);
 
-    // ---- Confirm valid NES header (magic number) ----
+    // ---- Confirm valid NES header ----
     if (
       romBytes[0] !== 0x4E || romBytes[1] !== 0x45 ||
       romBytes[2] !== 0x53 || romBytes[3] !== 0x1A
@@ -23,7 +21,7 @@ function readFile(input) {
       return;
     }
 
-    // ========= Header button (live view) =========
+    // ========= Header button =========
     const headerButton = document.getElementById('header-button');
     headerButton.replaceWith(headerButton.cloneNode(true));
     const freshButton = document.getElementById('header-button');
@@ -34,19 +32,18 @@ function readFile(input) {
       const mirroring = (nesHeader[6] & 0x01) ? 'Vertical' : 'Horizontal';
 
       const info =
-        'System: NES\n' +
-        'PRG ROM Size: ' + prgBanks * 16 + ' KB\n' +
-        'CHR ROM Size: ' + chrBanks * 8 + ' KB - ' +
-        (chrBanks === 0 ? 'Uses CHR RAM' : 'Uses CHR ROM') + '\n' +
-        'Mapper Number: ' + mapperNumber + '\n' +
-        'Mirroring: ' + mirroring + '\n' +
-        'Battery-Backed: ' + ((nesHeader[6] & 0x02) ? 'Yes' : 'No') + '\n' +
-        'Trainer: ' + ((nesHeader[6] & 0x04) ? 'Yes' : 'No') + '\n' +
-        'Four Screen VRAM: ' + ((nesHeader[6] & 0x08) ? 'Yes' : 'No') + '\n';
+        `System: NES\n` +
+        `PRG ROM Size: ${prgBanks * 16} KB\n` +
+        `CHR ROM Size: ${chrBanks * 8} KB - ${(chrBanks === 0 ? 'Uses CHR RAM' : 'Uses CHR ROM')}\n` +
+        `Mapper Number: ${mapperNumber}\n` +
+        `Mirroring: ${mirroring}\n` +
+        `Battery-Backed: ${((nesHeader[6] & 0x02) ? 'Yes' : 'No')}\n` +
+        `Trainer: ${((nesHeader[6] & 0x04) ? 'Yes' : 'No')}\n` +
+        `Four Screen VRAM: ${((nesHeader[6] & 0x08) ? 'Yes' : 'No')}\n`;
       window.alert(info);
     });
 
-    // ---- Extract PRG/CHR sizes from header ----
+    // ---- Extract PRG/CHR sizes ----
     const prgBanks = romBytes[4]; // 16KB banks
     const chrBanks = romBytes[5]; // 8KB banks
     const prgSize  = prgBanks * 0x4000;
@@ -58,42 +55,26 @@ function readFile(input) {
     // ---- Slice out PRG-ROM ----
     prgRom = romBytes.slice(16, 16 + prgSize);
 
-    // ---- Load CHR (ROM or RAM) into SHARED SAB ----
+    // ---- Load CHR data directly into shared CHR_ROM ----
+    const chrStart = 16 + prgSize;
     if (chrSize > 0) {
-      // Ensure SAB matches cart size
-      if (!SHARED.SAB_CHR || SHARED.CHR_ROM.byteLength !== chrSize) {
-        SHARED.SAB_CHR = new SharedArrayBuffer(chrSize);
-        SHARED.CHR_ROM = new Uint8Array(SHARED.SAB_CHR);
-        // Inform worker of new CHR buffer
-        ppuWorker.postMessage({ type: 'assetsUpdate', SAB_ASSETS: { CHR_ROM: SHARED.SAB_CHR } });
-      }
-      const chrStart = 16 + prgSize;
-      SHARED.CHR_ROM.set(romBytes.subarray(chrStart, chrStart + chrSize));
-      window.chrIsRAM = false;
+      CHR_ROM.set(romBytes.subarray(chrStart, chrStart + chrSize));
+      chrIsRAM = false;
     } else {
-      // CHR-RAM cart (writes to $0000-$1FFF allowed)
-      if (!SHARED.SAB_CHR || SHARED.CHR_ROM.byteLength !== 0x2000) {
-        SHARED.SAB_CHR = new SharedArrayBuffer(0x2000);
-        SHARED.CHR_ROM = new Uint8Array(SHARED.SAB_CHR);
-        ppuWorker.postMessage({ type: 'assetsUpdate', SAB_ASSETS: { CHR_ROM: SHARED.SAB_CHR } });
-      }
-      SHARED.CHR_ROM.fill(0x00);
-      window.chrIsRAM = true;
+      CHR_ROM.fill(0x00);
+      chrIsRAM = true;
     }
 
     console.log(`[Loader] Loaded PRG-ROM: ${prgRom.length} bytes`);
-    console.log(`[Loader] CHR is ${window.chrIsRAM ? 'RAM' : 'ROM'}; size=${SHARED.CHR_ROM.byteLength} bytes`);
+    console.log(`[Loader] CHR is ${chrIsRAM ? 'RAM' : 'ROM'}; size=${CHR_ROM.byteLength} bytes`);
 
-    // --- Kick off mapper to finish PRG-ROM setup (mirroring, reset vector)
-    mapper(romBytes.slice(0, 16)); // pass header only
+    // --- Mapper setup ---
+    mapper(romBytes.slice(0, 16));
 
     updateDebugTables();
-    isRomLoaded = true;
-    // post a message to our multithread worker, ROM is loaded
-    ppuWorker.postMessage({ type: 'romReady' });
-    // post a snapshot (top of ppu.js) to our multithread worker
-    postPPUSnapshot();
 
+    // Notify PPU worker ROM is ready
+    ppuWorker.postMessage({ type: 'romReady' });
   };
 
   reader.onerror = function () {

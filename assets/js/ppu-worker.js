@@ -1,89 +1,190 @@
-// =============================
-// ppu-worker.js  (self-driven PPU with catch-up pump)
-// PPU stays in sync because ppu-worker compares CLOCKS[0] (CPU cycles) to (CPU * 3) and ticks until caught up.
-// =============================
-
 importScripts('/assets/js/ppu-worker-setup.js');
 
 console.log('[PPU-Worker] loaded');
 
-// PPU timing state
-const PPUclock = { dot: 0, scanline: 0, frame: 0, oddFrame: false };
+// debug logging for worker side (not a redeclaration, out of scope), can not
+// toggle this one from console
+ppuDebugLogging = true;
 
-// Constants
+// --- Constants ---
 const NES_W = 256, NES_H = 240;
-const DOTS_PER_SCANLINE = 341, SCANLINES_PER_FRAME = 262;
+const DOTS_PER_SCANLINE = 341;
+const SCANLINES_PER_FRAME = 262;   // legal scanline values: -1, 0..260, and we also mirror 261 as pre-render
 
-// Back buffer of palette indices (0..63)
+// --- PPU timing state ---
+const PPUclock = { dot: 0, scanline: -1, frame: 0, oddFrame: false };
+
+// --- Back buffer of palette indices (0..63) ---
 let paletteIndexFrame = new Uint8Array(NES_W * NES_H);
 let lastFrameRendered = -1;
 
+// --- Worker-local background pipeline/shifters ---
+const background = {
+  bgShiftLo: 0, bgShiftHi: 0,
+  atShiftLo: 0, atShiftHi: 0,
+  ntByte: 0, atByte: 0,
+  tileLo: 0, tileHi: 0
+};
 
+// --- added: track when ROM is ready so the pump can run once clocks are attached ---
+let romReady = false;
 
-// ---------- PPU tick ----------
-function ppuTick() {
-  const renderingEnabled = !!(regMASK() & 0x18);
+// =============================
+// Per-scanline functions
+// =============================
 
-  if (PPUclock.scanline >= 0 && PPUclock.scanline < 240) {
-    if (renderingEnabled) {
-      if ((PPUclock.dot >= 1 && PPUclock.dot <= 256) || (PPUclock.dot >= 321 && PPUclock.dot <= 336)) {
-        PPUreg.BG.bgShiftLo <<= 1; PPUreg.BG.bgShiftHi <<= 1;
-        PPUreg.BG.atShiftLo <<= 1; PPUreg.BG.atShiftHi <<= 1;
+function preRenderScanline() {
+  // -1 / 261
+  // Clear vblank at dot 1. Sprite flags clear would go here if/when you wire them.
+  if (PPUclock.dot === 1) {
+    PPUSTATUS &= ~0x80; // clear vblank
+  }
+  // During dots 280..304, copy vertical scroll bits if rendering is enabled
+  if ((PPUMASK & 0x18) && PPUclock.dot >= 280 && PPUclock.dot <= 304) {
+    copyVert();
+  }
+}
 
-        switch (PPUclock.dot % 8) {
-          case 1:
-            PPUreg.BG.ntByte = ppuBusRead(0x2000 | (PPUreg.VRAM_ADDR & 0x0FFF));
-            break;
-          case 3:
-            PPUreg.BG.atByte = ppuBusRead(
-              0x23C0 |
-              (PPUreg.VRAM_ADDR & 0x0C00) |
-              ((PPUreg.VRAM_ADDR >> 4) & 0x38) |
-              ((PPUreg.VRAM_ADDR >> 2) & 0x07)
-            );
-            break;
-          case 5:
-            PPUreg.BG.tileLo = ppuBusRead(
-              (regCTRL() & 0x10 ? 0x1000 : 0x0000) +
-              (PPUreg.BG.ntByte * 16) +
-              ((PPUreg.VRAM_ADDR >> 12) & 0x7)
-            );
-            break;
-          case 7:
-            PPUreg.BG.tileHi = ppuBusRead(
-              (regCTRL() & 0x10 ? 0x1000 : 0x0000) +
-              (PPUreg.BG.ntByte * 16) +
-              ((PPUreg.VRAM_ADDR >> 12) & 0x7) + 8
-            );
-            break;
-          case 0:
-            reloadBGShifters();
-            incCoarseX();
-            break;
-        }
+function visibleScanline() {
+  const renderingEnabled = true//!!(PPUMASK & 0x18);
+
+  if (ppuDebugLogging && PPUclock.dot === 1) {
+    console.log("%c[BG FETCH START]", "color: white; background: green; padding: 2px 4px");
+  }
+
+  if (renderingEnabled) {
+    if ((PPUclock.dot >= 1 && PPUclock.dot <= 256) || (PPUclock.dot >= 321 && PPUclock.dot <= 336)) {
+      background.bgShiftLo <<= 1; background.bgShiftHi <<= 1;
+      background.atShiftLo <<= 1; background.atShiftHi <<= 1;
+
+      switch (PPUclock.dot % 8) {
+        case 1:
+          if (ppuDebugLogging) console.log("%c[NT BYTE FETCH]", "color: black; background: yellow; padding: 2px 4px");
+          background.ntByte = ppuBusRead(0x2000 | (VRAM_ADDR & 0x0FFF)) & 0xFF;
+          break;
+        case 3:
+          if (ppuDebugLogging) console.log("%c[AT BYTE FETCH]", "color: white; background: purple; padding: 2px 4px");
+          background.atByte = ppuBusRead(
+            0x23C0 |
+            (VRAM_ADDR & 0x0C00) |
+            ((VRAM_ADDR >> 4) & 0x38) |
+            ((VRAM_ADDR >> 2) & 0x07)
+          ) & 0xFF;
+          break;
+        case 5:
+          if (ppuDebugLogging) console.log("%c[TILE LO FETCH]", "color: black; background: cyan; padding: 2px 4px");
+          background.tileLo = ppuBusRead(
+            (PPUCTRL & 0x10 ? 0x1000 : 0x0000) +
+            (background.ntByte * 16) +
+            ((VRAM_ADDR >> 12) & 0x7)
+          ) & 0xFF;
+          break;
+        case 7:
+          if (ppuDebugLogging) console.log("%c[TILE HI FETCH]", "color: white; background: blue; padding: 2px 4px");
+          background.tileHi = ppuBusRead(
+            (PPUCTRL & 0x10 ? 0x1000 : 0x0000) +
+            (background.ntByte * 16) +
+            ((VRAM_ADDR >> 12) & 0x7) + 8
+          ) & 0xFF;
+          break;
+        case 0:
+          if (ppuDebugLogging) console.log("%c[RELOAD & COARSE X]", "color: white; background: black; padding: 2px 4px");
+          reloadBGShifters();
+          incCoarseX();
+          break;
       }
-      if (PPUclock.dot === 256) incY();
-      if (PPUclock.dot === 257) copyHoriz();
     }
-    if (PPUclock.dot >= 1 && PPUclock.dot <= 256) emitPixel();
+
+    // Sprite evaluation phase
+    if (ppuDebugLogging && PPUclock.dot === 257) {
+      console.log("%c[SPRITE EVAL START]", "color: white; background: red; padding: 2px 4px");
+    }
+
+    if (PPUclock.dot === 256) incY();
+    if (PPUclock.dot === 257) copyHoriz();
   }
 
-  if (PPUclock.scanline === 241 && PPUclock.dot === 1) {
-    setSTATUS(regSTATUS() | 0x80);
-    if (regCTRL() & 0x80) Atomics.or(EVENTS, 0, 0x1);
+  if (PPUclock.dot >= 1 && PPUclock.dot <= 256) emitPixel();
+}
 
-    if (PPUclock.frame !== lastFrameRendered) {
-      renderFrameIndices();
-      if (FRAMECTR) Atomics.add(FRAMECTR, 0, 1);
-      lastFrameRendered = PPUclock.frame;
+
+function postRenderScanline() {
+  // 240 — idle (post-render)
+}
+
+function vblankStartScanline() {
+  // 241, dot 1
+  if (PPUclock.dot === 1) {
+    PPUSTATUS |= 0x80; // set vblank
+    if (PPUCTRL & 0x80) {
+      nmiPending = true;
+      console.log("%cNMI fired", "color:#fff;background:#c00;font-weight:bold;padding:2px 6px;border-radius:3px");
     }
   }
+}
 
-  if (PPUclock.scanline === -1 || PPUclock.scanline === 261) {
-    if (PPUclock.dot === 1) setSTATUS(regSTATUS() & ~0x80);
-    if (renderingEnabled && PPUclock.dot >= 280 && PPUclock.dot <= 304) copyVert();
+function firstVblankIdleScanline() {
+  // 242
+
+  // For now we still transfer the buffer (NES is small, this is fine). Swap to SAB + signal later if needed
+  // or use this thread to render
+  postMessage(
+    { type: 'frame', format: 'indices', bpp: 8, w: NES_W, h: NES_H, buffer: paletteIndexFrame.buffer },
+    [paletteIndexFrame.buffer]
+  );
+  paletteIndexFrame = new Uint8Array(NES_W * NES_H);
+}
+
+function vblankIdleScanline() {
+  // 243..260 — nothing special
+}
+
+// =============================
+// Scanline LUT (array index == scanline; -1 is placed at index 261)
+// =============================
+
+const scanlineLUT = new Array(262);
+
+// 0..239 visible
+for (let i = 0; i <= 239; i++) scanlineLUT[i] = visibleScanline;
+
+// 240 post-render
+scanlineLUT[240] = postRenderScanline;
+
+// 241 vblank start
+scanlineLUT[241] = vblankStartScanline;
+
+// 242 we will use this scanline to send our frame
+scanlineLUT[242] = firstVblankIdleScanline;
+
+// 242..260 vblank idle
+for (let i = 243; i <= 260; i++) scanlineLUT[i] = vblankIdleScanline;
+
+// 261 pre-render (mirror of -1)
+scanlineLUT[261] = preRenderScanline;
+
+//console.log(JSON.stringify(scanlineLUT.map(fn => fn ? fn.name : null)));
+
+
+// =============================
+// One-dot tick
+// =============================
+function ppuTick() {
+
+  const renderingEnabled = !!(PPUMASK & 0x18);
+
+  // odd frame: skip dot 0 on pre-render if rendering is on
+  if (PPUclock.scanline === -1 && PPUclock.dot === 0 && renderingEnabled && PPUclock.oddFrame) {
+    PPUclock.dot = 1;
   }
 
+  // dispatch to the scanline function
+  // map scanline -1 → index 261; otherwise direct
+  const idx = (PPUclock.scanline === -1) ? 261 : PPUclock.scanline;
+  const fn = scanlineLUT[idx];
+  if (fn) fn();
+
+  // advance dot / scanline
   PPUclock.dot++;
   if (PPUclock.dot >= DOTS_PER_SCANLINE) {
     PPUclock.dot = 0;
@@ -94,179 +195,154 @@ function ppuTick() {
       PPUclock.oddFrame = !PPUclock.oddFrame;
     }
   }
-
-  if (CLOCKS) Atomics.add(CLOCKS, 1, 1);
 }
 
-// ---------- Helpers ----------
-function reloadBGShifters() {
-  PPUreg.BG.bgShiftLo = (PPUreg.BG.bgShiftLo & 0xFF00) | PPUreg.BG.tileLo;
-  PPUreg.BG.bgShiftHi = (PPUreg.BG.bgShiftHi & 0xFF00) | PPUreg.BG.tileHi;
+// =============================
+// Helpers (BG pipeline + VRAM logic)
+// =============================
 
-  const at = PPUreg.BG.atByte;
-  const palLo = (at & 1) ? 0xFF : 0x00;
-  const palHi = (at & 2) ? 0xFF : 0x00;
-  PPUreg.BG.atShiftLo = (PPUreg.BG.atShiftLo & 0xFF00) | palLo;
-  PPUreg.BG.atShiftHi = (PPUreg.BG.atShiftHi & 0xFF00) | palHi;
+function reloadBGShifters() {
+  background.bgShiftLo = (background.bgShiftLo & 0xFF00) | (background.tileLo & 0xFF);
+  background.bgShiftHi = (background.bgShiftHi & 0xFF00) | (background.tileHi & 0xFF);
+
+  const at = background.atByte & 0x03;  // we only care about two bits for palette select
+  const palLo = (at & 0x01) ? 0xFF : 0x00;
+  const palHi = (at & 0x02) ? 0xFF : 0x00;
+  background.atShiftLo = (background.atShiftLo & 0xFF00) | palLo;
+  background.atShiftHi = (background.atShiftHi & 0xFF00) | palHi;
 }
 
 function emitPixel() {
-  const x = PPUclock.dot - 1, y = PPUclock.scanline;
-  if (x < 0 || x >= NES_W || y < 0 || y >= NES_H) return;
+  const x = (PPUclock.dot - 1) | 0;
+  const y = PPUclock.scanline | 0;
+  if ((x >>> 0) >= NES_W || (y >>> 0) >= NES_H) return;
 
-  const fineX = PPUreg.fineX & 0x7;
+  const fx = fineX & 0x07;
 
-  const bit0 = (PPUreg.BG.bgShiftLo >> (15 - fineX)) & 1;
-  const bit1 = (PPUreg.BG.bgShiftHi >> (15 - fineX)) & 1;
+  const bit0 = (background.bgShiftLo >> (15 - fx)) & 1;
+  const bit1 = (background.bgShiftHi >> (15 - fx)) & 1;
   const bgPix = (bit1 << 1) | bit0;
 
-  const pal0 = (PPUreg.BG.atShiftLo >> (15 - fineX)) & 1;
-  const pal1 = (PPUreg.BG.atShiftHi >> (15 - fineX)) & 1;
+  const pal0 = (background.atShiftLo >> (15 - fx)) & 1;
+  const pal1 = (background.atShiftHi >> (15 - fx)) & 1;
   const palSel = (pal1 << 1) | pal0;
 
   let index = (palSel << 2) | bgPix;
   if (bgPix === 0) index = 0;
 
-  paletteIndexFrame[y * NES_W + x] = index & 0x3F;
+  paletteIndexFrame[(y * NES_W + x) | 0] = index & 0x3F;
 }
 
 function incCoarseX() {
-  if ((PPUreg.VRAM_ADDR & 0x001F) !== 31) {
-    PPUreg.VRAM_ADDR = (PPUreg.VRAM_ADDR + 1) & 0x7FFF;
+  if ((VRAM_ADDR & 0x001F) !== 31) {
+    VRAM_ADDR = (VRAM_ADDR + 1) & 0x7FFF;
   } else {
-    PPUreg.VRAM_ADDR = (PPUreg.VRAM_ADDR & ~0x001F) ^ 0x0400;
+    VRAM_ADDR = (VRAM_ADDR & ~0x001F) ^ 0x0400;
   }
 }
 
 function incY() {
-  if ((PPUreg.VRAM_ADDR & 0x7000) !== 0x7000) {
-    PPUreg.VRAM_ADDR = (PPUreg.VRAM_ADDR + 0x1000) & 0x7FFF;
+  if ((VRAM_ADDR & 0x7000) !== 0x7000) {
+    VRAM_ADDR = (VRAM_ADDR + 0x1000) & 0x7FFF;
   } else {
-    PPUreg.VRAM_ADDR &= ~0x7000;
-    let y = (PPUreg.VRAM_ADDR & 0x03E0) >> 5;
+    VRAM_ADDR &= ~0x7000;
+    let y = (VRAM_ADDR & 0x03E0) >> 5;
     if (y === 29) {
-      y = 0; PPUreg.VRAM_ADDR ^= 0x0800;
+      y = 0; VRAM_ADDR ^= 0x0800;
     } else if (y === 31) {
       y = 0;
     } else {
       y++;
     }
-    PPUreg.VRAM_ADDR = (PPUreg.VRAM_ADDR & ~0x03E0) | (y << 5);
+    VRAM_ADDR = (VRAM_ADDR & ~0x03E0) | ((y & 0x1F) << 5);
   }
 }
 
 function copyHoriz() {
-  PPUreg.VRAM_ADDR = (PPUreg.VRAM_ADDR & ~0x041F) | (PPUreg.t & 0x041F);
+  const t = ((t_hi << 8) | t_lo) & 0x7FFF;
+  VRAM_ADDR = (VRAM_ADDR & ~0x041F) | (t & 0x041F);
 }
 
 function copyVert() {
-  PPUreg.VRAM_ADDR = (PPUreg.VRAM_ADDR & ~0x7BE0) | (PPUreg.t & 0x7BE0);
+  const t = ((t_hi << 8) | t_lo) & 0x7FFF;
+  VRAM_ADDR = (VRAM_ADDR & ~0x7BE0) | (t & 0x7BE0);
 }
 
 function ppuBusRead(addr) {
   addr &= 0x3FFF;
+
+  // Pattern tables
   if (addr < 0x2000) {
-    return SHARED.CHR_ROM ? SHARED.CHR_ROM[addr] : 0;
+    return CHR_ROM[addr] & 0xFF;
   }
-  if (addr < 0x3F00) {
-    return SHARED.VRAM ? SHARED.VRAM[(addr - 0x2000) & 0x07FF] : 0;
+
+  // Palette RAM + mirrors
+  if (addr >= 0x3F00) {
+    let pal = addr & 0x1F;
+    // $3F10,14,18,1C mirror $3F00,04,08,0C
+    if ((pal & 0x13) === 0x10) pal &= ~0x10;
+    return PALETTE_RAM[pal] & 0x3F; // palette uses 6 bits
   }
-  let pal = addr & 0x1F;
-  if ((pal & 0x13) === 0x10) pal &= ~0x10;
-  return SHARED.PALETTE_RAM ? (SHARED.PALETTE_RAM[pal] & 0x3F) : 0;
+
+  // Nametables (2 KB, mirrored every 2 KB over $2000–$2FFF)
+  return VRAM[(addr - 0x2000) & 0x07FF] & 0xFF;
 }
 
-function renderFrameIndices() {
-  const TILE_BYTES = 16, TILES_X = 32, TILES_Y = 30;
-  const totalTiles = SHARED.CHR_ROM ? (SHARED.CHR_ROM.length / TILE_BYTES) | 0 : 0;
-
-  const lowLUT  = new Uint8Array(totalTiles * 8);
-  const highLUT = new Uint8Array(totalTiles * 8);
-
-  for (let t = 0; t < totalTiles; t++) {
-    const base = t * 16;
-    for (let row = 0; row < 8; row++) {
-      const li = t * 8 + row;
-      lowLUT[li]  = SHARED.CHR_ROM ? SHARED.CHR_ROM[base + row]     : 0;
-      highLUT[li] = SHARED.CHR_ROM ? SHARED.CHR_ROM[base + row + 8] : 0;
-    }
-  }
-
-  const NAME_BASE = 0x000;
-  const ATTR_BASE = 0x3C0;
-
-  let out = 0;
-  for (let y = 0; y < NES_H; y++) {
-    const tileY = (y / 8) | 0;
-    const rowInTile = y & 7;
-
-    for (let x = 0; x < NES_W; x++) {
-      const tileX = (x / 8) | 0;
-
-      const ntIndex   = tileY * TILES_X + tileX;
-      const tileIndex = SHARED.VRAM ? SHARED.VRAM[NAME_BASE + ntIndex] : 0;
-
-      const lutIndex  = tileIndex * 8 + rowInTile;
-      const lowB  = lowLUT[lutIndex];
-      const highB = highLUT[lutIndex];
-
-      const bit = 7 - (x & 7);
-      const pix = ((highB >> bit) & 1) << 1 | ((lowB >> bit) & 1);
-
-      const attrX = (tileX / 4) | 0;
-      const attrY = (tileY / 4) | 0;
-      const attrIndex = attrY * 8 + attrX;
-      const attrByte  = SHARED.VRAM ? SHARED.VRAM[ATTR_BASE + attrIndex] : 0;
-
-      const shift   = ((tileY & 2) << 1) | (tileX & 2);
-      const palNum  = (attrByte >> shift) & 0x03;
-
-      const palBase = (palNum * 4) | 0;
-      const palIdx  = SHARED.PALETTE_RAM ? (SHARED.PALETTE_RAM[(palBase + pix) & 0x1F] & 0x3F) : 0;
-
-      paletteIndexFrame[out++] = palIdx;
-    }
-  }
-
-  postMessage(
-    { type: 'frame', format: 'indices', bpp: 8, w: NES_W, h: NES_H, buffer: paletteIndexFrame.buffer },
-    [paletteIndexFrame.buffer]
-  );
-  paletteIndexFrame = new Uint8Array(NES_W * NES_H);
-}
-
+// =============================
+// Reset
+// =============================
 function resetPPU() {
   PPUclock.dot = 0;
-  PPUclock.scanline = 0;
+  PPUclock.scanline = -1;
   PPUclock.frame = 0;
   PPUclock.oddFrame = false;
   lastFrameRendered = -1;
 
-  PPUreg.OAMADDR = 0;
-  PPUreg.SCROLL_X = PPUreg.SCROLL_Y = 0;
-  PPUreg.VRAM_ADDR = PPUreg.t = 0;
-  PPUreg.fineX = 0;
-  PPUreg.writeToggle = false;
+  OAMADDR = 0;
+  SCROLL_X = SCROLL_Y = 0;
+  VRAM_ADDR = 0;
+  t_lo = 0; t_hi = 0;
+  fineX = 0;
+  writeToggle = false;
 
-  PPUreg.BG.bgShiftLo = PPUreg.BG.bgShiftHi =
-  PPUreg.BG.atShiftLo = PPUreg.BG.atShiftHi = 0;
-  PPUreg.BG.ntByte = PPUreg.BG.atByte = PPUreg.BG.tileLo = PPUreg.BG.tileHi = 0;
+  background.bgShiftLo = background.bgShiftHi = 0;
+  background.atShiftLo = background.atShiftHi = 0;
+  background.ntByte = background.atByte = 0;
+  background.tileLo = background.tileHi = 0;
 }
 
+// =============================
+// Pump (CPU→PPU catch-up)
+// =============================
 let pumpStarted = false;
 function pump() {
-  if (!romReady || !CLOCKS) { setTimeout(pump, 0); return; }
+  // wait for ROM + SABs from setup
+  if (!romReady || !SHARED.CLOCKS) { 
+    setTimeout(pump, 0); 
+    return; 
+  }
 
-  const cpu    = Atomics.load(CLOCKS, 0) | 0;
-  const target = (cpu * 3) | 0;
-  let   ppu    = Atomics.load(CLOCKS, 1) | 0;
+  // use the actual shared array values
+  let cpuNow    = SHARED.CLOCKS[0] | 0; 
+  let ppuNow    = SHARED.CLOCKS[1] | 0;
+  let targetPPU = cpuNow * 3;
 
   let steps = 0, MAX = 50000;
-  while (ppu < target && steps < MAX) { ppuTick(); ppu++; steps++; }
+  while (ppuNow < targetPPU && steps < MAX) {
+    ppuTick();
+    ppuNow++;
+    steps++;
+  }
+
+  // write back PPU cycles
+  cpuCycles = ppuNow | 0;
 
   setTimeout(pump, 0);
 }
 
 function startPump() {
-  if (!pumpStarted) { pumpStarted = true; setTimeout(pump, 0); }
+  if (!pumpStarted) { 
+    pumpStarted = true; 
+    setTimeout(pump, 0); 
+  }
 }

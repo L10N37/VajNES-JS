@@ -217,12 +217,12 @@ function ppuRead(addr) {
   return cpuOpenBus;
 }
 
-// PPU BUS read / write need to be properly sorted for main thread/ worker thread, but won't hurt to double them
-// for now
 // Raw PPU memory fetch (no $2007 buffering rules here)
 // $0000–$1FFF: pattern tables (CHR)
 // $2000–$2FFF: nametables (VRAM, mirrored to $3EFF)
 // $3F00–$3F1F: palette RAM (with $3F10/$14/$18/$1C mirroring)
+
+/*
 function ppuBusRead(addr) {
   addr &= 0x3FFF;
 
@@ -242,6 +242,7 @@ function ppuBusRead(addr) {
   // Nametables (2 KB, mirrored every 2 KB over $2000–$2FFF)
   return VRAM[(addr - 0x2000) & 0x07FF] & 0xFF;
 }
+*/
 
 // --- PPU bus write ---
 // Raw PPU memory store (no $2007 buffering rules here)

@@ -81,7 +81,6 @@ onmessage = (e) => {
         postMessage({ type: 'ready' });
         return;
     }
-
     // ROM ready signal
     if (d.type === 'romReady') {
         romReady = true;

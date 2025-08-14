@@ -121,9 +121,6 @@ SHARED.SAB_FRAME = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
 SHARED.FRAME     = new Int32Array(SHARED.SAB_FRAME);
 SHARED.FRAME[0] = 0;
 
-// Legacy variable
-let cpuCycles = 0;
-
 /*
 Shared subset of PPU registers (8-bit only)
 =============== Index mapping ===============
@@ -315,8 +312,17 @@ function dmaTransfer(value) {
   // lets just the cycles as soon as dma is done in this case
 }
 
+//https://www.nesdev.org/wiki/CPU_interrupts
 // ===== NMI handler =====
 function serviceNMI() {
+
+  if (ppuDebugLogging){
+  console.log(
+      "%cNMI fired",
+      "color: white; background-color: red; font-weight: bold; padding: 2px 6px; border-radius: 3px"
+    );
+  }
+
   const pc = CPUregisters.PC & 0xFFFF;
 
   // Push PC high
@@ -343,8 +349,96 @@ function serviceNMI() {
   Atomics.add(SHARED.CLOCKS, 0, 7);
 }
 
-// ROM gate
-ppuWorker.postMessage({ type: 'romReady' });
+function IRQ(isFromBRK = false) {
+  // Push return address (PC high, then low)
+  systemMemory[0x100 + CPUregisters.S] = (CPUregisters.PC >> 8) & 0xFF;
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  systemMemory[0x100 + CPUregisters.S] = CPUregisters.PC & 0xFF;
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Build status byte
+  let status = 0x20; // bit 5 always set
+  if (CPUregisters.P.N) status |= 0x80;
+  if (CPUregisters.P.V) status |= 0x40;
+  if (CPUregisters.P.D) status |= 0x08;
+  if (CPUregisters.P.I) status |= 0x04;
+  if (CPUregisters.P.Z) status |= 0x02;
+  if (CPUregisters.P.C) status |= 0x01;
+
+  // Set B flag correctly for BRK vs. IRQ
+  if (isFromBRK) {
+    status |= 0x10; // B flag set when BRK
+  }
+
+  // Push status
+  systemMemory[0x100 + CPUregisters.S] = status;
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Set I flag to block further IRQs
+  CPUregisters.P.I = 1;
+
+  // Vector fetch — default IRQ vector
+  let vectorAddr = 0xFFFE;
+
+  // Hijack quirk:
+  // If this IRQ is actually being triggered mid-BRK AND
+  // an NMI line was asserted during BRK's first 4 cycles,
+  // hardware will use the NMI vector instead.
+  if (nmiPending && isFromBRK) {
+    vectorAddr = 0xFFFA; // NMI vector instead
+    nmiPending = !nmiPending;  // consume NMI
+  }
+
+  // Load PC from vector
+  const lo = systemMemory[vectorAddr];
+  const hi = systemMemory[vectorAddr + 1];
+  CPUregisters.PC = lo | (hi << 8);
+
+  // Notify PPU worker of 7 cycle stall
+  Atomics.add(SHARED.CLOCKS, 0, 7);
+}
+
+/*       --------- BRK (IMP) ---------------
+   BRK (0x00) — Force interrupt via IRQ/BRK vector */
+function BRK_IMP() {
+  // Per 6502 spec, BRK pushes PC+2 (opcode + padding byte)
+  const ret = (CPUregisters.PC + 2) & 0xFFFF;
+
+  // Push PCH
+  checkWriteOffset(0x0100 | CPUregisters.S, (ret >> 8) & 0xFF);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Push PCL
+  checkWriteOffset(0x0100 | CPUregisters.S, ret & 0xFF);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Build status byte with bit5=1 and B=1 for BRK
+  let p = (1 << 5) | (1 << 4); // bit5 always 1, B=1 for BRK
+  if (CPUregisters.P.N) p |= 0x80;
+  if (CPUregisters.P.V) p |= 0x40;
+  if (CPUregisters.P.D) p |= 0x08;
+  if (CPUregisters.P.I) p |= 0x04;
+  if (CPUregisters.P.Z) p |= 0x02;
+  if (CPUregisters.P.C) p |= 0x01;
+
+  // Push status
+  checkWriteOffset(0x0100 | CPUregisters.S, p);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // Set I flag (disable further IRQs)
+  CPUregisters.P.I = 1;
+  CPUregisters.P.B = 1;
+
+  // Fetch IRQ/BRK vector
+  const lo = checkReadOffset(0xFFFE) & 0xFF;
+  const hi = checkReadOffset(0xFFFF) & 0xFF;
+  CPUregisters.PC = (hi << 8) | lo;
+
+  // BRK takes 7 cycles total
+  cpuCycles = (cpuCycles + 7) & 0xFFFF;
+  // has a pointless quirk you -could- emulate down the track
+}
 
 PPUCTRL = PPUMASK = PPUSTATUS = OAMADDR = ADDR_HIGH = ADDR_LOW = VRAM_DATA = OAMDATA = 0x00;
 VRAM.fill(0x00);
+ppuCycles = cpuCycles = 0x00;
