@@ -377,7 +377,7 @@ const allVramCells = document.querySelectorAll('.vramCells');
 allVramCells.forEach(cell => {
   const match = cell.id.match(/VRAM-CELL-([0-9A-F]{4})/);
   const addr = match ? parseInt(match[1], 16) : 0;
-  const val = SHARED.VRAM[addr & 0x7FF];
+  const val = VRAM[addr & 0x7FF];
   cell.innerText = val.toString(16).padStart(2, '0').toUpperCase() + 'h';
   cell.title = `$${addr.toString(16).toUpperCase().padStart(4, '0')}`;
 
@@ -406,7 +406,7 @@ allVramCells.forEach(cell => {
     function commit() {
       let v = parseInt(input.value, 16);
       if (isNaN(v) || v < 0x00 || v > 0xFF) v = 0; // Clamp to byte
-      SHARED.VRAM[addr & 0x7FF] = v; // Store to actual video RAM
+      VRAM[addr & 0x7FF] = v; // Store to actual video RAM
       cell.innerText = v.toString(16).padStart(2, '0').toUpperCase() + 'h';
       cell.classList.add('edited-cell'); // mark as edited
     }
@@ -551,14 +551,14 @@ function ppuRegisterBitsPopulate() {
       if (cell) cell.innerText = (regVal >> i) & 1;
     }
   }
-  setBitsPPU(PPUregister.CTRL,      "PPUCTRL");
-  setBitsPPU(PPUregister.MASK,      "PPUMASK");
-  setBitsPPU(PPUregister.STATUS,    "PPUSTATUS");
-  setBitsPPU(PPUregister.OAMADDR,   "OAMADDR");
-  setBitsPPU(PPUregister.OAMDATA,   "OAMDATA");
-  setBitsPPU(PPUregister.ADDR_HIGH, "PPUADDR_HIGH");
-  setBitsPPU(PPUregister.ADDR_LOW,  "PPUADDR_LOW");
-  setBitsPPU(PPUregister.VRAM_DATA, "PPUDATA");
+  setBitsPPU(PPUCTRL,      "PPUCTRL");
+  setBitsPPU(PPUMASK,      "PPUMASK");
+  setBitsPPU(PPUSTATUS,    "PPUSTATUS");
+  setBitsPPU(OAMADDR,   "OAMADDR");
+  setBitsPPU(OAMDATA,   "OAMDATA");
+  setBitsPPU(ADDR_HIGH, "PPUADDR_HIGH");
+  setBitsPPU(ADDR_LOW,  "PPUADDR_LOW");
+  setBitsPPU(VRAM_DATA, "PPUDATA");
 }
 
 // =================== CPU/PPU REGISTERS + FLAGS TABLES ===================

@@ -2,13 +2,10 @@
 // ppu-worker.js  (self-driven PPU with catch-up pump)
 // PPU stays in sync because ppu-worker compares CLOCKS[0] (CPU cycles) to (CPU * 3) and ticks until caught up.
 // =============================
+
+importScripts('/assets/js/ppu-worker-setup.js');
+
 console.log('[PPU-Worker] loaded');
-
-// Local namespace for shared views (mirrors main thread’s SHARED)
-let SHARED = {};
-
-let CLOCKS, EVENTS, FRAMECTR;
-let romReady = false;
 
 // PPU timing state
 const PPUclock = { dot: 0, scanline: 0, frame: 0, oddFrame: false };
@@ -21,71 +18,7 @@ const DOTS_PER_SCANLINE = 341, SCANLINES_PER_FRAME = 262;
 let paletteIndexFrame = new Uint8Array(NES_W * NES_H);
 let lastFrameRendered = -1;
 
-// only the variables needed on this thread
-const PPUreg = {
-  VRAM_ADDR: 0x0000,  // v
-  t: 0x0000,          // t
-  fineX: 0,
-  writeToggle: false,
-  BG: {
-    bgShiftLo: 0, bgShiftHi: 0,
-    atShiftLo: 0, atShiftHi: 0,
-    ntByte: 0, atByte: 0, tileLo: 0, tileHi: 0
-  }
-};
 
-function mergePPUSnapshot(s) {
-  if (!s) return;
-  if (typeof s.SCROLL_X   === 'number') PPUreg.SCROLL_X   = s.SCROLL_X & 0xFF;
-  if (typeof s.SCROLL_Y   === 'number') PPUreg.SCROLL_Y   = s.SCROLL_Y & 0xFF;
-  if (typeof s.VRAM_ADDR  === 'number') PPUreg.VRAM_ADDR  = s.VRAM_ADDR & 0x3FFF;
-  if (typeof s.t          === 'number') PPUreg.t          = s.t & 0x7FFF;
-  if (typeof s.fineX      === 'number') PPUreg.fineX      = s.fineX & 0x07;
-  if (typeof s.writeToggle=== 'boolean')PPUreg.writeToggle= s.writeToggle;
-}
-
-// ---------- Message wiring ----------
-onmessage = (e) => {
-  const d = e.data || {};
-
-  if (d.SAB_CLOCKS) { SHARED.CLOCKS = new Int32Array(d.SAB_CLOCKS); CLOCKS = SHARED.CLOCKS; }
-  if (d.SAB_EVENTS) { SHARED.EVENTS = new Int32Array(d.SAB_EVENTS); EVENTS = SHARED.EVENTS; }
-  if (d.SAB_FRAME)  { SHARED.FRAME  = new Int32Array(d.SAB_FRAME);  FRAMECTR = SHARED.FRAME; }
-  if (d.SAB_CPU_OPENBUS) { SHARED.CPU_OPENBUS = new Uint8Array(d.SAB_CPU_OPENBUS); }
-
-  if (d.type === 'ppuRegs' && d.regs) {
-  mergePPUSnapshot(d.regs);
-  }
-
-  // Mapping: 0=CTRL, 1=MASK, 2=ADDR_HIGH, 3=ADDR_LOW, 4=STATUS
-  if (d.SAB_PPU_REGS) {
-    SHARED.PPU_REGS = new Uint8Array(d.SAB_PPU_REGS);
-  }
-
-  if (d.SAB_ASSETS) {
-    SHARED.CHR_ROM     = new Uint8Array(d.SAB_ASSETS.CHR_ROM);
-    SHARED.VRAM        = new Uint8Array(d.SAB_ASSETS.VRAM);
-    SHARED.PALETTE_RAM = new Uint8Array(d.SAB_ASSETS.PALETTE_RAM);
-    SHARED.OAM         = new Uint8Array(d.SAB_ASSETS.OAM);
-  }
-
-  if (d.type === 'romReady') {
-    romReady = true;
-    startPump();
-  }
-
-  if (d.type === 'ppu-reset') {
-    resetPPU();
-  }
-};
-
-// ---------- Shared reg helpers ----------
-function regCTRL()      { return SHARED.PPU_REGS[0] | 0; }
-function regMASK()      { return SHARED.PPU_REGS[1] | 0; }
-function regADDR_HIGH() { return SHARED.PPU_REGS[2] | 0; }
-function regADDR_LOW()  { return SHARED.PPU_REGS[3] | 0; }
-function regSTATUS()    { return SHARED.PPU_REGS[4] | 0; }
-function setSTATUS(val) { SHARED.PPU_REGS[4] = val & 0xFF; }
 
 // ---------- PPU tick ----------
 function ppuTick() {

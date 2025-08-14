@@ -1,5 +1,5 @@
-/* 
-Frame Buffer Arrays
+/* DELETE THIS FILE, ITS JUST for scrap coding trials
+Frame Buffer Arrays 
 -----------------------------------------
 First index = Y (scanline)
 Second index = X (pixel in that scanline)

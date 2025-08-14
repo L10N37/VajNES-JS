@@ -14,32 +14,6 @@ function pause() {
   updateDebugTables();
 }
 
-// ===== NMI handler =====
-function serviceNMI() {
-  const pc = CPUregisters.PC & 0xFFFF;
-
-  // Push PC high
-  checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), (pc >>> 8) & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Push PC low
-  checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), pc & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Push P with B=0, bit5 set
-  const pushedP = ((CPUregisters.P & ~0x10) | 0x20) & 0xFF;
-  checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), pushedP);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Set I flag
-  CPUregisters.P = (CPUregisters.P | 0x04) & 0xFF;
-
-  // Fetch NMI vector
-  const lo = checkReadOffset(0xFFFA) & 0xFF;
-  const hi = checkReadOffset(0xFFFB) & 0xFF;
-  CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
-}
-
 // ============================
 // CPU Step
 // ============================
@@ -73,28 +47,17 @@ function step(force = false) {
   cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0x7fffffff;
   Atomics.store(SHARED.CLOCKS, 0, cpuCycles);
 
-  /* too slow, keeping ppureg struct/ original variables for CPU side (UI etc.), assigning elements of shared
-   arrays to regs that need sharing for both CPU/PPU side to see, copy data across to shared elements in cases where required
-
-  // Send live PPU register snapshot
-  ppuWorker.postMessage({
-    type: 'ppuState',
-    PPUregister: PPUregister,
-  });
-*/
-
   // Handle NMI if requested
-  const ev = Atomics.load(SHARED.EVENTS, 0) | 0;
-  if (ev & 0b1) {
-    Atomics.and(SHARED.EVENTS, 0, ~0b1);
+  if (nmiPending) {
     serviceNMI();
-    cpuCycles = (cpuCycles + 7) & 0x7fffffff;
-    Atomics.add(SHARED.CLOCKS, 0, 7);
+    nmiPending = !nmiPending
+    // +7 cycles insta-added in handler for PPU worker to see
   }
+
 }
 
-window.run = run;
-window.pause = pause;
+  window.run = run;
+  window.pause = pause;
 
 // ============================
 // Handle messages from main / clock worker

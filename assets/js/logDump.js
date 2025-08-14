@@ -13,7 +13,7 @@ function addSectionHeader(container, title, id) {
 
   wrap.appendChild(h2);
   container.appendChild(wrap);
-  return wrap; // return the section to append content into
+  return wrap;
 }
 
 // Hex table generator with change highlighting
@@ -82,7 +82,7 @@ function generateHexTable(title, array, baseAddress = 0x0000) {
 }
 
 // Simple key/value register table
-function generateRegisterTable(title, regObject) {
+function generateRegisterTable(title, regList) {
   const table = document.createElement('table');
   table.className = 'dump-table kv-table';
 
@@ -92,7 +92,7 @@ function generateRegisterTable(title, regObject) {
   table.appendChild(caption);
 
   const tbody = document.createElement('tbody');
-  for (const [key, value] of Object.entries(regObject)) {
+  for (const [key, value] of Object.entries(regList)) {
     const tr = document.createElement('tr');
 
     const tdKey = document.createElement('td');
@@ -149,7 +149,6 @@ function generateControllerTable() {
 
 // ---------- MAIN CLICK HANDLER ----------
 document.getElementById('dumpState').addEventListener('click', () => {
-  // Build report in main page context
   const report = document.createElement('div');
   report.className = 'container';
 
@@ -158,26 +157,51 @@ document.getElementById('dumpState').addEventListener('click', () => {
   cpuSec.appendChild(generateHexTable('PRG ROM ($8000)', prgRom, 0x8000));
 
   const chrSec = addSectionHeader(report, 'CHR-ROM', 'chr');
-  chrSec.appendChild(generateHexTable('CHR ROM ($0000)', SHARED.CHR_ROM, 0x0000));
+  chrSec.appendChild(generateHexTable('CHR ROM ($0000)', CHR_ROM, 0x0000)); // accessor
 
   const vramSec = addSectionHeader(report, 'VRAM', 'vram');
-  vramSec.appendChild(generateHexTable('PPU VRAM ($2000)', SHARED.VRAM, 0x2000));
+  vramSec.appendChild(generateHexTable('PPU VRAM ($2000)', VRAM, 0x2000)); // accessor
 
   const palSec = addSectionHeader(report, 'Palette RAM', 'pal');
-  palSec.appendChild(generateHexTable('Palette RAM ($3F00)', SHARED.PALETTE_RAM, 0x3F00));
+  palSec.appendChild(generateHexTable('Palette RAM ($3F00)', PALETTE_RAM, 0x3F00)); // accessor
 
   const oamSec = addSectionHeader(report, 'OAM', 'oam');
-  oamSec.appendChild(generateHexTable('OAM ($0000)', SHARED.OAM, 0x0000));
+  oamSec.appendChild(generateHexTable('OAM ($0000)', OAM, 0x0000)); // accessor
 
   const regSec = addSectionHeader(report, 'Registers', 'regs');
+
+  // CPU registers (unchanged)
   regSec.appendChild(generateRegisterTable('CPU Registers', CPUregisters));
-  regSec.appendChild(generateRegisterTable('PPU Registers', PPUregister));
+
+  // PPU registers — build an object from your accessors
+  const ppuRegs = {
+    PPUCTRL,
+    PPUMASK,
+    PPUSTATUS,
+    OAMADDR,
+    OAMDATA,
+    SCROLL_X,
+    SCROLL_Y,
+    ADDR_HIGH,
+    ADDR_LOW,
+    t_lo,
+    t_hi,
+    fineX,
+    writeToggle,
+    VRAM_DATA,
+    BG_ntByte,
+    BG_atByte,
+    BG_tileLo,
+    BG_tileHi,
+    VRAM_ADDR
+  };
+  regSec.appendChild(generateRegisterTable('PPU Registers', ppuRegs));
+
   regSec.appendChild(generateRegisterTable('APU Registers', APUregister));
 
   const padSec = addSectionHeader(report, 'Controllers', 'pads');
   padSec.appendChild(generateControllerTable());
 
-  // Styled HTML shell with sticky jump bar
   const styles = `
     html, body { background: #0f1115; color: #e8eaf0; font-family: sans-serif; margin: 0; padding: 0; scroll-behavior: smooth; }
     .container { max-width: 1200px; margin: 40px auto 120px auto; padding: 0 16px; }
@@ -199,7 +223,6 @@ document.getElementById('dumpState').addEventListener('click', () => {
   newTab.document.write(`<html><head><title>NES State Dump</title><style>${styles}</style></head><body></body></html>`);
   newTab.document.body.appendChild(report);
 
-  // Jump bar
   const jumpbar = newTab.document.createElement('div');
   jumpbar.className = 'jumpbar';
   jumpbar.innerHTML = `
@@ -215,7 +238,6 @@ document.getElementById('dumpState').addEventListener('click', () => {
   `;
   newTab.document.body.appendChild(jumpbar);
 
-  // Bind jump buttons
   const buttons = newTab.document.querySelectorAll('.jumpbar button');
   buttons.forEach(btn => {
     btn.addEventListener('click', () => {
