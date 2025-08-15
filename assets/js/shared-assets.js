@@ -435,7 +435,8 @@ function BRK_IMP() {
   CPUregisters.PC = (hi << 8) | lo;
 
   // BRK takes 7 cycles total
-  cpuCycles = (cpuCycles + 7) & 0xFFFF;
+  //cpuCycles = (cpuCycles + 7) & 0xFFFF;
+  Atomics.add(SHARED.CLOCKS, 0, 7); 
   // has a pointless quirk you -could- emulate down the track
 }
 

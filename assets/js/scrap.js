@@ -1,5 +1,12 @@
 /* DELETE THIS FILE, ITS JUST for scrap coding trials
 Frame Buffer Arrays 
+
+delete all local changes and revert to last push
+
+git fetch origin && \
+git reset --hard origin/$(git rev-parse --abbrev-ref HEAD) && \
+git clean -fd
+
 -----------------------------------------
 First index = Y (scanline)
 Second index = X (pixel in that scanline)
@@ -51,4 +58,12 @@ $3F0A  BG palette 2 - colour 3
 $3F0C  BG palette 3 - colour 1
 $3F0D  BG palette 3 - colour 2
 $3F0E  BG palette 3 - colour 3
+*/
+
+/*
+
+PPUSim_start(60); // run
+PPUSim_stop();    // stop
+PPUSim_step();    // single frame
+
 */

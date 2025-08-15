@@ -41,11 +41,10 @@ function step(force = false) {
     console.log(`0x${code.toString(16).toUpperCase()}`);
     console.log(`PC=> $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
   }
-
+  //ouch we were doing a double cycles increment here since re-aliasing shared variable to 'cpuCycles' 
   execFn();
-  CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]);
-  cpuCycles = (cpuCycles + opcodeCyclesInc[code]) & 0x7fffffff;
-  Atomics.store(SHARED.CLOCKS, 0, cpuCycles);
+  CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]) & 0xFFFF;
+  Atomics.add(SHARED.CLOCKS, 0, opcodeCyclesInc[code]); // base cycles
 
   // Handle NMI if requested
   if (nmiPending) {
