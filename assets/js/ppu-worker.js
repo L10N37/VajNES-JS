@@ -1,34 +1,16 @@
-// ============================
-// ppu-worker.js — PPU (BG-only) with real NES data, 1:1 with working SIM
-// ============================
-
 importScripts('/assets/js/ppu-worker-setup.js');
-if (typeof setupMultiThreadVariables === 'function') setupMultiThreadVariables();
+
+console.log("[PPU Worker init]")
 
 let ppuDebugLogging = false;
 
 // ---------- Constants ----------
-const NES_W = 256, NES_H = 240;
-const DOTS_PER_SCANLINE = 341;
+const DOTS_PER_SCANLINE   = 341;
 const SCANLINES_PER_FRAME = 262; // -1, 0..260; mirror at 261
-
-// ---------- Readiness gate ----------
-let romReady = false;
-
-// ---------- Run/Pause/Step control ----------
-let workerRunning  = false; // continuous run
-let pumpStarted    = false; // scheduled flag
-let stepBudgetDots = 0;     // PPU-only step budget
-let lastStepAckId  = 0;
-
-// Light idle polling while paused but CPU may step
-const IDLE_POLL_MS = 16;
+const LEAD_DOTS           = 3;          // permanent head start
 
 // ---------- Timing state ----------
 const PPUclock = { dot: 0, scanline: -1, frame: 0, oddFrame: false };
-
-// ---------- Frame backbuffer (palette indices 0..63) ----------
-let paletteIndexFrame = new Uint8Array(NES_W * NES_H);
 
 // ---------- BG pipeline / shifters ----------
 const background = {
@@ -40,51 +22,6 @@ const background = {
 // ---------- Helpers for combined 't' ----------
 function t_get() { return ((t_hi & 0xFF) << 8) | (t_lo & 0xFF); }
 function t_set(v) { v &= 0x7FFF; t_lo = v & 0xFF; t_hi = (v >> 8) & 0xFF; }
-
-// ---------- Message handling ----------
-self.onmessage = (e) => {
-  const msg = e.data || {};
-  switch (msg.type) {
-    case 'romReady':
-      romReady = true;
-      if (ppuDebugLogging) console.log('[PPU-Worker] romReady = true');
-      if (workerRunning || stepBudgetDots > 0) startPump();
-      else scheduleIdlePoll();
-      break;
-
-    case 'set-running': {
-      const on = !!msg.running;
-      workerRunning = on;
-      if (on) startPump();
-      else { pumpStarted = false; scheduleIdlePoll(); }
-      break;
-    }
-
-    case 'run':
-      workerRunning = true; startPump(); break;
-
-    case 'pause':
-      workerRunning = false; pumpStarted = false; scheduleIdlePoll(); break;
-
-    case 'step': {
-      const mode  = msg.mode || 'dots';
-      const count = (msg.count | 0) || 1;
-      lastStepAckId = msg.ackId | 0;
-
-      let dotsPer = 1;
-      if (mode === 'scanline') dotsPer = DOTS_PER_SCANLINE;
-      else if (mode === 'frame') dotsPer = DOTS_PER_SCANLINE * SCANLINES_PER_FRAME;
-
-      stepBudgetDots += Math.max(0, count) * dotsPer;
-      workerRunning = false;
-      startPump();
-      break;
-    }
-
-    default:
-      break;
-  }
-};
 
 // =============================
 // Core PPU tick (per dot)
@@ -114,7 +51,9 @@ function ppuTick() {
 function preRenderScanline() {
   // -1 (261)
   if (PPUclock.dot === 1) {
-    PPUSTATUS = PPUSTATUS & ~0x80; // clear vblank
+    PPUSTATUS &= ~0x80; // clear VBlank
+    PPUSTATUS &= ~0x40; // clear sprite 0 hit
+    PPUSTATUS &= ~0x20; // clear sprite overflow
     nmiPending = false;
   }
   if ((PPUMASK & 0x18) !== 0) {
@@ -200,7 +139,7 @@ function postRenderScanline() {
 function vblankStartScanline() {
   // 241, dot 1
   if (PPUclock.dot === 1) {
-    PPUSTATUS = PPUSTATUS | 0x80; // set vblank
+    PPUSTATUS = PPUSTATUS | 0b10000000; // set vblank
     if (PPUCTRL & 0x80) {
       nmiPending = true;
       if (ppuDebugLogging) console.log("%cPPU NMI", "color:#fff;background:#c00;font-weight:bold;padding:2px 6px;border-radius:3px");
@@ -209,20 +148,26 @@ function vblankStartScanline() {
 }
 
 function firstVblankIdleScanline() {
-  // 242 — send the frame
-  try {
-    postMessage(
-      { type: 'frame', format: 'indices', bpp: 8, w: NES_W, h: NES_H, buffer: paletteIndexFrame.buffer },
-      [paletteIndexFrame.buffer]
-    );
-  } catch {
-    postMessage({ type: 'frame', format: 'indices', bpp: 8, w: NES_W, h: NES_H, buffer: paletteIndexFrame.buffer });
-  }
-  paletteIndexFrame = new Uint8Array(NES_W * NES_H);
+  // 242 —  render (technically should happen in 261 / -1 )
+  PPU_FRAME_FLAGS = 0b00000001; // tell main to blit
 }
 
 function vblankIdleScanline() {
-  // 243..260 idle
+  // NES has 262 scanlines per frame:
+  //  - 0..239 visible
+  //  - 240 post-render
+  //  - 241..260 vblank (idle)
+  //  - 261 pre-render
+  //
+  // Each scanline = 341 PPU cycles.
+  // VBlank idle region = 17 scanlines (243..259 inclusive).
+  //
+  // So total idle cycles = 17 × 341 = 5797 cycles.
+  const idleCycles = 17 * 341;
+
+  // Skip ticking — just consume straight from our accounting.
+  Atomics.sub(SHARED.SYNC, 0, idleCycles);   // subtract from budget
+  Atomics.add(SHARED.SYNC, 1, idleCycles);   // count them as burned
 }
 
 // =============================
@@ -320,6 +265,7 @@ function copyVert() {
 }
 
 // ---------- Bus access (real SHARED arrays) ----------
+// ---------- Bus access (real SHARED arrays) ----------
 function ppuBusRead(addr) {
   addr &= 0x3FFF;
   if (addr < 0x2000) {            // pattern tables
@@ -338,72 +284,65 @@ function ppuBusRead(addr) {
 function resetPPU() {
   PPUclock.dot = 0; PPUclock.scanline = -1; PPUclock.frame = 0; PPUclock.oddFrame = false;
   t_set(0); fineX = 0;
-  paletteIndexFrame = new Uint8Array(NES_W * NES_H);
+  if (paletteIndexFrame && paletteIndexFrame.fill) paletteIndexFrame.fill(0);
 }
 
-// =============================
-// Pump: run/pause/step (ROM ready gated)
-//  - Running: catch up PPU to cpuCycles*3
-//  - Paused:  if cpuCycles advanced (you called step(true)), catch up once
-//  - Step budget: optional PPU-only stepping via message
-// =============================
-function pump() {
-  if (!romReady || !self.SHARED || !SHARED.CLOCKS) {
-    if (workerRunning || stepBudgetDots > 0) setTimeout(pump, 0);
-    return;
-  }
+function startPPULoop() {
+  let last = 0;
 
-  let cpuNow = cpuCycles | 0;
-  let ppuNow = ppuCycles | 0;
+  while (true) {
+    // wait here until RUN bit set
+    while ((Atomics.load(SHARED.EVENTS, 0) & 0b00000100) !== 0b00000100) {}
 
-  let steps = 0, MAX = 60000;
-  let stepped = false;
+    // snapshot → budget → burn
+    const now    = Atomics.load(SHARED.CLOCKS, 1);
+    const budget = now - last;
+    last = now;
 
-  if (stepBudgetDots > 0) {
-    const targetPPU = ppuNow + stepBudgetDots;
-    while (ppuNow < targetPPU && steps < MAX) { ppuTick(); ppuNow++; steps++; }
-    stepBudgetDots = Math.max(0, stepBudgetDots - steps);
-    stepped = (stepBudgetDots === 0);
-  } else if (workerRunning) {
-    const targetPPU = (cpuNow * 3) | 0;
-    while (ppuNow < targetPPU && steps < MAX) { ppuTick(); ppuNow++; steps++; }
-  } else {
-    // Paused: auto-follow CPU step(true)
-    const targetPPU = (cpuNow * 3) | 0;
-    if (ppuNow < targetPPU) {
-      while (ppuNow < targetPPU && steps < MAX) { ppuTick(); ppuNow++; steps++; }
-    } else {
-      pumpStarted = false;
-      scheduleIdlePoll();
-      return;
+    if (budget > 0) {
+      let burned = 0;
+
+      for (let i = 0; i < budget; i++) {
+        ppuTick();
+        burned++;
+      }
+
+      // publish stats
+      Atomics.store(SHARED.SYNC, 0, budget); // cycles available this interval
+      Atomics.store(SHARED.SYNC, 1, burned); // cycles actually burned
     }
   }
-
-  ppuCycles = ppuNow | 0;
-
-  if (stepped) {
-    pumpStarted = false;
-    try { postMessage({ type: 'stepped', ackId: lastStepAckId, ppuCycles: ppuNow|0 }); } catch {}
-    return;
-  }
-
-  setTimeout(pump, 0);
 }
 
-function startPump() {
-  if (!pumpStarted) {
-    pumpStarted = true;
-    setTimeout(pump, 0);
-  }
-}
+// for console 
+/*
 
-function scheduleIdlePoll() {
-  if (pumpStarted || !romReady) return;
-  setTimeout(() => {
-    if (!workerRunning) {
-      const c = (self.SHARED && SHARED.CLOCKS) ? (cpuCycles | 0) : 0;
-      const p = (self.SHARED && SHARED.CLOCKS) ? (ppuCycles | 0) : 0;
-      if (c * 3 > p) startPump(); else scheduleIdlePoll();
-    }
-  }, IDLE_POLL_MS);
-}
+window.snap = () => {
+  const ev   = Atomics.load(SHARED.EVENTS, 0);
+  const cpu  = Atomics.load(SHARED.CLOCKS, 0);
+  const ppu  = Atomics.load(SHARED.CLOCKS, 1);
+  const done = SHARED.SYNC ? Atomics.load(SHARED.SYNC, 0) : null;
+
+  const evBits = ev.toString(2).padStart(8, "0");
+  const runOn  = (ev & 0b100) ? "ON" : "OFF";
+
+  const last = window.__s || { cpu, ppu, t: performance.now() };
+  const dcpu = cpu - last.cpu;
+  const dppu = ppu - last.ppu;
+  const expected = 3 * dcpu;         // production this interval
+  const dt   = (performance.now() - last.t).toFixed(1);
+
+  console.log(
+    `EVENTS[0]: ${ev} (bits ${evBits})  RUN=${runOn}\n` +
+    `CPU total: ${cpu}   ΔCPU=${dcpu}\n` +
+    `PPU total: ${ppu}   ΔPPU(produced)=${dppu}\n` +
+    (done !== null ? `PPU burned (worker): ${done}\n` : ``) +
+    `Expected ΔPPU = 3×ΔCPU = ${expected}\n` +
+    `Interval: ${dt} ms`
+  );
+
+  window.__s = { cpu, ppu, t: performance.now() };
+};
+
+
+*/

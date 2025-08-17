@@ -1,4 +1,5 @@
-ppuDebugLogging = true;
+debugLogging = false;
+ppuDebugLogging = false;
 
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
@@ -222,7 +223,7 @@ function ppuRead(addr) {
 // $2000–$2FFF: nametables (VRAM, mirrored to $3EFF)
 // $3F00–$3F1F: palette RAM (with $3F10/$14/$18/$1C mirroring)
 
-/*
+
 function ppuBusRead(addr) {
   addr &= 0x3FFF;
 
@@ -242,7 +243,7 @@ function ppuBusRead(addr) {
   // Nametables (2 KB, mirrored every 2 KB over $2000–$2FFF)
   return VRAM[(addr - 0x2000) & 0x07FF] & 0xFF;
 }
-*/
+
 
 // --- PPU bus write ---
 // Raw PPU memory store (no $2007 buffering rules here)

@@ -1,419 +1,248 @@
-let ppuDebugLogging = true;
+(() => {
+  console.log("[main] shared-assets.js loaded");
 
-/*
-Legacy, new declarations at the bottom of the file
-let PPUregister = {
-  // ---------------------------
-  // $2000 — PPUCTRL
-  // ---------------------------
-  CTRL:        0x00,  // Control register (V, P, H, Sprite pattern, BG pattern, Sprite size, Master/Slave, NMI)
+  // Ensure NES dimensions exist before allocating pixel buffer.
+  if (typeof NES_W === "undefined") globalThis.NES_W = 256;
+  if (typeof NES_H === "undefined") globalThis.NES_H = 240;
 
-  // ---------------------------
-  // $2001 — PPUMASK
-  // ---------------------------
-  MASK:        0x00,  // Rendering enable flags, color emphasis
+  // Shared namespace
+  window.SHARED = Object.create(null);
 
-  // ---------------------------
-  // $2002 — PPUSTATUS
-  // ---------------------------
-  STATUS:      0x00,  // VBlank flag, sprite 0 hit, sprite overflow
+  // ------------------------------------------------------------
+  // Allocate SABs + Views
+  // ------------------------------------------------------------
+  console.log("[main] Allocating SABs…");
 
-  // ---------------------------
-  // $2003/$2004 — OAM
-  // ---------------------------
-  OAMADDR:     0x00,  // Address into OAM (sprite RAM)
-  OAMDATA:     0x00,  // Data port for OAM (SPR-RAM I/O)
+  // Clocks: [0]=CPU, [1]=PPU
+  SHARED.SAB_CLOCKS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
+  SHARED.CLOCKS     = new Int32Array(SHARED.SAB_CLOCKS);
+  SHARED.CLOCKS[0]  = 0;
+  SHARED.CLOCKS[1]  = 0;
 
-  // ---------------------------
-  // $2005 — PPUSCROLL
-  // ---------------------------
-  SCROLL_X:    0x00,  // First write: fine X scroll (lower 3 bits) + coarse X
-  SCROLL_Y:    0x00,  // Second write: fine Y scroll (lower 3 bits) + coarse Y
+  // for PPU ticks consumed as theyre otherwise local to the worker
+  SHARED.SAB_SYNC = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
+  SHARED.SYNC     = new Int32Array(SHARED.SAB_SYNC);
+  SHARED.SYNC[0]  = 0;
 
-  // ---------------------------
-  // $2006 — PPUADDR
-  // ---------------------------
-  ADDR_HIGH:   0x00,  // First write: high byte of VRAM address
-  ADDR_LOW:    0x00,  // Second write: low byte of VRAM address
-  VRAM_ADDR:   0x0000,// Full 15-bit VRAM address (from ADDR_HIGH/LOW)
+  // Events bitfield (bit0=NMI, bit1=IRQ)
+  // Run bit lives in EVENTS[0] (bit 2). Main sets/clears it. Worker only reads it.
+  SHARED.SAB_EVENTS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  SHARED.EVENTS     = new Int32Array(SHARED.SAB_EVENTS);
+  SHARED.EVENTS[0]  = 0;
 
-  // ---------------------------
-  // Internal registers
-  // ---------------------------
-  t:           0x0000,// Temporary VRAM address latch
-  fineX:       0,     // Fine X scroll (3 bits from PPUSCROLL first write)
-  writeToggle: false, // Latch toggle for $2005/$2006
-
-  // ---------------------------
-  // $2007 — PPUDATA
-  // ---------------------------
-  VRAM_DATA:   0x00,  // VRAM data buffer for $2007 reads/writes
-
-  // ---------------------------
-  // Internal background fetch pipeline
-  // ---------------------------
-  BG: {
-    bgShiftLo: 0,     // Pattern data shift register low
-    bgShiftHi: 0,     // Pattern data shift register high
-    atShiftLo: 0,     // Attribute data shift register low
-    atShiftHi: 0,     // Attribute data shift register high
-    ntByte:    0,     // Nametable byte
-    atByte:    0,     // Attribute table byte
-    tileLo:    0,     // Pattern low byte
-    tileHi:    0      // Pattern high byte
-  }
-};
-*/
-
-window.SHARED = {};
-
-// our multithread workers
-const ppuWorker = new Worker('assets/js/ppu-worker.js');
-
-// --- CPU loop control ---
-let cpuRunning = false;
-const CPU_BATCH = 20000; // how many instructions to run per slice
-
-function cpuLoop() {
-  if (!cpuRunning) return;
-  for (let i = 0; i < CPU_BATCH; i++) {
-    step();
-  }
-  setTimeout(cpuLoop, 0); // cooperative async
-}
-
-// start/pause
-function startEmu() {
-  if (!cpuRunning) {
-    cpuRunning = true;
-    cpuLoop(); // kick off CPU execution loop
-  }
-  ppuWorker.postMessage({ type: 'set-running', running: true });
-}
-
-function pauseEmu() {
-  cpuRunning = false;
-  ppuWorker.postMessage({ type: 'set-running', running: false });
-}
-
-// ------------------------------------------------------------
-// Shared state setup
-// ------------------------------------------------------------
-
-// Clocks: [0] = cpuCycles, [1] = ppuCycles
-SHARED.SAB_CLOCKS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
-SHARED.CLOCKS     = new Int32Array(SHARED.SAB_CLOCKS);
-SHARED.CLOCKS[0] = 0; // CPU
-SHARED.CLOCKS[1] = 0; // PPU
-
-// CPU Open Bus
-SHARED.SAB_CPU_OPENBUS = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT);
-SHARED.CPU_OPENBUS = new Uint8Array(SHARED.SAB_CPU_OPENBUS);
-SHARED.CPU_OPENBUS[0] = 0;
-
-// Events bitfield: bit0 = NMI pending, bit1 = IRQ pending
-SHARED.SAB_EVENTS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
-SHARED.EVENTS     = new Int32Array(SHARED.SAB_EVENTS);
-SHARED.EVENTS[0] = 0;
-
-// frame counter - not yet using
-SHARED.SAB_FRAME = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
-SHARED.FRAME     = new Int32Array(SHARED.SAB_FRAME);
-SHARED.FRAME[0] = 0;
-
-/*
-Shared subset of PPU registers (8-bit only)
-=============== Index mapping ===============
-  0  = CTRL        ($2000)
-  1  = MASK        ($2001)
-  2  = STATUS      ($2002)
-  3  = OAMADDR     ($2003)
-  4  = OAMDATA     ($2004)
-  5  = SCROLL_X    ($2005 first write)
-  6  = SCROLL_Y    ($2005 second write)
-  7  = ADDR_HIGH   ($2006 high byte)
-  8  = ADDR_LOW    ($2006 low byte)
-  9  = t (lo byte)
- 10  = t (hi byte)
- 11  = fineX
- 12  = writeToggle
- 13  = VRAM_DATA   ($2007)
- 14  = BG.ntByte
- 15  = BG.atByte
- 16  = BG.tileLo
- 17  = BG.tileHi
-*/
-SHARED.SAB_PPU_REGS = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT * 18);
-SHARED.PPU_REGS     = new Uint8Array(SHARED.SAB_PPU_REGS);
-
-// Separate shared variable for full 16-bit VRAM_ADDR
-SHARED.SAB_VRAM_ADDR = new SharedArrayBuffer(Uint16Array.BYTES_PER_ELEMENT);
-SHARED.VRAM_ADDR     = new Uint16Array(SHARED.SAB_VRAM_ADDR);
-
-// Shared PPU asset memory
-SHARED.SAB_CHR = new SharedArrayBuffer(0x2000); // 8 KB
-SHARED.CHR_ROM = new Uint8Array(SHARED.SAB_CHR);
-
-SHARED.SAB_VRAM = new SharedArrayBuffer(0x800); // 2 KB
-SHARED.VRAM = new Uint8Array(SHARED.SAB_VRAM);
-
-
-SHARED.SAB_PALETTE = new SharedArrayBuffer(0x20); // 32 bytes
-SHARED.PALETTE_RAM = new Uint8Array(SHARED.SAB_PALETTE);
-
-SHARED.SAB_OAM = new SharedArrayBuffer(0x100); // 256 bytes
-SHARED.OAM = new Uint8Array(SHARED.SAB_OAM);
-
-/*
-
-Named variables that directly read/write shared PPU registers
-
-examples, we can now read and write to the shared array without having to remember nesting/ indexes
-AND because the worker lives in an entirely separate scope we can simply redeclare these blocks on 
-the worker side and use the same variable names.
-
-examples
---------
-PPUCTRL = 0x69; <-- write using new define properties alias
-105
-console.log(SHARED.PPU_REGS[0]) <-- read back from nested PPU_REGS, element zero
-105
-
-VRAM[0x200] = 0x12
-18
-console.log(SHARED.VRAM[0x200])
-18
-
-Also, NMI pending is now seen as a regular boolean as if we weren't multithreading
-
-nmiPending = true
-true
-nmiPending = false
-false
-console.log(nmiPending)
-false
-
-same for IRQ event handling
-
-irqPending
-false 
-
-*/
-
-// literally for the sake of being able to collapse this block of code its a function 
-function setupMultiThreadVariables(){
-// 1-byte PPU registers
-Object.defineProperties(globalThis, {
-  PPUCTRL:     { get: () => SHARED.PPU_REGS[0],  set: v => { SHARED.PPU_REGS[0]  = v & 0xFF; } },
-  PPUMASK:     { get: () => SHARED.PPU_REGS[1],  set: v => { SHARED.PPU_REGS[1]  = v & 0xFF; } },
-  PPUSTATUS:   { get: () => SHARED.PPU_REGS[2],  set: v => { SHARED.PPU_REGS[2]  = v & 0xFF; } },
-  OAMADDR:     { get: () => SHARED.PPU_REGS[3],  set: v => { SHARED.PPU_REGS[3]  = v & 0xFF; } },
-  OAMDATA:     { get: () => SHARED.PPU_REGS[4],  set: v => { SHARED.PPU_REGS[4]  = v & 0xFF; } },
-  SCROLL_X:    { get: () => SHARED.PPU_REGS[5],  set: v => { SHARED.PPU_REGS[5]  = v & 0xFF; } },
-  SCROLL_Y:    { get: () => SHARED.PPU_REGS[6],  set: v => { SHARED.PPU_REGS[6]  = v & 0xFF; } },
-  ADDR_HIGH:   { get: () => SHARED.PPU_REGS[7],  set: v => { SHARED.PPU_REGS[7]  = v & 0xFF; } },
-  ADDR_LOW:    { get: () => SHARED.PPU_REGS[8],  set: v => { SHARED.PPU_REGS[8]  = v & 0xFF; } },
-  t_lo:        { get: () => SHARED.PPU_REGS[9],  set: v => { SHARED.PPU_REGS[9]  = v & 0xFF; } },
-  t_hi:        { get: () => SHARED.PPU_REGS[10], set: v => { SHARED.PPU_REGS[10] = v & 0xFF; } },
-  fineX:       { get: () => SHARED.PPU_REGS[11], set: v => { SHARED.PPU_REGS[11] = v & 0xFF; } },
-  writeToggle: { get: () => SHARED.PPU_REGS[12], set: v => { SHARED.PPU_REGS[12] = v & 0xFF; } },
-  VRAM_DATA:   { get: () => SHARED.PPU_REGS[13], set: v => { SHARED.PPU_REGS[13] = v & 0xFF; } },
-  BG_ntByte:   { get: () => SHARED.PPU_REGS[14], set: v => { SHARED.PPU_REGS[14] = v & 0xFF; } },
-  BG_atByte:   { get: () => SHARED.PPU_REGS[15], set: v => { SHARED.PPU_REGS[15] = v & 0xFF; } },
-  BG_tileLo:   { get: () => SHARED.PPU_REGS[16], set: v => { SHARED.PPU_REGS[16] = v & 0xFF; } },
-  BG_tileHi:   { get: () => SHARED.PPU_REGS[17], set: v => { SHARED.PPU_REGS[17] = v & 0xFF; } },
-
-  // 16-bit VRAM address
-  VRAM_ADDR:   { get: () => SHARED.VRAM_ADDR[0], set: v => { SHARED.VRAM_ADDR[0] = v & 0xFFFF; } }
-});
-
-
-Object.defineProperties(globalThis, {
-  CHR_ROM: {
-    get: () => SHARED.CHR_ROM
-  },
-  VRAM: {
-    get: () => SHARED.VRAM
-  },
-  PALETTE_RAM: {
-    get: () => SHARED.PALETTE_RAM
-  },
-  OAM: {
-    get: () => SHARED.OAM
-  }
-});
-
-Object.defineProperties(globalThis, {
-  // Clock counters
-  cpuCycles: {
-    get: () => SHARED.CLOCKS[0],
-    set: v  => { SHARED.CLOCKS[0] = v | 0; } // force int
-  },
-  ppuCycles: {
-    get: () => SHARED.CLOCKS[1],
-    set: v  => { SHARED.CLOCKS[1] = v | 0; }
-  },
+  // Frame counter
+  SHARED.SAB_FRAME = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  SHARED.FRAME     = new Int32Array(SHARED.SAB_FRAME);
+  SHARED.FRAME[0]  = 0;
 
   // CPU open bus
-  cpuOpenBus: {
-    get: () => SHARED.CPU_OPENBUS[0],
-    set: v  => { SHARED.CPU_OPENBUS[0] = v & 0xFF; }
-  },
+  SHARED.SAB_CPU_OPENBUS = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT);
+  SHARED.CPU_OPENBUS     = new Uint8Array(SHARED.SAB_CPU_OPENBUS);
+  SHARED.CPU_OPENBUS[0]  = 0;
 
-  // NMI pending flag (bit 0)
-  nmiPending: {
-    get: () => (SHARED.EVENTS[0] & 0b00000001) !== 0,
-    set: v  => {
-      if (v) SHARED.EVENTS[0] |= 0b00000001;  // set bit 0
-      else   SHARED.EVENTS[0] &= ~0b00000001; // clear bit 0
-    }
-  },
+  // PPU regs (8-bit)
+  // 0:PPUCTRL 1:PPUMASK 2:PPUSTATUS 3:OAMADDR 4:OAMDATA
+  // 5:SCROLL_X 6:SCROLL_Y 7:ADDR_HIGH 8:ADDR_LOW
+  // 9:t_lo 10:t_hi 11:fineX 12:writeToggle 13:VRAM_DATA
+  // 14:BG_ntByte 15:BG_atByte 16:BG_tileLo 17:BG_tileHi
+  // 18:PPU_FRAME_FLAGS (bit0 = frame-ready)
+  SHARED.SAB_PPU_REGS = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT * 19);
+  SHARED.PPU_REGS     = new Uint8Array(SHARED.SAB_PPU_REGS);
 
-  // IRQ pending flag (bit 1)
-  irqPending: {
-    get: () => (SHARED.EVENTS[0] & 0b00000010) !== 0,
-    set: v  => {
-      if (v) SHARED.EVENTS[0] |= 0b00000010;  // set bit 1
-      else   SHARED.EVENTS[0] &= ~0b00000010; // clear bit 1
-    }
+  // VRAM_ADDR (16-bit at index 0)
+  SHARED.SAB_VRAM_ADDR = new SharedArrayBuffer(Uint16Array.BYTES_PER_ELEMENT);
+  SHARED.VRAM_ADDR     = new Uint16Array(SHARED.SAB_VRAM_ADDR);
+
+  // Assets
+  SHARED.SAB_CHR     = new SharedArrayBuffer(0x2000); // 8KB CHR ROM
+  SHARED.CHR_ROM     = new Uint8Array(SHARED.SAB_CHR);
+
+  SHARED.SAB_VRAM    = new SharedArrayBuffer(0x800); // 2KB VRAM
+  SHARED.VRAM        = new Uint8Array(SHARED.SAB_VRAM);
+
+  SHARED.SAB_PALETTE = new SharedArrayBuffer(0x20); // 32B Palette RAM
+  SHARED.PALETTE_RAM = new Uint8Array(SHARED.SAB_PALETTE);
+
+  SHARED.SAB_OAM     = new SharedArrayBuffer(0x100); // 256B OAM
+  SHARED.OAM         = new Uint8Array(SHARED.SAB_OAM);
+
+  // Pixel buffer (palette indices per pixel)
+  const PIXEL_COUNT = NES_W * NES_H;
+  SHARED.SAB_PALETTE_INDEX_FRAME = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT * PIXEL_COUNT);
+  SHARED.PALETTE_INDEX_FRAME     = new Uint8Array(SHARED.SAB_PALETTE_INDEX_FRAME);
+
+  // ------------------------------------------------------------
+  // Read-only accessors to shared views (no rebinding, no copies)
+  // ------------------------------------------------------------
+  Object.defineProperties(globalThis, {
+    paletteIndexFrame: { get: () => SHARED.PALETTE_INDEX_FRAME, configurable: true },
+    VRAM:              { get: () => SHARED.VRAM,                configurable: true },
+    OAM:               { get: () => SHARED.OAM,                 configurable: true },
+    CHR_ROM:           { get: () => SHARED.CHR_ROM,             configurable: true },
+    PALETTE_RAM:       { get: () => SHARED.PALETTE_RAM,         configurable: true },
+  });
+
+  console.log("[main] paletteIndexFrame len =", paletteIndexFrame.length, " (expected", PIXEL_COUNT, ")");
+
+  // Optional: set sentinel bytes so worker can confirm same memory
+  try {
+    const mid  = (paletteIndexFrame.length >>> 1) | 0;
+    const last = paletteIndexFrame.length - 1;
+    paletteIndexFrame[0]   = 0x11;
+    paletteIndexFrame[mid] = 0x22;
+    paletteIndexFrame[last]= 0x33;
+    console.log("[main] wrote sentinels [0]=0x11, [mid]=0x22, [last]=0x33");
+  } catch (e) {
+    console.warn("[main] sentinel write failed:", e);
   }
-});
-}
-setupMultiThreadVariables();
 
-// ------------------------------------------------------------
-// Initial handshake to the worker (after SHARED is populated)
-// ------------------------------------------------------------
-ppuWorker.postMessage({
-  SAB_CLOCKS: SHARED.SAB_CLOCKS,
-  SAB_EVENTS: SHARED.SAB_EVENTS,
-  SAB_FRAME:  SHARED.SAB_FRAME,
-  SAB_CPU_OPENBUS: SHARED.SAB_CPU_OPENBUS,
-  SAB_PPU_REGS: SHARED.SAB_PPU_REGS,
-  SAB_ASSETS: {
-    CHR_ROM:     SHARED.SAB_CHR,
-    VRAM:        SHARED.SAB_VRAM,
-    PALETTE_RAM: SHARED.SAB_PALETTE,
-    OAM:         SHARED.SAB_OAM,
-  },
-});
+  // ------------------------------------------------------------
+  // LIVE scalars via accessors
+  // ------------------------------------------------------------
+  const make8  = v => v & 0xFF;
+  const make16 = v => v & 0xFFFF;
 
-// DMA copy from CPU RAM to PPU OAM
+  Object.defineProperties(globalThis, {
+    // 8-bit regs
+    PPUCTRL:     { get: () => SHARED.PPU_REGS[0],  set: v => { SHARED.PPU_REGS[0]  = make8(v); }, configurable: true },
+    PPUMASK:     { get: () => SHARED.PPU_REGS[1],  set: v => { SHARED.PPU_REGS[1]  = make8(v); }, configurable: true },
+    PPUSTATUS:   { get: () => SHARED.PPU_REGS[2],  set: v => { SHARED.PPU_REGS[2]  = make8(v); }, configurable: true },
+    OAMADDR:     { get: () => SHARED.PPU_REGS[3],  set: v => { SHARED.PPU_REGS[3]  = make8(v); }, configurable: true },
+    OAMDATA:     { get: () => SHARED.PPU_REGS[4],  set: v => { SHARED.PPU_REGS[4]  = make8(v); }, configurable: true },
+    SCROLL_X:    { get: () => SHARED.PPU_REGS[5],  set: v => { SHARED.PPU_REGS[5]  = make8(v); }, configurable: true },
+    SCROLL_Y:    { get: () => SHARED.PPU_REGS[6],  set: v => { SHARED.PPU_REGS[6]  = make8(v); }, configurable: true },
+    ADDR_HIGH:   { get: () => SHARED.PPU_REGS[7],  set: v => { SHARED.PPU_REGS[7]  = make8(v); }, configurable: true },
+    ADDR_LOW:    { get: () => SHARED.PPU_REGS[8],  set: v => { SHARED.PPU_REGS[8]  = make8(v); }, configurable: true },
+    t_lo:        { get: () => SHARED.PPU_REGS[9],  set: v => { SHARED.PPU_REGS[9]  = make8(v); }, configurable: true },
+    t_hi:        { get: () => SHARED.PPU_REGS[10], set: v => { SHARED.PPU_REGS[10] = make8(v); }, configurable: true },
+    fineX:       { get: () => SHARED.PPU_REGS[11], set: v => { SHARED.PPU_REGS[11] = make8(v); }, configurable: true },
+    writeToggle: { get: () => SHARED.PPU_REGS[12], set: v => { SHARED.PPU_REGS[12] = make8(v); }, configurable: true },
+    VRAM_DATA:   { get: () => SHARED.PPU_REGS[13], set: v => { SHARED.PPU_REGS[13] = make8(v); }, configurable: true },
+    BG_ntByte:   { get: () => SHARED.PPU_REGS[14], set: v => { SHARED.PPU_REGS[14] = make8(v); }, configurable: true },
+    BG_atByte:   { get: () => SHARED.PPU_REGS[15], set: v => { SHARED.PPU_REGS[15] = make8(v); }, configurable: true },
+    BG_tileLo:   { get: () => SHARED.PPU_REGS[16], set: v => { SHARED.PPU_REGS[16] = make8(v); }, configurable: true },
+    BG_tileHi:   { get: () => SHARED.PPU_REGS[17], set: v => { SHARED.PPU_REGS[17] = make8(v); }, configurable: true },
+    PPU_FRAME_FLAGS: { get: () => SHARED.PPU_REGS[18], set: v => { SHARED.PPU_REGS[18] = make8(v); }, configurable: true },
+
+    // 16-bit VRAM address
+    VRAM_ADDR:   { get: () => SHARED.VRAM_ADDR[0], set: v => { SHARED.VRAM_ADDR[0] = make16(v); }, configurable: true },
+
+    // clocks
+    cpuCycles:   { get: () => SHARED.CLOCKS[0],    set: v => { SHARED.CLOCKS[0] = v|0; }, configurable: true },
+    ppuCycles:   { get: () => SHARED.CLOCKS[1],    set: v => { SHARED.CLOCKS[1] = v|0; }, configurable: true },
+
+    // open bus
+    cpuOpenBus:  { get: () => SHARED.CPU_OPENBUS[0], set: v => { SHARED.CPU_OPENBUS[0] = make8(v); }, configurable: true },
+
+    // events
+    nmiPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1) !== 0,
+                    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1)
+                                  : Atomics.and(SHARED.EVENTS, 0, ~0b1); }, configurable: true },
+    irqPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b10) !== 0,
+                    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b10)
+                                  : Atomics.and(SHARED.EVENTS, 0, ~0b10); }, configurable: true },
+
+  });
+
+  console.log("[main] Installed live scalar accessors");
+
+  // ------------------------------------------------------------
+  // Worker boot + handshake (export worker globally)
+  // ------------------------------------------------------------
+  globalThis.ppuWorker = new Worker('assets/js/ppu-worker.js');
+
+  console.log("[main] ppuWorker created");
+
+  ppuWorker.addEventListener('message', (e) => {
+    const d = e.data || {};
+    if (d.type === 'ready') {
+      console.log("[main] worker says ready");
+    } else {
+      console.log("[main] worker message:", d);
+    }
+  });
+
+  ppuWorker.addEventListener('error', (e) => {
+    console.error("[main] worker error:", e.message || e);
+  });
+  ppuWorker.addEventListener('messageerror', (e) => {
+    console.error("[main] worker messageerror:", e);
+  });
+
+  // Send all SABs
+  ppuWorker.postMessage({
+    SAB_CLOCKS: SHARED.SAB_CLOCKS,
+    SAB_EVENTS: SHARED.SAB_EVENTS,
+    SAB_FRAME:  SHARED.SAB_FRAME,
+    SAB_CPU_OPENBUS: SHARED.SAB_CPU_OPENBUS,
+    SAB_PPU_REGS: SHARED.SAB_PPU_REGS,
+    SAB_VRAM_ADDR: SHARED.SAB_VRAM_ADDR,
+    SAB_SYNC: SHARED.SAB_SYNC,
+    SAB_ASSETS: {
+      CHR_ROM:     SHARED.SAB_CHR,
+      VRAM:        SHARED.SAB_VRAM,
+      PALETTE_RAM: SHARED.SAB_PALETTE,
+      OAM:         SHARED.SAB_OAM,
+    },
+    SAB_PALETTE_INDEX_FRAME: SHARED.SAB_PALETTE_INDEX_FRAME
+  });
+
+  console.log("[main] Handshake posted to worker");
+
+})();
+
+// ===== OAM DMA ($4014) =====
+// Copies 256 bytes from CPU RAM page (value << 8) into PPU OAM.
+// Adds 513 cycles if CPU is on even cycle, 514 if odd.
 function dmaTransfer(value) {
-  let even = (cpuCycles & 1) === 0;
-  const start = value << 8;
+  const start = (value & 0xFF) << 8;
   for (let i = 0; i < 256; ++i) {
     OAM[i] = systemMemory[(start + i) & 0x7FF];
   }
-  const add = even ? 513 : 514;
-  Atomics.add(SHARED.CLOCKS, 0, add);
-  // atomics ensures update is seen straight away by other threads using the variable
-  // likely not crucial here as we increment cycles per opcode in step()
-  // lets just the cycles as soon as dma is done in this case
+  // so further research says no point with atomics unless both 
+  // main and worker thread are modifying values, we are only incrementing
+  // on main side. Alias is 1:1 with SHARED.CLOCKS[0]
+  if (cpuCycles % 2 === 0) addExtraCycles(513);
+  else addExtraCycles(514);
 }
 
-//https://www.nesdev.org/wiki/CPU_interrupts
-// ===== NMI handler =====
+// ======== Interrupts ======== 
+// https://www.nesdev.org/wiki/CPU_interrupts
 function serviceNMI() {
-
-  if (ppuDebugLogging){
-  console.log(
-      "%cNMI fired",
-      "color: white; background-color: red; font-weight: bold; padding: 2px 6px; border-radius: 3px"
-    );
+  if (ppuDebugLogging) {
+    console.log("%cNMI fired", "color: white; background-color: red; font-weight: bold; padding: 2px 6px; border-radius: 3px");
   }
-
   const pc = CPUregisters.PC & 0xFFFF;
-
   // Push PC high
   checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), (pc >>> 8) & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
   // Push PC low
   checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), pc & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
   // Push P with B=0, bit5 set
   const pushedP = ((CPUregisters.P & ~0x10) | 0x20) & 0xFF;
   checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), pushedP);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
   // Set I flag
   CPUregisters.P = (CPUregisters.P | 0x04) & 0xFF;
-
   // Fetch NMI vector
   const lo = checkReadOffset(0xFFFA) & 0xFF;
   const hi = checkReadOffset(0xFFFB) & 0xFF;
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
-  // insta add cycles for ppu worker to see
-  Atomics.add(SHARED.CLOCKS, 0, 7);
+  // 7-cycle stall, visible immediately to PPU thread
+  addExtraCycles(7);
 }
 
-function IRQ(isFromBRK = false) {
-  // Push return address (PC high, then low)
-  systemMemory[0x100 + CPUregisters.S] = (CPUregisters.PC >> 8) & 0xFF;
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  systemMemory[0x100 + CPUregisters.S] = CPUregisters.PC & 0xFF;
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Build status byte
-  let status = 0x20; // bit 5 always set
-  if (CPUregisters.P.N) status |= 0x80;
-  if (CPUregisters.P.V) status |= 0x40;
-  if (CPUregisters.P.D) status |= 0x08;
-  if (CPUregisters.P.I) status |= 0x04;
-  if (CPUregisters.P.Z) status |= 0x02;
-  if (CPUregisters.P.C) status |= 0x01;
-
-  // Set B flag correctly for BRK vs. IRQ
-  if (isFromBRK) {
-    status |= 0x10; // B flag set when BRK
-  }
-
-  // Push status
-  systemMemory[0x100 + CPUregisters.S] = status;
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Set I flag to block further IRQs
-  CPUregisters.P.I = 1;
-
-  // Vector fetch — default IRQ vector
-  let vectorAddr = 0xFFFE;
-
-  // Hijack quirk:
-  // If this IRQ is actually being triggered mid-BRK AND
-  // an NMI line was asserted during BRK's first 4 cycles,
-  // hardware will use the NMI vector instead.
-  if (nmiPending && isFromBRK) {
-    vectorAddr = 0xFFFA; // NMI vector instead
-    nmiPending = !nmiPending;  // consume NMI
-  }
-
-  // Load PC from vector
-  const lo = systemMemory[vectorAddr];
-  const hi = systemMemory[vectorAddr + 1];
-  CPUregisters.PC = lo | (hi << 8);
-
-  // Notify PPU worker of 7 cycle stall
-  Atomics.add(SHARED.CLOCKS, 0, 7);
-}
-
-/*       --------- BRK (IMP) ---------------
-   BRK (0x00) — Force interrupt via IRQ/BRK vector */
 function BRK_IMP() {
-  // Per 6502 spec, BRK pushes PC+2 (opcode + padding byte)
   const ret = (CPUregisters.PC + 2) & 0xFFFF;
 
-  // Push PCH
   checkWriteOffset(0x0100 | CPUregisters.S, (ret >> 8) & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // Push PCL
   checkWriteOffset(0x0100 | CPUregisters.S, ret & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // Build status byte with bit5=1 and B=1 for BRK
-  let p = (1 << 5) | (1 << 4); // bit5 always 1, B=1 for BRK
+  let p = (1 << 5) | (1 << 4);
   if (CPUregisters.P.N) p |= 0x80;
   if (CPUregisters.P.V) p |= 0x40;
   if (CPUregisters.P.D) p |= 0x08;
@@ -421,25 +250,45 @@ function BRK_IMP() {
   if (CPUregisters.P.Z) p |= 0x02;
   if (CPUregisters.P.C) p |= 0x01;
 
-  // Push status
   checkWriteOffset(0x0100 | CPUregisters.S, p);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // Set I flag (disable further IRQs)
   CPUregisters.P.I = 1;
   CPUregisters.P.B = 1;
 
-  // Fetch IRQ/BRK vector
   const lo = checkReadOffset(0xFFFE) & 0xFF;
   const hi = checkReadOffset(0xFFFF) & 0xFF;
   CPUregisters.PC = (hi << 8) | lo;
 
-  // BRK takes 7 cycles total
-  //cpuCycles = (cpuCycles + 7) & 0xFFFF;
-  Atomics.add(SHARED.CLOCKS, 0, 7); 
-  // has a pointless quirk you -could- emulate down the track
+  addExtraCycles(7);
 }
 
-PPUCTRL = PPUMASK = PPUSTATUS = OAMADDR = ADDR_HIGH = ADDR_LOW = VRAM_DATA = OAMDATA = 0x00;
-VRAM.fill(0x00);
-ppuCycles = cpuCycles = 0x00;
+function serviceIRQ() {
+  // Only fire if I flag (Interrupt Disable) is clear
+  if ((CPUregisters.P & 0x04) === 0) {
+
+    // Push PC high, PC low, then status with B flag clear
+    checkWriteOffset(0x0100 + CPUregisters.SP, (CPUregisters.PC >> 8) & 0xFF);
+    CPUregisters.SP = (CPUregisters.SP - 1) & 0xFF;
+
+    checkWriteOffset(0x0100 + CPUregisters.SP, CPUregisters.PC & 0xFF);
+    CPUregisters.SP = (CPUregisters.SP - 1) & 0xFF;
+
+    // Push status with B=0, bit 5 forced set
+    let status = CPUregisters.P & ~0x10;
+    status |= 0x20;
+    checkWriteOffset(0x0100 + CPUregisters.SP, status);
+    CPUregisters.SP = (CPUregisters.SP - 1) & 0xFF;
+
+    // Fetch new PC from vector $FFFE/FFFF
+    const lo = checkReadOffset(0xFFFE);
+    const hi = checkReadOffset(0xFFFF);
+    CPUregisters.PC = (hi << 8) | lo;
+
+    // Set interrupt disable
+    CPUregisters.P |= 0x04;
+
+    // IRQ takes 7 cycles total
+    addExtraCycles(7);
+  }
+}

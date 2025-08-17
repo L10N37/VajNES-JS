@@ -60,10 +60,3 @@ $3F0D  BG palette 3 - colour 2
 $3F0E  BG palette 3 - colour 3
 */
 
-/*
-
-PPUSim_start(60); // run
-PPUSim_stop();    // stop
-PPUSim_step();    // single frame
-
-*/

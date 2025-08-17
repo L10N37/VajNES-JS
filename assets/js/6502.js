@@ -62,8 +62,8 @@ function resetCPU() {
       N: 0     // Negative
   };
   // pull PC from reset vector
-  const lo = cpuRead(0xFFFC);
-  const hi = cpuRead(0xFFFD);
+  const lo = checkReadOffset(0xFFFC);
+  const hi = checkReadOffset(0xFFFD);
   CPUregisters.PC = lo | (hi << 8);;
 }
 
@@ -80,6 +80,11 @@ function opCodeTest(){
     "%c🟢 TEST MODAL TRIGGERED by OPCODE 0x02 🟢",
     "background: yellow; color: black; font-weight: bold; font-size: 20px; padding: 6px 12px; border: 2px solid black;"
   );
+}
+
+function addExtraCycles(x) {
+  Atomics.add(SHARED.CLOCKS, 0, x);        // CPU
+  Atomics.add(SHARED.CLOCKS, 1, 3 * x);    // PPU
 }
 
 /*
@@ -231,7 +236,7 @@ function LDA_ABSX() {
   // Detect page boundary crossing ONLY for this data fetch:
   if ((base & 0xFF00) !== (address & 0xFF00)) {
       //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-      Atomics.add(SHARED.CLOCKS, 0, 1);
+      addExtraCycles(1);
   }
 
 }
@@ -249,7 +254,7 @@ function LDA_ABSY() {
   // Detect page boundary crossing
   if ((base & 0xFF00) !== (address & 0xFF00)) {
     //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-    Atomics.add(SHARED.CLOCKS, 0, 1);
+    addExtraCycles(1);
   }
 }
 
@@ -272,7 +277,7 @@ function LDA_INDY() {
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
     // Add a cycle if page boundary is crossed when adding Y
-  if ((base & 0xFF00) !== (address & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+  if ((base & 0xFF00) !== (address & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function STA_ZP() {
@@ -351,7 +356,7 @@ function INC_ABSX() {
   CPUregisters.P.Z = ((value === 0)) ? 1 : 0;
   CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
   //cpuCycles = (cpuCycles + 3) & 0xFFFF; // quirk, add 3 to base cycles
-  Atomics.add(SHARED.CLOCKS, 0, 3);
+  addExtraCycles(3);
 }
 
 function JMP_ABS() {
@@ -508,7 +513,7 @@ function LDX_ABSY() {
   CPUregisters.P.Z = (CPUregisters.X === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.X & 0x80) !== 0) ? 1 : 0;
     // Add cycle if page crossed (standard quirk)
-  if ((base & 0xFF00) !== (address & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1); //cpuCycles = (cpuCycles + 1) & 0xFFFF;
+  if ((base & 0xFF00) !== (address & 0xFF00)) addExtraCycles(1); //cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function ADC_ZP() {
@@ -601,7 +606,7 @@ function ADC_ABSX() {
   CPUregisters.A = res;
 
   // timing (+1 on page cross
-  if ((addr & 0xFF00) !== (base & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+  if ((addr & 0xFF00) !== (base & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function ADC_ABSY() {
@@ -618,7 +623,7 @@ function ADC_ABSY() {
   CPUregisters.A = res;
 
   // timing (+1 cycle if page crossed)
-  if ((addr & 0xFF00) !== (base & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1);// cpuCycles = (cpuCycles + 1) & 0xFFFF;
+  if ((addr & 0xFF00) !== (base & 0xFF00)) addExtraCycles(1);// cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function ADC_INDX() {
@@ -739,7 +744,7 @@ function AND_INDX() {
   CPUregisters.P.N = (res & 0x80) ? 1 : 0;
 
   //cpuCycles = (cpuCycles + 6) & 0xFFFF; // +add 6 to 1 base cycles, total 7 for this opcode
-  Atomics.add(SHARED.CLOCKS, 0, 6);
+  addExtraCycles(6);
 }
 
 // AND ($nn),Y — opcode 0x31
@@ -760,8 +765,9 @@ function AND_INDY() {
   CPUregisters.P.N = (res & 0x80) ? 1 : 0;
 
   //cpuCycles = (cpuCycles + 5) & 0xFFFF;
-  Atomics.add(SHARED.CLOCKS, 0, 5);
-  if ((addr & 0xFF00) !== (base & 0xFF00))Atomics.add(SHARED.CLOCKS, 0, 1); //cpuCycles = (cpuCycles + 1) & 0xFFFF;
+  addExtraCycles(5);
+
+  if ((addr & 0xFF00) !== (base & 0xFF00))addExtraCycles(1); //cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 // ---------- ASL (Accumulator) total = 2 cycles → extra = 0 ----------
@@ -790,7 +796,8 @@ function ASL_ZP() {
   checkWriteOffset(ea, res);                // final write
 
   //cpuCycles = (cpuCycles + 2) & 0xFFFF; // base(3) + 2 = 5
-  Atomics.add(SHARED.CLOCKS, 0, 2);
+  addExtraCycles(2);
+
 }
 
 // ---------- ASL $nn,X (ZP,X) total = 6 cycles → extra = +2 ----------
@@ -808,7 +815,8 @@ function ASL_ZPX() {
   checkWriteOffset(ea, res);                // final
 
  //cpuCycles = (cpuCycles + 2) & 0xFFFF; // base(4) + 2 = 6
- Atomics.add(SHARED.CLOCKS, 0, 2);
+ addExtraCycles(2);
+
 }
 
 // ---------- ASL $nnnn (ABS) total = 6 cycles → extra = +2 ----------
@@ -827,7 +835,8 @@ function ASL_ABS() {
   checkWriteOffset(ea, res);                // final
 
  //cpuCycles = (cpuCycles + 2) & 0xFFFF; // base(4) + 2 = 6
- Atomics.add(SHARED.CLOCKS, 0, 2);
+ addExtraCycles(2);
+
 }
 
 // ---------- ASL $nnnn,X (ABS,X) total = 7 cycles → extra = +3 ----------
@@ -846,7 +855,7 @@ function ASL_ABSX() {
   checkWriteOffset(ea, res);                // final
 
   //cpuCycles = (cpuCycles + 3) & 0xFFFF; // base(4) + 3 = 7 (fixed; no page-cross add for RMW)
-  Atomics.add(SHARED.CLOCKS, 0, 3);
+  addExtraCycles(3);
 }
 
 function BIT_ZP() {
@@ -902,7 +911,8 @@ function LSR_ZP() {
   CPUregisters.P.N = 0;
 
   //cpuCycles = (cpuCycles + 5) & 0xFFFF; // ZP: 5 cycles
-  Atomics.add(SHARED.CLOCKS, 0, 5);
+  addExtraCycles(5);
+
 }
 
 // LSR $nn,X  (0x56) — Zero Page,X (wrap)
@@ -918,7 +928,7 @@ function LSR_ZPX() {
   CPUregisters.P.N = 0;
 
   //cpuCycles = (cpuCycles + 6) & 0xFFFF;// ZP,X: 6 cycles
-  Atomics.add(SHARED.CLOCKS, 0, 6);
+  addExtraCycles(6);
 }
 
 // LSR $nnnn  (0x4E) — Absolute
@@ -935,7 +945,7 @@ function LSR_ABS() {
   CPUregisters.P.N = 0;
 
   //cpuCycles = (cpuCycles + 6) & 0xFFFF; // ABS: 6 cycles
-  Atomics.add(SHARED.CLOCKS, 0, 6);
+  addExtraCycles(6);
 }
 
 // LSR $nnnn,X  (0x5E) — Absolute,X
@@ -953,7 +963,7 @@ function LSR_ABSX() {
   CPUregisters.P.N = 0;
 
   //cpuCycles = (cpuCycles + 7) & 0xFFFF; // ABS,X: 7 cycles (RMW)
-  Atomics.add(SHARED.CLOCKS, 0, 7);
+  addExtraCycles(1); // +1 on base, 7 is a mistake
 }
 
 function ORA_IMM() {
@@ -1201,7 +1211,8 @@ function DEC_ZPX() {
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val & 0x80) ? 1 : 0;
   //cpuCycles = (cpuCycles + 2) & 0xFFFF;  // add two to base of 4 for Absolute addressing, 6 total for this opcode
-  Atomics.add(SHARED.CLOCKS, 0, 2); // so the worker thread can action its 3 ticks per CPU cycle instantly
+  addExtraCycles(2);
+ // so the worker thread can action its 3 ticks per CPU cycle instantly
 }
 
 // DEC $nnnn  (opcode 0xCE)
@@ -1214,7 +1225,8 @@ function DEC_ABS() {
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val & 0x80) ? 1 : 0;
   //cpuCycles = (cpuCycles + 2) & 0xFFFF; // add two to base of 4 for Absolute addressing, 6 total for this opcode
-  Atomics.add(SHARED.CLOCKS, 0, 2);
+  addExtraCycles(2);
+
 }
 
 function DEC_ABSX() {
@@ -1238,7 +1250,7 @@ function DEC_ABSX() {
 
   // Timing: base(absX)=4 added by dispatcher; add +3 here -> total 7
   //cpuCycles = (cpuCycles + 3) & 0xFFFF;
-  Atomics.add(SHARED.CLOCKS, 0, 3);
+  addExtraCycles(3);
 }
 
 function EOR_IMM() {
@@ -1333,7 +1345,7 @@ function EOR_INDX() {
   CPUregisters.P.N = (res & 0x80) ? 1 : 0;
 
   //cpuCycles = (cpuCycles + 6) & 0xFFFF;// fixed for INDX
-  Atomics.add(SHARED.CLOCKS, 0, 6);
+  addExtraCycles(6);
 }
 
 function EOR_INDY() {
@@ -1428,7 +1440,7 @@ function LDY_ABSX() {
   CPUregisters.P.N = ((CPUregisters.Y & 0x80) !== 0) ? 1 : 0;
 
   // Add cycle if page crossed — always do cycle logic *after* memory ops!
-  if ((base & 0xFF00) !== (address & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+  if ((base & 0xFF00) !== (address & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
   
 }
 
@@ -1614,7 +1626,7 @@ function PHP_IMP() {
 // PLP - Pull Processor Status from stack (implied)
 function PLP_IMP() {
     CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-    let val = cpuRead(0x0100 | CPUregisters.S);
+    let val = checkReadOffset(0x0100 | CPUregisters.S);
     // Ignore the break flag bits in storage (bits 4 & 5 handling per NES behaviour)
     CPUregisters.P.C = (val & 0x01) ? 1 : 0;
     CPUregisters.P.Z = (val & 0x02) ? 1 : 0;
@@ -1638,7 +1650,7 @@ function PHA_IMP() {
 // PLA - Pull Accumulator (implied)
 function PLA_IMP() {
     CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-    CPUregisters.A = cpuRead(0x0100 | CPUregisters.S);
+    CPUregisters.A = checkReadOffset(0x0100 | CPUregisters.S);
     CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
     CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
 }
@@ -1673,7 +1685,7 @@ function NOP_ZPY() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   checkReadOffset((zp + CPUregisters.Y) & 0xFF);
   //cpuCycles = (cpuCycles + 1) & 0xFFFF; // +1 for this opcode
-  Atomics.add(SHARED.CLOCKS, 0, 1);
+  addExtraCycles(1);
   
 }
 
@@ -1708,7 +1720,7 @@ function NOP_ABSX() {
   const base = lo | (hi << 8);
   const eff = (base + CPUregisters.X) & 0xFFFF;
   checkReadOffset(eff);
-  if ((base & 0xFF00) !== (eff & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1); //cpuCycles = (cpuCycles + 1) & 0xFFFF; // Add cycle if page crossed
+  if ((base & 0xFF00) !== (eff & 0xFF00)) addExtraCycles(1); //cpuCycles = (cpuCycles + 1) & 0xFFFF; // Add cycle if page crossed
 }
 
 function SKB_IMM() {
@@ -2079,7 +2091,7 @@ function LAX_ABSY() {
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
   CPUregisters.P.N = ((value & 0x80) !== 0) ? 1 : 0;
   // Add extra cycle if page boundary is crossed, post data manipulation
-  if ((base & 0xFF00) !== (address & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+  if ((base & 0xFF00) !== (address & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
 }
 
 function LAX_INDX() {
@@ -2326,7 +2338,7 @@ function SLO_ABSX() {
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
   //cpuCycles = (cpuCycles + 3) & 0xFFFF; // add 3 to the base, this opcode always chews 7 cycles
-  Atomics.add(SHARED.CLOCKS, 0, 3);
+  addExtraCycles(3);
 }
 
 function SLO_ABSY() {
@@ -2673,7 +2685,7 @@ function BRA_REL() {
   const oldPC = CPUregisters.PC;
   const newPC = (CPUregisters.PC + 2 + signed) & 0xFFFF;
   // Page boundary cross penalty (+1 cycle)
-  if (((oldPC + 2) & 0xFF00) !== (newPC & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+  if (((oldPC + 2) & 0xFF00) !== (newPC & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
   CPUregisters.PC = newPC;
 }
 
@@ -2737,8 +2749,8 @@ function BCC_REL() {
   if (!CPUregisters.P.C) {
     const dest = (nextPC + rel) & 0xFFFF;
     //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-    Atomics.add(SHARED.CLOCKS, 0, 1);
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    addExtraCycles(1);
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2756,8 +2768,8 @@ function BCS_REL() {
 
   if (CPUregisters.P.C) {
     const dest = (nextPC + rel) & 0xFFFF;
-     Atomics.add(SHARED.CLOCKS, 0, 1); // branch taken  //cpuCycles = (cpuCycles + 1) & 0xFFFF; // +1 if branch taken
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1); // branch taken //cpuCycles = (cpuCycles + 1) & 0xFFFF; // +1 if page cross
+     addExtraCycles(1); // branch taken  //cpuCycles = (cpuCycles + 1) & 0xFFFF; // +1 if branch taken
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) addExtraCycles(1); // branch taken //cpuCycles = (cpuCycles + 1) & 0xFFFF; // +1 if page cross
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2773,7 +2785,7 @@ function BEQ_REL() {
   if (CPUregisters.P.Z) {
     const dest = (nextPC + rel) & 0xFFFF;
     //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-    Atomics.add(SHARED.CLOCKS, 0, 1);
+    addExtraCycles(1);
     if ((nextPC & 0xFF00) !== (dest & 0xFF00)) cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
@@ -2790,8 +2802,8 @@ function BNE_REL() {
   if (!CPUregisters.P.Z) {
     const dest = (nextPC + rel) & 0xFFFF;
     //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-    Atomics.add(SHARED.CLOCKS, 0, 1);
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1); //cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    addExtraCycles(1);
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) addExtraCycles(1); //cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2807,8 +2819,8 @@ function BMI_REL() {
   if (CPUregisters.P.N) {
     const dest = (nextPC + rel) & 0xFFFF;
     //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-    Atomics.add(SHARED.CLOCKS, 0, 1);
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1); //cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    addExtraCycles(1);
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) addExtraCycles(1); //cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2824,8 +2836,8 @@ function BPL_REL() {
   if (!CPUregisters.P.N) {
     const dest = (nextPC + rel) & 0xFFFF;
     //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-    Atomics.add(SHARED.CLOCKS, 0, 1);
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    addExtraCycles(1);
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2841,8 +2853,8 @@ function BVC_REL() {
   if (!CPUregisters.P.V) {
     const dest = (nextPC + rel) & 0xFFFF;
     //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-    Atomics.add(SHARED.CLOCKS, 0, 1);
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    addExtraCycles(1);
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
@@ -2858,8 +2870,8 @@ function BVS_REL() {
   if (CPUregisters.P.V) {
     const dest = (nextPC + rel) & 0xFFFF;
     //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-    Atomics.add(SHARED.CLOCKS, 0, 1);
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) Atomics.add(SHARED.CLOCKS, 0, 1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    addExtraCycles(1);
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
