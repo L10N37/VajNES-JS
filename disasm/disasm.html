@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en" data-theme="amber">
+<head>
+  <meta charset="utf-8" />
+  <title>NES Disasm</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="./disasm.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="bar">
+      <div class="title">DISASSEMBLER</div>
+      <button id="theme-toggle" class="btn" title="T">Theme: Amber</button>
+    </header>
+
+    <main id="view" class="viewport" tabindex="0" role="log" aria-live="polite">
+      <table class="disasm">
+        <thead>
+        <tr class="hdr">
+            <th class="col-pc">PC</th>
+            <th class="col-opc">OPC</th>
+            <th class="col-op">OP</th>
+            <th class="col-mn">MNEMONIC</th>
+            <th class="col-notes">NOTES</th>
+            <th class="col-reg">A</th>
+            <th class="col-reg">X</th>
+            <th class="col-reg">Y</th>
+            <th class="col-reg">P</th>
+            <th class="col-reg">S</th>
+        </tr>
+        <tr class="sep"><td colspan="10"></td></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="scan" aria-hidden="true"></div>
+    </main>
+
+    <footer class="keybar">
+      <span>R = Run</span>
+      <span>P = Pause</span>
+      <span>S = Step</span>
+      <span>T = Theme</span>
+    </footer>
+  </div>
+
+  <!-- Page-only helpers: DebugCtl + theme + keys -->
+  <script>
+  function getCtl() {
+    try {
+      if (window.DebugCtl) return window.DebugCtl;
+      if (window.parent && window.parent.DebugCtl) return window.parent.DebugCtl;
+      if (window.opener && window.opener.DebugCtl) return window.opener.DebugCtl;
+      if (window.top && window.top.DebugCtl) return window.top.DebugCtl;
+    } catch(_) {}
+    return null;
+  }
+  function run()  { getCtl()?.run?.(); }
+  function pause(){ getCtl()?.pause?.(); }
+  function step() { getCtl()?.step?.(); }
+
+  (function(){
+    const html = document.documentElement;
+    const btn  = document.getElementById('theme-toggle');
+    function setTheme(name){
+      html.setAttribute('data-theme', name);
+      if (btn) btn.textContent = 'Theme: ' + (name === 'amber' ? 'Amber' : 'Green');
+      try { top.document.documentElement.setAttribute('data-theme', name); } catch(e){}
+    }
+    function toggle(){ setTheme(html.getAttribute('data-theme') === 'amber' ? 'green' : 'amber'); }
+    if (btn) btn.addEventListener('click', toggle);
+
+    addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      const t = (e.target.tagName||'');
+      if (t === 'INPUT' || t === 'TEXTAREA') return;
+      const k = e.key;
+      if (k==='r'||k==='R') { e.preventDefault(); run(); }
+      else if (k==='p'||k==='P') { e.preventDefault(); pause(); }
+      else if (k==='s'||k==='S') { e.preventDefault(); step(); }
+      else if (k==='t'||k==='T') { e.preventDefault(); toggle(); }
+    });
+
+    const viewEl = document.getElementById('view');
+    if (viewEl) viewEl.focus();
+  }());
+  </script>
+
+  <!-- Attach to SABs via BroadcastChannel and append HTML rows -->
+  <script>
+  (function(){
+    const rowsEl = document.getElementById('rows');
+    const bc = new BroadcastChannel('nes-disasm');
+    let HTML_U32 = null, HTML_U8 = null, DATA_CAP = 0;
+    const dec = new TextDecoder();
+
+    // ask the main page for SABs
+    bc.postMessage({ type: 'disasm.attachRequest' });
+
+    bc.onmessage = (e) => {
+      const m = e && e.data;
+      if (!m) return;
+      if (m.type === 'disasm.attachGrant') {
+        HTML_U32 = new Uint32Array(m.sab.HTML, 0, 2); // [commitOffset, epoch]
+        HTML_U8  = new Uint8Array(m.sab.HTML, 8);     // data region (SAB-backed)
+        DATA_CAP = m.html.dataBytes;
+        startPump();
+      }
+    };
+
+    // Helper: safely decode SAB-backed slice by copying to a normal buffer
+    function decodeSABSlice(start, end) {
+      const n = end - start;
+      if (n <= 0) return "";
+      const tmp = new Uint8Array(n);
+      tmp.set(HTML_U8.subarray(start, end));
+      return dec.decode(tmp);
+    }
+
+    function startPump() {
+      if (!HTML_U32 || !HTML_U8) return;
+      let lastEpoch = Atomics.load(HTML_U32, 1);
+      let lastOff   = Atomics.load(HTML_U32, 0);
+
+      function pump() {
+        const epoch = Atomics.load(HTML_U32, 1);
+        const off   = Atomics.load(HTML_U32, 0);
+        let html = "";
+
+        if (epoch === lastEpoch) {
+          if (off > lastOff) html = decodeSABSlice(lastOff, off);
+        } else {
+          // wrapped: tail then head
+          html  = decodeSABSlice(lastOff, DATA_CAP);
+          html += decodeSABSlice(0, off);
+        }
+
+        if (html) {
+          rowsEl.insertAdjacentHTML("beforeend", html);
+          const MAX_ROWS = 256;
+          while (rowsEl.children.length > MAX_ROWS) {
+            rowsEl.removeChild(rowsEl.firstElementChild);
+          }
+          lastEpoch = epoch;
+          lastOff   = off;
+        }
+        requestAnimationFrame(pump);
+      }
+      requestAnimationFrame(pump);
+    }
+  }());
+  </script>
+
+</body>
+</html>

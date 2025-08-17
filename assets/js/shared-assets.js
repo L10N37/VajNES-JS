@@ -292,3 +292,75 @@ function serviceIRQ() {
     addExtraCycles(7);
   }
 }
+
+// ============ Disassembler SAB set up ============
+/*
+DISASM.RING record layout (per instruction step)
+
+Bytes 0..1 : PC16      // Uint16
+Byte  2    : OPC       // opcode byte
+Byte  3    : OP1       // first operand
+Byte  4    : OP2       // second operand
+Byte  5    : A         // accumulator register
+Byte  6    : X         // X register
+Byte  7    : Y         // Y register
+Byte  8    : S         // stack pointer
+Byte  9    : P.C       // Carry flag (0/1)
+Byte 10    : P.Z       // Zero flag
+Byte 11    : P.I       // Interrupt Disable
+Byte 12    : P.D       // Decimal Mode
+Byte 13    : P.B       // Break Command
+Byte 14    : P.U       // Unused flag (always 1 on NES CPU)
+Byte 15    : P.V       // Overflow flag
+Byte 16    : P.N       // Negative flag
+*/
+
+// create SABs and start worker
+window.DISASM = window.DISASM || {};
+
+// --- RAW FACTS RING (CPU writes; worker reads) -------------------------------
+const RING_CAPACITY    = 2048;  // tune 1024–4096 later
+const RING_RECORD_SIZE = 5;     // PC16 + OPC + OP1 + OP2
+
+DISASM.SAB = DISASM.SAB || {};
+DISASM.SAB.RING = new SharedArrayBuffer(RING_CAPACITY * RING_RECORD_SIZE);
+DISASM.RING_U8   = new Uint8Array(DISASM.SAB.RING);
+DISASM.RING_U16  = new Uint16Array(DISASM.SAB.RING);
+DISASM.CAPACITY    = RING_CAPACITY;
+DISASM.RECORD_SIZE = RING_RECORD_SIZE;
+
+// --- HTML PIPE (worker writes HTML; disasm.html reads) -----------------------
+const HTML_HEADER_WORDS = 2;                        // [U32 COMMIT_OFFSET, U32 EPOCH]
+const HTML_HEADER_BYTES = HTML_HEADER_WORDS * 4;    // 8 bytes
+const HTML_DATA_BYTES   = 512 * 1024;               // 512 KiB
+
+DISASM.SAB.HTML = new SharedArrayBuffer(HTML_HEADER_BYTES + HTML_DATA_BYTES);
+DISASM.HTML_U32 = new Uint32Array(DISASM.SAB.HTML, 0, HTML_HEADER_WORDS);
+DISASM.HTML_U8  = new Uint8Array(DISASM.SAB.HTML, HTML_HEADER_BYTES);
+DISASM.HTML_DATA_BYTES = HTML_DATA_BYTES;
+
+// --- Start worker (non-module) ----------------------------------------------
+DISASM.worker = new Worker("disasm/disasm-worker.js");
+DISASM.worker.postMessage({
+  type: "init",
+  sab:  { RING: DISASM.SAB.RING, HTML: DISASM.SAB.HTML },
+  ring: { cap: RING_CAPACITY, stride: RING_RECORD_SIZE },
+  html: { headerBytes: HTML_HEADER_BYTES, dataBytes: HTML_DATA_BYTES }
+});
+
+// ===== Serve SABs to disasm.html via BroadcastChannel ========================
+(function () {
+  const bc = new BroadcastChannel("nes-disasm");
+  bc.onmessage = (e) => {
+    const m = e && e.data;
+    if (!m) return;
+    if (m.type === "disasm.attachRequest") {
+      bc.postMessage({
+        type: "disasm.attachGrant",
+        sab:  { RING: DISASM.SAB.RING, HTML: DISASM.SAB.HTML },
+        ring: { cap: DISASM.CAPACITY, stride: DISASM.RECORD_SIZE },
+        html: { dataBytes: DISASM.HTML_DATA_BYTES } // header is 8 bytes fixed
+      });
+    }
+  };
+})();

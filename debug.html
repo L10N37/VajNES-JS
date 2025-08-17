@@ -26,6 +26,7 @@
         <button class="dropbtn" id="clickedScreen"> Screen</button>
         <button class="dropbtn" id="clickedTileView">Tile View</button>
         <button class="dropbtn" id="dumpState">Dump</button>
+        <button class="dropbtn" id="open-disasm">DisAsm</button>
       </div>
 
     </div>
@@ -239,6 +240,7 @@
 </div>
 
 <script src="assets/js/shared-assets.js"></script>
+
 <script src="assets/js/helpers.js"></script>
 <script src="assets/js/6502.js"></script>
 <script src="assets/js/memory.js"></script>
@@ -272,11 +274,31 @@
 <script src="test/benchmarks/benchMarkTests.js"></script>
 <script src="test/standaloneCallInConsoleTests.js"></script>
 <script src="assets/js/logDump.js"></script>
+
 <script src="assets/js/debug.js"></script>
 
 <script src="test/ppuSimulation/ppu-sim.js"></script>
 <script src="test/ppuSimulation/ppu-sim-direct.js"></script>
 
+<!-- purely for disassembler, absolutely nailed the desired outcome/ aesthetics for the window, but can't drag out of DOM -->
+<script src="/disasm/winbox.bundle.min.js"></script>
+<script>
+document.getElementById("open-disasm").onclick = () => {
+  new WinBox({
+    title: "NES Disassembler",
+    url: "disasm/disasm.html",
+    width: 980,
+    height: 720,
+    x: "center",
+    y: "center",
+    overflow: "1",
+    background: "#111",
+    border: 0,
+    // show Close + Fullscreen; hide Min/Max
+    class: ["no-min", "no-max"]
+  });
+};
+</script>
 
 </body>
 <footer>

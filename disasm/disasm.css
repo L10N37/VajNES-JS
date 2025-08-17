@@ -1,0 +1,146 @@
+:root {
+  --bg: #0a0a0a;
+  --fg: #ffb86b;
+  --fg-dim: #dca56a;
+  --accent: #444;
+  --chrome: #2a2a2a;
+  --glow: rgba(255, 184, 107, 0.06);
+  --row-h: 1.1;
+  --font: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+html[data-theme="green"] {
+  --fg: #8cff88;
+  --fg-dim: #7de67a;
+  --glow: rgba(140, 255, 136, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  line-height: var(--row-h);
+  overflow: hidden;
+}
+
+/* Layout */
+.wrap {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto; /* header, content, keybar */
+  height: 100%;
+  background: radial-gradient(120% 100% at 50% 0%, #0d0d0d 0%, var(--bg) 60%);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: linear-gradient(#121212, #0d0d0d);
+  border-bottom: 1px solid var(--chrome);
+  color: var(--fg-dim);
+}
+
+.title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.btn {
+  border: 1px solid var(--accent);
+  background: #111;
+  color: var(--fg);
+  padding: 4px 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+
+.viewport {
+  position: relative;
+  overflow: auto;
+  padding: 10px 12px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) transparent;
+}
+
+/* Invisible table (frameless grid) */
+.disasm {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  color: var(--fg);
+  text-shadow: 0 0 2px var(--glow);
+}
+.disasm th,
+.disasm td {
+  border: none;
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  font-variant-ligatures: none;
+}
+
+/* Column widths (tight OP and MNEMONIC) */
+.col-pc    { width: 64px; }
+.col-opc   { width: 48px; }
+.col-op    { width: 56px; }   /* fits "00 00" */
+.col-mn    { width: 160px; }  /* cap to leave room for NOTES */
+.col-reg   { width: 32px; text-align: right; }
+.col-notes { width: auto; }
+
+/* Header + separator */
+.hdr th {
+  color: var(--fg-dim);
+}
+.sep td {
+  height: 1px;
+  background: var(--chrome);
+}
+
+/* Sticky key binding bar */
+.keybar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 6px 12px;
+  border-top: 1px solid var(--chrome);
+  background: linear-gradient(#0d0d0d, #101010);
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+/* CRT scanlines overlay */
+.scan {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.05) 0px,
+    rgba(0, 0, 0, 0.05) 2px,
+    rgba(0, 0, 0, 0.00) 3px
+  );
+  mix-blend-mode: multiply;
+  animation: shim 6s linear infinite;
+  opacity: 0.55;
+}
+
+@keyframes shim {
+  0%   { opacity: 0.50; }
+  50%  { opacity: 0.60; }
+  100% { opacity: 0.50; }
+}

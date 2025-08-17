@@ -59,9 +59,28 @@ function disasm(pc) {
   return `$${pc.toString(16).padStart(4,"0")}  ${byteStr.padEnd(8)}  ${mnem} ${operand}`;
 }
 
-// ============================
-// CPU Step
-// ============================
+function disasmData(disasmCode, disasmOp_, disasmOp__){
+  // PC16
+  DISASM.RING_U16[0] = CPUregisters.PC & 0xFFFF;
+  // opcode + operands
+  DISASM.RING_U8[2] = disasmCode;
+  DISASM.RING_U8[3] = disasmOp_;
+  DISASM.RING_U8[4] = disasmOp__;
+  // registers
+  DISASM.RING_U8[5] = CPUregisters.A;
+  DISASM.RING_U8[6] = CPUregisters.X;
+  DISASM.RING_U8[7] = CPUregisters.Y;
+  DISASM.RING_U8[8] = CPUregisters.S;
+  DISASM.RING_U8[9] = CPUregisters.P.C;
+  DISASM.RING_U8[10] = CPUregisters.P.Z;
+  DISASM.RING_U8[11] = CPUregisters.P.I;
+  DISASM.RING_U8[12] = CPUregisters.P.D;
+  DISASM.RING_U8[13] = CPUregisters.P.B;
+  DISASM.RING_U8[14] = CPUregisters.P.U;
+  DISASM.RING_U8[15] = CPUregisters.P.V;
+  DISASM.RING_U8[16] = CPUregisters.P.N;
+}
+
 function step() {
   // if we're paused, briefly let the PPU worker run this step
   const wasPaused = !cpuRunning;
@@ -87,6 +106,15 @@ function step() {
   NoSignalAudio.setEnabled(false);
 
   const code   = prgRom[(CPUregisters.PC - 0x8000) & 0x7FFF];
+
+  // disasm will use code above but we will also grab ops for it
+  const _op   = prgRom[(CPUregisters.PC - 0x8000 + 1) & 0x7FFF];
+  const __op  = prgRom[(CPUregisters.PC - 0x8000 + 2) & 0x7FFF];
+
+  // store the data the disassembler needs in the SABs, passing it opcode/operands
+  // the flags/ regs it can do in func
+  disasmData(code, _op, __op);
+
   const execFn = opcodeFuncs[code];
   if (!execFn) {
     const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
@@ -113,6 +141,7 @@ function step() {
 
   // if we temporarily enabled the worker, put it back to paused
   if (wasPaused) Atomics.and(SHARED.EVENTS, 0, ~0b00000100); // clear RUN bit
+
 }
 
 
@@ -372,3 +401,8 @@ const opcodeModes = [
   "IMM","INDX","IMM","INDX","ZP","ZP","ZP","ZP","IMP","IMM","IMP","IMM","ABS","ABS","ABS","ABS", // 0xEx
   "REL","INDY","KIL","INDY","ZPX","ZPX","ZPX","ZPX","IMP","ABY","IMP","ABY","ABX","ABX","ABX","ABX"  // 0xFx
 ];
+
+// so disassembler can access them
+globalThis.DebugCtl = Object.assign(globalThis.DebugCtl || {}, {
+  run, pause, step
+});
