@@ -265,7 +265,6 @@ function copyVert() {
 }
 
 // ---------- Bus access (real SHARED arrays) ----------
-// ---------- Bus access (real SHARED arrays) ----------
 function ppuBusRead(addr) {
   addr &= 0x3FFF;
   if (addr < 0x2000) {            // pattern tables

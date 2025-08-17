@@ -56,6 +56,11 @@ function step() {
   execFn();
   CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]) & 0xFFFF;
 
+      // === debug logging ===
+      if (debugLogging) {
+        console.log(`PC:$${hex16(CPUregisters.PC)}  $${code.toString(16).toUpperCase().padStart(2,"0")}`);
+      }
+
   // Base cycles (CPU + PPU budget)
   const cyc = opcodeCyclesInc[code] | 0;
   if (cyc) {
