@@ -1,5 +1,5 @@
 debugLogging = true;
-ppuDebugLogging = true;
+ppuDebugLogging = false;
 
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
