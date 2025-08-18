@@ -144,3 +144,31 @@ body {
   50%  { opacity: 0.60; }
   100% { opacity: 0.50; }
 }
+
+.disasm th.col-bit, .disasm td:nth-child(9),
+.disasm td:nth-child(10), .disasm td:nth-child(11),
+.disasm td:nth-child(12), .disasm td:nth-child(13),
+.disasm td:nth-child(14), .disasm td:nth-child(15),
+.disasm td:nth-child(16) {
+  text-align: center;
+  width: 1ch;
+}
+
+.disasm th.col-bit,
+.disasm td:nth-child(9),
+.disasm td:nth-child(10),
+.disasm td:nth-child(11),
+.disasm td:nth-child(12),
+.disasm td:nth-child(13),
+.disasm td:nth-child(14),
+.disasm td:nth-child(15),
+.disasm td:nth-child(16) {
+  text-align: center;
+  width: 2ch;     /* bump up from 1ch */
+}
+
+.disasm th.col-mn,
+.disasm td:nth-child(4) {
+  padding-left: 2em;   /* shove right by half an em */
+}
+

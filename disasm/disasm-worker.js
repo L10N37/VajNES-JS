@@ -1,3 +1,5 @@
+// disasm-worker.js — snapshot model, no ring consumption
+
 var RING_U8, RING_U16;
 var HTML_U32, HTML_U8, HTML_DATA_BYTES;
 var _enc = new TextEncoder();
@@ -11,19 +13,20 @@ var lastOPC = -1;
 var rowCount = 0;
 
 // --- config -------------------------------------------------------------
-const PC_BASE = 0x0000; //
+const PC_BASE = 0x0000;
 
 // hex helpers: LOWERCASE as requested
 function h2(v){ return (v & 0xFF).toString(16).padStart(2,'0'); }
 function h4(v){ return (v & 0xFFFF).toString(16).padStart(4,'0'); }
 
-// addressing mode enum (matches the LUT below)
+// addressing mode enum (must match your LUT file)
 const AM = {
   IMP:0, ACC:1, IMM:2, ZP:3, ZPX:4, ZPY:5, ABS:6, ABSX:7, ABSY:8,
   IND:9, INDX:10, INDY:11, REL:12
 };
 
-// -----------------------------------------------------------------------
+// one-time sizer row to lock widths
+let didSizer = false;
 
 onmessage = function (e) {
   if (!e.data || e.data.type !== "init") return;
@@ -78,25 +81,35 @@ function tick() {
   var Y    = RING_U8[7] | 0;
   var S    = RING_U8[8] | 0;
 
-  var Cf   = RING_U8[9]  & 1;
-  var Zf   = RING_U8[10] & 1;
-  var If   = RING_U8[11] & 1;
-  var Df   = RING_U8[12] & 1;
-  var Bf   = RING_U8[13] & 1;
-  var Uf   = RING_U8[14] & 1;
-  var Vf   = RING_U8[15] & 1;
-  var Nf   = RING_U8[16] & 1;
-
-  // build compact flag string for single 'P' column (e.g., "NVUBDIZC" using dots for clear)
-  var Pstr = (Nf?'N':'•') + (Vf?'V':'•') + (Uf?'U':'•') + (Bf?'B':'•') +
-             (Df?'D':'•') + (If?'I':'•') + (Zf?'Z':'•') + (Cf?'C':'•');
+  // flags (bool → 1/0 text)
+  var Cf   = (RING_U8[9]  & 1) ? '1':'0';
+  var Zf   = (RING_U8[10] & 1) ? '1':'0';
+  var If   = (RING_U8[11] & 1) ? '1':'0';
+  var Df   = (RING_U8[12] & 1) ? '1':'0';
+  var Bf   = (RING_U8[13] & 1) ? '1':'0';
+  var Uf   = (RING_U8[14] & 1) ? '1':'0';
+  var Vf   = (RING_U8[15] & 1) ? '1':'0';
+  var Nf   = (RING_U8[16] & 1) ? '1':'0';
 
   // decode opcode to mnemonic + addressing text + notes
-  const d = OPINFO_6502[opc] || {m:'???', am:AM.IMP, len:1, cyc:2, pb:false};
+  const d = (typeof OPINFO_6502 !== 'undefined' && OPINFO_6502[opc]) || {m:'???', am:AM.IMP, len:1, cyc:2, pb:false};
   const { mnemonic, operandText, notes } = formatDisasm(pc, opc, op1, op2, X, Y, d);
 
+  // emit sizer row once to lock column widths (invisible but takes layout space)
+  if (!didSizer){
+    writeHTML(sizerRowHTML());
+    didSizer = true;
+  }
+
   // build and commit one row
-  var html = rowHTML(pc, opc, op1, op2, mnemonic + (operandText ? ' ' + operandText : ''), notes, A, X, Y, S, Pstr);
+  var html = rowHTML(
+    pc, opc, op1, op2,
+    mnemonic + (operandText ? ' ' + operandText : ''),
+    notes,
+    A, X, Y,
+    Cf, Zf, If, Df, Bf, Uf, Vf, Nf,
+    S
+  );
   writeHTML(html);
 
   // update change detector + row counter
@@ -113,6 +126,8 @@ function writeHTML(str) {
     htmlOff = 0;
     htmlEpoch++;
     Atomics.store(HTML_U32, 1, htmlEpoch); // bump epoch on wrap
+    // Re-emit sizer after wrap (ensures widths remain even if table is recreated)
+    didSizer = false;
   }
   HTML_U8.set(bytes, htmlOff);
   htmlOff += n;
@@ -143,7 +158,6 @@ function operandString(am, op1, op2, X, Y){
     case AM.INDX:return '($' + h2(op1) + ',x)';
     case AM.INDY:return '($' + h2(op1) + '),y';
     case AM.REL: {
-      // printed as absolute target in NOTES; here keep as $±off for the op field
       const s = sign8(op1);
       if (s >= 0) return '$+' + s;
       return '$' + s; // negative shows with minus
@@ -155,7 +169,7 @@ function operandString(am, op1, op2, X, Y){
 function computeNotes(pc, am, op1, op2, X, Y, addsPB){
   let notes = '';
 
-  // Branch target for REL (effective target uses PC of *this* opcode)
+  // Branch target for REL
   if (am === AM.REL){
     const s = sign8(op1);
     const tgt = (pc + 2 + s) & 0xFFFF;
@@ -163,8 +177,7 @@ function computeNotes(pc, am, op1, op2, X, Y, addsPB){
     return notes;
   }
 
-  // Page boundary detection where it applies
-  // (Emulation timing: ABS,X | ABS,Y | (ZP),Y can add a cycle on cross)
+  // Page boundary detection (reads that can add a cycle)
   if (addsPB){
     let crossed = false;
     switch(am){
@@ -190,18 +203,60 @@ function formatDisasm(pc, opc, op1, op2, X, Y, d){
   };
 }
 
-// Row renderer (now includes mnemonic & notes)
-function rowHTML(pc, opc, op1, op2, mnemonicAndOp, notes, A, X, Y, S, Pstr) {
+// ---------- row renderers ----------------------------------------------
+
+// Hidden sizer row: fixes max column widths (NOTES capped to typical max)
+// Use visibility:hidden so it still participates in layout.
+function sizerRowHTML(){
+  // Representative widest values per column
+  const PC   = '$ffff';
+  const OPC  = 'ff';
+  const OP   = 'ff ff';
+  const MNE  = 'jmp ($ffff),y'; // fairly wide mnemonic sample
+  const NOTE = '→ $ffff +pb';   // max we expect (target + pb)
+  const AXYS = 'ff';
+  const BIT  = '1';
+  const S    = 'ff';
+
+  return `<tr class="sizer" aria-hidden="true" style="visibility:hidden;height:0">
+    <td>${PC}</td>
+    <td>${OPC}</td>
+    <td>${OP}</td>
+    <td>${MNE}</td>
+    <td style="max-width:12ch;white-space:nowrap;overflow:hidden;text-overflow:clip;">${NOTE}</td>
+    <td>${AXYS}</td>
+    <td>${AXYS}</td>
+    <td>${AXYS}</td>
+    <td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td>
+    <td>${S}</td>
+  </tr>`;
+}
+
+function rowHTML(
+  pc, opc, op1, op2,
+  mnemonicAndOp,
+  notes,
+  A, X, Y,
+  Cb, Zb, Ib, Db, Bb, Ub, Vb, Nb,
+  S
+) {
   return `<tr>
     <td>$${h4(pc)}</td>
     <td>${h2(opc)}</td>
     <td>${h2(op1)} ${h2(op2)}</td>
     <td>${mnemonicAndOp}</td>
-    <td>${notes}</td>
+    <td style="max-width:12ch;white-space:nowrap;overflow:hidden;text-overflow:clip;">${notes}</td>
     <td>${h2(A)}</td>
     <td>${h2(X)}</td>
     <td>${h2(Y)}</td>
-    <td>${Pstr}</td>
+    <td>${Cb}</td>
+    <td>${Zb}</td>
+    <td>${Ib}</td>
+    <td>${Db}</td>
+    <td>${Bb}</td>
+    <td>${Ub}</td>
+    <td>${Vb}</td>
+    <td>${Nb}</td>
     <td>${h2(S)}</td>
   </tr>`;
 }

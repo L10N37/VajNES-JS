@@ -1,4 +1,3 @@
-debugLogging = true;
 ppuDebugLogging = false;
 
 function checkReadOffset(address) {
@@ -26,19 +25,8 @@ function checkReadOffset(address) {
   }
   else if (addr < 0x4020) { // APU & I/O
     value = apuRead(addr);
-
-    if (debugLogging) {
-      const h16 = v => "0x" + (v & 0xFFFF).toString(16).padStart(4, "0");
-      const h8  = v => "0x" + (v & 0xFF).toString(16).padStart(2, "0");
-      if (addr === 0x4015) {
-        console.log(`[APU $4015 R] -> ${h8(value)}`);
-      } else if (addr === 0x4016 || addr === 0x4017) {
-        console.log(`[CTRL ${h16(addr)} R] -> ${h8(value)}`);
-      } else {
-        console.log(`[APU/IO R] ${h16(addr)} -> ${h8(value)}`);
-      }
-    }
   }
+  
   else if (addr < 0x6000) { // Expansion
     return cpuOpenBus & 0xFF;
     

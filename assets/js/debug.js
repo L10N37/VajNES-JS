@@ -16,49 +16,6 @@ const CPU_BATCH = 1000; // adjust if you want larger inner batches
 const NES_CPU_HZ    = 1_789_773;           // 1.789773 MHz
 const CYCLES_PER_MS = NES_CPU_HZ / 1000;   // ~1789.773 cycles per ms
 
-
-// === tiny disassembler helper ===
-function disasm(pc) {
-  const code = prgRom[(pc - 0x8000) & 0x7FFF];
-  const len  = opcodePcIncs[code] || 1;
-
-  // fetch raw bytes
-  const bytes = [];
-  for (let i = 0; i < len; i++) {
-    const b = prgRom[(pc + i - 0x8000) & 0x7FFF];
-    bytes.push(b);
-  }
-
-  // operand decoding by addressing mode
-  const mnem = opcodeMnemonics[code] || "???";
-  let operand = "";
-  switch (opcodeModes[code]) {
-    case "IMM": operand = `#$${bytes[1].toString(16).padStart(2,"0").toUpperCase()}`; break;
-    case "ZP":  operand = `$${bytes[1].toString(16).padStart(2,"0").toUpperCase()}`; break;
-    case "ZPX": operand = `$${bytes[1].toString(16).padStart(2,"0").toUpperCase()},X`; break;
-    case "ZPY": operand = `$${bytes[1].toString(16).padStart(2,"0").toUpperCase()},Y`; break;
-    case "ABS": operand = `$${(bytes[2]<<8|bytes[1]).toString(16).padStart(4,"0").toUpperCase()}`; break;
-    case "ABX": operand = `$${(bytes[2]<<8|bytes[1]).toString(16).padStart(4,"0").toUpperCase()},X`; break;
-    case "ABY": operand = `$${(bytes[2]<<8|bytes[1]).toString(16).padStart(4,"0").toUpperCase()},Y`; break;
-    case "IND": operand = `($${(bytes[2]<<8|bytes[1]).toString(16).padStart(4,"0").toUpperCase()})`; break;
-    case "INDX":operand = `($${bytes[1].toString(16).padStart(2,"0").toUpperCase()},X)`; break;
-    case "INDY":operand = `($${bytes[1].toString(16).padStart(2,"0").toUpperCase()}),Y`; break;
-    case "REL": {
-      const offset = (bytes[1] & 0x80) ? bytes[1]-0x100 : bytes[1];
-      const dest   = (pc + 2 + offset) & 0xFFFF;
-      operand = `$${dest.toString(16).padStart(4,"0").toUpperCase()}`;
-      break;
-    }
-    case "ACC": operand = "A"; break;
-    default:    operand = ""; break;
-  }
-
-  // raw bytes for display
-  const byteStr = bytes.map(b=>b.toString(16).toUpperCase().padStart(2,"0")).join(" ");
-
-  return `$${pc.toString(16).padStart(4,"0")}  ${byteStr.padEnd(8)}  ${mnem} ${operand}`;
-}
-
 function disasmData(disasmCode, disasmOp_, disasmOp__){
   // PC16
   DISASM.RING_U16[0] = CPUregisters.PC & 0xFFFF;
@@ -126,11 +83,6 @@ function step() {
 
   execFn();
   CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]) & 0xFFFF;
-
-    // === debug logging ===
-    if (debugLogging){
-    console.log(disasm((CPUregisters.PC - opcodePcIncs[code]) & 0xFFFF));
-    }
 
   // Base cycles (CPU + PPU budget)
   const cyc = opcodeCyclesInc[code] | 0;
@@ -354,52 +306,6 @@ const opcodeFuncs = [
   INX_IMP,    SBC_IMM,    NOP,        /*null*/,   CPX_ABS,    SBC_ABS,    INC_ABS,    ISC_ABS,
   BEQ_REL,    SBC_INDY,   /*null*/,   ISC_INDY,   NOP_ZPX,    SBC_ZPX,    INC_ZPX,    ISC_ZPX,
   SED_IMP,    SBC_ABSY,   NOP,        ISC_ABSY,   NOP_ABSX,   SBC_ABSX,   INC_ABSX,   ISC_ABSX
-];
-
-
-// ===========================
-// 6502 + NES unofficial opcodes
-// ===========================
-// for DisASm
-// Mnemonics (256 entries)
-const opcodeMnemonics = [
-  "BRK","ORA","KIL","SLO","NOP","ORA","ASL","SLO","PHP","ORA","ASL","ANC","NOP","ORA","ASL","SLO", // 0x0x
-  "BPL","ORA","KIL","SLO","NOP","ORA","ASL","SLO","CLC","ORA","NOP","SLO","NOP","ORA","ASL","SLO", // 0x1x
-  "JSR","AND","KIL","RLA","BIT","AND","ROL","RLA","PLP","AND","ROL","ANC","BIT","AND","ROL","RLA", // 0x2x
-  "BMI","AND","KIL","RLA","NOP","AND","ROL","RLA","SEC","AND","NOP","RLA","NOP","AND","ROL","RLA", // 0x3x
-  "RTI","EOR","KIL","SRE","NOP","EOR","LSR","SRE","PHA","EOR","LSR","ALR","JMP","EOR","LSR","SRE", // 0x4x
-  "BVC","EOR","KIL","SRE","NOP","EOR","LSR","SRE","CLI","EOR","NOP","SRE","NOP","EOR","LSR","SRE", // 0x5x
-  "RTS","ADC","KIL","RRA","NOP","ADC","ROR","RRA","PLA","ADC","ROR","ARR","JMP","ADC","ROR","RRA", // 0x6x
-  "BVS","ADC","KIL","RRA","NOP","ADC","ROR","RRA","SEI","ADC","NOP","RRA","NOP","ADC","ROR","RRA", // 0x7x
-  "NOP","STA","NOP","SAX","STY","STA","STX","SAX","DEY","NOP","TXA","XAA","STY","STA","STX","SAX", // 0x8x
-  "BCC","STA","KIL","AXA","STY","STA","STX","SAX","TYA","STA","TXS","TAS","SHY","STA","SHX","AXA", // 0x9x
-  "LDY","LDA","LDX","LAX","LDY","LDA","LDX","LAX","TAY","LDA","TAX","LAX","LDY","LDA","LDX","LAX", // 0xAx
-  "BCS","LDA","KIL","LAX","LDY","LDA","LDX","LAX","CLV","LDA","TSX","LAS","LDY","LDA","LDX","LAX", // 0xBx
-  "CPY","CMP","NOP","DCP","CPY","CMP","DEC","DCP","INY","CMP","DEX","SBX","CPY","CMP","DEC","DCP", // 0xCx
-  "BNE","CMP","KIL","DCP","NOP","CMP","DEC","DCP","CLD","CMP","NOP","DCP","NOP","CMP","DEC","DCP", // 0xDx
-  "CPX","SBC","NOP","ISC","CPX","SBC","INC","ISC","INX","SBC","NOP","SBC","CPX","SBC","INC","ISC", // 0xEx
-  "BEQ","SBC","KIL","ISC","NOP","SBC","INC","ISC","SED","SBC","NOP","ISC","NOP","SBC","INC","ISC"  // 0xFx
-];
-
-// Addressing modes (256 entries)
-// Key: IMM, ZP, ZPX, ZPY, ABS, ABX, ABY, IND, INDX, INDY, REL, ACC, IMP, KIL
-const opcodeModes = [
-  "IMP","INDX","KIL","INDX","ZP","ZP","ZP","ZP","IMP","IMM","ACC","IMM","ABS","ABS","ABS","ABS", // 0x0x
-  "REL","INDY","KIL","INDY","ZPX","ZPX","ZPX","ZPX","IMP","ABY","IMP","ABY","ABX","ABX","ABX","ABX", // 0x1x
-  "ABS","INDX","KIL","INDX","ZP","ZP","ZP","ZP","IMP","IMM","ACC","IMM","ABS","ABS","ABS","ABS", // 0x2x
-  "REL","INDY","KIL","INDY","ZPX","ZPX","ZPX","ZPX","IMP","ABY","IMP","ABY","ABX","ABX","ABX","ABX", // 0x3x
-  "IMP","INDX","KIL","INDX","ZP","ZP","ZP","ZP","IMP","IMM","ACC","IMM","ABS","ABS","ABS","ABS", // 0x4x
-  "REL","INDY","KIL","INDY","ZPX","ZPX","ZPX","ZPX","IMP","ABY","IMP","ABY","ABX","ABX","ABX","ABX", // 0x5x
-  "IMP","INDX","KIL","INDX","ZP","ZP","ZP","ZP","IMP","IMM","ACC","IMM","IND","ABS","ABS","ABS", // 0x6x
-  "REL","INDY","KIL","INDY","ZPX","ZPX","ZPX","ZPX","IMP","ABY","IMP","ABY","ABX","ABX","ABX","ABX", // 0x7x
-  "IMM","INDX","IMM","INDX","ZP","ZP","ZP","ZP","IMP","IMM","IMP","IMM","ABS","ABS","ABS","ABS", // 0x8x
-  "REL","INDY","KIL","INDY","ZPX","ZPX","ZPY","ZPY","IMP","ABY","IMP","ABY","ABX","ABX","ABY","ABY", // 0x9x
-  "IMM","INDX","IMM","INDX","ZP","ZP","ZP","ZP","IMP","IMM","IMP","IMM","ABS","ABS","ABS","ABS", // 0xAx
-  "REL","INDY","KIL","INDY","ZPX","ZPX","ZPY","ZPY","IMP","ABY","IMP","ABY","ABX","ABX","ABY","ABY", // 0xBx
-  "IMM","INDX","IMM","INDX","ZP","ZP","ZP","ZP","IMP","IMM","IMP","IMM","ABS","ABS","ABS","ABS", // 0xCx
-  "REL","INDY","KIL","INDY","ZPX","ZPX","ZPX","ZPX","IMP","ABY","IMP","ABY","ABX","ABX","ABX","ABX", // 0xDx
-  "IMM","INDX","IMM","INDX","ZP","ZP","ZP","ZP","IMP","IMM","IMP","IMM","ABS","ABS","ABS","ABS", // 0xEx
-  "REL","INDY","KIL","INDY","ZPX","ZPX","ZPX","ZPX","IMP","ABY","IMP","ABY","ABX","ABX","ABX","ABX"  // 0xFx
 ];
 
 // so disassembler can access them
