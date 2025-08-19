@@ -222,55 +222,58 @@ function serviceNMI() {
   if (debugLogging) {
     console.debug("%cNMI fired", "color: white; background-color: red; font-weight: bold; padding: 2px 6px; border-radius: 3px");
   }
+
   const pc = CPUregisters.PC & 0xFFFF;
-  // Push PC high
-  checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), (pc >>> 8) & 0xFF);
+
+  // push PC hi/lo
+  checkWriteOffset(0x0100 | CPUregisters.S, (pc >>> 8) & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  // Push PC low
-  checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), pc & 0xFF);
+
+  checkWriteOffset(0x0100 | CPUregisters.S, pc & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  // Push P with B=0, bit5 set
-  const pushedP = ((CPUregisters.P & ~0x10) | 0x20) & 0xFF;
-  checkWriteOffset(0x0100 + (CPUregisters.S & 0xFF), pushedP);
+
+  // push status with Break=0
+  const p = packStatus(false);
+  checkWriteOffset(0x0100 | CPUregisters.S, p);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  // Set I flag
-  CPUregisters.P = (CPUregisters.P | 0x04) & 0xFF;
-  // Fetch NMI vector
+
+  // set flags after NMI
+  CPUregisters.P.I = 1;
+  CPUregisters.P.B = 0;
+
+  // fetch NMI vector
   const lo = checkReadOffset(0xFFFA) & 0xFF;
   const hi = checkReadOffset(0xFFFB) & 0xFF;
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
-  // 7-cycle stall, visible immediately to PPU thread
+
   addExtraCycles(7);
 }
 
 function BRK_IMP() {
   const ret = (CPUregisters.PC + 2) & 0xFFFF;
 
+  // push return address
   checkWriteOffset(0x0100 | CPUregisters.S, (ret >> 8) & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
   checkWriteOffset(0x0100 | CPUregisters.S, ret & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  let p = (1 << 5) | (1 << 4);
-  if (CPUregisters.P.N) p |= 0x80;
-  if (CPUregisters.P.V) p |= 0x40;
-  if (CPUregisters.P.D) p |= 0x08;
-  if (CPUregisters.P.I) p |= 0x04;
-  if (CPUregisters.P.Z) p |= 0x02;
-  if (CPUregisters.P.C) p |= 0x01;
-
+  // push status with Break=1
+  const p = packStatus(true);
   checkWriteOffset(0x0100 | CPUregisters.S, p);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
+  // set flags after BRK
   CPUregisters.P.I = 1;
-  CPUregisters.P.B = 1;
+  CPUregisters.P.B = 1; // set internally only for this instruction
 
+  // fetch IRQ/BRK vector
   const lo = checkReadOffset(0xFFFE) & 0xFF;
   const hi = checkReadOffset(0xFFFF) & 0xFF;
   CPUregisters.PC = (hi << 8) | lo;
 
-  addExtraCycles(7);
+  addExtraCycles(5); // 5 over base , total 7
 }
 
 function serviceIRQ() {

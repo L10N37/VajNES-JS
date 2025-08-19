@@ -478,3 +478,132 @@ S(0xB8,'clv',AM.IMP,1,2);
 S(0x38,'sec',AM.IMP,1,2);
 S(0xF8,'sed',AM.IMP,1,2);
 S(0x78,'sei',AM.IMP,1,2);
+
+// === Unofficial opcodes ===
+// Reference: https://www.nesdev.org/wiki/CPU_unofficial_opcodes
+
+// Helper alias (for readability)
+const U = (op, m, am, len, cyc, pb=false)=>S(op,m,am,len,cyc,pb);
+
+// --- NOP variants (multi-byte "skip" NOPs) ---
+U(0x1A,'nop',AM.IMP,1,2);
+U(0x3A,'nop',AM.IMP,1,2);
+U(0x5A,'nop',AM.IMP,1,2);
+U(0x7A,'nop',AM.IMP,1,2);
+U(0xDA,'nop',AM.IMP,1,2);
+U(0xFA,'nop',AM.IMP,1,2);
+
+// NOP with operands (but ignore them)
+U(0x80,'nop',AM.IMM,2,2);
+U(0x82,'nop',AM.IMM,2,2);
+U(0x89,'nop',AM.IMM,2,2);
+U(0xC2,'nop',AM.IMM,2,2);
+U(0xE2,'nop',AM.IMM,2,2);
+U(0x04,'nop',AM.ZP, 2,3);
+U(0x44,'nop',AM.ZP, 2,3);
+U(0x64,'nop',AM.ZP, 2,3);
+U(0x14,'nop',AM.ZPX,2,4);
+U(0x34,'nop',AM.ZPX,2,4);
+U(0x54,'nop',AM.ZPX,2,4);
+U(0x74,'nop',AM.ZPX,2,4);
+U(0xD4,'nop',AM.ZPX,2,4);
+U(0xF4,'nop',AM.ZPX,2,4);
+U(0x0C,'nop',AM.ABS,3,4);
+U(0x1C,'nop',AM.ABSX,3,4,true);
+U(0x3C,'nop',AM.ABSX,3,4,true);
+U(0x5C,'nop',AM.ABSX,3,4,true);
+U(0x7C,'nop',AM.ABSX,3,4,true);
+U(0xDC,'nop',AM.ABSX,3,4,true);
+U(0xFC,'nop',AM.ABSX,3,4,true);
+
+// --- LAX (LDA+LDX) ---
+U(0xA7,'lax',AM.ZP, 2,3);
+U(0xB7,'lax',AM.ZPY,2,4);
+U(0xAF,'lax',AM.ABS,3,4);
+U(0xBF,'lax',AM.ABSY,3,4,true);
+U(0xA3,'lax',AM.INDX,2,6);
+U(0xB3,'lax',AM.INDY,2,5,true);
+
+// --- SAX (STA & STX & (A&X)) ---
+U(0x87,'sax',AM.ZP, 2,3);
+U(0x97,'sax',AM.ZPY,2,4);
+U(0x8F,'sax',AM.ABS,3,4);
+U(0x83,'sax',AM.INDX,2,6);
+
+// --- DCP (DEC + CMP) ---
+U(0xC7,'dcp',AM.ZP, 2,5);
+U(0xD7,'dcp',AM.ZPX,2,6);
+U(0xCF,'dcp',AM.ABS,3,6);
+U(0xDF,'dcp',AM.ABSX,3,7);
+U(0xDB,'dcp',AM.ABSY,3,7);
+U(0xC3,'dcp',AM.INDX,2,8);
+U(0xD3,'dcp',AM.INDY,2,8);
+
+// --- ISC/ISB (INC + SBC) ---
+U(0xE7,'isc',AM.ZP, 2,5);
+U(0xF7,'isc',AM.ZPX,2,6);
+U(0xEF,'isc',AM.ABS,3,6);
+U(0xFF,'isc',AM.ABSX,3,7);
+U(0xFB,'isc',AM.ABSY,3,7);
+U(0xE3,'isc',AM.INDX,2,8);
+U(0xF3,'isc',AM.INDY,2,8);
+
+// --- SLO (ASL + ORA) ---
+U(0x07,'slo',AM.ZP, 2,5);
+U(0x17,'slo',AM.ZPX,2,6);
+U(0x0F,'slo',AM.ABS,3,6);
+U(0x1F,'slo',AM.ABSX,3,7);
+U(0x1B,'slo',AM.ABSY,3,7);
+U(0x03,'slo',AM.INDX,2,8);
+U(0x13,'slo',AM.INDY,2,8);
+
+// --- RLA (ROL + AND) ---
+U(0x27,'rla',AM.ZP, 2,5);
+U(0x37,'rla',AM.ZPX,2,6);
+U(0x2F,'rla',AM.ABS,3,6);
+U(0x3F,'rla',AM.ABSX,3,7);
+U(0x3B,'rla',AM.ABSY,3,7);
+U(0x23,'rla',AM.INDX,2,8);
+U(0x33,'rla',AM.INDY,2,8);
+
+// --- RRA (ROR + ADC) ---
+U(0x67,'rra',AM.ZP, 2,5);
+U(0x77,'rra',AM.ZPX,2,6);
+U(0x6F,'rra',AM.ABS,3,6);
+U(0x7F,'rra',AM.ABSX,3,7);
+U(0x7B,'rra',AM.ABSY,3,7);
+U(0x63,'rra',AM.INDX,2,8);
+U(0x73,'rra',AM.INDY,2,8);
+
+// --- SRE (LSR + EOR) ---
+U(0x47,'sre',AM.ZP, 2,5);
+U(0x57,'sre',AM.ZPX,2,6);
+U(0x4F,'sre',AM.ABS,3,6);
+U(0x5F,'sre',AM.ABSX,3,7);
+U(0x5B,'sre',AM.ABSY,3,7);
+U(0x43,'sre',AM.INDX,2,8);
+U(0x53,'sre',AM.INDY,2,8);
+
+// --- ANC (AND + set carry from bit7 of A) ---
+U(0x0B,'anc',AM.IMM,2,2);
+U(0x2B,'anc',AM.IMM,2,2);
+
+// --- ALR (AND + LSR) ---
+U(0x4B,'alr',AM.IMM,2,2);
+
+// --- ARR (AND + ROR + special flags) ---
+U(0x6B,'arr',AM.IMM,2,2);
+
+// --- XAA (unstable, TXA + AND imm) ---
+U(0x8B,'xaa',AM.IMM,2,2);
+
+// --- LAS (LDA+TSX, limited) ---
+U(0xBB,'las',AM.ABSY,3,4,true);
+
+// --- AXS (SAX with subtraction) ---
+U(0xCB,'axs',AM.IMM,2,2);
+
+// --- SHY/SHX/TAS (unstable store hacks) ---
+U(0x9C,'shy',AM.ABSX,3,5);
+U(0x9E,'shx',AM.ABSY,3,5);
+U(0x9B,'tas',AM.ABSY,3,5);

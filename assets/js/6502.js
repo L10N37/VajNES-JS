@@ -1376,6 +1376,7 @@ function JSR_ABS() {
 
   // Set PC to target address (jump)
   CPUregisters.PC = target;
+  addExtraCycles(2) // 2 over base of 4, 6 for this handler
 }
 
 function STY_ZP() {
@@ -1602,7 +1603,6 @@ function TYA_IMP() {
   CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
 }
 
-
 // TXA - Transfer X to A (implied)
 function TXA_IMP() {
   CPUregisters.A = CPUregisters.X;
@@ -1610,39 +1610,23 @@ function TXA_IMP() {
   CPUregisters.P.N = (CPUregisters.A >> 7) & 1;
 }
 
-// PHP - Push Processor Status on stack (implied)
-// PHP (0x08) — push status with bit5=1, B=0 (not BRK)
+// PHP - Push Processor Status
 function PHP_IMP() {
-  // Build processor status byte: N V 1 B D I Z C
-  let p = 0;
-  p |= (CPUregisters.P.N & 1) << 7;
-  p |= (CPUregisters.P.V & 1) << 6;
-  p |= 1 << 5;                        // bit 5 always 1 when pushed
-  p |= 0 << 4;                        // B=0 for PHP (BRK would push B=1)
-  p |= (CPUregisters.P.D & 1) << 3;
-  p |= (CPUregisters.P.I & 1) << 2;
-  p |= (CPUregisters.P.Z & 1) << 1;
-  p |= (CPUregisters.P.C & 1) << 0;
-
   const spAddr = 0x0100 | (CPUregisters.S & 0xFF);
-  checkWriteOffset(spAddr, p & 0xFF); // push P
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;     // post-decrement
+  const p = packStatus(true); // always push with B=1
+  checkWriteOffset(spAddr, p);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF; // post-decrement
+  addExtraCycles(1); // 1 extra cycle over base of 2, 3 for this handler
 }
 
-// PLP - Pull Processor Status from stack (implied)
+// PLP - Pull Processor Status
 function PLP_IMP() {
-    CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-    let val = checkReadOffset(0x0100 | CPUregisters.S);
-    // Ignore the break flag bits in storage (bits 4 & 5 handling per NES behaviour)
-    CPUregisters.P.C = (val & 0x01) ? 1 : 0;
-    CPUregisters.P.Z = (val & 0x02) ? 1 : 0;
-    CPUregisters.P.I = (val & 0x04) ? 1 : 0;
-    CPUregisters.P.D = (val & 0x08) ? 1 : 0;
-    CPUregisters.P.B = 0; // B flag not actually stored in P register
-    CPUregisters.P.V = (val & 0x40) ? 1 : 0;
-    CPUregisters.P.N = (val & 0x80) ? 1 : 0;
+  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
+  const val = checkReadOffset(0x0100 | CPUregisters.S);
+  unpackStatus(val);
+  CPUregisters.P.U = 1; // unused flag always forced high
+  addExtraCycles(2); // as above
 }
-
 
 // PHA - Push Accumulator (implied)
 // PHA (0x48)
@@ -1650,6 +1634,7 @@ function PHA_IMP() {
   const spAddr = 0x0100 | (CPUregisters.S & 0xFF);
   checkWriteOffset(spAddr, CPUregisters.A & 0xFF);  // push A
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;     // post-decrement
+  addExtraCycles(1); // one over base of 2, 3 for this handler
 }
 
 // PLA - Pull Accumulator (implied)
@@ -1658,13 +1643,15 @@ function PLA_IMP() {
     CPUregisters.A = checkReadOffset(0x0100 | CPUregisters.S);
     CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
     CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
+    addExtraCycles(2); // + 2 over base, for 4
 }
 
 // RTI - Return from Interrupt (implied)
 function RTI_IMP() {
-  // Pull status register (with break flag masked out)
+  // Pull status register (all 8 bits)
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  CPUregisters.SR = checkReadOffset(0x100 + CPUregisters.S) & 0xEF;
+  const packedP = checkReadOffset(0x100 + CPUregisters.S);
+  unpackStatus(packedP);
   // Pull low byte of PC
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
   const pcl = checkReadOffset(0x100 + CPUregisters.S);
@@ -1673,18 +1660,7 @@ function RTI_IMP() {
   const pch = checkReadOffset(0x100 + CPUregisters.S);
   // Reconstruct program counter
   CPUregisters.PC = (pch << 8) | pcl;
-}
-
-// RTS - Return from Subroutine (implied)
-function RTS_IMP() {
-  // Pull low byte of return address
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const pcl = checkReadOffset(0x100 + CPUregisters.S);
-  // Pull high byte of return address
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const pch = checkReadOffset(0x100 + CPUregisters.S);
-  // Reconstruct PC and add 1 (RTS = jump to return+1)
-  CPUregisters.PC = (((pch << 8) | pcl) + 1) & 0xFFFF;
+  addExtraCycles(4); // base 2 + 4 for 6 cycles for this opcode
 }
 
 function NOP_ZPY() {
