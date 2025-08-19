@@ -66,6 +66,17 @@ body {
   transform: translateY(1px);
 }
 
+tr.hdr th {
+  position: sticky;
+  top: 0;
+  background: black;
+  color: white;       /* so text is readable on black */
+  z-index: 2;
+  padding: 12px 8px;  /* increases row height */
+  height: 48px;       /* optional: force a minimum height */
+  line-height: 1.5;   /* improve vertical spacing */
+}
+
 .viewport {
   position: relative;
   overflow: auto;
@@ -171,4 +182,3 @@ body {
 .disasm td:nth-child(4) {
   padding-left: 2em;   /* shove right by half an em */
 }
-

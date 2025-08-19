@@ -54,7 +54,7 @@ function step() {
 
   // ---- frame blit ----
   if (PPU_FRAME_FLAGS == 0b00000001) {
-    // console.log("FRAME BLIT");
+    // console.debug("FRAME BLIT");
     blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
     PPU_FRAME_FLAGS = 0x00;
   }
@@ -95,7 +95,6 @@ function step() {
   if (wasPaused) Atomics.and(SHARED.EVENTS, 0, ~0b00000100); // clear RUN bit
 
 }
-
 
 // ====================================== PACED RUN + SAMPLER ======================================
 // Real-time pacing state
@@ -196,7 +195,7 @@ function runPacedWithSampler(msTotal = 5000, msSample = 500) {
     const exp  = 3 * dcpu;   // expected ΔPPU for this interval
     const util = (cur.bud > 0) ? ((cur.burn / cur.bud) * 100).toFixed(1) : '—';
     const runOn= (cur.ev & 0b100) ? "ON" : "OFF";
-    console.log(
+    console.debug(
       `EVENTS[0]=${cur.ev} (bits ${bits(cur.ev)}) RUN=${runOn}\n` +
       `CPU total=${cur.cpu}   ΔCPU=${dcpu}\n` +
       `PPU total=${cur.ppu}   ΔPPU=${dppu}   expected=${exp}\n` +
@@ -238,7 +237,7 @@ function runPacedWithSampler(msTotal = 5000, msSample = 500) {
       burn:(SHARED.SYNC ? Atomics.load(SHARED.SYNC, 1) : 0),
     });
 
-    console.log(
+    console.debug(
       `[SUMMARY] elapsed=${elapsed.toFixed(1)} ms\n` +
       `[SUMMARY] CPU cycles produced=${produced}\n` +
       `[SUMMARY] cycles/sec=${Math.round(cps)}  (NES ${NES_CPU_HZ} → x${ratio})`

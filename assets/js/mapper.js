@@ -22,11 +22,11 @@ function mapper(nesHeader) {
     // 16KB PRG: Mirror into both halves ($8000-$BFFF and $C000-$FFFF)
     flatPrg.set(prgRom.slice(0, 0x4000), 0x0000); // $8000
     flatPrg.set(prgRom.slice(0, 0x4000), 0x4000); // $C000
-    console.log("[Mapper] Mirrored 16KB PRG into 32KB region ($8000-$FFFF)");
+    console.debug("[Mapper] Mirrored 16KB PRG into 32KB region ($8000-$FFFF)");
   } else if (prgBanks === 2) {
     // 32KB PRG: just copy
     flatPrg.set(prgRom.slice(0, 0x8000), 0x0000);
-    console.log("[Mapper] Loaded 32KB PRG as is ($8000-$FFFF)");
+    console.debug("[Mapper] Loaded 32KB PRG as is ($8000-$FFFF)");
   } else {
     throw new Error(`Unexpected PRG-ROM bank count: ${prgBanks}`);
   }
@@ -40,5 +40,5 @@ function mapper(nesHeader) {
   const lo = prgRom[0x7FFC];
   const hi = prgRom[0x7FFD];
   CPUregisters.PC = (hi << 8) | lo;
-  console.log(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
+  console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
 }

@@ -262,7 +262,7 @@ function runEdgeCaseTests() {
         const used = cpuCycles - before;
         const expect = getBaseCycles("Self-mod IMM") + 0;
 
-        console.log(`[Self-mod IMM] A=${hex8(CPUregisters.A)} PC=${hex16(CPUregisters.PC)} usedCycles=${used}`);
+        console.debug(`[Self-mod IMM] A=${hex8(CPUregisters.A)} PC=${hex16(CPUregisters.PC)} usedCycles=${used}`);
 
         return aOK && pcOK && (used === expect);
       }

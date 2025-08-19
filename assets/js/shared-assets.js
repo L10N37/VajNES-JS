@@ -1,5 +1,5 @@
 (() => {
-  console.log("[main] shared-assets.js loaded");
+  console.debug("[main] shared-assets.js loaded");
 
   // Ensure NES dimensions exist before allocating pixel buffer.
   if (typeof NES_W === "undefined") globalThis.NES_W = 256;
@@ -11,7 +11,7 @@
   // ------------------------------------------------------------
   // Allocate SABs + Views
   // ------------------------------------------------------------
-  console.log("[main] Allocating SABs…");
+  console.debug("[main] Allocating SABs…");
 
   // Clocks: [0]=CPU, [1]=PPU
   SHARED.SAB_CLOCKS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
@@ -82,19 +82,26 @@
     PALETTE_RAM:       { get: () => SHARED.PALETTE_RAM,         configurable: true },
   });
 
-  console.log("[main] paletteIndexFrame len =", paletteIndexFrame.length, " (expected", PIXEL_COUNT, ")");
+  console.debug("[main] paletteIndexFrame len =", paletteIndexFrame.length, " (expected", PIXEL_COUNT, ")");
 
-  // Optional: set sentinel bytes so worker can confirm same memory
-  try {
-    const mid  = (paletteIndexFrame.length >>> 1) | 0;
-    const last = paletteIndexFrame.length - 1;
-    paletteIndexFrame[0]   = 0x11;
-    paletteIndexFrame[mid] = 0x22;
-    paletteIndexFrame[last]= 0x33;
-    console.log("[main] wrote sentinels [0]=0x11, [mid]=0x22, [last]=0x33");
-  } catch (e) {
-    console.warn("[main] sentinel write failed:", e);
+// verify pixel buffer sharing without corrupting framebuffer
+try {
+  console.debug("[main] paletteIndexFrame sanity check:");
+  console.debug("  length =", paletteIndexFrame.length);
+  console.debug("  BYTES_PER_ELEMENT =", paletteIndexFrame.BYTES_PER_ELEMENT);
+  console.debug("  buffer.byteLength =", paletteIndexFrame.buffer.byteLength);
+  console.debug("  buffer identity =", paletteIndexFrame.buffer);
+
+  // Send a message to worker so it can log the same buffer identity
+  if (typeof worker !== "undefined") {
+    worker.postMessage({
+      type: "verifyBuffer",
+      bufferId: paletteIndexFrame.buffer
+    });
   }
+} catch (e) {
+  console.warn("[main] buffer sanity check failed:", e);
+}
 
   // ------------------------------------------------------------
   // LIVE scalars via accessors
@@ -144,21 +151,21 @@
 
   });
 
-  console.log("[main] Installed live scalar accessors");
+  console.debug("[main] Installed live scalar accessors");
 
   // ------------------------------------------------------------
   // Worker boot + handshake (export worker globally)
   // ------------------------------------------------------------
   globalThis.ppuWorker = new Worker('assets/js/ppu-worker.js');
 
-  console.log("[main] ppuWorker created");
+  console.debug("[main] ppuWorker created");
 
   ppuWorker.addEventListener('message', (e) => {
     const d = e.data || {};
     if (d.type === 'ready') {
-      console.log("[main] worker says ready");
+      console.debug("[main] worker says ready");
     } else {
-      console.log("[main] worker message:", d);
+      console.debug("[main] worker message:", d);
     }
   });
 
@@ -187,7 +194,7 @@
     SAB_PALETTE_INDEX_FRAME: SHARED.SAB_PALETTE_INDEX_FRAME
   });
 
-  console.log("[main] Handshake posted to worker");
+  console.debug("[main] Handshake posted to worker");
 
 })();
 
@@ -196,21 +203,24 @@
 // Adds 513 cycles if CPU is on even cycle, 514 if odd.
 function dmaTransfer(value) {
   const start = (value & 0xFF) << 8;
-  for (let i = 0; i < 256; ++i) {
-    OAM[i] = systemMemory[(start + i) & 0x7FF];
+  const end   = start + 0x100;
+
+  for (let src = start, i = 0; src < end; src++, i++) {
+    OAM[i] = systemMemory[src & 0x7FF];
   }
-  // so further research says no point with atomics unless both 
-  // main and worker thread are modifying values, we are only incrementing
-  // on main side. Alias is 1:1 with SHARED.CLOCKS[0]
-  if (cpuCycles % 2 === 0) addExtraCycles(513);
+  //set our stall flag
+  dmaTransferOcurred = true;
+  // add our cycles, topping up the PPU budget by 513/514 * 3
+  const curCycles = Atomics.load(SHARED.CLOCKS, 0);
+  if (curCycles % 2 === 0) addExtraCycles(513);
   else addExtraCycles(514);
 }
 
 // ======== Interrupts ======== 
 // https://www.nesdev.org/wiki/CPU_interrupts
 function serviceNMI() {
-  if (ppuDebugLogging) {
-    console.log("%cNMI fired", "color: white; background-color: red; font-weight: bold; padding: 2px 6px; border-radius: 3px");
+  if (debugLogging) {
+    console.debug("%cNMI fired", "color: white; background-color: red; font-weight: bold; padding: 2px 6px; border-radius: 3px");
   }
   const pc = CPUregisters.PC & 0xFFFF;
   // Push PC high

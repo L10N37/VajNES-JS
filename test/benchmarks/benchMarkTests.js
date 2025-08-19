@@ -17,7 +17,7 @@ function stats(arr) {
 }
 
 function benchmarkHarness(runs=5) {
-  console.log("=== Benchmarking CPU core ===");
+  console.debug("=== Benchmarking CPU core ===");
 
   ["10k","100k"].forEach(label => {
     const iters = label === "10k" ? 10_000 : 100_000;
@@ -33,7 +33,7 @@ function benchmarkHarness(runs=5) {
     samples.shift();
     const { min, max, mean, median } = stats(samples);
 
-    console.log(
+    console.debug(
       `${label} steps — min: ${min.toFixed(2)} ms, ` +
       `max: ${max.toFixed(2)} ms, mean: ${mean.toFixed(2)} ms, ` +
       `median: ${median.toFixed(2)} ms`

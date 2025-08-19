@@ -49,8 +49,8 @@ function readFile(input) {
     const prgSize  = prgBanks * 0x4000;
     const chrSize  = chrBanks * 0x2000;
 
-    console.log(`[HEADER] PRG banks: ${prgBanks} (${prgSize} bytes), CHR banks: ${chrBanks} (${chrSize} bytes)`);
-    console.log(`[HEADER] Mapper: ${((romBytes[6] >> 4) | (romBytes[7] & 0xF0))}, Mirroring: ${romBytes[6] & 0x01 ? 'Vertical' : 'Horizontal'}`);
+    console.debug(`[HEADER] PRG banks: ${prgBanks} (${prgSize} bytes), CHR banks: ${chrBanks} (${chrSize} bytes)`);
+    console.debug(`[HEADER] Mapper: ${((romBytes[6] >> 4) | (romBytes[7] & 0xF0))}, Mirroring: ${romBytes[6] & 0x01 ? 'Vertical' : 'Horizontal'}`);
 
     // ---- Slice out PRG-ROM ----
     prgRom = romBytes.slice(16, 16 + prgSize);
@@ -65,8 +65,8 @@ function readFile(input) {
       chrIsRAM = true;
     }
 
-    console.log(`[Loader] Loaded PRG-ROM: ${prgRom.length} bytes`);
-    console.log(`[Loader] CHR is ${chrIsRAM ? 'RAM' : 'ROM'}; size=${CHR_ROM.byteLength} bytes`);
+    console.debug(`[Loader] Loaded PRG-ROM: ${prgRom.length} bytes`);
+    console.debug(`[Loader] CHR is ${chrIsRAM ? 'RAM' : 'ROM'}; size=${CHR_ROM.byteLength} bytes`);
 
     // --- Mapper setup ---
     mapper(romBytes.slice(0, 16));
@@ -78,6 +78,6 @@ function readFile(input) {
   };
 
   reader.onerror = function () {
-    console.log(reader.error);
+    console.debug(reader.error);
   };
 }

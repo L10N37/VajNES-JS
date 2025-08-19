@@ -282,7 +282,7 @@ fbxOriginalHardware: {
     if (window.PALETTES[name]) {
       window.currentPaletteName = name;
       window.currentPalette = window.PALETTES[name];
-      console.log(`[Palette] using '${name}'`);
+      console.debug(`[Palette] using '${name}'`);
     } else {
       console.warn(`[Palette] Unknown palette name '${name}'`);
     }
@@ -305,7 +305,7 @@ fbxOriginalHardware: {
     radio.addEventListener('change', (e) => {
       const selectedPalette = e.target.value;
       setCurrentPalette(selectedPalette);
-      console.log(`[TileViewer] Selected palette: ${selectedPalette}`);
+      console.debug(`[TileViewer] Selected palette: ${selectedPalette}`);
   
       if (window.lastCHRData) {
         drawTilesToCanvas(window.lastCHRData, "bgCanvas");

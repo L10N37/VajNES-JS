@@ -1,12 +1,12 @@
 /* 
 old debugging, as done its job, can't use as these aren't global vars and will log every step with UI refresh
-console.log(`WRAM cells = ${allWramCells.length} bytes`);
-console.log(`WRAM cells = ${(allWramCells.length / 1024).toFixed(2)} KB`);
-console.log(`VRAM cells = ${allVramCells.length} bytes`);
-console.log(`VRAM cells = ${(allVramCells.length / 1024).toFixed(2)} KB`);
-console.log(`Cartridge1 space cells = ${allCartSpaceBytes1.length} bytes`);
-console.log(`Cartridge2 space cells = ${allCartSpaceBytes2.length} bytes`);
-console.log(`Total Cartridge space = ${(allCartSpaceBytes1.length + allCartSpaceBytes2.length) / 1024} KB`);
+console.debug(`WRAM cells = ${allWramCells.length} bytes`);
+console.debug(`WRAM cells = ${(allWramCells.length / 1024).toFixed(2)} KB`);
+console.debug(`VRAM cells = ${allVramCells.length} bytes`);
+console.debug(`VRAM cells = ${(allVramCells.length / 1024).toFixed(2)} KB`);
+console.debug(`Cartridge1 space cells = ${allCartSpaceBytes1.length} bytes`);
+console.debug(`Cartridge2 space cells = ${allCartSpaceBytes2.length} bytes`);
+console.debug(`Total Cartridge space = ${(allCartSpaceBytes1.length + allCartSpaceBytes2.length) / 1024} KB`);
 */
 
 // Chrome has an issue with scroll to view that isn't present on other browsers, only since having 3 separate 
@@ -373,53 +373,73 @@ allWramCells.forEach(cell => {
 
 // VRAM populate
 function vramPopulate(){
-const allVramCells = document.querySelectorAll('.vramCells');
-allVramCells.forEach(cell => {
-  const match = cell.id.match(/VRAM-CELL-([0-9A-F]{4})/);
-  const addr = match ? parseInt(match[1], 16) : 0;
-  const val = VRAM[addr & 0x7FF];
-  cell.innerText = val.toString(16).padStart(2, '0').toUpperCase() + 'h';
-  cell.title = `$${addr.toString(16).toUpperCase().padStart(4, '0')}`;
+  const allVramCells = document.querySelectorAll('.vramCells');
+  allVramCells.forEach(cell => {
+    const match = cell.id.match(/VRAM-CELL-([0-9A-F]{4})/);
+    const addr = match ? parseInt(match[1], 16) : 0;
+    let val;
 
-  // Click: toggle highlight for this cell only, update offset display if present
-  cell.addEventListener('click', () => {
-    cell.classList.toggle('highlighted-cell');
-    const hex = addr.toString(16).toUpperCase().padStart(4, '0');
-    const offsetContainer = document.getElementById('locContainer2');
-    if (offsetContainer) offsetContainer.innerHTML = `&nbsp;$${hex}`;
-  });
-
-  // Double-click: edit value in cell
-  cell.addEventListener('dblclick', (e) => {
-    e.stopPropagation();
-    let curValue = cell.innerText.replace('h','');
-    let input = document.createElement('input');
-    input.type = 'text';
-    input.value = curValue;
-    input.maxLength = 2;
-    input.style.width = '2.2em';
-    cell.innerText = '';
-    cell.appendChild(input);
-    input.focus();
-
-    // Commit value on blur or Enter
-    function commit() {
-      let v = parseInt(input.value, 16);
-      if (isNaN(v) || v < 0x00 || v > 0xFF) v = 0; // Clamp to byte
-      VRAM[addr & 0x7FF] = v; // Store to actual video RAM
-      cell.innerText = v.toString(16).padStart(2, '0').toUpperCase() + 'h';
-      cell.classList.add('edited-cell'); // mark as edited
+    if (addr < 0x2000) {
+      // Pattern tables (CHR) → not really in VRAM, show 00 for now
+      val = 0;
+    } else if (addr < 0x3F00) {
+      // Nametables (mirror into 2KB VRAM)
+      val = VRAM[mapNT(addr)];
+    } else if (addr < 0x4000) {
+      // Palette RAM ($3F00–$3F1F mirrored every 0x20)
+      val = PALETTE_RAM[paletteIndex(addr)];
+    } else {
+      // Out of range → blank
+      val = 0;
     }
-    input.addEventListener('blur', commit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        input.blur();
-      } else if (e.key === 'Escape') {
-        cell.innerText = curValue.padStart(2, '0').toUpperCase() + 'h';
+
+    cell.innerText = val.toString(16).padStart(2, '0').toUpperCase() + 'h';
+    cell.title = `$${addr.toString(16).toUpperCase().padStart(4, '0')}`;
+
+    // Click highlight
+    cell.addEventListener('click', () => {
+      cell.classList.toggle('highlighted-cell');
+      const hex = addr.toString(16).toUpperCase().padStart(4, '0');
+      const offsetContainer = document.getElementById('locContainer2');
+      if (offsetContainer) offsetContainer.innerHTML = `&nbsp;$${hex}`;
+    });
+
+    // Double-click edit
+    cell.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      let curValue = cell.innerText.replace('h','');
+      let input = document.createElement('input');
+      input.type = 'text';
+      input.value = curValue;
+      input.maxLength = 2;
+      input.style.width = '2.2em';
+      cell.innerText = '';
+      cell.appendChild(input);
+      input.focus();
+
+      function commit() {
+        let v = parseInt(input.value, 16);
+        if (isNaN(v) || v < 0x00 || v > 0xFF) v = 0;
+
+        if (addr >= 0x2000 && addr < 0x3F00) {
+          VRAM[mapNT(addr)] = v;
+        } else if (addr >= 0x3F00 && addr < 0x4000) {
+          PALETTE_RAM[paletteIndex(addr)] = v & 0x3F;
+        }
+
+        cell.innerText = v.toString(16).padStart(2, '0').toUpperCase() + 'h';
+        cell.classList.add('edited-cell');
       }
+
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') input.blur();
+        else if (e.key === 'Escape') {
+          cell.innerText = curValue.padStart(2, '0').toUpperCase() + 'h';
+        }
+      });
     });
   });
-});
 }
 
 function prgRomPopulate(){

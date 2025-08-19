@@ -82,10 +82,10 @@
   <main>
 
     
-<div class="wram-header">| WRAM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <span id="locContainer"></span></div>
+<div class="wram-header">| WRAM + Mirrors<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <span id="locContainer"></span></div>
 <article class="debug"></article>
 
-<div class="vram-header">| VRAM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <span id="locContainer2"></span></div>
+<div class="vram-header">| PPU Memory Space<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <span id="locContainer2"></span></div>
 <article class="debug2"></article>
 
 <div class="prgrom-header">| PRG-ROM<loc>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Offset: </loc> <span id="locContainer3"></span></div>
@@ -245,6 +245,7 @@
 <script src="assets/js/6502.js"></script>
 <script src="assets/js/memory.js"></script>
 <script src="assets/js/memoryMaps.js"></script>
+
 <script src="assets/js/offsetsHandler.js"></script>
 
 <script src="assets/js/screen/palettes.js"></script>
@@ -279,6 +280,7 @@
 
 <script src="test/ppuSimulation/ppu-sim.js"></script>
 <script src="test/ppuSimulation/ppu-sim-direct.js"></script>
+<script src="test/offsets/offset-test.js"></script>
 
 <!-- purely for disassembler, absolutely nailed the desired outcome/ aesthetics for the window, but can't drag out of DOM -->
 <script src="/disasm/winbox.bundle.min.js"></script>
@@ -287,7 +289,7 @@ document.getElementById("open-disasm").onclick = () => {
   new WinBox({
     title: "NES Disassembler",
     url: "disasm/disasm.html",
-    width: 980,
+    width: 720,
     height: 720,
     x: "center",
     y: "center",

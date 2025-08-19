@@ -142,16 +142,19 @@
           html  = decodeSABSlice(lastOff, DATA_CAP);
           html += decodeSABSlice(0, off);
         }
-
         if (html) {
           rowsEl.insertAdjacentHTML("beforeend", html);
           const MAX_ROWS = 256;
           while (rowsEl.children.length > MAX_ROWS) {
             rowsEl.removeChild(rowsEl.firstElementChild);
           }
+          // 🔽 Auto-scroll fix
+          const viewEl = document.getElementById("view");
+          viewEl.scrollTop = viewEl.scrollHeight;
+
           lastEpoch = epoch;
           lastOff   = off;
-        }
+          }
         requestAnimationFrame(pump);
       }
       requestAnimationFrame(pump);

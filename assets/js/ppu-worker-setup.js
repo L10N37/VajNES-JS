@@ -1,4 +1,4 @@
-console.log("[worker] ppu-worker-setup.js loaded");
+console.debug("[worker] ppu-worker-setup.js loaded");
 
 // Shared container (SABs + typed views)
 let SHARED = Object.create(null);
@@ -52,7 +52,7 @@ function installLiveScalars() {
                                   : Atomics.and(SHARED.EVENTS, 0, ~0b10); }, configurable: true },
   });
 
-  console.log("[worker] Installed live scalar accessors");
+  console.debug("[worker] Installed live scalar accessors");
 }
 
 // Handshake (use addEventListener so other handlers can coexist)
@@ -63,7 +63,7 @@ self.addEventListener("message", (e) => {
 
   // First packet from main: SAB hookup
   if (d.SAB_CLOCKS && !_initDone) {
-    console.log("[worker] Handshake received. Keys:", Object.keys(d));
+    console.debug("[worker] Handshake received. Keys:", Object.keys(d));
 
     // SABs
     SHARED.SAB_CLOCKS              = d.SAB_CLOCKS;
@@ -105,17 +105,17 @@ self.addEventListener("message", (e) => {
     installLiveScalars();
 
     // Debug dump
-    console.log("[worker] Views ready:");
-    console.log("  CLOCKS len =", SHARED.CLOCKS.length, "EVENTS len =", SHARED.EVENTS.length);
-    console.log("  PPU_REGS len =", SHARED.PPU_REGS.length, "VRAM_ADDR len =", SHARED.VRAM_ADDR.length);
-    console.log("  CHR len =", CHR_ROM.length, "VRAM len =", VRAM.length, "PALETTE len =", PALETTE_RAM.length, "OAM len =", OAM.length);
+    console.debug("[worker] Views ready:");
+    console.debug("  CLOCKS len =", SHARED.CLOCKS.length, "EVENTS len =", SHARED.EVENTS.length);
+    console.debug("  PPU_REGS len =", SHARED.PPU_REGS.length, "VRAM_ADDR len =", SHARED.VRAM_ADDR.length);
+    console.debug("  CHR len =", CHR_ROM.length, "VRAM len =", VRAM.length, "PALETTE len =", PALETTE_RAM.length, "OAM len =", OAM.length);
 
     // Pixel buffer sanity
     const pixLen = paletteIndexFrame.length;
     const mid = (pixLen >>> 1) | 0;
     const last = pixLen - 1;
-    console.log("[worker] paletteIndexFrame len =", pixLen);
-    console.log("[worker] sentinels:", "[0]=", paletteIndexFrame[0].toString(16),
+    console.debug("[worker] paletteIndexFrame len =", pixLen);
+    console.debug("[worker] sentinels:", "[0]=", paletteIndexFrame[0].toString(16),
                                    "[mid]=", paletteIndexFrame[mid].toString(16),
                                    "[last]=", paletteIndexFrame[last].toString(16));
 
@@ -130,7 +130,7 @@ self.addEventListener("message", (e) => {
   }
 
   if (d.type === "ppu-reset") {
-    console.log("[worker] ppu-reset");
+    console.debug("[worker] ppu-reset");
     resetPPU();
     return;
   }

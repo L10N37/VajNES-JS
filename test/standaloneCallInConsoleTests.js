@@ -17,17 +17,17 @@ function testOamDmaTransfer(page = 0x02) {
   const actual   = Array.from(PPU_OAM.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
 
   // Log results
-  console.log(
+  console.debug(
     "%cExpected OAM[0..15]: %c" + expected,
     "color: orange; font-weight: bold;", "color: green; font-weight: bold;"
   );
-  console.log(
+  console.debug(
     "%cActual   OAM[0..15]: %c" + actual,
     "color: orange; font-weight: bold;", "color: cyan; font-weight: bold;"
   );
 
   // Check a specific value
-  console.log(
+  console.debug(
     "%cCheck OAM[0x10]: %c" + PPU_OAM[0x10].toString(16) +
     " %c(expected: %c10)",
     "color: orange; font-weight: bold;",
@@ -38,12 +38,12 @@ function testOamDmaTransfer(page = 0x02) {
 }
 
 function testPpuMemorySuite() {
-  console.log("%c=== PPU MEMORY TEST SUITE ===", "color: yellow; font-weight: bold;");
+  console.debug("%c=== PPU MEMORY TEST SUITE ===", "color: yellow; font-weight: bold;");
 
   // Utility: log pass/fail
   function logTest(name, expected, actual) {
     const pass = (expected === actual);
-    console.log(
+    console.debug(
       `%c${name}: expected %c${expected.toString(16).padStart(2, '0')} %c(actual: %c${actual.toString(16).padStart(2, '0')})`,
       "color: orange; font-weight: bold;",
       pass ? "color: green; font-weight: bold;" : "color: red; font-weight: bold;",
@@ -63,7 +63,7 @@ function testPpuMemorySuite() {
     logTest("Pattern [$0000]", testVal, SHARED.CHR_ROM[addr]);
     SHARED.CHR_ROM[addr] = orig; // restore
   } else {
-    console.log("%cPattern [$0000]: SKIPPED (CHR-ROM read-only)", "color: gray;");
+    console.debug("%cPattern [$0000]: SKIPPED (CHR-ROM read-only)", "color: gray;");
   }
 
   // ------------------------
@@ -107,13 +107,13 @@ function testPpuMemorySuite() {
   for (let i = 0; i < 16; i++) {
     if (PPU_OAM[i] !== (i & 0xFF)) oamPass = false;
   }
-  console.log(
+  console.debug(
     `%cOAM [0..15] via DMA: %c${oamPass ? "PASS" : "FAIL"}`,
     "color: orange; font-weight: bold;",
     oamPass ? "color: green; font-weight: bold;" : "color: red; font-weight: bold;"
   );
 
-  console.log("%c=== PPU MEMORY TEST END ===", "color: yellow; font-weight: bold;");
+  console.debug("%c=== PPU MEMORY TEST END ===", "color: yellow; font-weight: bold;");
 }
 
 
@@ -156,35 +156,35 @@ function testTiming() {
   // =============================
   let expectedTicks = 0;
 
-  console.log("=== Branch timing test ===");
+  console.debug("=== Branch timing test ===");
   step(2); expectedTicks += 2 * 3;
   step(3); expectedTicks += 3 * 3;
-  console.log(`PPU ticks=${testPpuTicks} Expected=${expectedTicks}`);
+  console.debug(`PPU ticks=${testPpuTicks} Expected=${expectedTicks}`);
 
-  console.log("=== NMI timing test ===");
+  console.debug("=== NMI timing test ===");
   step(2, { nmi: true });
   expectedTicks += (2 + 7) * 3;
-  console.log(`PPU ticks=${testPpuTicks} Expected=${expectedTicks}`);
+  console.debug(`PPU ticks=${testPpuTicks} Expected=${expectedTicks}`);
 
-  console.log("=== DMA even-cycle test ===");
+  console.debug("=== DMA even-cycle test ===");
   // Align to even cycle
   if (testCpuCycles % 2 !== 0) { step(1); expectedTicks += 1 * 3; }
   const penaltyEven = 513;
   step(0, { dma: true }); // DMA from even cycle start
   expectedTicks += penaltyEven * 3;
-  console.log(`PPU ticks=${testPpuTicks} Expected=${expectedTicks}`);
+  console.debug(`PPU ticks=${testPpuTicks} Expected=${expectedTicks}`);
 
-  console.log("=== DMA odd-cycle test ===");
+  console.debug("=== DMA odd-cycle test ===");
   // Align to odd cycle
   if (testCpuCycles % 2 === 0) { step(1); expectedTicks += 1 * 3; }
   const penaltyOdd = 514;
   step(0, { dma: true }); // DMA from odd cycle start
   expectedTicks += penaltyOdd * 3;
-  console.log(`PPU ticks=${testPpuTicks} Expected=${expectedTicks}`);
+  console.debug(`PPU ticks=${testPpuTicks} Expected=${expectedTicks}`);
 
-  console.log("=== Final totals ===");
-  console.log(`CPU cycles=${testCpuCycles}`);
-  console.log(`PPU ticks=${testPpuTicks} Expected total=${expectedTicks}`);
+  console.debug("=== Final totals ===");
+  console.debug(`CPU cycles=${testCpuCycles}`);
+  console.debug(`PPU ticks=${testPpuTicks} Expected total=${expectedTicks}`);
 }
 
 
@@ -251,10 +251,10 @@ function testTimingReal() {
   function runAndCheck(name, cyclesExpected) {
     step();
     expectedTicks += cyclesExpected * 3;
-    console.log(`${name}: PPU ticks=${localPPUTicks} Expected=${expectedTicks}`);
+    console.debug(`${name}: PPU ticks=${localPPUTicks} Expected=${expectedTicks}`);
   }
 
-  console.log("=== Opcode timing tests ===");
+  console.debug("=== Opcode timing tests ===");
   runAndCheck("NOP (2)", 2);
   runAndCheck("LDA abs (3)", 3);
   runAndCheck("BNE taken (+1)", 3); // base 2 + 1 taken
@@ -263,25 +263,25 @@ function testTimingReal() {
   runAndCheck("NOP after BEQ", 2);
   runAndCheck("BNE + page cross (+2)", 4); // base 2 + 2 page cross
 
-  console.log("=== DMA even-cycle ===");
+  console.debug("=== DMA even-cycle ===");
   cpuCycles &= ~1;
   dmaTransfer(0);
   expectedTicks += 513 * 3;
-  console.log(`PPU ticks=${localPPUTicks} Expected=${expectedTicks}`);
+  console.debug(`PPU ticks=${localPPUTicks} Expected=${expectedTicks}`);
 
-  console.log("=== DMA odd-cycle ===");
+  console.debug("=== DMA odd-cycle ===");
   cpuCycles |= 1;
   dmaTransfer(0);
   expectedTicks += 514 * 3;
-  console.log(`PPU ticks=${localPPUTicks} Expected=${expectedTicks}`);
+  console.debug(`PPU ticks=${localPPUTicks} Expected=${expectedTicks}`);
 
-  console.log("=== NMI latency ===");
+  console.debug("=== NMI latency ===");
   nmiPending = true;
   runAndCheck("NOP + NMI (2+7)", 2 + 7);
 
-  console.log("=== Final totals ===");
-  console.log(`cpuCycles=${cpuCycles}`);
-  console.log(`PPU ticks=${localPPUTicks} Expected total=${expectedTicks}`);
+  console.debug("=== Final totals ===");
+  console.debug(`cpuCycles=${cpuCycles}`);
+  console.debug(`PPU ticks=${localPPUTicks} Expected total=${expectedTicks}`);
 
   // Restore original state
   window.ppuTick = originalPpuTick;

@@ -8,11 +8,11 @@ snap0345("after ASL");
 function watchWRAMBase(base){
   const b = base & 0x1FFF;
   const isWRAM = b < 0x2000;
-  console.log(`[WATCH] ${hex16(b)} (${isWRAM ? "WRAM" : "not WRAM"})`);
+  console.debug(`[WATCH] ${hex16(b)} (${isWRAM ? "WRAM" : "not WRAM"})`);
   const addrs = isWRAM ? [b & 0x07FF, (b&0x07FF)+0x0800, (b&0x07FF)+0x1000, (b&0x07FF)+0x1800] : [b];
   return function snapshot(tag=""){
     const vals = addrs.map(a => checkReadOffset(a) & 0xFF);
-    console.log(`[WATCH ${tag}] ${addrs.map(hex16).join(",")} = ${vals.map(hex8).join(",")}`);
+    console.debug(`[WATCH ${tag}] ${addrs.map(hex16).join(",")} = ${vals.map(hex8).join(",")}`);
   };
 }
 
@@ -34,7 +34,7 @@ function hexDump(array) {
     lines.push(`${offset}: ${rowBytes}`);
   }
   // Join all rows with newlines and print as one table
-  console.log(lines.join('\n'));
+  console.debug(lines.join('\n'));
 }
 
 // test suite helpers
@@ -113,7 +113,7 @@ for(let i=0; i<256; ++i) {
   });
 }
 
-console.log("%c==== 6502 Opcode Table (Branch ops highlighted) ====", "color:#fff;background:#222;font-size:1.2em;padding:4px;");
+console.debug("%c==== 6502 Opcode Table (Branch ops highlighted) ====", "color:#fff;background:#222;font-size:1.2em;padding:4px;");
 console.table(opcodeRows);
 
 }
@@ -224,7 +224,7 @@ If your emulator loop is running and you don’t want it stopped by the first te
 
 
 function debugDumpPPUFrame() {
-  console.log("%c[PPU Debug Frame Dump]", "background:#222; color:#0f0; font-weight:bold");
+  console.debug("%c[PPU Debug Frame Dump]", "background:#222; color:#0f0; font-weight:bold");
   for (let y = 0; y < NES_H; y++) {
     let line = "";
     let styles = [];
@@ -234,6 +234,37 @@ function debugDumpPPUFrame() {
       line += "%c  "; // 2 spaces for "pixel"
       styles.push(`background:${color};`);
     }
-    console.log(line, ...styles);
+    console.debug(line, ...styles);
   }
+}
+
+function testDma(){
+// fake systemMemory + OAM for testing
+for (let i = 0; i < 0x800; i++) systemMemory[i] = i & 0xFF;
+
+// clear OAM
+for (let i = 0; i < 256; i++) OAM[i] = 0x00;
+
+// call DMA from page 0x02 (so src=0x0200–0x02FF)
+dmaTransfer(0x02);
+
+// check: OAM[0..15] should now mirror systemMemory[0x0200..0x020F]
+console.debug("OAM sample:", OAM.slice(0, 16));
+console.debug("SRC sample:", Array.from(systemMemory.slice(0x200, 0x210)));
+
+// check DMA cycles topped up
+console.debug("Budget CPU:", Atomics.load(SHARED.CLOCKS, 0));
+console.debug("Budget PPU:", Atomics.load(SHARED.CLOCKS, 1));
+}
+
+function dumpFrameBuffer() {
+  console.debug("paletteIndexFrame =", "[" + paletteIndexFrame.join(",") + "]");
+}
+
+// white screen
+function renderFrameBuffer(){
+  for (let index = 0; index < paletteIndexFrame.length; index++) {
+    paletteIndexFrame[index] = 0x60;
+  }
+  blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
 }

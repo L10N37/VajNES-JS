@@ -58,7 +58,7 @@ http
   })
   .listen(PORT, () => {
     const url = `http://127.0.0.1:${PORT}/debug.html`;
-    console.log(`Server running at ${url}`);
+    console.debug(`Server running at ${url}`);
 
     // Auto-open default browser
     const startCmd =

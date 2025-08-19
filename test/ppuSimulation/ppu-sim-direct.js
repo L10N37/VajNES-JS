@@ -306,7 +306,7 @@ function startVBlank_Sim() {
 
     // Debug: dump first 16 pixels of first scanline
     const row0 = paletteIndexFrame_Sim.slice(0, 16);
-    console.log(`[PPUSim] frame ${PPUclock_Sim.frame} row0:`,
+    console.debug(`[PPUSim] frame ${PPUclock_Sim.frame} row0:`,
       Array.from(row0).map((v, i) => `${i}:${v}`).join(' ')
     );
 

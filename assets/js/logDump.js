@@ -170,7 +170,7 @@ document.getElementById('dumpState').addEventListener('click', () => {
 
   const regSec = addSectionHeader(report, 'Registers', 'regs');
 
-  // CPU registers (unchanged)
+  // CPU registers
   regSec.appendChild(generateRegisterTable('CPU Registers', CPUregisters));
 
   // PPU registers — build an object from your accessors
