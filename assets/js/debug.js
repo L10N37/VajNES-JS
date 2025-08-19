@@ -68,10 +68,6 @@ function step() {
   const _op   = prgRom[(CPUregisters.PC - 0x8000 + 1) & 0x7FFF];
   const __op  = prgRom[(CPUregisters.PC - 0x8000 + 2) & 0x7FFF];
 
-  // store the data the disassembler needs in the SABs, passing it opcode/operands
-  // the flags/ regs it can do in func
-  disasmData(code, _op, __op);
-
   const execFn = opcodeFuncs[code];
   if (!execFn) {
     const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
@@ -93,6 +89,10 @@ function step() {
 
   // if we temporarily enabled the worker, put it back to paused
   if (wasPaused) Atomics.and(SHARED.EVENTS, 0, ~0b00000100); // clear RUN bit
+
+   // store the data the disassembler needs in the SABs, passing it opcode/operands
+  // the flags/ regs it can do in func
+  disasmData(code, _op, __op);
 
 }
 
