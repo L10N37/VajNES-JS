@@ -2771,20 +2771,21 @@ function SBX_IMM() {
 
 // BCC — Branch if Carry Clear (0x90)
 function BCC_REL() {
-  const off    = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-  const rel    = (off < 0x80) ? off : off - 0x100;  // sign-extend
+  // fetch relative offset
+  const off = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  const rel = (off < 0x80) ? off : off - 0x100;  // sign-extend
   const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
 
   if (!CPUregisters.P.C) {
     const dest = (nextPC + rel) & 0xFFFF;
-    //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-    addExtraCycles(1);
-    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+    addExtraCycles(1); // branch taken
+    if ((nextPC & 0xFF00) !== (dest & 0xFF00)) {
+      addExtraCycles(1); // add only if page crossed
+    }
     CPUregisters.PC = dest;
   } else {
     CPUregisters.PC = nextPC;
   }
-
 }
 
 // BCS — Branch if Carry Set (0xB0)
