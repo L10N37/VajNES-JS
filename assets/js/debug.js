@@ -77,13 +77,13 @@ function step() {
     return;
   }
 
-  execFn();
-  CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]) & 0xFFFF;
-   
   // store the data the disassembler needs in the SABs, passing it opcode/operands
   // the flags/ regs it can do in func
   disasmData(code, _op, __op);
 
+  execFn();
+  CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]) & 0xFFFF;
+   
   // Base cycles (CPU + PPU budget)
   const cyc = opcodeCyclesInc[code] | 0;
   if (cyc) {
