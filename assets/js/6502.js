@@ -121,6 +121,32 @@ function addExtraCycles(x) {
 
   Prioritise implementing IRQ support for popular mappers like MMC3 (4), MMC5 (5), and VRC6 (22).
 */
+function BRK_IMP() {
+  const ret = (CPUregisters.PC + 2) & 0xFFFF;
+
+  // push return address
+  checkWriteOffset(0x0100 | CPUregisters.S, (ret >> 8) & 0xFF);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  checkWriteOffset(0x0100 | CPUregisters.S, ret & 0xFF);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // push status with Break=1
+  const p = packStatus(true);
+  checkWriteOffset(0x0100 | CPUregisters.S, p);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+
+  // set flags after BRK
+  CPUregisters.P.I = 1;
+  CPUregisters.P.B = 1; // set internally only for this instruction
+
+  // fetch IRQ/BRK vector
+  const lo = checkReadOffset(0xFFFE) & 0xFF;
+  const hi = checkReadOffset(0xFFFF) & 0xFF;
+  CPUregisters.PC = (hi << 8) | lo;
+
+  addExtraCycles(5); // 5 over base , total 7
+}
 
 function SEI_IMP() {
   CPUregisters.P.I = (1) ? 1 : 0;
