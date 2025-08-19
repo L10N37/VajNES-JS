@@ -10,6 +10,10 @@
   <div class="wrap">
     <header class="bar">
       <div class="title">DISASSEMBLER</div>
+<span id="cycles-wrap" style="margin-left:10px;">
+  CPU Cycles: <span id="cycles-value">--</span>
+  <button id="cycles-update" class="btn">Update</button>
+</span>
       <button id="theme-toggle" class="btn" title="T">Theme: Amber</button>
     </header>
 
@@ -160,7 +164,20 @@
       requestAnimationFrame(pump);
     }
   }());
+
+  function updateCycles() {
+  try {
+    const ctl = getCtl();
+    const val = (ctl && typeof ctl.cpuCycles !== "undefined") ? ctl.cpuCycles : "--";
+    document.getElementById("cycles-value").textContent = val;
+  } catch {
+    document.getElementById("cycles-value").textContent = "ERR";
+  }
+}
   </script>
+
+  <!--for updating cycles when debugging with disasm-->
+<script src="/disasm/disasm-cycles.js"></script>
 
 </body>
 </html>
