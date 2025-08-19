@@ -1663,6 +1663,19 @@ function RTI_IMP() {
   addExtraCycles(4); // base 2 + 4 for 6 cycles for this opcode
 }
 
+// RTS - Return from Subroutine (implied)
+function RTS_IMP() {
+  // Pull low byte of return address
+  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
+  const pcl = checkReadOffset(0x100 + CPUregisters.S);
+  // Pull high byte of return address
+  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
+  const pch = checkReadOffset(0x100 + CPUregisters.S);
+  // Reconstruct PC and add 1 (RTS = jump to return+1)
+  CPUregisters.PC = (((pch << 8) | pcl) + 1) & 0xFFFF;
+  addExtraCycles(4); // base 2 + 4 for 6 cycles for this opcode
+}
+
 function NOP_ZPY() {
   // dummy read from (ZP + Y) but do nothing else
   const zp = checkReadOffset(CPUregisters.PC + 1);
