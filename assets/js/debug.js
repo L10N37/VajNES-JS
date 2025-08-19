@@ -79,6 +79,10 @@ function step() {
 
   execFn();
   CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]) & 0xFFFF;
+   
+  // store the data the disassembler needs in the SABs, passing it opcode/operands
+  // the flags/ regs it can do in func
+  disasmData(code, _op, __op);
 
   // Base cycles (CPU + PPU budget)
   const cyc = opcodeCyclesInc[code] | 0;
@@ -89,10 +93,6 @@ function step() {
 
   // if we temporarily enabled the worker, put it back to paused
   if (wasPaused) Atomics.and(SHARED.EVENTS, 0, ~0b00000100); // clear RUN bit
-
-   // store the data the disassembler needs in the SABs, passing it opcode/operands
-  // the flags/ regs it can do in func
-  disasmData(code, _op, __op);
 
 }
 
