@@ -18,33 +18,32 @@
     </header>
 
     <main id="view" class="viewport" tabindex="0" role="log" aria-live="polite">
-      <table class="disasm">
-        <thead>
-        <tr class="hdr">
-            <th class="col-pc">PC</th>
-            <th class="col-opc">OPC</th>
-            <th class="col-op">OP</th>
-            <th class="col-mn">MNEMONIC</th>
-            <th class="col-notes">NOTES</th>
-            <th class="col-reg">A</th>
-            <th class="col-reg">X</th>
-            <th class="col-reg">Y</th>
-            <!-- Per-flag 1/0 columns -->
-            <th class="col-bit">C</th>
-            <th class="col-bit">Z</th>
-            <th class="col-bit">I</th>
-            <th class="col-bit">D</th>
-            <th class="col-bit">B</th>
-            <th class="col-bit">U</th>
-            <th class="col-bit">V</th>
-            <th class="col-bit">N</th>
-            <th class="col-reg">S</th>
-        </tr>
-        <!-- separator now spans all 17 columns -->
-        <tr class="sep"><td colspan="17"></td></tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
+    <table class="disasm">
+      <thead>
+      <tr class="hdr">
+          <th class="col-pc">PC</th>
+          <th class="col-opc">OPC</th>
+          <th class="col-op">OP</th>
+          <th class="col-mn">MNEMONIC</th>
+          <th class="col-notes">NOTES</th>
+          <th class="col-reg">A</th>
+          <th class="col-reg">X</th>
+          <th class="col-reg">Y</th>
+          <!-- Only real flags now -->
+          <th class="col-bit">C</th>
+          <th class="col-bit">Z</th>
+          <th class="col-bit">I</th>
+          <th class="col-bit">D</th>
+          <th class="col-bit">V</th>
+          <th class="col-bit">N</th>
+          <th class="col-reg">S</th>
+      </tr>
+      <!-- separator now spans 15 columns -->
+      <tr class="sep"><td colspan="15"></td></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+
       <div class="scan" aria-hidden="true"></div>
     </main>
 

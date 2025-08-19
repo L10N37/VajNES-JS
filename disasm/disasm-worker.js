@@ -1,5 +1,3 @@
-// disasm-worker.js — snapshot model, no ring consumption
-
 var RING_U8, RING_U16;
 var HTML_U32, HTML_U8, HTML_DATA_BYTES;
 var _enc = new TextEncoder();
@@ -31,7 +29,7 @@ let didSizer = false;
 onmessage = function (e) {
   if (!e.data || e.data.type !== "init") return;
 
-  // RAW snapshot (single record at fixed offsets 0..16)
+  // RAW snapshot (single record at fixed offsets 0..14)
   RING_U8  = new Uint8Array(e.data.sab.RING);
   RING_U16 = new Uint16Array(e.data.sab.RING);
 
@@ -63,7 +61,7 @@ function tick() {
   // 6   : X
   // 7   : Y
   // 8   : S
-  // 9..16 : flags C,Z,I,D,B,U,V,N (one byte each)
+  // 9..14 : flags C,Z,I,D,V,N (one byte each)
 
   // read snapshot
   var pcOff = RING_U16[0] | 0;
@@ -81,15 +79,13 @@ function tick() {
   var Y    = RING_U8[7] | 0;
   var S    = RING_U8[8] | 0;
 
-  // flags (bool → 1/0 text)
-  var Cf   = (RING_U8[9]  & 1) ? '1':'0';
-  var Zf   = (RING_U8[10] & 1) ? '1':'0';
-  var If   = (RING_U8[11] & 1) ? '1':'0';
-  var Df   = (RING_U8[12] & 1) ? '1':'0';
-  var Bf   = (RING_U8[13] & 1) ? '1':'0';
-  var Uf   = (RING_U8[14] & 1) ? '1':'0';
-  var Vf   = (RING_U8[15] & 1) ? '1':'0';
-  var Nf   = (RING_U8[16] & 1) ? '1':'0';
+  // flags (bool → 1/0 text) — matches sequential layout
+  var Cf = (RING_U8[9]  & 1) ? '1' : '0';
+  var Zf = (RING_U8[10] & 1) ? '1' : '0';
+  var If = (RING_U8[11] & 1) ? '1' : '0';
+  var Df = (RING_U8[12] & 1) ? '1' : '0';
+  var Vf = (RING_U8[13] & 1) ? '1' : '0';
+  var Nf = (RING_U8[14] & 1) ? '1' : '0';
 
   // decode opcode to mnemonic + addressing text + notes
   const d = (typeof OPINFO_6502 !== 'undefined' && OPINFO_6502[opc]) || {m:'???', am:AM.IMP, len:1, cyc:2, pb:false};
@@ -107,7 +103,7 @@ function tick() {
     mnemonic + (operandText ? ' ' + operandText : ''),
     notes,
     A, X, Y,
-    Cf, Zf, If, Df, Bf, Uf, Vf, Nf,
+    Cf, Zf, If, Df, Vf, Nf,
     S
   );
   writeHTML(html);
@@ -205,15 +201,14 @@ function formatDisasm(pc, opc, op1, op2, X, Y, d){
 
 // ---------- row renderers ----------------------------------------------
 
-// Hidden sizer row: fixes max column widths (NOTES capped to typical max)
-// Use visibility:hidden so it still participates in layout.
+// Hidden sizer row: fixes max column widths
 function sizerRowHTML(){
   // Representative widest values per column
   const PC   = '$ffff';
   const OPC  = 'ff';
   const OP   = 'ff ff';
-  const MNE  = 'jmp ($ffff),y'; // fairly wide mnemonic sample
-  const NOTE = '→ $ffff +pb';   // max we expect (target + pb)
+  const MNE  = 'jmp ($ffff),y';
+  const NOTE = '→ $ffff +pb';
   const AXYS = 'ff';
   const BIT  = '1';
   const S    = 'ff';
@@ -227,7 +222,7 @@ function sizerRowHTML(){
     <td>${AXYS}</td>
     <td>${AXYS}</td>
     <td>${AXYS}</td>
-    <td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td>
+    <td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td><td>${BIT}</td>
     <td>${S}</td>
   </tr>`;
 }
@@ -237,7 +232,7 @@ function rowHTML(
   mnemonicAndOp,
   notes,
   A, X, Y,
-  Cb, Zb, Ib, Db, Bb, Ub, Vb, Nb,
+  Cb, Zb, Ib, Db, Vb, Nb,
   S
 ) {
   return `<tr>
@@ -253,8 +248,6 @@ function rowHTML(
     <td>${Zb}</td>
     <td>${Ib}</td>
     <td>${Db}</td>
-    <td>${Bb}</td>
-    <td>${Ub}</td>
     <td>${Vb}</td>
     <td>${Nb}</td>
     <td>${h2(S)}</td>

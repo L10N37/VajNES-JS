@@ -72,20 +72,20 @@ function packStatus(setBreakBit) {
     (CPUregisters.P.N << 7) |
     (CPUregisters.P.V << 6) |
     (1 << 5) |                        // U flag always set
-    ((setBreakBit ? 1 : 0) << 4) |    // B flag forced if requested
+    ((setBreakBit ? 1 : 0) << 4) |    // B bit only when pushing
     (CPUregisters.P.D << 3) |
     (CPUregisters.P.I << 2) |
     (CPUregisters.P.Z << 1) |
     (CPUregisters.P.C)
   ) & 0xFF;
 }
-// Unpack pulled status byte into CPUregisters.P flags
+
 function unpackStatus(packed) {
   CPUregisters.P.C =  packed       & 1;
   CPUregisters.P.Z = (packed >> 1) & 1;
   CPUregisters.P.I = (packed >> 2) & 1;
   CPUregisters.P.D = (packed >> 3) & 1;
-  CPUregisters.P.B = (packed >> 4) & 1;   // phantom, but we track it
+  // B bit is ignored – phantom flag
   CPUregisters.P.U = 1;                   // always forced high
   CPUregisters.P.V = (packed >> 6) & 1;
   CPUregisters.P.N = (packed >> 7) & 1;

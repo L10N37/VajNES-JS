@@ -35,14 +35,12 @@ let CPUregisters = {
       Z: 0,    // Zero
       I: 0,    // Interrupt Disable
       D: 0,    // Decimal Mode
-      B: 0,    // Break Command
-      U: 1,    // Unused ('U' Flag, technically always set to 1)
       V: 0,    // Overflow
       N: 0     // Negative
   }
 };
 // These are used to access P register by INDEX! used for debug table
-let P_VARIABLES = ['C', 'Z', 'I', 'D', 'B', 'U', 'V', 'N'];
+let P_VARIABLES = ['C', 'Z', 'I', 'D', 'V', 'N'];
 
 function resetCPU() {
   SHARED.VRAM.fill(0x00);
@@ -56,8 +54,6 @@ function resetCPU() {
       Z: 0,    // Zero
       I: 0,    // Interrupt Disable
       D: 0,    // Decimal Mode
-      B: 0,    // Break Command
-      U: 1,    // Unused ('U' Flag, technically always set to 1)
       V: 0,    // Overflow
       N: 0     // Negative
   };

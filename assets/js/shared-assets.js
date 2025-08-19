@@ -24,9 +24,8 @@
   SHARED.SYNC     = new Int32Array(SHARED.SAB_SYNC);
   SHARED.SYNC[0]  = 0;
 
-  // Events bitfield (bit0=NMI)
-  // Run bit lives in EVENTS[0] (bit 2)
-  // LEVERAGE RUN BIT FOR FRAME SYNC
+  // Events bitfield (bit0=NMI, bit1=IRQ)
+  // Run bit lives in EVENTS[0] (bit 2). Main sets/clears it. Worker only reads it.
   SHARED.SAB_EVENTS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
   SHARED.EVENTS     = new Int32Array(SHARED.SAB_EVENTS);
   SHARED.EVENTS[0]  = 0;
@@ -146,6 +145,10 @@ try {
     nmiPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1) !== 0,
                     set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1)
                                   : Atomics.and(SHARED.EVENTS, 0, ~0b1); }, configurable: true },
+    irqPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b10) !== 0,
+                    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b10)
+                                  : Atomics.and(SHARED.EVENTS, 0, ~0b10); }, configurable: true },
+
   });
 
   console.debug("[main] Installed live scalar accessors");
@@ -246,34 +249,7 @@ function serviceNMI() {
   addExtraCycles(7);
 }
 
-function BRK_IMP() {
-  const ret = (CPUregisters.PC + 2) & 0xFFFF;
-
-  // push return address
-  checkWriteOffset(0x0100 | CPUregisters.S, (ret >> 8) & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  checkWriteOffset(0x0100 | CPUregisters.S, ret & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // push status with Break=1
-  const p = packStatus(true);
-  checkWriteOffset(0x0100 | CPUregisters.S, p);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // set flags after BRK
-  CPUregisters.P.I = 1;
-  CPUregisters.P.B = 1; // set internally only for this instruction
-
-  // fetch IRQ/BRK vector
-  const lo = checkReadOffset(0xFFFE) & 0xFF;
-  const hi = checkReadOffset(0xFFFF) & 0xFF;
-  CPUregisters.PC = (hi << 8) | lo;
-
-  addExtraCycles(5); // 5 over base , total 7
-}
-
-function serviceIRQ() { // fix handling of this #fix
+function serviceIRQ() {
   // Only fire if I flag (Interrupt Disable) is clear
   if ((CPUregisters.P & 0x04) === 0) {
 

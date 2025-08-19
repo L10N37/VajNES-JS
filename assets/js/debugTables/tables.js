@@ -552,13 +552,19 @@ function cpuRegisterBitsPopulate() {
   }
 }
 
-// populate cpu register bits
 function cpuStatusRegisterPopulate() {
-  // P0–P7 = C Z I D B U V N
-  const flagOrder = ['C', 'Z', 'I', 'D', 'B', 'U', 'V', 'N'];
-  for (let i = 0; i < 8; i++) {
-    const cell = document.getElementById('P' + i);
-    if (cell) cell.innerText = CPUregisters.P[flagOrder[i]];
+  const values = {
+    0: CPUregisters.P.C ? 1 : 0,
+    1: CPUregisters.P.Z ? 1 : 0,
+    2: CPUregisters.P.I ? 1 : 0,
+    3: CPUregisters.P.D ? 1 : 0,
+    6: CPUregisters.P.V ? 1 : 0,
+    7: CPUregisters.P.N ? 1 : 0
+  };
+
+  for (const bit in values) {
+    const cell = document.getElementById('P' + bit);
+    if (cell) cell.innerText = values[bit];
   }
 }
 
@@ -693,8 +699,7 @@ const PPUregistersTable = `
 </table>
 `;
 
-let FlagRegisterTable =  
-`
+let FlagRegisterTable = `
 <table>
   <thead>
     <tr>
@@ -702,23 +707,19 @@ let FlagRegisterTable =
       <th class='addressClass'>01 (Zero)</th>
       <th class='addressClass'>02 (Int. Disable)</th>
       <th class='addressClass'>03 (Decimal)</th>
-      <th class='addressClass'>04 (B Flag)</th>
-      <th class='addressClass'>05 (Unused)</th>
       <th class='addressClass'>06 (Overflow)</th>
-      <th class='addressClass'>07 (negative)</th>
+      <th class='addressClass'>07 (Negative)</th>
     </tr>
   </thead>
   <tbody>
-  <tr>
-    <td id="P0">0</td>
-    <td id="P1">0</td>
-    <td id="P2">0</td>
-    <td id="P3">0</td>
-    <td id="P4">0</td>
-    <td id="P5">1</td>
-    <td id="P6">0</td>
-    <td id="P7">0</td>
-  </tr>
+    <tr>
+      <td id="P0">0</td>
+      <td id="P1">0</td>
+      <td id="P2">0</td>
+      <td id="P3">0</td>
+      <td id="P6">0</td>
+      <td id="P7">0</td>
+    </tr>
   </tbody>
 </table>
 `;

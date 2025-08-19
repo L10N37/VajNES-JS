@@ -19,23 +19,25 @@ const CYCLES_PER_MS = NES_CPU_HZ / 1000;   // ~1789.773 cycles per ms
 function disasmData(disasmCode, disasmOp_, disasmOp__){
   // PC16
   DISASM.RING_U16[0] = CPUregisters.PC & 0xFFFF;
+
   // opcode + operands
-  DISASM.RING_U8[2] = disasmCode;
-  DISASM.RING_U8[3] = disasmOp_;
-  DISASM.RING_U8[4] = disasmOp__;
+  DISASM.RING_U8[2]  = disasmCode;
+  DISASM.RING_U8[3]  = disasmOp_;
+  DISASM.RING_U8[4]  = disasmOp__;
+
   // registers
-  DISASM.RING_U8[5] = CPUregisters.A;
-  DISASM.RING_U8[6] = CPUregisters.X;
-  DISASM.RING_U8[7] = CPUregisters.Y;
-  DISASM.RING_U8[8] = CPUregisters.S;
-  DISASM.RING_U8[9] = CPUregisters.P.C;
+  DISASM.RING_U8[5]  = CPUregisters.A;
+  DISASM.RING_U8[6]  = CPUregisters.X;
+  DISASM.RING_U8[7]  = CPUregisters.Y;
+  DISASM.RING_U8[8]  = CPUregisters.S;
+
+  // flags
+  DISASM.RING_U8[9]  = CPUregisters.P.C;
   DISASM.RING_U8[10] = CPUregisters.P.Z;
   DISASM.RING_U8[11] = CPUregisters.P.I;
   DISASM.RING_U8[12] = CPUregisters.P.D;
-  DISASM.RING_U8[13] = CPUregisters.P.B;
-  DISASM.RING_U8[14] = CPUregisters.P.U;
-  DISASM.RING_U8[15] = CPUregisters.P.V;
-  DISASM.RING_U8[16] = CPUregisters.P.N;
+  DISASM.RING_U8[13] = CPUregisters.P.V;
+  DISASM.RING_U8[14] = CPUregisters.P.N;
 }
 
 // offset handler takes care of prgRom being based @ 0x0000
