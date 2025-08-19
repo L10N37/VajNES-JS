@@ -47,9 +47,6 @@ function installLiveScalars() {
     nmiPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1) !== 0,
                     set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1)
                                   : Atomics.and(SHARED.EVENTS, 0, ~0b1); }, configurable: true },
-    irqPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b10) !== 0,
-                    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b10)
-                                  : Atomics.and(SHARED.EVENTS, 0, ~0b10); }, configurable: true },
   });
 
   console.debug("[worker] Installed live scalar accessors");

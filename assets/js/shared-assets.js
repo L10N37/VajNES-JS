@@ -24,8 +24,9 @@
   SHARED.SYNC     = new Int32Array(SHARED.SAB_SYNC);
   SHARED.SYNC[0]  = 0;
 
-  // Events bitfield (bit0=NMI, bit1=IRQ)
-  // Run bit lives in EVENTS[0] (bit 2). Main sets/clears it. Worker only reads it.
+  // Events bitfield (bit0=NMI)
+  // Run bit lives in EVENTS[0] (bit 2)
+  // LEVERAGE RUN BIT FOR FRAME SYNC
   SHARED.SAB_EVENTS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
   SHARED.EVENTS     = new Int32Array(SHARED.SAB_EVENTS);
   SHARED.EVENTS[0]  = 0;
@@ -145,10 +146,6 @@ try {
     nmiPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1) !== 0,
                     set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1)
                                   : Atomics.and(SHARED.EVENTS, 0, ~0b1); }, configurable: true },
-    irqPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b10) !== 0,
-                    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b10)
-                                  : Atomics.and(SHARED.EVENTS, 0, ~0b10); }, configurable: true },
-
   });
 
   console.debug("[main] Installed live scalar accessors");
@@ -276,7 +273,7 @@ function BRK_IMP() {
   addExtraCycles(5); // 5 over base , total 7
 }
 
-function serviceIRQ() {
+function serviceIRQ() { // fix handling of this #fix
   // Only fire if I flag (Interrupt Disable) is clear
   if ((CPUregisters.P & 0x04) === 0) {
 

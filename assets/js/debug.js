@@ -38,19 +38,15 @@ function disasmData(disasmCode, disasmOp_, disasmOp__){
   DISASM.RING_U8[16] = CPUregisters.P.N;
 }
 
+// offset handler takes care of prgRom being based @ 0x0000
 function step() {
+
+  // disable CRT fuzz noise
+  NoSignalAudio.setEnabled(false);
+
   // if we're paused, briefly let the PPU worker run this step
   const wasPaused = !cpuRunning;
   if (wasPaused) Atomics.or(SHARED.EVENTS, 0, 0b00000100); // set RUN bit
-
-  // ---- interrupts ----
-  if (nmiPending) {
-    serviceNMI();   // adds +7 via addExtraCycles()
-    nmiPending = false;
-  } else if (irqPending && (CPUregisters.P & 0x04) === 0) {
-    serviceIRQ();   // adds +7 via addExtraCycles()
-    irqPending = false;
-  }
 
   // ---- frame blit ----
   if (PPU_FRAME_FLAGS == 0b00000001) {
@@ -59,14 +55,8 @@ function step() {
     PPU_FRAME_FLAGS = 0x00;
   }
 
-  // ---- execute one instruction ----
-  NoSignalAudio.setEnabled(false);
-
-  const code   = prgRom[(CPUregisters.PC - 0x8000) & 0x7FFF];
-
-  // disasm will use code above but we will also grab ops for it
-  const _op   = prgRom[(CPUregisters.PC - 0x8000 + 1) & 0x7FFF];
-  const __op  = prgRom[(CPUregisters.PC - 0x8000 + 2) & 0x7FFF];
+  // realigns with our prgRom base being 0x00 by being passed through offset handler
+  const code   = checkReadOffset(CPUregisters.PC);
 
   const execFn = opcodeFuncs[code];
   if (!execFn) {
@@ -77,14 +67,28 @@ function step() {
     return;
   }
 
+  execFn();
+
+  // ---- handle interrupts ----
+  if (nmiPending) {
+    serviceNMI();   // adds +7 via addExtraCycles()
+    nmiPending = false;
+  } else if (!CPUregisters.P.I) {
+    serviceIRQ();   // adds +7 via addExtraCycles()
+  }
+  
+  // disasm will use code above but we will also grab ops for it
+  const _op   = checkReadOffset(CPUregisters.PC + 1);
+  const __op  = checkReadOffset(CPUregisters.PC + 2);
+
   // store the data the disassembler needs in the SABs, passing it opcode/operands
-  // the flags/ regs it can do in func
   disasmData(code, _op, __op);
 
-  execFn();
-  CPUregisters.PC = (CPUregisters.PC + opcodePcIncs[code]) & 0xFFFF;
-   
+  // increment PC to point at next opcode
+  CPUregisters.PC = CPUregisters.PC + opcodePcIncs[code];
+
   // Base cycles (CPU + PPU budget)
+  // coerce a value into an integer | 0
   const cyc = opcodeCyclesInc[code] | 0;
   if (cyc) {
     Atomics.add(SHARED.CLOCKS, 0, cyc);
