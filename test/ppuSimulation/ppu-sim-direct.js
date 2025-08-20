@@ -302,6 +302,7 @@ function startVBlank_Sim() {
     // Blit the finished frame
     if (typeof blitNESFramePaletteIndex === 'function') {
       blitNESFramePaletteIndex(new Uint8Array(paletteIndexFrame_Sim), NES_W_Sim, NES_H_Sim);
+      registerFrameUpdate(); // FPS counter screen overlay
     }
 
     // Debug: dump first 16 pixels of first scanline
