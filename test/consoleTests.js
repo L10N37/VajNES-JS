@@ -144,3 +144,45 @@ function opcodeTablePrint() {
   console.table(opcodeRows);
 }
 //=======================================================
+
+// worker side ppuBusRead test
+function testPpuBusRead(){
+// --- Fake backing arrays for test ---
+const CHR_ROM     = new Uint8Array(0x2000); // 8KB
+const VRAM        = new Uint8Array(0x0800); // 2KB
+const PALETTE_RAM = new Uint8Array(0x20);   // 32B
+
+// Seed with known values
+for (let i = 0; i < CHR_ROM.length; i++) CHR_ROM[i] = 0xAA;
+for (let i = 0; i < VRAM.length; i++) VRAM[i] = 0xBB;
+for (let i = 0; i < PALETTE_RAM.length; i++) PALETTE_RAM[i] = 0x3C; // 6-bit max
+
+// Write unique markers at a few spots
+CHR_ROM[0x123] = 0x11;
+VRAM[0x456 & 0x07FF] = 0x22;
+PALETTE_RAM[0x0C] = 0x2A;   // normal entry
+PALETTE_RAM[0x00] = 0x33;   // universal background
+
+// --- The function under test ---
+function ppuBusRead(addr) {
+  addr &= 0x3FFF;
+
+  if (addr < 0x2000) {
+    return CHR_ROM[addr & 0x1FFF] & 0xFF;
+  }
+  if (addr >= 0x3F00) {
+    let pal = addr & 0x1F;
+    if ((pal & 0x13) === 0x10) pal &= ~0x10;
+    return PALETTE_RAM[pal & 0x1F] & 0x3F;
+  }
+  return VRAM[(addr - 0x2000) & 0x07FF] & 0xFF;
+}
+
+// --- Tests ---
+console.assert(ppuBusRead(0x0123) === 0x11, "Pattern table read failed");
+console.assert(ppuBusRead(0x2456) === 0x22, "Nametable read failed");
+console.assert(ppuBusRead(0x3F0C) === 0x2A, "Palette read failed");
+console.assert(ppuBusRead(0x3F10) === 0x33, "Palette mirror $3F10 failed");
+
+console.log("All ppuBusRead tests passed!");
+}
