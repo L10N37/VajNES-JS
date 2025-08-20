@@ -55,8 +55,8 @@ function step() {
 
   // ---- frame blit ----
   if (PPU_FRAME_FLAGS == 0b00000001) {
-    console.debug("FRAME BLIT");
     blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
+    registerFrameUpdate(); // FPS counter screen overlay
     PPU_FRAME_FLAGS = 0x00;
   }
 

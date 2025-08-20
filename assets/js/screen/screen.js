@@ -134,7 +134,7 @@ function openPaletteModal() {
   }, { once: true });
 }
 
-const exitOption = systemScreen.querySelector('.optionsBar li:nth-child(4)');
+const exitOption = systemScreen.querySelector('.optionsBar li:nth-child(5)');
 exitOption.addEventListener('click', () => {
   systemScreen.style.display   = 'none';
   grilleScreen.style.display   = 'none';
@@ -355,3 +355,47 @@ function redrawWithCurrentPalette() {
 }
 window.redrawWithCurrentPalette = redrawWithCurrentPalette;
 
+// --- setup overlay ---
+const fpsOverlay = document.createElement("div");
+fpsOverlay.id = "fps-overlay";
+fpsOverlay.style.position = "absolute";
+fpsOverlay.style.top = "5px";
+fpsOverlay.style.right = "10px";
+fpsOverlay.style.color = "#0f0";
+fpsOverlay.style.fontFamily = "monospace";
+fpsOverlay.style.fontSize = "14px";
+fpsOverlay.style.background = "rgba(0,0,0,0.5)";
+fpsOverlay.style.padding = "2px 6px";
+fpsOverlay.style.borderRadius = "4px";
+fpsOverlay.style.display = "none"; // hidden by default
+fpsOverlay.textContent = "FPS: 0"; // show 0 by default
+systemScreen.appendChild(fpsOverlay);
+
+// --- FPS tracking ---
+let frameCount = 0;
+let fps = 0;
+
+// update FPS once per second
+setInterval(() => {
+  fps = frameCount;
+  frameCount = 0;
+  if (fpsOverlay.style.display !== "none") {
+    fpsOverlay.textContent = `FPS: ${fps}`;
+  }
+}, 1000);
+
+// whenever the system screen modal gets a frame update, call this:
+function registerFrameUpdate() {
+  frameCount++;
+}
+
+// --- toggle button ---
+const fpsOption = systemScreen.querySelector(".optionsBar li:nth-child(4)");
+fpsOption.addEventListener("click", () => {
+  if (fpsOverlay.style.display === "none") {
+    fpsOverlay.style.display = "block";
+    fpsOverlay.textContent = "FPS: 0"; // reset display on show
+  } else {
+    fpsOverlay.style.display = "none";
+  }
+});
