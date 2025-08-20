@@ -40,8 +40,36 @@ function disasmData(disasmCode, disasmOp_, disasmOp__) {
   DISASM.RING_U8[14] = CPUregisters.P.N;
 }
 
+let nmiCheckCounter = 0;
+let nmiServiceCounter = 0;
+
+function checkInterrupts() {
+  nmiCheckCounter++;
+
+  const edgeMarker = Atomics.load(SHARED.SYNC, 4);
+  if (edgeMarker !== 0) {
+    nmiServiceCounter++;
+    console.log(`[CPU] NMI edge latched (#${nmiServiceCounter}) after ${nmiCheckCounter} checks`);
+
+    nmiCheckCounter = 0;
+
+    // now we set nmiPending (the SAB flag) here
+    Atomics.store(SHARED.SYNC, 5, 1); // or directly set CPU-local nmiPending = true;
+
+    Atomics.store(SHARED.SYNC, 4, 0); // clear the edge marker
+  }
+}
+
 // offset handler takes care of prgRom being based @ 0x0000
 function step() {
+ checkInterrupts();
+  // ---- handle interrupts ----
+  if (nmiPending && (PPUCTRL & 0x80)){
+    serviceNMI();   // adds +7 via addExtraCycles()
+    nmiPending = false;
+  } else if (!CPUregisters.P.I) {
+    serviceIRQ();   // adds +7 via addExtraCycles()
+  }
 
   // we can't catch rows where branches occurred without updating disasm data within every handler
   // if (debugLogging) console.debug("(pre)PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
@@ -82,14 +110,6 @@ function step() {
 
   // store the data the disassembler needs in the SABs, passing it opcode/operands
   disasmData(code, _op, __op);
-
-  // ---- handle interrupts ----
-  if (nmiPending) {
-    serviceNMI();   // adds +7 via addExtraCycles()
-    nmiPending = false;
-  } else if (!CPUregisters.P.I) {
-    serviceIRQ();   // adds +7 via addExtraCycles()
-  }
   
   // increment PC to point at next opcode, if PC modified in opcode handler, this adds zero
   CPUregisters.PC = CPUregisters.PC + OPCODES[code].pc;

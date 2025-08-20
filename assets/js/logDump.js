@@ -175,26 +175,35 @@ document.getElementById('dumpState').addEventListener('click', () => {
 
   // PPU registers — build an object from your accessors
   const ppuRegs = {
-    PPUCTRL,
-    PPUMASK,
-    PPUSTATUS,
-    OAMADDR,
-    OAMDATA,
-    SCROLL_X,
-    SCROLL_Y,
-    ADDR_HIGH,
-    ADDR_LOW,
-    t_lo,
-    t_hi,
-    fineX,
-    writeToggle,
-    VRAM_DATA,
-    BG_ntByte,
-    BG_atByte,
-    BG_tileLo,
-    BG_tileHi,
-    VRAM_ADDR
+    PPUCTRL,     // CPU writes, PPU uses
+    PPUMASK,     // CPU writes, PPU uses
+    PPUSTATUS,   // PPU sets flags, CPU reads
+
+    OAMADDR,     // CPU writes, PPU uses
+    OAMDATA,     // CPU read/write, PPU uses
+
+    SCROLL_X,    // CPU writes, PPU uses
+    SCROLL_Y,    // CPU writes, PPU uses
+
+    ADDR_HIGH,   // CPU writes, PPU uses
+    ADDR_LOW,    // CPU writes, PPU uses
+
+    t_lo,        // Internal latch
+    t_hi,        // Internal latch
+    fineX,       // Fine X scroll
+
+    writeToggle, // $2005/$2006 latch toggle
+
+    VRAM_DATA,   // CPU read/write, PPU uses
+
+    BG_ntByte,   // Internal fetch (PPU)
+    BG_atByte,   // Internal fetch (PPU)
+    BG_tileLo,   // Internal fetch (PPU)
+    BG_tileHi,   // Internal fetch (PPU)
+
+    VRAM_ADDR    // PPU address reg
   };
+  
   regSec.appendChild(generateRegisterTable('PPU Registers', ppuRegs));
 
   regSec.appendChild(generateRegisterTable('APU Registers', APUregister));

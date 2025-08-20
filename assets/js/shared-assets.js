@@ -19,10 +19,23 @@
   SHARED.CLOCKS[0]  = 0;
   SHARED.CLOCKS[1]  = 0;
 
-  // for PPU ticks consumed as theyre otherwise local to the worker
-  SHARED.SAB_SYNC = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
+  // --- PPU/CPU sync SAB ---
+  SHARED.SAB_SYNC = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 8);
   SHARED.SYNC     = new Int32Array(SHARED.SAB_SYNC);
-  SHARED.SYNC[0]  = 0;
+
+  // Init all to 0
+  for (let i = 0; i < SHARED.SYNC.length; i++) SHARED.SYNC[i] = 0;
+
+  /*
+    SYNC[0] : CPU cycles
+    SYNC[1] : PPU budget
+    SYNC[2] : Current scanline (0..261)
+    SYNC[3] : Current dot (0..340)
+    SYNC[4] : Current frame counter
+    SYNC[5] : VBlank flag shadow (0 = clear, 1 = set)
+    SYNC[6] : NMI edge marker (frame number or dot when NMI was asserted)
+    SYNC[7] : unused
+  */
 
   // Events bitfield (bit0=NMI, bit1=IRQ)
   // Run bit lives in EVENTS[0] (bit 2). Main sets/clears it. Worker only reads it.
@@ -145,10 +158,6 @@ try {
     nmiPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1) !== 0,
                     set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1)
                                   : Atomics.and(SHARED.EVENTS, 0, ~0b1); }, configurable: true },
-    irqPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b10) !== 0,
-                    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b10)
-                                  : Atomics.and(SHARED.EVENTS, 0, ~0b10); }, configurable: true },
-
   });
 
   console.debug("[main] Installed live scalar accessors");
@@ -278,28 +287,6 @@ function serviceIRQ() {
     addExtraCycles(7);
   }
 }
-
-// ============ Disassembler SAB set up ============
-/*
-DISASM.RING record layout (per instruction step)
-
-Bytes 0..1 : PC16      // Uint16
-Byte  2    : OPC       // opcode byte
-Byte  3    : OP1       // first operand
-Byte  4    : OP2       // second operand
-Byte  5    : A         // accumulator register
-Byte  6    : X         // X register
-Byte  7    : Y         // Y register
-Byte  8    : S         // stack pointer
-Byte  9    : P.C       // Carry flag (0/1)
-Byte 10    : P.Z       // Zero flag
-Byte 11    : P.I       // Interrupt Disable
-Byte 12    : P.D       // Decimal Mode
-Byte 13    : P.B       // Break Command
-Byte 14    : P.U       // Unused flag (always 1 on NES CPU)
-Byte 15    : P.V       // Overflow flag
-Byte 16    : P.N       // Negative flag
-*/
 
 // create SABs and start worker
 window.DISASM = window.DISASM || {};

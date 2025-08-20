@@ -63,6 +63,7 @@ function updateDebugTables() {
 function resetSystem(){resetCPU(), ppuResetCounters();}
 
 // for handlers that expect a real single byte/ 8 bit register of cpu flag bits where bools were used
+// absolutely necessary for when pull operations where a byte is pulled and unpacked back to the flag bits
 // helper to build packed P byte from individual flags
 // BRK_IMP, serviceNMI, RTI_IMP, PHP_IMP, PLP_IMP
 // Build a packed P byte from CPUregisters.P flags

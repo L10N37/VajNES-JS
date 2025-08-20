@@ -2,11 +2,11 @@
 // NES Offsets / Bus Handler
 // =========================================================
 
-let debugLogging = true;
+let debugLogging = false;
 
 // ----- PPU VRAM helpers -----
 
-// Mapper should tell us mirroring; fall back to horizontal if not available.
+// Mapper should tell us mirroring; fall back to horizontal if not available. #fix for later use
 let MIRRORING = (typeof mapperGetMirroring === "function")
   ? mapperGetMirroring()
   : "horizontal";
@@ -58,8 +58,7 @@ function checkReadOffset(address) {
     switch (reg) {
       case 0x2002: { // PPUSTATUS
         value = PPUSTATUS;
-        PPUSTATUS &= ~0x80;
-        writeToggle = 0;
+        PPUSTATUS &= ~0x80; // clear VBlank flag
         if (debugLogging) console.debug(`[READ PPUSTATUS] $2002 -> ${value.toString(16).padStart(2,"0")}`);
         break;
       }
@@ -169,35 +168,30 @@ else if (addr < 0x4000) {
 
     case 0x2005: { // PPUSCROLL
       let t = ((t_hi << 8) | t_lo) & 0xFFFF;
-      if ((writeToggle & 1) === 0) {
-        SCROLL_X = value;
-        fineX = value & 0x07;
-        t = (t & ~0x001F) | ((value >>> 3) & 0x1F);
-      } else {
-        SCROLL_Y = value;
-        t = (t & ~(0x7000 | 0x03E0))
-          | ((value & 0x07) << 12)
-          | (((value >>> 3) & 0x1F) << 5);
-      }
+
+      // Just forward the value, PPU tracks first/second write
+      SCROLL_X = value;
+      SCROLL_Y = value;
+      fineX    = value & 0x07;
+
+      // leave coarse/fine updates to PPU logic
       t_hi = (t >>> 8) & 0xFF;
       t_lo = t & 0xFF;
-      writeToggle ^= 1;
       break;
     }
 
     case 0x2006: { // PPUADDR
       let t = ((t_hi << 8) | t_lo) & 0xFFFF;
-      if ((writeToggle & 1) === 0) {
-        ADDR_HIGH = value;
-        t = (t & 0x00FF) | ((value & 0x3F) << 8);
-      } else {
-        ADDR_LOW = value;
-        t = (t & 0x7F00) | value;
-        VRAM_ADDR = t & 0x3FFF;
-      }
+
+      // Just forward, PPU latch decides high/low byte
+      ADDR_HIGH = value;
+      ADDR_LOW  = value;
+
+      // update VRAM_ADDR only when PPU completes its latch
+      VRAM_ADDR = t & 0x3FFF;
+
       t_hi = (t >>> 8) & 0xFF;
       t_lo = t & 0xFF;
-      writeToggle ^= 1;
       break;
     }
 

@@ -1918,46 +1918,52 @@ function STX_ABS() {
     const zp = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
     const addr = checkReadOffset(zp) | (checkReadOffset((zp + 1) & 0xFF) << 8);
     let val = checkReadOffset(addr);
-  
-    // --- ROR memory (same as ROR_ABS but inline) ---
-    const oldCarry = CPUregisters.P & 0x01;
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((val & 0x01) ? 1 : 0);
+
+    // --- ROR memory (inline) ---
+    const oldCarry = CPUregisters.P.C;
+    CPUregisters.P.C = val & 0x01;               // new carry from bit 0
     val = (val >> 1) | (oldCarry << 7);
     checkWriteOffset(addr, val);
-  
-    // --- ADC (A + val + carry, set N/Z/C/V flags) ---
+
+    // --- ADC (A + val + carry) ---
     let acc = CPUregisters.A;
-    let carry = (CPUregisters.P & 0x01) ? 1 : 0;
+    let carry = CPUregisters.P.C ? 1 : 0;
     let result = acc + val + carry;
-    CPUregisters.P = (CPUregisters.P & ~0x80) | (result & 0x80); // N flag
-    CPUregisters.P = (CPUregisters.P & ~0x02) | ((result === 0) ? 0x02 : 0); // Z flag
-    CPUregisters.P = (CPUregisters.P & ~0x40) | (((~(acc ^ val) & (acc ^ result)) & 0x80) ? 0x40 : 0); // V flag
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((result > 0xFF) ? 0x01 : 0); // C flag
+
+    // Flags
+    CPUregisters.P.N = (result >> 7) & 1;
+    CPUregisters.P.Z = +((result & 0xFF) === 0);
+    CPUregisters.P.V = +(((~(acc ^ val) & (acc ^ result)) & 0x80) !== 0);
+    CPUregisters.P.C = +(result > 0xFF);
+
     CPUregisters.A = result & 0xFF;
   }
 
-  function RRA_INDY() {
-    const zp = checkReadOffset(CPUregisters.PC + 1);
-    const base = checkReadOffset(zp) | (checkReadOffset((zp + 1) & 0xFF) << 8);
-    const addr = (base + CPUregisters.Y) & 0xFFFF;
-    let val = checkReadOffset(addr);
-  
-    // ROR
-    const oldCarry = CPUregisters.P & 0x01;
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((val & 0x01) ? 1 : 0);
-    val = (val >> 1) | (oldCarry << 7);
-    checkWriteOffset(addr, val);
-  
-    // ADC
-    let acc = CPUregisters.A;
-    let carry = (CPUregisters.P & 0x01) ? 1 : 0;
-    let result = acc + val + carry;
-    CPUregisters.P = (CPUregisters.P & ~0x80) | (result & 0x80);
-    CPUregisters.P = (CPUregisters.P & ~0x02) | ((result === 0) ? 0x02 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x40) | (((~(acc ^ val) & (acc ^ result)) & 0x80) ? 0x40 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((result > 0xFF) ? 0x01 : 0);
-    CPUregisters.A = result & 0xFF;
-  }
+function RRA_INDY() {
+  const zp = checkReadOffset(CPUregisters.PC + 1);
+  const base = checkReadOffset(zp) | (checkReadOffset((zp + 1) & 0xFF) << 8);
+  const addr = (base + CPUregisters.Y) & 0xFFFF;
+  let val = checkReadOffset(addr);
+
+  // --- ROR (rotate right through carry) ---
+  const oldCarry = CPUregisters.P.C;
+  CPUregisters.P.C = val & 0x01;                // new carry from bit 0
+  val = (val >> 1) | (oldCarry << 7);
+  checkWriteOffset(addr, val);
+
+  // --- ADC (A + val + carry) ---
+  let acc = CPUregisters.A;
+  let carry = CPUregisters.P.C ? 1 : 0;
+  let result = acc + val + carry;
+
+  // Flags
+  CPUregisters.P.N = (result >> 7) & 1;                                // Negative
+  CPUregisters.P.Z = +((result & 0xFF) === 0);                         // Zero
+  CPUregisters.P.V = +(((~(acc ^ val) & (acc ^ result)) & 0x80) !== 0); // Overflow
+  CPUregisters.P.C = +(result > 0xFF);                                 // Carry
+
+  CPUregisters.A = result & 0xFF;
+}
 
 function RRA_ZP() {
   const addr = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
@@ -2009,68 +2015,78 @@ function RRA_ZP() {
   function RRA_ABS() {
     const addr = checkReadOffset(CPUregisters.PC + 1) | (checkReadOffset(CPUregisters.PC + 2) << 8);
     let val = checkReadOffset(addr);
-  
-    // ROR
-    const oldCarry = CPUregisters.P & 0x01;
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((val & 0x01) ? 1 : 0);
+
+    // --- ROR (rotate right through carry) ---
+    const oldCarry = CPUregisters.P.C;
+    CPUregisters.P.C = val & 0x01;                // new carry from bit 0
     val = (val >> 1) | (oldCarry << 7);
     checkWriteOffset(addr, val);
-  
-    // ADC
+
+    // --- ADC (A + val + carry) ---
     let acc = CPUregisters.A;
-    let carry = (CPUregisters.P & 0x01) ? 1 : 0;
+    let carry = CPUregisters.P.C ? 1 : 0;
     let result = acc + val + carry;
-    CPUregisters.P = (CPUregisters.P & ~0x80) | (result & 0x80);
-    CPUregisters.P = (CPUregisters.P & ~0x02) | ((result === 0) ? 0x02 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x40) | (((~(acc ^ val) & (acc ^ result)) & 0x80) ? 0x40 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((result > 0xFF) ? 0x01 : 0);
-    CPUregisters.A = result & 0xFF;
-  }
-  
-  function RRA_ABSX() {
-    const base = checkReadOffset(CPUregisters.PC + 1) | (checkReadOffset(CPUregisters.PC + 2) << 8);
-    const addr = (base + CPUregisters.X) & 0xFFFF;
-    let val = checkReadOffset(addr);
-  
-    // ROR
-    const oldCarry = CPUregisters.P & 0x01;
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((val & 0x01) ? 1 : 0);
-    val = (val >> 1) | (oldCarry << 7);
-    checkWriteOffset(addr, val);
-  
-    // ADC
-    let acc = CPUregisters.A;
-    let carry = (CPUregisters.P & 0x01) ? 1 : 0;
-    let result = acc + val + carry;
-    CPUregisters.P = (CPUregisters.P & ~0x80) | (result & 0x80);
-    CPUregisters.P = (CPUregisters.P & ~0x02) | ((result === 0) ? 0x02 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x40) | (((~(acc ^ val) & (acc ^ result)) & 0x80) ? 0x40 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((result > 0xFF) ? 0x01 : 0);
+
+    // Flags
+    CPUregisters.P.N = (result >> 7) & 1;                                // Negative
+    CPUregisters.P.Z = +((result & 0xFF) === 0);                         // Zero
+    CPUregisters.P.V = +(((~(acc ^ val) & (acc ^ result)) & 0x80) !== 0); // Overflow
+    CPUregisters.P.C = +(result > 0xFF);                                 // Carry
+
     CPUregisters.A = result & 0xFF;
   }
 
-  function RRA_ABSY() {
-    const base = checkReadOffset(CPUregisters.PC + 1) | (checkReadOffset(CPUregisters.PC + 2) << 8);
-    const addr = (base + CPUregisters.Y) & 0xFFFF;
-    let val = checkReadOffset(addr);
   
-    // ROR
-    const oldCarry = CPUregisters.P & 0x01;
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((val & 0x01) ? 1 : 0);
-    val = (val >> 1) | (oldCarry << 7);
-    checkWriteOffset(addr, val);
-  
-    // ADC
-    let acc = CPUregisters.A;
-    let carry = (CPUregisters.P & 0x01) ? 1 : 0;
-    let result = acc + val + carry;
-    CPUregisters.P = (CPUregisters.P & ~0x80) | (result & 0x80);
-    CPUregisters.P = (CPUregisters.P & ~0x02) | ((result === 0) ? 0x02 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x40) | (((~(acc ^ val) & (acc ^ result)) & 0x80) ? 0x40 : 0);
-    CPUregisters.P = (CPUregisters.P & ~0x01) | ((result > 0xFF) ? 0x01 : 0);
-    CPUregisters.A = result & 0xFF;
-  }
-  
+function RRA_ABSX() {
+  const base = checkReadOffset(CPUregisters.PC + 1) | (checkReadOffset(CPUregisters.PC + 2) << 8);
+  const addr = (base + CPUregisters.X) & 0xFFFF;
+  let val = checkReadOffset(addr);
+
+  // --- ROR (rotate right through carry) ---
+  const oldCarry = CPUregisters.P.C;
+  CPUregisters.P.C = val & 0x01;                // new carry from bit 0
+  val = (val >> 1) | (oldCarry << 7);
+  checkWriteOffset(addr, val);
+
+  // --- ADC (A + val + carry) ---
+  let acc = CPUregisters.A;
+  let carry = CPUregisters.P.C ? 1 : 0;
+  let result = acc + val + carry;
+
+  // Flags
+  CPUregisters.P.N = (result >> 7) & 1;                                // Negative
+  CPUregisters.P.Z = +((result & 0xFF) === 0);                         // Zero
+  CPUregisters.P.V = +(((~(acc ^ val) & (acc ^ result)) & 0x80) !== 0); // Overflow
+  CPUregisters.P.C = +(result > 0xFF);                                 // Carry
+
+  CPUregisters.A = result & 0xFF;
+}
+
+function RRA_ABSY() {
+  const base = checkReadOffset(CPUregisters.PC + 1) | (checkReadOffset(CPUregisters.PC + 2) << 8);
+  const addr = (base + CPUregisters.Y) & 0xFFFF;
+  let val = checkReadOffset(addr);
+
+  // --- ROR (rotate right through carry) ---
+  const oldCarry = CPUregisters.P.C;
+  CPUregisters.P.C = val & 0x01;                // new carry from bit 0
+  val = (val >> 1) | (oldCarry << 7);
+  checkWriteOffset(addr, val);
+
+  // --- ADC (A + val + carry) ---
+  let acc = CPUregisters.A;
+  let carry = CPUregisters.P.C ? 1 : 0;
+  let result = acc + val + carry;
+
+  // Flags
+  CPUregisters.P.N = (result >> 7) & 1;                                // Negative
+  CPUregisters.P.Z = +((result & 0xFF) === 0);                         // Zero
+  CPUregisters.P.V = +(((~(acc ^ val) & (acc ^ result)) & 0x80) !== 0); // Overflow
+  CPUregisters.P.C = +(result > 0xFF);                                 // Carry
+
+  CPUregisters.A = result & 0xFF;
+}
+
   function LAX_ZP() {
   const address = checkReadOffset(CPUregisters.PC +1);// always zero page (no handler)
   const value = checkReadOffset(address);

@@ -125,10 +125,4 @@ self.addEventListener("message", (e) => {
     startPPULoop();
     return;
   }
-
-  if (d.type === "ppu-reset") {
-    console.debug("[worker] ppu-reset");
-    resetPPU();
-    return;
-  }
 });
