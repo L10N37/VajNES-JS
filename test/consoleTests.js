@@ -128,20 +128,19 @@ stopTestAnim() to halt.
   };
 })();
 
-
 //=======================================================
-let opcodeRows = [];
-for(let i=0; i<256; ++i) {
-  opcodeRows.push({
+function opcodeTablePrint() {
+  const opcodeRows = OPCODES.map((op, i) => ({
     OPC: "0x" + i.toString(16).padStart(2, "0").toUpperCase(),
-    Handler: opcodeFuncs[i] ? opcodeFuncs[i].name : "(none)",
-    "PC+": opcodePcIncs[i],
-    Cycles: opcodeCyclesInc[i],
-  });
-}
+    Handler: op.func ? op.func.name : "(none)",
+    "PC+": op.pc,
+    Cycles: op.cycles
+  }));
 
-function opcodeTablePrint(){
-console.debug("%c==== 6502 Opcode Table (Branch ops highlighted) ====", "color:#fff;background:#222;font-size:1.2em;padding:4px;");
-console.table(opcodeRows);
+  console.debug(
+    "%c==== 6502 Unified Opcode Table (Branch ops highlighted) ====",
+    "color:#fff;background:#222;font-size:1.2em;padding:4px;"
+  );
+  console.table(opcodeRows);
 }
 //=======================================================

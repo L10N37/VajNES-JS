@@ -2908,6 +2908,7 @@ function BVS_REL() {
 
 /*
 //////////////////////// 6502 CPU opcode object ////////////////////////
+// legacy, handy for opcode hex reference
 const opcodes = {
 
   // ==================== BRANCH/CONTROL FLOW (pcIncrement: 0) ==================== //

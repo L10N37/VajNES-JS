@@ -16,7 +16,7 @@ const CPU_BATCH = 1000; // adjust if you want larger inner batches
 const NES_CPU_HZ    = 1_789_773;           // 1.789773 MHz
 const CYCLES_PER_MS = NES_CPU_HZ / 1000;   // ~1789.773 cycles per ms
 
-function disasmData(disasmCode, disasmOp_, disasmOp__){
+function disasmData(disasmCode, disasmOp_, disasmOp__) {
   // PC16
   DISASM.RING_U16[0] = CPUregisters.PC & 0xFFFF;
 
@@ -43,6 +43,9 @@ function disasmData(disasmCode, disasmOp_, disasmOp__){
 // offset handler takes care of prgRom being based @ 0x0000
 function step() {
 
+  // we can't catch rows where branches occurred without updating disasm data within every handler
+  // if (debugLogging) console.debug("(pre)PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
+
   // disable CRT fuzz noise
   NoSignalAudio.setEnabled(false);
 
@@ -52,7 +55,7 @@ function step() {
 
   // ---- frame blit ----
   if (PPU_FRAME_FLAGS == 0b00000001) {
-    // console.debug("FRAME BLIT");
+    console.debug("FRAME BLIT");
     blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
     PPU_FRAME_FLAGS = 0x00;
   }
@@ -60,7 +63,9 @@ function step() {
   // realigns with our prgRom base being 0x00 by being passed through offset handler
   const code   = checkReadOffset(CPUregisters.PC);
 
-  const execFn = opcodeFuncs[code];
+  // execute opcode handler
+  const execFn = OPCODES[code].func;
+
   if (!execFn) {
     const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
     console.warn(`Unknown opcode 0x${codeHex}`);
@@ -69,7 +74,14 @@ function step() {
     return;
   }
 
+  // disasm will use code above but we will also grab ops for it
+  const _op   = checkReadOffset(CPUregisters.PC + 1);
+  const __op  = checkReadOffset(CPUregisters.PC + 2);
+
   execFn();
+
+  // store the data the disassembler needs in the SABs, passing it opcode/operands
+  disasmData(code, _op, __op);
 
   // ---- handle interrupts ----
   if (nmiPending) {
@@ -79,19 +91,15 @@ function step() {
     serviceIRQ();   // adds +7 via addExtraCycles()
   }
   
-  // disasm will use code above but we will also grab ops for it
-  const _op   = checkReadOffset(CPUregisters.PC + 1);
-  const __op  = checkReadOffset(CPUregisters.PC + 2);
+  // increment PC to point at next opcode, if PC modified in opcode handler, this adds zero
+  CPUregisters.PC = CPUregisters.PC + OPCODES[code].pc;
 
-  // store the data the disassembler needs in the SABs, passing it opcode/operands
-  disasmData(code, _op, __op);
-
-  // increment PC to point at next opcode
-  CPUregisters.PC = CPUregisters.PC + opcodePcIncs[code];
+  // we can't catch rows where branches occurred without updating disasm data within every handler
+  // if (debugLogging) console.debug("(post)PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
 
   // Base cycles (CPU + PPU budget)
   // coerce a value into an integer | 0
-  const cyc = opcodeCyclesInc[code] | 0;
+  const cyc = OPCODES[code].cycles | 0;
   if (cyc) {
     Atomics.add(SHARED.CLOCKS, 0, cyc);
     Atomics.add(SHARED.CLOCKS, 1, 3 * cyc);
@@ -251,66 +259,89 @@ function runPacedWithSampler(msTotal = 5000, msSample = 500) {
   }, msTotal);
 }
 
-
-// =============================== OPCODE LUTS ======================================================
-// move directly to opcode handlers eventually to optimise
-const opcodePcIncs = [ 
-2,2,0,2,2,2,2,2,1,2,1,2,3,3,3,3,0,2,0,2,2,2,2,2,1,3,1,3,3,3,3,3,
-0,2,0,2,2,2,2,2,1,2,1,2,3,3,3,3,0,2,0,2,2,2,2,2,1,3,1,3,3,3,3,3,
-0,2,0,2,2,2,2,2,1,2,1,2,0,3,3,3,0,2,0,2,2,2,2,2,1,3,1,3,3,3,3,3,
-0,2,0,2,2,2,2,2,1,2,1,2,0,3,3,3,0,2,0,2,2,2,2,2,1,3,1,3,3,3,3,3,
-0,2,2,2,2,2,2,2,1,2,1,2,3,3,3,3,0,2,2,2,2,2,2,2,1,3,1,3,3,3,3,3,
-2,2,2,2,2,2,2,2,1,2,1,2,3,3,3,3,0,2,0,2,2,2,2,2,1,3,1,3,3,3,3,3,
-2,2,2,2,2,2,2,2,1,2,1,2,3,3,3,3,0,2,0,2,2,2,2,2,1,3,1,3,3,3,3,3,
-2,2,2,2,2,2,2,2,1,2,1,0,3,3,3,3,0,2,0,2,2,2,2,2,1,3,1,3,3,3,3,3
-];
-
-// move directly to opcode handlers eventually to optimise
-const opcodeCyclesInc = [
-2,6,2,6,3,3,3,3,2,2,2,2,4,4,4,4,2,5,0,5,4,4,4,4,2,4,2,4,4,4,4,4,
-4,6,0,6,3,3,3,3,2,2,2,2,4,4,4,4,2,5,0,5,4,4,4,4,2,4,2,4,4,4,4,4,
-2,6,0,6,3,3,3,3,2,2,2,2,4,4,4,4,2,5,0,5,4,4,4,4,2,4,2,4,4,4,4,4,
-2,6,0,6,3,3,3,3,2,2,2,2,5,4,4,4,2,5,0,5,4,4,4,4,2,4,2,4,4,4,4,4,
-2,6,2,6,3,3,3,3,2,2,2,2,4,4,4,4,2,5,4,5,4,4,4,4,2,4,2,4,4,4,4,4,
-2,6,2,6,3,3,3,3,2,2,2,2,4,4,4,4,2,5,0,5,4,4,4,4,2,4,2,4,4,4,4,4,
-2,6,2,6,3,3,3,3,2,2,2,2,4,4,4,4,2,5,0,5,4,4,4,4,2,4,2,4,4,4,4,4,
-2,6,2,6,3,3,3,3,2,2,2,0,4,4,4,4,2,5,0,5,4,4,4,4,2,4,2,4,4,4,4,4
-];
-
 // ======================== OPCODE DISPATCH TABLE ========================
-const opcodeFuncs = [     
-  BRK_IMP,    ORA_INDX, /*opCodeTest*/, SLO_INDX,   NOP_ZP,     ORA_ZP,     ASL_ZP,     SLO_ZP,
-  PHP_IMP,    ORA_IMM,    ASL_ACC,    ANC_IMM,    NOP_ABS,    ORA_ABS,    ASL_ABS,    SLO_ABS,
-  BPL_REL,    ORA_INDY,   /*null*/,   SLO_INDY,   NOP_ZPX,    ORA_ZPX,    ASL_ZPX,    SLO_ZPX,
-  CLC_IMP,    ORA_ABSY,   NOP,        SLO_ABSY,   NOP_ABSX,   ORA_ABSX,   ASL_ABSX,   SLO_ABSX,
-  JSR_ABS,    AND_INDX,   /*null*/,   RLA_INDX,   BIT_ZP,     AND_ZP,     ROL_ZP,     RLA_ZP,
-  PLP_IMP,    AND_IMM,    ROL_ACC,    ANC_IMM,    BIT_ABS,    AND_ABS,    ROL_ABS,    RLA_ABS,
-  BMI_REL,    AND_INDY,   /*null*/,   RLA_INDY,   NOP_ZPX,    AND_ZPX,    ROL_ZPX,    RLA_ZPX,
-  SEC_IMP,    AND_ABSY,   NOP,        RLA_ABSY,   NOP_ABSX,   AND_ABSX,   ROL_ABSX,   RLA_ABSX,
-  RTI_IMP,    EOR_INDX,   /*null*/,   SRE_INDX,   NOP_ZP,     EOR_ZP,     LSR_ZP,     SRE_ZP,
-  PHA_IMP,    EOR_IMM,    LSR_ACC,    ALR_IMM,    JMP_ABS,    EOR_ABS,    LSR_ABS,    SRE_ABS,
-  BVC_REL,    EOR_INDY,   /*null*/,   SRE_INDY,   NOP_ZPX,    EOR_ZPX,    LSR_ZPX,    SRE_ZPX,
-  CLI_IMP,    EOR_ABY,    NOP,        SRE_ABSY,   NOP_ABSX,   EOR_ABX,    LSR_ABSX,   SRE_ABSX,
-  RTS_IMP,    ADC_INDX,   /*null*/,   RRA_INDX,   NOP_ZP,     ADC_ZP,     ROR_ZP,     RRA_ZP,
-  PLA_IMP,    ADC_IMM,    ROR_ACC,    ARR_IMM,    JMP_IND,    ADC_ABS,    ROR_ABS,    RRA_ABS,
-  BVS_REL,    ADC_INDY,   /*null*/,   RRA_INDY,   NOP_ZPX,    ADC_ZPX,    ROR_ZPX,    RRA_ZPX,
-  SEI_IMP,    ADC_ABSY,   NOP,        RRA_ABSY,   NOP_ABSX,   ADC_ABSX,   ROR_ABSX,   RRA_ABSX,
-  BRA_REL,    STA_INDX,   NOP,        SAX_INDX,   STY_ZP,     STA_ZP,     STX_ZP,     SAX_ZP,
-  DEY_IMP,    NOP,        TXA_IMP,    XAA_IMM,    STY_ABS,    STA_ABS,    STX_ABS,    SAX_ABS,
-  BCC_REL,    STA_INDY,   NOP_ZPY,    AXA_INDY,   STY_ZPX,    STA_ZPX,    STX_ZPY,    SAX_ZPY,
-  TYA_IMP,    STA_ABSY,   TXS_IMP,    TAS_ABSY,   SHY_ABSX,   STA_ABSX,   SHX_ABSY,   AXA_ABSY,
-  LDY_IMM,    LDA_INDX,   LDX_IMM,    LAX_INDX,   LDY_ZP,     LDA_ZP,     LDX_ZP,     LAX_ZP,
-  TAY_IMP,    LDA_IMM,    TAX_IMP,    LAX_IMM,    LDY_ABS,    LDA_ABS,    LDX_ABS,    LAX_ABS,
-  BCS_REL,    LDA_INDY,   /*null*/,   LAX_INDY,   LDY_ZPX,    LDA_ZPX,    LDX_ZPY,    LAX_ZPY,
-  CLV_IMP,    LDA_ABSY,   TSX_IMP,    LAS_ABSY,   LDY_ABSX,   LDA_ABSX,   LDX_ABSY,   LAX_ABSY,
-  CPY_IMM,    CMP_INDX,   NOP,        DCP_INDX,   CPY_ZP,     CMP_ZP,     DEC_ZP,     DCP_ZP,
-  INY_IMP,    CMP_IMM,    DEX_IMP,    SBX_IMM,    CPY_ABS,    CMP_ABS,    DEC_ABS,    DCP_ABS,
-  BNE_REL,    CMP_INDY,   /*null*/,   DCP_INDY,   NOP_ZPX,    CMP_ZPX,    DEC_ZPX,    DCP_ZPX,
-  CLD_IMP,    CMP_ABSY,   NOP,        DCP_ABSY,   NOP_ABSX,   CMP_ABSX,   DEC_ABSX,   DCP_ABSX,
-  CPX_IMM,    SBC_INDX,   NOP,        ISC_INDX,   CPX_ZP,     SBC_ZP,     INC_ZP,     ISC_ZP,
-  INX_IMP,    SBC_IMM,    NOP,        /*null*/,   CPX_ABS,    SBC_ABS,    INC_ABS,    ISC_ABS,
-  BEQ_REL,    SBC_INDY,   /*null*/,   ISC_INDY,   NOP_ZPX,    SBC_ZPX,    INC_ZPX,    ISC_ZPX,
-  SED_IMP,    SBC_ABSY,   NOP,        ISC_ABSY,   NOP_ABSX,   SBC_ABSX,   INC_ABSX,   ISC_ABSX
+// move pc/cyc directly to opcode handlers eventually to optimise
+// all opcodes setting PC manually have zero increment
+const OPCODES = [
+  { pc:1, cycles:2, func: BRK_IMP },   { pc:2, cycles:6, func: ORA_INDX }, { pc:0, cycles:2, func: null },     { pc:2, cycles:6, func: SLO_INDX },
+  { pc:2, cycles:3, func: NOP_ZP },    { pc:2, cycles:3, func: ORA_ZP },   { pc:2, cycles:3, func: ASL_ZP },   { pc:2, cycles:3, func: SLO_ZP },
+  { pc:1, cycles:2, func: PHP_IMP },   { pc:2, cycles:2, func: ORA_IMM },  { pc:1, cycles:2, func: ASL_ACC },  { pc:2, cycles:2, func: ANC_IMM },
+  { pc:3, cycles:4, func: NOP_ABS },   { pc:3, cycles:4, func: ORA_ABS },  { pc:3, cycles:4, func: ASL_ABS },  { pc:3, cycles:4, func: SLO_ABS },
+
+  { pc:0, cycles:2, func: BPL_REL },   { pc:2, cycles:5, func: ORA_INDY }, { pc:0, cycles:0, func: null },     { pc:2, cycles:5, func: SLO_INDY },
+  { pc:2, cycles:4, func: NOP_ZPX },   { pc:2, cycles:4, func: ORA_ZPX },  { pc:2, cycles:4, func: ASL_ZPX },  { pc:2, cycles:4, func: SLO_ZPX },
+  { pc:1, cycles:2, func: CLC_IMP },   { pc:3, cycles:4, func: ORA_ABSY }, { pc:1, cycles:2, func: NOP },      { pc:3, cycles:4, func: SLO_ABSY },
+  { pc:3, cycles:4, func: NOP_ABSX },  { pc:3, cycles:4, func: ORA_ABSX }, { pc:3, cycles:4, func: ASL_ABSX }, { pc:3, cycles:4, func: SLO_ABSX },
+
+  { pc:0, cycles:4, func: JSR_ABS },   { pc:2, cycles:6, func: AND_INDX }, { pc:0, cycles:0, func: null },     { pc:2, cycles:6, func: RLA_INDX },
+  { pc:2, cycles:3, func: BIT_ZP },    { pc:2, cycles:3, func: AND_ZP },   { pc:2, cycles:3, func: ROL_ZP },   { pc:2, cycles:3, func: RLA_ZP },
+  { pc:1, cycles:2, func: PLP_IMP },   { pc:2, cycles:2, func: AND_IMM },  { pc:1, cycles:2, func: ROL_ACC },  { pc:2, cycles:2, func: ANC_IMM },
+  { pc:3, cycles:4, func: BIT_ABS },   { pc:3, cycles:4, func: AND_ABS },  { pc:3, cycles:4, func: ROL_ABS },  { pc:3, cycles:4, func: RLA_ABS },
+
+  { pc:0, cycles:2, func: BMI_REL },   { pc:2, cycles:5, func: AND_INDY }, { pc:0, cycles:0, func: null },     { pc:2, cycles:5, func: RLA_INDY },
+  { pc:2, cycles:4, func: NOP_ZPX },   { pc:2, cycles:4, func: AND_ZPX },  { pc:2, cycles:4, func: ROL_ZPX },  { pc:2, cycles:4, func: RLA_ZPX },
+  { pc:1, cycles:2, func: SEC_IMP },   { pc:3, cycles:4, func: AND_ABSY }, { pc:1, cycles:2, func: NOP },      { pc:3, cycles:4, func: RLA_ABSY },
+  { pc:3, cycles:4, func: NOP_ABSX },  { pc:3, cycles:4, func: AND_ABSX }, { pc:3, cycles:4, func: ROL_ABSX }, { pc:3, cycles:4, func: RLA_ABSX },
+
+  { pc:0, cycles:2, func: RTI_IMP },   { pc:2, cycles:6, func: EOR_INDX }, { pc:0, cycles:0, func: null },     { pc:2, cycles:6, func: SRE_INDX },
+  { pc:2, cycles:3, func: NOP_ZP },    { pc:2, cycles:3, func: EOR_ZP },   { pc:2, cycles:3, func: LSR_ZP },   { pc:2, cycles:3, func: SRE_ZP },
+  { pc:1, cycles:2, func: PHA_IMP },   { pc:2, cycles:2, func: EOR_IMM },  { pc:1, cycles:2, func: LSR_ACC },  { pc:2, cycles:2, func: ALR_IMM },
+  { pc:3, cycles:4, func: JMP_ABS },   { pc:3, cycles:4, func: EOR_ABS },  { pc:3, cycles:4, func: LSR_ABS },  { pc:3, cycles:4, func: SRE_ABS },
+
+  { pc:0, cycles:2, func: BVC_REL },   { pc:2, cycles:5, func: EOR_INDY }, { pc:0, cycles:0, func: null },     { pc:2, cycles:5, func: SRE_INDY },
+  { pc:2, cycles:4, func: NOP_ZPX },   { pc:2, cycles:4, func: EOR_ZPX },  { pc:2, cycles:4, func: LSR_ZPX },  { pc:2, cycles:4, func: SRE_ZPX },
+  { pc:1, cycles:2, func: CLI_IMP },   { pc:3, cycles:4, func: EOR_ABY },  { pc:1, cycles:2, func: NOP },      { pc:3, cycles:4, func: SRE_ABSY },
+  { pc:3, cycles:4, func: NOP_ABSX },  { pc:3, cycles:4, func: EOR_ABX },  { pc:3, cycles:4, func: LSR_ABSX }, { pc:3, cycles:4, func: SRE_ABSX },
+
+  { pc:0, cycles:2, func: RTS_IMP },   { pc:2, cycles:6, func: ADC_INDX }, { pc:0, cycles:0, func: null },     { pc:2, cycles:6, func: RRA_INDX },
+  { pc:2, cycles:3, func: NOP_ZP },    { pc:2, cycles:3, func: ADC_ZP },   { pc:2, cycles:3, func: ROR_ZP },   { pc:2, cycles:3, func: RRA_ZP },
+  { pc:1, cycles:2, func: PLA_IMP },   { pc:2, cycles:2, func: ADC_IMM },  { pc:1, cycles:2, func: ROR_ACC },  { pc:2, cycles:2, func: ARR_IMM },
+  { pc:3, cycles:4, func: JMP_IND },   { pc:3, cycles:4, func: ADC_ABS },  { pc:3, cycles:4, func: ROR_ABS },  { pc:3, cycles:4, func: RRA_ABS },
+
+  { pc:0, cycles:2, func: BVS_REL },   { pc:2, cycles:5, func: ADC_INDY }, { pc:0, cycles:0, func: null },     { pc:2, cycles:5, func: RRA_INDY },
+  { pc:2, cycles:4, func: NOP_ZPX },   { pc:2, cycles:4, func: ADC_ZPX },  { pc:2, cycles:4, func: ROR_ZPX },  { pc:2, cycles:4, func: RRA_ZPX },
+  { pc:1, cycles:2, func: SEI_IMP },   { pc:3, cycles:4, func: ADC_ABSY }, { pc:1, cycles:2, func: NOP },      { pc:3, cycles:4, func: RRA_ABSY },
+  { pc:3, cycles:4, func: NOP_ABSX },  { pc:3, cycles:4, func: ADC_ABSX }, { pc:3, cycles:4, func: ROR_ABSX }, { pc:3, cycles:4, func: RRA_ABSX },
+
+  { pc:0, cycles:2, func: BRA_REL },   { pc:2, cycles:6, func: STA_INDX }, { pc:2, cycles:2, func: NOP },      { pc:2, cycles:6, func: SAX_INDX },
+  { pc:2, cycles:3, func: STY_ZP },    { pc:2, cycles:3, func: STA_ZP },   { pc:2, cycles:3, func: STX_ZP },   { pc:2, cycles:3, func: SAX_ZP },
+  { pc:1, cycles:2, func: DEY_IMP },   { pc:2, cycles:2, func: NOP },      { pc:1, cycles:2, func: TXA_IMP },  { pc:2, cycles:2, func: XAA_IMM },
+  { pc:3, cycles:4, func: STY_ABS },   { pc:3, cycles:4, func: STA_ABS },  { pc:3, cycles:4, func: STX_ABS },  { pc:3, cycles:4, func: SAX_ABS },
+
+  { pc:0, cycles:2, func: BCC_REL },   { pc:2, cycles:6, func: STA_INDY }, { pc:2, cycles:2, func: NOP_ZPY },  { pc:2, cycles:6, func: AXA_INDY },
+  { pc:2, cycles:4, func: STY_ZPX },   { pc:2, cycles:4, func: STA_ZPX },  { pc:2, cycles:4, func: STX_ZPY },  { pc:2, cycles:4, func: SAX_ZPY },
+  { pc:1, cycles:2, func: TYA_IMP },   { pc:3, cycles:4, func: STA_ABSY }, { pc:1, cycles:2, func: TXS_IMP },  { pc:3, cycles:4, func: TAS_ABSY },
+  { pc:3, cycles:4, func: SHY_ABSX },  { pc:3, cycles:4, func: STA_ABSX }, { pc:3, cycles:4, func: SHX_ABSY }, { pc:3, cycles:4, func: AXA_ABSY },
+
+  { pc:2, cycles:2, func: LDY_IMM },   { pc:2, cycles:6, func: LDA_INDX }, { pc:2, cycles:2, func: LDX_IMM },  { pc:2, cycles:6, func: LAX_INDX },
+  { pc:2, cycles:3, func: LDY_ZP },    { pc:2, cycles:3, func: LDA_ZP },   { pc:2, cycles:3, func: LDX_ZP },   { pc:2, cycles:3, func: LAX_ZP },
+  { pc:1, cycles:2, func: TAY_IMP },   { pc:2, cycles:2, func: LDA_IMM },  { pc:1, cycles:2, func: TAX_IMP },  { pc:2, cycles:2, func: LAX_IMM },
+  { pc:3, cycles:4, func: LDY_ABS },   { pc:3, cycles:4, func: LDA_ABS },  { pc:3, cycles:4, func: LDX_ABS },  { pc:3, cycles:4, func: LAX_ABS },
+
+  { pc:0, cycles:2, func: BCS_REL },   { pc:2, cycles:6, func: LDA_INDY }, { pc:0, cycles:0, func: null },     { pc:2, cycles:6, func: LAX_INDY },
+  { pc:2, cycles:4, func: LDY_ZPX },   { pc:2, cycles:4, func: LDA_ZPX },  { pc:2, cycles:4, func: LDX_ZPY },  { pc:2, cycles:4, func: LAX_ZPY },
+  { pc:1, cycles:2, func: CLV_IMP },   { pc:3, cycles:4, func: LDA_ABSY }, { pc:1, cycles:2, func: TSX_IMP },  { pc:3, cycles:4, func: LAS_ABSY },
+  { pc:3, cycles:4, func: LDY_ABSX },  { pc:3, cycles:4, func: LDA_ABSX }, { pc:3, cycles:4, func: LDX_ABSY }, { pc:3, cycles:4, func: LAX_ABSY },
+
+  { pc:2, cycles:2, func: CPY_IMM },   { pc:2, cycles:6, func: CMP_INDX }, { pc:2, cycles:2, func: NOP },      { pc:2, cycles:6, func: DCP_INDX },
+  { pc:2, cycles:3, func: CPY_ZP },    { pc:2, cycles:3, func: CMP_ZP },   { pc:2, cycles:3, func: DEC_ZP },   { pc:2, cycles:3, func: DCP_ZP },
+  { pc:1, cycles:2, func: INY_IMP },   { pc:2, cycles:2, func: CMP_IMM },  { pc:1, cycles:2, func: DEX_IMP },  { pc:2, cycles:2, func: SBX_IMM },
+  { pc:3, cycles:4, func: CPY_ABS },   { pc:3, cycles:4, func: CMP_ABS },  { pc:3, cycles:4, func: DEC_ABS },  { pc:3, cycles:4, func: DCP_ABS },
+
+  { pc:0, cycles:2, func: BNE_REL },   { pc:2, cycles:6, func: CMP_INDY }, { pc:0, cycles:0, func: null },     { pc:2, cycles:6, func: DCP_INDY },
+  { pc:2, cycles:4, func: NOP_ZPX },   { pc:2, cycles:4, func: CMP_ZPX },  { pc:2, cycles:4, func: DEC_ZPX },  { pc:2, cycles:4, func: DCP_ZPX },
+  { pc:1, cycles:2, func: CLD_IMP },   { pc:3, cycles:4, func: CMP_ABSY }, { pc:1, cycles:2, func: NOP },      { pc:3, cycles:4, func: DCP_ABSY },
+  { pc:3, cycles:4, func: NOP_ABSX },  { pc:3, cycles:4, func: CMP_ABSX }, { pc:3, cycles:4, func: DEC_ABSX }, { pc:3, cycles:4, func: DCP_ABSX },
+
+  { pc:2, cycles:2, func: CPX_IMM },   { pc:2, cycles:6, func: SBC_INDX }, { pc:2, cycles:2, func: NOP },      { pc:2, cycles:6, func: ISC_INDX },
+  { pc:2, cycles:3, func: CPX_ZP },    { pc:2, cycles:3, func: SBC_ZP },   { pc:2, cycles:3, func: INC_ZP },   { pc:2, cycles:3, func: ISC_ZP },
+  { pc:1, cycles:2, func: INX_IMP },   { pc:2, cycles:2, func: SBC_IMM },  { pc:1, cycles:2, func: NOP },      { pc:0, cycles:0, func: null },
+  { pc:3, cycles:4, func: CPX_ABS },   { pc:3, cycles:4, func: SBC_ABS },  { pc:3, cycles:4, func: INC_ABS },  { pc:3, cycles:4, func: ISC_ABS },
+
+  { pc:0, cycles:2, func: BEQ_REL },   { pc:2, cycles:6, func: SBC_INDY }, { pc:0, cycles:0, func: null },     { pc:2, cycles:6, func: ISC_INDY },
+  { pc:2, cycles:4, func: NOP_ZPX },   { pc:2, cycles:4, func: SBC_ZPX },  { pc:2, cycles:4, func: INC_ZPX },  { pc:2, cycles:4, func: ISC_ZPX },
+  { pc:1, cycles:2, func: SED_IMP },   { pc:3, cycles:4, func: SBC_ABSY }, { pc:1, cycles:2, func: NOP },      { pc:3, cycles:4, func: ISC_ABSY },
+  { pc:3, cycles:4, func: NOP_ABSX },  { pc:3, cycles:4, func: SBC_ABSX }, { pc:3, cycles:4, func: INC_ABSX }, { pc:3, cycles:4, func: ISC_ABSX },
 ];
 
 // so disassembler can access them

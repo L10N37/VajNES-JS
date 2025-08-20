@@ -32,19 +32,19 @@ function runBusTest() {
     recordResult(a, "PRG RAM", val, got);
   }
 
-    // ---------- Nametables ----------
-    for (let v = 0x2000; v < 0x2400; v += 0x40) {
+  // ---------- VRAM / Nametables ----------
+  for (let v = 0x2000; v < 0x2400; v += 0x40) {
     const val = (v ^ 0x77) & 0xFF;
 
-    // write the value
+    // write via $2006/$2007
     checkWriteOffset(0x2006, (v >> 8) & 0x3F);
     checkWriteOffset(0x2006, v & 0xFF);
     checkWriteOffset(0x2007, val);
 
-    // reset addr and prime read buffer
+    // reset addr and prime buffer
     checkWriteOffset(0x2006, (v >> 8) & 0x3F);
     checkWriteOffset(0x2006, v & 0xFF);
-    checkReadOffset(0x2007); // dummy read to fill buffer
+    checkReadOffset(0x2007); // dummy read
 
     // real read
     checkWriteOffset(0x2006, (v >> 8) & 0x3F);
@@ -52,7 +52,7 @@ function runBusTest() {
     const got = checkReadOffset(0x2007);
 
     recordResult(v, "Nametable", val, got);
-    }
+  }
 
   // ---------- Palette ----------
   for (let v = 0x3F00; v < 0x3F20; v++) {
@@ -67,6 +67,71 @@ function runBusTest() {
     recordResult(v, "Palette", val & 0x3F, got);
   }
 
+  // ---------- OAM ----------
+  for (let i = 0; i < 0x100; i += 0x20) {
+    checkWriteOffset(0x2003, i);
+    checkWriteOffset(0x2004, i ^ 0xAB);
+    checkWriteOffset(0x2003, i);
+    const got = checkReadOffset(0x2004);
+    recordResult(0x2004, "OAMDATA", i ^ 0xAB, got);
+  }
+
+    // ---------- CPU RAM mirrors ----------
+  for (let base = 0x0000; base < 0x0800; base += 0x100) {
+    const val = (base ^ 0xCC) & 0xFF;
+    checkWriteOffset(base, val);
+    const mirrorAddr = base + 0x0800; // $0800 mirrors $0000
+    const got = checkReadOffset(mirrorAddr);
+    recordResult(mirrorAddr, "CPU RAM mirror", val, got);
+  }
+
+    // ---------- VRAM mirrors ----------
+  for (let v = 0x2000; v < 0x2400; v += 0x40) {
+    const val = (v ^ 0x5A) & 0xFF;
+
+    // write original
+    checkWriteOffset(0x2006, (v >> 8) & 0x3F);
+    checkWriteOffset(0x2006, v & 0xFF);
+    checkWriteOffset(0x2007, val);
+
+    // read mirror at $3000 region
+    const mirror = v + 0x1000;
+    checkWriteOffset(0x2006, (mirror >> 8) & 0x3F);
+    checkWriteOffset(0x2006, mirror & 0xFF);
+    checkReadOffset(0x2007); // dummy read
+    checkWriteOffset(0x2006, (mirror >> 8) & 0x3F);
+    checkWriteOffset(0x2006, mirror & 0xFF);
+    const got = checkReadOffset(0x2007);
+
+    recordResult(mirror, "VRAM mirror", val, got);
+  }
+
+    // ---------- Palette mirrors ----------
+  for (let v = 0x3F00; v < 0x3F20; v++) {
+    const val = (v ^ 0x3C) & 0x3F;
+
+    // write into base palette
+    checkWriteOffset(0x2006, (v >> 8) & 0x3F);
+    checkWriteOffset(0x2006, v & 0xFF);
+    checkWriteOffset(0x2007, val);
+
+    // read from mirrored address
+    const mirror = 0x3F20 + (v & 0x1F); // repeats every 0x20 up to 0x3FFF
+    checkWriteOffset(0x2006, (mirror >> 8) & 0x3F);
+    checkWriteOffset(0x2006, mirror & 0xFF);
+    const got = checkReadOffset(0x2007);
+
+    recordResult(mirror, "Palette mirror", val, got);
+  }
+
+  // ---------- CHR ROM/RAM (if writable mapper) ----------
+  for (let v = 0; v < 0x2000; v += 0x100) {
+    const val = (v ^ 0x99) & 0xFF;
+    SHARED.CHR_ROM[v] = val;  // direct write (mapper dependent)
+    const got = SHARED.CHR_ROM[v];
+    recordResult(v, "CHR", val, got);
+  }
+
   // ---------- Write-only PPU registers ----------
   checkWriteOffset(0x2000, 0x80); recordResult(0x2000, "PPUCTRL", 0x80, PPUCTRL);
   checkWriteOffset(0x2001, 0x1E); recordResult(0x2001, "PPUMASK", 0x1E, PPUMASK);
@@ -77,7 +142,7 @@ function runBusTest() {
   const got2002 = checkReadOffset(0x2002);
   recordResult(0x2002, "PPUSTATUS", 0xE0, got2002 | 0xE0);
 
-  // ---------- APU readable reg ----------
+  // ---------- APU ----------
   APUregister.SND_CHN = 0xAA;
   const got4015 = checkReadOffset(0x4015);
   recordResult(0x4015, "APU $4015", 0xAA, got4015);

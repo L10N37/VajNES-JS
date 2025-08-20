@@ -13,11 +13,11 @@ var rowCount = 0;
 // --- config -------------------------------------------------------------
 const PC_BASE = 0x0000;
 
-// hex helpers: LOWERCASE as requested
+// hex helpers: LOWERCASE
 function h2(v){ return (v & 0xFF).toString(16).padStart(2,'0'); }
 function h4(v){ return (v & 0xFFFF).toString(16).padStart(4,'0'); }
 
-// addressing mode enum (must match your LUT file)
+// addressing mode enum
 const AM = {
   IMP:0, ACC:1, IMM:2, ZP:3, ZPX:4, ZPY:5, ABS:6, ABSX:7, ABSY:8,
   IND:9, INDX:10, INDY:11, REL:12
@@ -29,17 +29,17 @@ let didSizer = false;
 onmessage = function (e) {
   if (!e.data || e.data.type !== "init") return;
 
-  // RAW snapshot (single record at fixed offsets 0..14)
+  // RAW snapshot
   RING_U8  = new Uint8Array(e.data.sab.RING);
   RING_U16 = new Uint16Array(e.data.sab.RING);
 
   // HTML pipe
   var HTML_SAB     = e.data.sab.HTML;
-  var headerBytes  = e.data.html.headerBytes; // 8
+  var headerBytes  = e.data.html.headerBytes;
   HTML_DATA_BYTES  = e.data.html.dataBytes;
 
-  HTML_U32 = new Uint32Array(HTML_SAB, 0, 2);       // [commitOffset, epoch]
-  HTML_U8  = new Uint8Array(HTML_SAB, headerBytes); // data region
+  HTML_U32 = new Uint32Array(HTML_SAB, 0, 2);
+  HTML_U8  = new Uint8Array(HTML_SAB, headerBytes);
 
   // reset header
   Atomics.store(HTML_U32, 0, 0);
@@ -52,24 +52,10 @@ onmessage = function (e) {
 };
 
 function tick() {
-  // Fixed layout:
-  // 0..1: PC16   (Uint16, CPUregisters.PC - 0x8000)
-  // 2   : OPC
-  // 3   : OP1
-  // 4   : OP2
-  // 5   : A
-  // 6   : X
-  // 7   : Y
-  // 8   : S
-  // 9..14 : flags C,Z,I,D,V,N (one byte each)
-
-  // read snapshot
   var pcOff = RING_U16[0] | 0;
   var pc    = (pcOff + PC_BASE) & 0xFFFF;
+  var opc   = RING_U8[2] | 0;
 
-  var opc  = RING_U8[2] | 0;
-
-  // only work when something actually changed
   if (pcOff === lastPC && opc === lastOPC) return;
 
   var op1  = RING_U8[3] | 0;
@@ -79,36 +65,35 @@ function tick() {
   var Y    = RING_U8[7] | 0;
   var S    = RING_U8[8] | 0;
 
-  // flags (bool → 1/0 text) — matches sequential layout
-  var Cf = (RING_U8[9]  & 1) ? '1' : '0';
-  var Zf = (RING_U8[10] & 1) ? '1' : '0';
-  var If = (RING_U8[11] & 1) ? '1' : '0';
-  var Df = (RING_U8[12] & 1) ? '1' : '0';
-  var Vf = (RING_U8[13] & 1) ? '1' : '0';
-  var Nf = (RING_U8[14] & 1) ? '1' : '0';
+  // 6 flags only
+  var Cf   = (RING_U8[9]  & 1) ? '1':'0';
+  var Zf   = (RING_U8[10] & 1) ? '1':'0';
+  var If   = (RING_U8[11] & 1) ? '1':'0';
+  var Df   = (RING_U8[12] & 1) ? '1':'0';
+  var Vf   = (RING_U8[13] & 1) ? '1':'0';
+  var Nf   = (RING_U8[14] & 1) ? '1':'0';
 
-  // decode opcode to mnemonic + addressing text + notes
-  const d = (typeof OPINFO_6502 !== 'undefined' && OPINFO_6502[opc]) || {m:'???', am:AM.IMP, len:1, cyc:2, pb:false};
+  const d = (typeof OPINFO_6502 !== 'undefined' && OPINFO_6502[opc]) ||
+            {m:'???', am:AM.IMP, len:1, cyc:2, pb:false};
   const { mnemonic, operandText, notes } = formatDisasm(pc, opc, op1, op2, X, Y, d);
 
-  // emit sizer row once to lock column widths (invisible but takes layout space)
   if (!didSizer){
     writeHTML(sizerRowHTML());
     didSizer = true;
   }
 
-  // build and commit one row
   var html = rowHTML(
     pc, opc, op1, op2,
     mnemonic + (operandText ? ' ' + operandText : ''),
     notes,
     A, X, Y,
     Cf, Zf, If, Df, Vf, Nf,
-    S
+    S,
+    d.len
   );
+
   writeHTML(html);
 
-  // update change detector + row counter
   lastPC  = pcOff;
   lastOPC = opc;
   rowCount++;
@@ -121,13 +106,12 @@ function writeHTML(str) {
   if (htmlOff + n > HTML_DATA_BYTES) {
     htmlOff = 0;
     htmlEpoch++;
-    Atomics.store(HTML_U32, 1, htmlEpoch); // bump epoch on wrap
-    // Re-emit sizer after wrap (ensures widths remain even if table is recreated)
+    Atomics.store(HTML_U32, 1, htmlEpoch);
     didSizer = false;
   }
   HTML_U8.set(bytes, htmlOff);
   htmlOff += n;
-  Atomics.store(HTML_U32, 0, htmlOff);     // commit
+  Atomics.store(HTML_U32, 0, htmlOff);
 }
 
 // ---------- disasm formatting ------------------------------------------
@@ -156,7 +140,7 @@ function operandString(am, op1, op2, X, Y){
     case AM.REL: {
       const s = sign8(op1);
       if (s >= 0) return '$+' + s;
-      return '$' + s; // negative shows with minus
+      return '$' + s;
     }
     default: return '';
   }
@@ -164,23 +148,18 @@ function operandString(am, op1, op2, X, Y){
 
 function computeNotes(pc, am, op1, op2, X, Y, addsPB){
   let notes = '';
-
-  // Branch target for REL
   if (am === AM.REL){
     const s = sign8(op1);
     const tgt = (pc + 2 + s) & 0xFFFF;
     notes = '→ $' + h4(tgt);
     return notes;
   }
-
-  // Page boundary detection (reads that can add a cycle)
   if (addsPB){
     let crossed = false;
     switch(am){
       case AM.ABSX: crossed = crossesPage((op1 | (op2<<8)), X); break;
       case AM.ABSY: crossed = crossesPage((op1 | (op2<<8)), Y); break;
-      case AM.INDY: crossed = crossesPage(op1, Y); break; // base: zp pointer low byte
-      default: break;
+      case AM.INDY: crossed = crossesPage(op1, Y); break;
     }
     if (crossed) notes = '+pb';
   }
@@ -192,18 +171,12 @@ function formatDisasm(pc, opc, op1, op2, X, Y, d){
   const operandText = operandString(am, op1, op2, X, Y);
   const pbApplies = !!d.pb;
   const notes = computeNotes(pc, am, op1, op2, X, Y, pbApplies);
-  return {
-    mnemonic: d.m,
-    operandText,
-    notes
-  };
+  return { mnemonic: d.m, operandText, notes };
 }
 
 // ---------- row renderers ----------------------------------------------
 
-// Hidden sizer row: fixes max column widths
 function sizerRowHTML(){
-  // Representative widest values per column
   const PC   = '$ffff';
   const OPC  = 'ff';
   const OP   = 'ff ff';
@@ -233,12 +206,21 @@ function rowHTML(
   notes,
   A, X, Y,
   Cb, Zb, Ib, Db, Vb, Nb,
-  S
+  S,
+  len
 ) {
+  // format operand bytes based on instruction length
+  let ops = '';
+  if (len === 2) {
+    ops = h2(op1);
+  } else if (len === 3) {
+    ops = h2(op1) + ' ' + h2(op2);
+  }
+
   return `<tr>
     <td>$${h4(pc)}</td>
     <td>${h2(opc)}</td>
-    <td>${h2(op1)} ${h2(op2)}</td>
+    <td>${ops}</td>
     <td>${mnemonicAndOp}</td>
     <td style="max-width:12ch;white-space:nowrap;overflow:hidden;text-overflow:clip;">${notes}</td>
     <td>${h2(A)}</td>
