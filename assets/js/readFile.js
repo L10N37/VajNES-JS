@@ -80,5 +80,4 @@ function readFile(input) {
   reader.onerror = function () {
     console.debug(reader.error);
   };
-resetCPU(); // burn 7 cycles here and reset cycle counter
 }

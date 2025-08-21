@@ -3,6 +3,8 @@
 let cpuRunning = false;
 const CPU_BATCH = 1000; // adjust if you want larger inner batches
 
+const NES_W = 256;
+const NES_H = 240;
 /*
 50,0000
 [SUMMARY] elapsed=50010.6 ms
@@ -40,37 +42,52 @@ function disasmData(disasmCode, disasmOp_, disasmOp__) {
   DISASM.RING_U8[14] = CPUregisters.P.N;
 }
 
+
+function renderFrame(){
+    // ---- frame blit ----
+  if (PPU_FRAME_FLAGS == 0b00000001) {
+    blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
+    registerFrameUpdate(); // FPS counter screen overlay
+    PPU_FRAME_FLAGS = 0x00;
+  }
+}
+
 let nmiCheckCounter = 0;
 let nmiServiceCounter = 0;
-
+let nmiPendingLocal=false;
 function checkInterrupts() {
   nmiCheckCounter++;
 
   const edgeMarker = Atomics.load(SHARED.SYNC, 4);
   if (edgeMarker !== 0) {
     nmiServiceCounter++;
-    console.log(`[CPU] NMI edge latched (#${nmiServiceCounter}) after ${nmiCheckCounter} checks`);
+    
+    if (debugLogging) {
+      console.log(`[CPU] NMI edge latched (#${nmiServiceCounter}) after ${nmiCheckCounter} checks`);
+    }
 
     nmiCheckCounter = 0;
 
-    // now we set nmiPending (the SAB flag) here
-    Atomics.store(SHARED.SYNC, 5, 1); // or directly set CPU-local nmiPending = true;
-
-    Atomics.store(SHARED.SYNC, 4, 0); // clear the edge marker
+    nmiPendingLocal = true;
+    Atomics.store(SHARED.SYNC, 5, 1);
+    Atomics.store(SHARED.SYNC, 4, 0);
   }
+
+    // ---- handle interrupts ----
+  if (nmiPendingLocal){
+    serviceNMI();   // adds +7 via addExtraCycles()
+    nmiPendingLocal = false;
+  }
+
+  if (!CPUregisters.P.I) {
+    serviceIRQ();   // adds +7 via addExtraCycles()
+  }
+  
 }
 
 // offset handler takes care of prgRom being based @ 0x0000
 function step() {
- checkInterrupts();
-  // ---- handle interrupts ----
-  if (nmiPending && (PPUCTRL & 0x80)){
-    serviceNMI();   // adds +7 via addExtraCycles()
-    nmiPending = false;
-  } else if (!CPUregisters.P.I) {
-    serviceIRQ();   // adds +7 via addExtraCycles()
-  }
-
+  renderFrame();
   // we can't catch rows where branches occurred without updating disasm data within every handler
   // if (debugLogging) console.debug("(pre)PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
 
@@ -80,13 +97,6 @@ function step() {
   // if we're paused, briefly let the PPU worker run this step
   const wasPaused = !cpuRunning;
   if (wasPaused) Atomics.or(SHARED.EVENTS, 0, 0b00000100); // set RUN bit
-
-  // ---- frame blit ----
-  if (PPU_FRAME_FLAGS == 0b00000001) {
-    blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
-    registerFrameUpdate(); // FPS counter screen overlay
-    PPU_FRAME_FLAGS = 0x00;
-  }
 
   // realigns with our prgRom base being 0x00 by being passed through offset handler
   const code   = checkReadOffset(CPUregisters.PC);
@@ -127,6 +137,8 @@ function step() {
 
   // if we temporarily enabled the worker, put it back to paused
   if (wasPaused) Atomics.and(SHARED.EVENTS, 0, ~0b00000100); // clear RUN bit
+
+  checkInterrupts();
 
 }
 

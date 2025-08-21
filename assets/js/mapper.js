@@ -35,11 +35,7 @@ function mapper(nesHeader) {
   prgRom = flatPrg;
 
   // CHR-ROM stays untouched (already global), no further mapping for Mapper 0
-
   // --- Set CPU reset vector from $FFFC-$FFFD (last 4 bytes of PRG region)
-  const lo = prgRom[0x7FFC];
-  const hi = prgRom[0x7FFD];
-  CPUregisters.PC = (hi << 8) | lo;
-  console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
-  console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
+  resetCPU(); // burn 7 cycles here and reset cycle counter
 }
+

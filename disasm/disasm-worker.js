@@ -454,6 +454,12 @@ S(0x38,'sec',AM.IMP,1,2);
 S(0xF8,'sed',AM.IMP,1,2);
 S(0x78,'sei',AM.IMP,1,2);
 
+// Stack operations
+S(0x48,'pha',AM.IMP,1,3);  // Push Accumulator
+S(0x68,'pla',AM.IMP,1,4);  // Pull Accumulator
+S(0x08,'php',AM.IMP,1,3);  // Push Processor Status
+S(0x28,'plp',AM.IMP,1,4);  // Pull Processor Status
+
 // === Unofficial opcodes ===
 // Reference: https://www.nesdev.org/wiki/CPU_unofficial_opcodes
 
@@ -582,3 +588,19 @@ U(0xCB,'axs',AM.IMM,2,2);
 U(0x9C,'shy',AM.ABSX,3,5);
 U(0x9E,'shx',AM.ABSY,3,5);
 U(0x9B,'tas',AM.ABSY,3,5);
+
+// --- Remaining unofficial 6502 opcodes ---
+
+// SHA (also called AHX, unstable: stores A & X & (addr>>8)+1)
+U(0x93,'sha',AM.INDY,2,6);
+U(0x9F,'sha',AM.ABSY,3,5);
+
+// SHS (a.k.a. TAS, sometimes duplicates SHA)
+U(0x9B,'shs',AM.ABSY,3,5);
+
+// ANE (a.k.a. XAA variant, unstable TXA+AND)
+U(0x8B,'ane',AM.IMM,2,2);
+
+// LXA (LAX variant, unstable)
+U(0xAB,'lxa',AM.IMM,2,2);
+

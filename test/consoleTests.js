@@ -184,7 +184,7 @@ console.assert(ppuBusRead(0x2456) === 0x22, "Nametable read failed");
 console.assert(ppuBusRead(0x3F0C) === 0x2A, "Palette read failed");
 console.assert(ppuBusRead(0x3F10) === 0x33, "Palette mirror $3F10 failed");
 
-console.log("All ppuBusRead tests passed!");
+console.debug("All ppuBusRead tests passed!");
 }
 
 function testByteAsFlag(){

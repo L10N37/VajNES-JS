@@ -1,12 +1,11 @@
-// =========================================================
-// NES Offsets / Bus Handler
-// =========================================================
-
 let debugLogging = false;
+console.debug(
+  `%c DEBUG LOGGING: ${debugLogging ? "ON" : "OFF"} `,
+  `background:${debugLogging ? "limegreen" : "crimson"}; color:white; font-weight:bold; padding:2px 6px; border-radius:4px;`
+);
+// writeToggle is an internal PPU latch but implemented here on CPU core
 
-// ----- PPU VRAM helpers -----
-
-// Mapper should tell us mirroring; fall back to horizontal if not available. #fix for later use
+// Mapper should tell us mirroring; fall back to horizontal if not available.
 let MIRRORING = (typeof mapperGetMirroring === "function")
   ? mapperGetMirroring()
   : "horizontal";
@@ -58,7 +57,8 @@ function checkReadOffset(address) {
     switch (reg) {
       case 0x2002: { // PPUSTATUS
         value = PPUSTATUS;
-        PPUSTATUS &= ~0x80; // clear VBlank flag
+        PPUSTATUS &= ~0x80;
+        writeToggle = 0;
         if (debugLogging) console.debug(`[READ PPUSTATUS] $2002 -> ${value.toString(16).padStart(2,"0")}`);
         break;
       }
@@ -141,12 +141,24 @@ else if (addr < 0x4000) {
   const reg = 0x2000 + (addr & 0x7);
 
   switch (reg) {
+
     case 0x2000: { // PPUCTRL
+      const wasEnabled = (PPUCTRL & 0x80) !== 0;
       PPUCTRL = value;
+
+      // Update temp VRAM address nametable bits
       let t = ((t_hi << 8) | t_lo) & 0xFFFF;
-      t = (t & 0xF3FF) | ((value & 0x03) << 10); // nametable select bits
+      t = (t & 0xF3FF) | ((value & 0x03) << 10);
       t_hi = (t >>> 8) & 0xFF;
       t_lo = t & 0xFF;
+
+      // Decide if NMI should be armed this frame
+      // If enabling NMI mid-VBlank → block until next VBlank
+      if (!wasEnabled && (PPUSTATUS & 0x80)) {
+        Atomics.store(SHARED.SYNC, 6, 0); // block NMI this frame
+      } else {
+        Atomics.store(SHARED.SYNC, 6, 1); // allow NMI on next VBlank
+      }
       break;
     }
 
@@ -168,30 +180,35 @@ else if (addr < 0x4000) {
 
     case 0x2005: { // PPUSCROLL
       let t = ((t_hi << 8) | t_lo) & 0xFFFF;
-
-      // Just forward the value, PPU tracks first/second write
-      SCROLL_X = value;
-      SCROLL_Y = value;
-      fineX    = value & 0x07;
-
-      // leave coarse/fine updates to PPU logic
+      if ((writeToggle & 1) === 0) {
+        SCROLL_X = value;
+        fineX = value & 0x07;
+        t = (t & ~0x001F) | ((value >>> 3) & 0x1F);
+      } else {
+        SCROLL_Y = value;
+        t = (t & ~(0x7000 | 0x03E0))
+          | ((value & 0x07) << 12)
+          | (((value >>> 3) & 0x1F) << 5);
+      }
       t_hi = (t >>> 8) & 0xFF;
       t_lo = t & 0xFF;
+      writeToggle ^= 1;
       break;
     }
 
     case 0x2006: { // PPUADDR
       let t = ((t_hi << 8) | t_lo) & 0xFFFF;
-
-      // Just forward, PPU latch decides high/low byte
-      ADDR_HIGH = value;
-      ADDR_LOW  = value;
-
-      // update VRAM_ADDR only when PPU completes its latch
-      VRAM_ADDR = t & 0x3FFF;
-
+      if ((writeToggle & 1) === 0) {
+        ADDR_HIGH = value;
+        t = (t & 0x00FF) | ((value & 0x3F) << 8);
+      } else {
+        ADDR_LOW = value;
+        t = (t & 0x7F00) | value;
+        VRAM_ADDR = t & 0x3FFF;
+      }
       t_hi = (t >>> 8) & 0xFF;
       t_lo = t & 0xFF;
+      writeToggle ^= 1;
       break;
     }
 

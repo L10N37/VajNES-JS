@@ -70,24 +70,23 @@ function resetSystem(){resetCPU(), ppuResetCounters();}
 // setBreakBit: true when BRK/PHP (always pushes B=1)
 function packStatus(setBreakBit) {
   return (
-    (CPUregisters.P.N << 7) |
-    (CPUregisters.P.V << 6) |
-    (1 << 5) |                        // U flag always set
-    ((setBreakBit ? 1 : 0) << 4) |    // B bit only when pushing
-    (CPUregisters.P.D << 3) |
-    (CPUregisters.P.I << 2) |
-    (CPUregisters.P.Z << 1) |
-    (CPUregisters.P.C)
+    (CPUregisters.P.N << 7) |        // Negative
+    (CPUregisters.P.V << 6) |        // Overflow
+    (1 << 5) |                       // U bit always set in pushes
+    ((setBreakBit ? 1 : 0) << 4) |   // B bit set only on PHP/BRK
+    (CPUregisters.P.D << 3) |        // Decimal
+    (CPUregisters.P.I << 2) |        // Interrupt Disable
+    (CPUregisters.P.Z << 1) |        // Zero
+    (CPUregisters.P.C)               // Carry
   ) & 0xFF;
 }
 
 function unpackStatus(packed) {
+  // Real flags only, ignore B (bit 4) and U (bit 5)
   CPUregisters.P.C =  packed       & 1;
   CPUregisters.P.Z = (packed >> 1) & 1;
   CPUregisters.P.I = (packed >> 2) & 1;
   CPUregisters.P.D = (packed >> 3) & 1;
-  // B bit is ignored – phantom flag
-  CPUregisters.P.U = 1;                   // always forced high
   CPUregisters.P.V = (packed >> 6) & 1;
   CPUregisters.P.N = (packed >> 7) & 1;
 }

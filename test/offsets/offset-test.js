@@ -1,5 +1,5 @@
 function runBusTest() {
-  console.log("=== NES Bus Test ===");
+  console.debug("=== NES Bus Test ===");
 
   let total = 0;
   let passCount = 0;
@@ -152,22 +152,22 @@ function runBusTest() {
   checkWriteOffset(0x4017, 0x02); recordResult(0x4017, "Joypad2 strobe", 0x02, JoypadRegister.JOYPAD2);
 
   // ---------- Summary ----------
-  console.log("---- PASS GROUPS ----");
+  console.debug("---- PASS GROUPS ----");
   for (let [label, count] of Object.entries(groupStats)) {
-    console.log(`${label}: ${count} ok`);
+    console.debug(`${label}: ${count} ok`);
   }
 
-  console.log(`TOTAL: ${passCount} / ${total} passed`);
-  console.log(`FAIL: ${failList.length}`);
+  console.debug(`TOTAL: ${passCount} / ${total} passed`);
+  console.debug(`FAIL: ${failList.length}`);
 
   if (failList.length) {
-    console.log("---- FAIL DETAILS ----");
+    console.debug("---- FAIL DETAILS ----");
     failList.forEach(f => {
-      console.log(
+      console.debug(
         `[${f.label}] $${f.addr.toString(16).padStart(4,"0")} exp=$${f.exp.toString(16).padStart(2,"0")} got=$${f.got.toString(16).padStart(2,"0")}`
       );
     });
   }
 
-  console.log("=== END TEST ===");
+  console.debug("=== END TEST ===");
 }

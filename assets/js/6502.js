@@ -44,7 +44,7 @@ let P_VARIABLES = ['C', 'Z', 'I', 'D', 'V', 'N'];
 
 function resetCPU() {
   SHARED.VRAM.fill(0x00);
-  systemMemory.fill(0x00); // may not happeon on a real system
+  systemMemory.fill(0x00); // may not happen on a real system
   CPUregisters.A = 0x00;
   CPUregisters.X = 0x00;
   CPUregisters.Y = 0x00;
@@ -64,6 +64,9 @@ function resetCPU() {
 
   cpuCycles = 0;  // reset cycles on reset
   cpuCycles += 7; // burn 7 cycles straight away
+
+  console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
+  console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
 }
 
 ////////////////////////// CPU Functions //////////////////////////
@@ -121,38 +124,30 @@ function addExtraCycles(x) {
   Prioritise implementing IRQ support for popular mappers like MMC3 (4), MMC5 (5), and VRC6 (22).
 */
 function BRK_IMP() {
-  const ret = (CPUregisters.PC + 2) & 0xFFFF;
+  const ret = (CPUregisters.PC + 2) & 0xFFFF;  // BRK pushes PC+2
 
-  // push return address
+  // push high byte of return address
   checkWriteOffset(0x0100 | CPUregisters.S, (ret >> 8) & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
+  // push low byte of return address
   checkWriteOffset(0x0100 | CPUregisters.S, ret & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // push status with Break=1
+  // push status with Break=1 (only set on stack, not in P)
   const p = packStatus(true);
   checkWriteOffset(0x0100 | CPUregisters.S, p);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
 
-  // set flags after BRK
-  CPUregisters.P.I = 1;
-  CPUregisters.P.B = 1; // set internally only for this instruction
+  // set Interrupt Disable flag after BRK
+  CPUregisters.P.I = 1;  
 
-  // fetch IRQ/BRK vector
+  // fetch IRQ/BRK vector (FFFE-FFFF)
   const lo = checkReadOffset(0xFFFE) & 0xFF;
   const hi = checkReadOffset(0xFFFF) & 0xFF;
   CPUregisters.PC = (hi << 8) | lo;
 
-  addExtraCycles(5); // 5 over base , total 7
-}
-
-function SEI_IMP() {
-  CPUregisters.P.I = (1) ? 1 : 0;
-}
-
-function CLD_IMP() {
-  CPUregisters.P.D = (0) ? 1 : 0;
+  addExtraCycles(5); // total 7 cycles
 }
 
 function LDA_IMM() {
@@ -339,11 +334,17 @@ function STA_INDY() {
   checkWriteOffset(address, CPUregisters.A);
 }
 
-function CLC_IMP() { CPUregisters.P.C = (0) ? 1 : 0; }
-function SEC_IMP() { CPUregisters.P.C = (1) ? 1 : 0; }
-function CLI_IMP() { CPUregisters.P.I = (0) ? 1 : 0; }
-function CLV_IMP() { CPUregisters.P.V = (0) ? 1 : 0; }
-function SED_IMP() { CPUregisters.P.D = (1) ? 1 : 0; }
+// Flag manipulation instructions
+function CLC_IMP() { CPUregisters.P.C = 0; }  // Clear Carry
+function SEC_IMP() { CPUregisters.P.C = 1; }  // Set Carry
+
+function CLI_IMP() { CPUregisters.P.I = 0; }  // Clear Interrupt Disable
+function SEI_IMP() { CPUregisters.P.I = 1; }  // Set Interrupt Disable
+
+function CLD_IMP() { CPUregisters.P.D = 0; }  // Clear Decimal
+function SED_IMP() { CPUregisters.P.D = 1; }  // Set Decimal
+
+function CLV_IMP() { CPUregisters.P.V = 0; }  // Clear Overflow
 
 function INC_ZP() {
   const addressess = checkReadOffset(CPUregisters.PC + 1);
@@ -1637,24 +1638,22 @@ function TXA_IMP() {
 
 // PHP - Push Processor Status
 function PHP_IMP() {
-  const spAddr = 0x0100 | (CPUregisters.S & 0xFF);
-  const p = packStatus(true); // always push with B=1
+  const spAddr = 0x0100 | CPUregisters.S;
+  const p = packStatus(true);    // Always set B bit when pushing via PHP
   checkWriteOffset(spAddr, p);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF; // post-decrement
-  addExtraCycles(1); // 1 extra cycle over base of 2, 3 for this handler
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  addExtraCycles(1); // total 3 cycles
 }
 
 // PLP - Pull Processor Status
 function PLP_IMP() {
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const val = checkReadOffset(0x0100 | CPUregisters.S);
-  unpackStatus(val);
-  CPUregisters.P.U = 1; // unused flag always forced high
-  addExtraCycles(2); // as above
+  const p = checkReadOffset(0x100 | CPUregisters.S);
+  unpackStatus(p);               // B/U bits ignored
+  addExtraCycles(2); // total 4 cycles
 }
 
 // PHA - Push Accumulator (implied)
-// PHA (0x48)
 function PHA_IMP() {
   const spAddr = 0x0100 | (CPUregisters.S & 0xFF);
   checkWriteOffset(spAddr, CPUregisters.A & 0xFF);  // push A
@@ -1671,32 +1670,36 @@ function PLA_IMP() {
     addExtraCycles(2); // + 2 over base, for 4
 }
 
-// RTI - Return from Interrupt (implied)
+// RTI - Return from Interrupt
 function RTI_IMP() {
-  // Pull status register (all 8 bits)
+  // Pull status register (B/U bits ignored in unpack)
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const packedP = checkReadOffset(0x100 + CPUregisters.S);
+  const packedP = checkReadOffset(0x0100 | CPUregisters.S);
   unpackStatus(packedP);
+
   // Pull low byte of PC
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const pcl = checkReadOffset(0x100 + CPUregisters.S);
+  const pcl = checkReadOffset(0x0100 | CPUregisters.S);
+
   // Pull high byte of PC
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const pch = checkReadOffset(0x100 + CPUregisters.S);
+  const pch = checkReadOffset(0x0100 | CPUregisters.S);
+
   // Reconstruct program counter
   CPUregisters.PC = (pch << 8) | pcl;
-  addExtraCycles(4); // base 2 + 4 for 6 cycles for this opcode
+
+  addExtraCycles(4); // base 2 + 4 = 6 cycles total
 }
 
 // RTS - Return from Subroutine (implied)
 function RTS_IMP() {
-  // Pull low byte of return address
+  // Pull low byte
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const pcl = checkReadOffset(0x100 + CPUregisters.S);
-  // Pull high byte of return address
+  const pcl = checkReadOffset(0x100 | CPUregisters.S);
+  // Pull high byte
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const pch = checkReadOffset(0x100 + CPUregisters.S);
-  // Reconstruct PC and add 1 (RTS = jump to return+1)
+  const pch = checkReadOffset(0x100 | CPUregisters.S);
+  // Reconstruct PC, then add 1 for proper return
   CPUregisters.PC = (((pch << 8) | pcl) + 1) & 0xFFFF;
   addExtraCycles(4); // base 2 + 4 for 6 cycles for this opcode
 }

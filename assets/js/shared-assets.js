@@ -1,10 +1,6 @@
 (() => {
   console.debug("[main] shared-assets.js loaded");
 
-  // Ensure NES dimensions exist before allocating pixel buffer.
-  if (typeof NES_W === "undefined") globalThis.NES_W = 256;
-  if (typeof NES_H === "undefined") globalThis.NES_H = 240;
-
   // Shared namespace
   window.SHARED = Object.create(null);
 
@@ -19,6 +15,7 @@
   SHARED.CLOCKS[0]  = 0;
   SHARED.CLOCKS[1]  = 0;
 
+  // #scalar these for readability with atomics on both cores
   // --- PPU/CPU sync SAB ---
   SHARED.SAB_SYNC = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 8);
   SHARED.SYNC     = new Int32Array(SHARED.SAB_SYNC);
@@ -80,7 +77,7 @@
   SHARED.OAM         = new Uint8Array(SHARED.SAB_OAM);
 
   // Pixel buffer (palette indices per pixel)
-  const PIXEL_COUNT = NES_W * NES_H;
+  const PIXEL_COUNT = 256 * 240;
   SHARED.SAB_PALETTE_INDEX_FRAME = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT * PIXEL_COUNT);
   SHARED.PALETTE_INDEX_FRAME     = new Uint8Array(SHARED.SAB_PALETTE_INDEX_FRAME);
 
@@ -122,43 +119,45 @@ try {
   const make8  = v => v & 0xFF;
   const make16 = v => v & 0xFFFF;
 
-  Object.defineProperties(globalThis, {
-    // 8-bit regs
-    PPUCTRL:     { get: () => SHARED.PPU_REGS[0],  set: v => { SHARED.PPU_REGS[0]  = make8(v); }, configurable: true },
-    PPUMASK:     { get: () => SHARED.PPU_REGS[1],  set: v => { SHARED.PPU_REGS[1]  = make8(v); }, configurable: true },
-    PPUSTATUS:   { get: () => SHARED.PPU_REGS[2],  set: v => { SHARED.PPU_REGS[2]  = make8(v); }, configurable: true },
-    OAMADDR:     { get: () => SHARED.PPU_REGS[3],  set: v => { SHARED.PPU_REGS[3]  = make8(v); }, configurable: true },
-    OAMDATA:     { get: () => SHARED.PPU_REGS[4],  set: v => { SHARED.PPU_REGS[4]  = make8(v); }, configurable: true },
-    SCROLL_X:    { get: () => SHARED.PPU_REGS[5],  set: v => { SHARED.PPU_REGS[5]  = make8(v); }, configurable: true },
-    SCROLL_Y:    { get: () => SHARED.PPU_REGS[6],  set: v => { SHARED.PPU_REGS[6]  = make8(v); }, configurable: true },
-    ADDR_HIGH:   { get: () => SHARED.PPU_REGS[7],  set: v => { SHARED.PPU_REGS[7]  = make8(v); }, configurable: true },
-    ADDR_LOW:    { get: () => SHARED.PPU_REGS[8],  set: v => { SHARED.PPU_REGS[8]  = make8(v); }, configurable: true },
-    t_lo:        { get: () => SHARED.PPU_REGS[9],  set: v => { SHARED.PPU_REGS[9]  = make8(v); }, configurable: true },
-    t_hi:        { get: () => SHARED.PPU_REGS[10], set: v => { SHARED.PPU_REGS[10] = make8(v); }, configurable: true },
-    fineX:       { get: () => SHARED.PPU_REGS[11], set: v => { SHARED.PPU_REGS[11] = make8(v); }, configurable: true },
-    writeToggle: { get: () => SHARED.PPU_REGS[12], set: v => { SHARED.PPU_REGS[12] = make8(v); }, configurable: true },
-    VRAM_DATA:   { get: () => SHARED.PPU_REGS[13], set: v => { SHARED.PPU_REGS[13] = make8(v); }, configurable: true },
-    BG_ntByte:   { get: () => SHARED.PPU_REGS[14], set: v => { SHARED.PPU_REGS[14] = make8(v); }, configurable: true },
-    BG_atByte:   { get: () => SHARED.PPU_REGS[15], set: v => { SHARED.PPU_REGS[15] = make8(v); }, configurable: true },
-    BG_tileLo:   { get: () => SHARED.PPU_REGS[16], set: v => { SHARED.PPU_REGS[16] = make8(v); }, configurable: true },
-    BG_tileHi:   { get: () => SHARED.PPU_REGS[17], set: v => { SHARED.PPU_REGS[17] = make8(v); }, configurable: true },
-    PPU_FRAME_FLAGS: { get: () => SHARED.PPU_REGS[18], set: v => { SHARED.PPU_REGS[18] = make8(v); }, configurable: true },
+Object.defineProperties(globalThis, {
+  // 8-bit regs
+  PPUCTRL:     { get: () => Atomics.load(SHARED.PPU_REGS, 0),  set: v => Atomics.store(SHARED.PPU_REGS, 0, make8(v)), configurable: true },
+  PPUMASK:     { get: () => Atomics.load(SHARED.PPU_REGS, 1),  set: v => Atomics.store(SHARED.PPU_REGS, 1, make8(v)), configurable: true },
+  PPUSTATUS:   { get: () => Atomics.load(SHARED.PPU_REGS, 2),  set: v => Atomics.store(SHARED.PPU_REGS, 2, make8(v)), configurable: true },
+  OAMADDR:     { get: () => Atomics.load(SHARED.PPU_REGS, 3),  set: v => Atomics.store(SHARED.PPU_REGS, 3, make8(v)), configurable: true },
+  OAMDATA:     { get: () => Atomics.load(SHARED.PPU_REGS, 4),  set: v => Atomics.store(SHARED.PPU_REGS, 4, make8(v)), configurable: true },
+  SCROLL_X:    { get: () => Atomics.load(SHARED.PPU_REGS, 5),  set: v => Atomics.store(SHARED.PPU_REGS, 5, make8(v)), configurable: true },
+  SCROLL_Y:    { get: () => Atomics.load(SHARED.PPU_REGS, 6),  set: v => Atomics.store(SHARED.PPU_REGS, 6, make8(v)), configurable: true },
+  ADDR_HIGH:   { get: () => Atomics.load(SHARED.PPU_REGS, 7),  set: v => Atomics.store(SHARED.PPU_REGS, 7, make8(v)), configurable: true },
+  ADDR_LOW:    { get: () => Atomics.load(SHARED.PPU_REGS, 8),  set: v => Atomics.store(SHARED.PPU_REGS, 8, make8(v)), configurable: true },
+  t_lo:        { get: () => Atomics.load(SHARED.PPU_REGS, 9),  set: v => Atomics.store(SHARED.PPU_REGS, 9, make8(v)), configurable: true },
+  t_hi:        { get: () => Atomics.load(SHARED.PPU_REGS, 10), set: v => Atomics.store(SHARED.PPU_REGS, 10, make8(v)), configurable: true },
+  fineX:       { get: () => Atomics.load(SHARED.PPU_REGS, 11), set: v => Atomics.store(SHARED.PPU_REGS, 11, make8(v)), configurable: true },
+  writeToggle: { get: () => Atomics.load(SHARED.PPU_REGS, 12), set: v => Atomics.store(SHARED.PPU_REGS, 12, make8(v)), configurable: true },
+  VRAM_DATA:   { get: () => Atomics.load(SHARED.PPU_REGS, 13), set: v => Atomics.store(SHARED.PPU_REGS, 13, make8(v)), configurable: true },
+  BG_ntByte:   { get: () => Atomics.load(SHARED.PPU_REGS, 14), set: v => Atomics.store(SHARED.PPU_REGS, 14, make8(v)), configurable: true },
+  BG_atByte:   { get: () => Atomics.load(SHARED.PPU_REGS, 15), set: v => Atomics.store(SHARED.PPU_REGS, 15, make8(v)), configurable: true },
+  BG_tileLo:   { get: () => Atomics.load(SHARED.PPU_REGS, 16), set: v => Atomics.store(SHARED.PPU_REGS, 16, make8(v)), configurable: true },
+  BG_tileHi:   { get: () => Atomics.load(SHARED.PPU_REGS, 17), set: v => Atomics.store(SHARED.PPU_REGS, 17, make8(v)), configurable: true },
+  PPU_FRAME_FLAGS: { get: () => Atomics.load(SHARED.PPU_REGS, 18), set: v => Atomics.store(SHARED.PPU_REGS, 18, make8(v)), configurable: true },
 
-    // 16-bit VRAM address
-    VRAM_ADDR:   { get: () => SHARED.VRAM_ADDR[0], set: v => { SHARED.VRAM_ADDR[0] = make16(v); }, configurable: true },
+  // 16-bit VRAM address (as single 16-bit value)
+  VRAM_ADDR:   { get: () => Atomics.load(SHARED.VRAM_ADDR, 0), set: v => Atomics.store(SHARED.VRAM_ADDR, 0, make16(v)), configurable: true },
 
-    // clocks
-    cpuCycles:   { get: () => SHARED.CLOCKS[0],    set: v => { SHARED.CLOCKS[0] = v|0; }, configurable: true },
-    ppuCycles:   { get: () => SHARED.CLOCKS[1],    set: v => { SHARED.CLOCKS[1] = v|0; }, configurable: true },
+  // clocks
+  cpuCycles:   { get: () => Atomics.load(SHARED.CLOCKS, 0), set: v => Atomics.store(SHARED.CLOCKS, 0, v|0), configurable: true },
+  ppuCycles:   { get: () => Atomics.load(SHARED.CLOCKS, 1), set: v => Atomics.store(SHARED.CLOCKS, 1, v|0), configurable: true },
 
-    // open bus
-    cpuOpenBus:  { get: () => SHARED.CPU_OPENBUS[0], set: v => { SHARED.CPU_OPENBUS[0] = make8(v); }, configurable: true },
+  // open bus
+  cpuOpenBus:  { get: () => Atomics.load(SHARED.CPU_OPENBUS, 0), set: v => Atomics.store(SHARED.CPU_OPENBUS, 0, make8(v)), configurable: true },
 
-    // events
-    nmiPending:  { get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1) !== 0,
-                    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1)
-                                  : Atomics.and(SHARED.EVENTS, 0, ~0b1); }, configurable: true },
-  });
+  // events (bit flags) #not needed?
+  nmiPending:  { 
+    get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1) !== 0,
+    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1) : Atomics.and(SHARED.EVENTS, 0, ~0b1); },
+    configurable: true
+  },
+});
 
   console.debug("[main] Installed live scalar accessors");
 
@@ -206,87 +205,6 @@ try {
   console.debug("[main] Handshake posted to worker");
 
 })();
-
-// ===== OAM DMA ($4014) =====
-// Copies 256 bytes from CPU RAM page (value << 8) into PPU OAM.
-// Adds 513 cycles if CPU is on even cycle, 514 if odd.
-function dmaTransfer(value) {
-  const start = (value & 0xFF) << 8;
-  const end   = start + 0x100;
-
-  for (let src = start, i = 0; src < end; src++, i++) {
-    OAM[i] = systemMemory[src & 0x7FF];
-  }
-  //set our stall flag
-  dmaTransferOcurred = true;
-  // add our cycles, topping up the PPU budget by 513/514 * 3
-  const curCycles = Atomics.load(SHARED.CLOCKS, 0);
-  if (curCycles % 2 === 0) addExtraCycles(513);
-  else addExtraCycles(514);
-}
-
-// ======== Interrupts ======== 
-// https://www.nesdev.org/wiki/CPU_interrupts
-function serviceNMI() {
-  if (debugLogging) {
-    console.debug("%cNMI fired", "color: white; background-color: red; font-weight: bold; padding: 2px 6px; border-radius: 3px");
-  }
-
-  const pc = CPUregisters.PC & 0xFFFF;
-
-  // push PC hi/lo
-  checkWriteOffset(0x0100 | CPUregisters.S, (pc >>> 8) & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  checkWriteOffset(0x0100 | CPUregisters.S, pc & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // push status with Break=0
-  const p = packStatus(false);
-  checkWriteOffset(0x0100 | CPUregisters.S, p);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // set flags after NMI
-  CPUregisters.P.I = 1;
-  CPUregisters.P.B = 0;
-
-  // fetch NMI vector
-  const lo = checkReadOffset(0xFFFA) & 0xFF;
-  const hi = checkReadOffset(0xFFFB) & 0xFF;
-  CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
-
-  addExtraCycles(7);
-}
-
-function serviceIRQ() {
-  // Only fire if I flag (Interrupt Disable) is clear
-  if ((CPUregisters.P & 0x04) === 0) {
-
-    // Push PC high, PC low, then status with B flag clear
-    checkWriteOffset(0x0100 + CPUregisters.SP, (CPUregisters.PC >> 8) & 0xFF);
-    CPUregisters.SP = (CPUregisters.SP - 1) & 0xFF;
-
-    checkWriteOffset(0x0100 + CPUregisters.SP, CPUregisters.PC & 0xFF);
-    CPUregisters.SP = (CPUregisters.SP - 1) & 0xFF;
-
-    // Push status with B=0, bit 5 forced set
-    let status = CPUregisters.P & ~0x10;
-    status |= 0x20;
-    checkWriteOffset(0x0100 + CPUregisters.SP, status);
-    CPUregisters.SP = (CPUregisters.SP - 1) & 0xFF;
-
-    // Fetch new PC from vector $FFFE/FFFF
-    const lo = checkReadOffset(0xFFFE);
-    const hi = checkReadOffset(0xFFFF);
-    CPUregisters.PC = (hi << 8) | lo;
-
-    // Set interrupt disable
-    CPUregisters.P |= 0x04;
-
-    // IRQ takes 7 cycles total
-    addExtraCycles(7);
-  }
-}
 
 // create SABs and start worker
 window.DISASM = window.DISASM || {};
