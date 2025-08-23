@@ -112,7 +112,7 @@ function ppuTick() {
     PPUclock.dot = 0;
     PPUclock.scanline++;
     // wrap around, back to the first scanline when incremented above scanline count
-    if (PPUclock.scanline === 262) {
+    if (PPUclock.scanline > 261) {
       PPUclock.scanline = 0;
       PPUclock.frame++;
       PPUclock.oddFrame = !PPUclock.oddFrame;
@@ -271,9 +271,7 @@ function vblankStartScanline(currentDot) {
   }
 }
 
-
 function vblankIdleScanline(currentDot) {
-
 }
 
 // =============================

@@ -17,7 +17,10 @@ optimise it to the point that this can become a functional, full speed browser b
 
 anyway, it would have had to be optimised into look up tables either way, but it would have being WAYYYYYYYYYY faster doing
 things the original way. Even with all the UI and debug stuff shaved off, the old code chewed through far more opcodes per
-second
+second.
+
+honestly, if you want to make an emulator, and actually make progress, use a flat memory model. DO NOT GO THIS ROUTE.
+headaches, hours and hours of wasted time trying to make align reads and writes that naturally line up with a flat memory model!
 */
 
 //to do: remove all prgRom references, along with -0x8000, use checkReadOffset - done
@@ -124,30 +127,18 @@ function addExtraCycles(x) {
   Prioritise implementing IRQ support for popular mappers like MMC3 (4), MMC5 (5), and VRC6 (22).
 */
 function BRK_IMP() {
-  const ret = (CPUregisters.PC + 2) & 0xFFFF;  // BRK pushes PC+2
+  const ret = (CPUregisters.PC + 2) & 0xFFFF;
+  pushStack((ret >> 8) & 0xFF);
+  pushStack(ret & 0xFF);
+  pushStatus(true);   // Break=1 only here
 
-  // push high byte of return address
-  checkWriteOffset(0x0100 | CPUregisters.S, (ret >> 8) & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  CPUregisters.P.I = 1;
 
-  // push low byte of return address
-  checkWriteOffset(0x0100 | CPUregisters.S, ret & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  const lo = checkReadOffset(0xFFFE);
+  const hi = checkReadOffset(0xFFFF);
+  CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
 
-  // push status with Break=1 (only set on stack, not in P)
-  const p = packStatus(true);
-  checkWriteOffset(0x0100 | CPUregisters.S, p);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // set Interrupt Disable flag after BRK
-  CPUregisters.P.I = 1;  
-
-  // fetch IRQ/BRK vector (FFFE-FFFF)
-  const lo = checkReadOffset(0xFFFE) & 0xFF;
-  const hi = checkReadOffset(0xFFFF) & 0xFF;
-  CPUregisters.PC = (hi << 8) | lo;
-
-  addExtraCycles(5); // total 7 cycles
+  addExtraCycles(5); // plus 2 base = 7 total
 }
 
 function LDA_IMM() {
@@ -1638,19 +1629,14 @@ function TXA_IMP() {
 
 // PHP - Push Processor Status
 function PHP_IMP() {
-  const spAddr = 0x0100 | CPUregisters.S;
-  const p = packStatus(true);    // Always set B bit when pushing via PHP
-  checkWriteOffset(spAddr, p);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  addExtraCycles(1); // total 3 cycles
+  pushStatus(true);   // always pushes with B=1
+  addExtraCycles(1);  // 3 total
 }
 
 // PLP - Pull Processor Status
 function PLP_IMP() {
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const p = checkReadOffset(0x100 | CPUregisters.S);
-  unpackStatus(p);               // B/U bits ignored
-  addExtraCycles(2); // total 4 cycles
+  pullStatus();       // unpacks flags, ignores B, forces U
+  addExtraCycles(2);  // 4 total
 }
 
 // PHA - Push Accumulator (implied)
@@ -1672,23 +1658,16 @@ function PLA_IMP() {
 
 // RTI - Return from Interrupt
 function RTI_IMP() {
-  // Pull status register (B/U bits ignored in unpack)
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const packedP = checkReadOffset(0x0100 | CPUregisters.S);
-  unpackStatus(packedP);
+  // Pull status (B/U bits ignored, U forced to 1 internally)
+  pullStatus();
 
-  // Pull low byte of PC
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const pcl = checkReadOffset(0x0100 | CPUregisters.S);
+  // Pull PC low then high
+  const pcl = pullStack();
+  const pch = pullStack();
 
-  // Pull high byte of PC
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  const pch = checkReadOffset(0x0100 | CPUregisters.S);
+  CPUregisters.PC = ((pch << 8) | pcl) & 0xFFFF;
 
-  // Reconstruct program counter
-  CPUregisters.PC = (pch << 8) | pcl;
-
-  addExtraCycles(4); // base 2 + 4 = 6 cycles total
+  addExtraCycles(4); // 6 total with base
 }
 
 // RTS - Return from Subroutine (implied)

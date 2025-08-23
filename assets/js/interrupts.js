@@ -1,57 +1,42 @@
 // ======== Interrupts ======== 
 // https://www.nesdev.org/wiki/CPU_interrupts
 function serviceNMI() {
-  
-if (debugLogging) console.debug("%cNMI fired", "color: white; background-color: red; font-weight: bold; padding: 2px 6px; border-radius: 3px");
+  if (debugLogging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
 
-  const pc = CPUregisters.PC & 0xFFFF;
+  const pc = (CPUregisters.PC) & 0xFFFF;
 
   // push PC hi/lo
-  checkWriteOffset(0x0100 | CPUregisters.S, (pc >>> 8) & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  pushStack((pc >> 8) & 0xFF);
+  pushStack(pc & 0xFF);
 
-  checkWriteOffset(0x0100 | CPUregisters.S, pc & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  // push status (Break=0)
+  pushStatus(false);
 
-  // push status with Break=0
-  const p = packStatus(false);
-  checkWriteOffset(0x0100 | CPUregisters.S, p);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // set flags after NMI
+  // set flags
   CPUregisters.P.I = 1;
   CPUregisters.P.B = 0;
 
-  // fetch NMI vector
-  const lo = checkReadOffset(0xFFFA) & 0xFF;
-  const hi = checkReadOffset(0xFFFB) & 0xFF;
+  // vector
+  const lo = checkReadOffset(0xFFFA);
+  const hi = checkReadOffset(0xFFFB);
+  //console.debug(`NMI vector lo=$${lo.toString(16)} hi=$${hi.toString(16)}`); //fucknshitcuntfuckyoufuckn
+
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
 
   addExtraCycles(7);
 }
 
 function serviceIRQ() {
-  // Push PC high, then low
-  checkWriteOffset(0x0100 + CPUregisters.S, (CPUregisters.PC >> 8) & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  const pc = CPUregisters.PC & 0xFFFF;
+  pushStack((pc >> 8) & 0xFF);
+  pushStack(pc & 0xFF);
+  pushStatus(false);  // Break=0
 
-  checkWriteOffset(0x0100 + CPUregisters.S, CPUregisters.PC & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Push status with B=0
-  const status = packStatus(false);
-  checkWriteOffset(0x0100 + CPUregisters.S, status);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-
-  // Fetch IRQ vector at $FFFE/$FFFF
   const lo = checkReadOffset(0xFFFE);
   const hi = checkReadOffset(0xFFFF);
-  CPUregisters.PC = (hi << 8) | lo;
+  CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
 
-  // Set interrupt disable flag
   CPUregisters.P.I = 1;
-
-  // Takes 7 cycles total
   addExtraCycles(7);
 }
 
@@ -73,3 +58,52 @@ function dmaTransfer(value) {
   if (curCycles % 2 === 0) addExtraCycles(513);
   else addExtraCycles(514);
 }
+
+// --- - -- - - helpers for the interrupt handlers and BRK_IMP (in 6502.js) - - -- - ---
+
+// Stack helpers (CPU stack is always page 1: $0100–$01FF)
+
+function pushStack(value) {
+  checkWriteOffset(0x0100 | CPUregisters.S, value & 0xFF);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+}
+
+function pullStack() {
+  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
+  return checkReadOffset(0x0100 | CPUregisters.S) & 0xFF;
+}
+
+// Pack CPU flags into one status byte
+function packStatus(setBreakBit) {
+  return (
+    (CPUregisters.P.N << 7) |   // Negative
+    (CPUregisters.P.V << 6) |   // Overflow
+    (1 << 5) |                  // U = always 1 when pushed
+    ((setBreakBit ? 1 : 0) << 4)|// Break (only BRK/PHP)
+    (CPUregisters.P.D << 3) |   // Decimal
+    (CPUregisters.P.I << 2) |   // Interrupt Disable
+    (CPUregisters.P.Z << 1) |   // Zero
+    CPUregisters.P.C            // Carry
+  ) & 0xFF;
+}
+
+// Unpack one status byte into CPU flags
+function unpackStatus(packed) {
+  CPUregisters.P.C =  packed       & 1;
+  CPUregisters.P.Z = (packed >> 1) & 1;
+  CPUregisters.P.I = (packed >> 2) & 1;
+  CPUregisters.P.D = (packed >> 3) & 1;
+  CPUregisters.P.V = (packed >> 6) & 1;
+  CPUregisters.P.N = (packed >> 7) & 1;
+}
+
+function pushStatus(setBreakBit) {
+  pushStack(packStatus(setBreakBit));
+}
+
+function pullStatus() {
+  const packed = pullStack();
+  unpackStatus(packed);
+}
+
+

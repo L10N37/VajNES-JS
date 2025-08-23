@@ -266,88 +266,101 @@ runFlagTests();
 
 // all ops that touch p flags test
 function runFlagSuite() {
-  function resetFlags() {
-    CPUregisters.P.C = 0;
-    CPUregisters.P.Z = 0;
-    CPUregisters.P.I = 0;
-    CPUregisters.P.D = 0;
-    CPUregisters.P.V = 0;
-    CPUregisters.P.N = 0;
+  function resetCPU() {
+    CPUregisters.A = 0;
+    CPUregisters.X = 0;
+    CPUregisters.Y = 0;
+    CPUregisters.PC = 0x0000;
+    CPUregisters.S  = 0xFD;
+    CPUregisters.P = { C:0, Z:0, I:0, D:0, V:0, N:0 };
+    systemMemory.fill(0);
   }
 
   function dumpFlags() {
-    return {
-      C: CPUregisters.P.C,
-      Z: CPUregisters.P.Z,
-      I: CPUregisters.P.I,
-      D: CPUregisters.P.D,
-      V: CPUregisters.P.V,
-      N: CPUregisters.P.N,
-    };
+    return {C:CPUregisters.P.C, Z:CPUregisters.P.Z, I:CPUregisters.P.I,
+            D:CPUregisters.P.D, V:CPUregisters.P.V, N:CPUregisters.P.N};
+  }
+
+  function runOne(opcode, name, setupFn, expectFlags) {
+    resetCPU();
+    setupFn();
+    OPCODES[opcode].func();
+    const actual = dumpFlags();
+    const ok = Object.entries(expectFlags).every(([f,v]) => actual[f] === v);
+    results.push({
+      opcode: opcode.toString(16).padStart(2,"0").toUpperCase(),
+      name, pass: ok ? "PASS" : "FAIL",
+      expected: expectFlags, actual
+    });
   }
 
   let results = [];
 
-  // --- Arithmetic/Logic ---
-  resetFlags(); CPUregisters.A = 0x10; let r = 0x10 + 0x20; CPUregisters.A = r & 0xFF;
-  CPUregisters.P.C = +(r > 0xFF); CPUregisters.P.Z = +(CPUregisters.A === 0); CPUregisters.P.N = (CPUregisters.A >> 7) & 1;
-  results.push({ test: "ADC basic", A: CPUregisters.A, flags: dumpFlags() });
+  // ======================
+  // OFFICIAL OPCODES
+  // ======================
 
-  resetFlags(); CPUregisters.A = 0x00; let r2 = CPUregisters.A - 0x01; CPUregisters.A = r2 & 0xFF;
-  CPUregisters.P.C = +(r2 >= 0); CPUregisters.P.Z = +(CPUregisters.A === 0); CPUregisters.P.N = (CPUregisters.A >> 7) & 1;
-  results.push({ test: "SBC basic", A: CPUregisters.A, flags: dumpFlags() });
+  runOne(0x69,"ADC sets C+N", () => {CPUregisters.A=0x50;systemMemory[1]=0xB0;}, {C:1,N:1});
+  runOne(0xE9,"SBC borrow", () => {CPUregisters.A=0;systemMemory[1]=1;}, {C:0,N:1});
+  runOne(0xC9,"CMP equal", () => {CPUregisters.A=0x40;systemMemory[1]=0x40;}, {C:1,Z:1});
+  runOne(0x29,"AND zero", () => {CPUregisters.A=0xFF;systemMemory[1]=0;}, {Z:1});
+  runOne(0x49,"EOR neg", () => {CPUregisters.A=0x0F;systemMemory[1]=0xFF;}, {N:1});
+  runOne(0x09,"ORA result", () => {CPUregisters.A=0xF0;systemMemory[1]=0x0F;}, {N:1});
+  runOne(0x2C,"BIT set NV", () => {CPUregisters.A=0xFF;systemMemory[1]=0;systemMemory[2]=0x10;systemMemory[0x1000]=0xC0;}, {N:1,V:1});
+  runOne(0x0A,"ASL carry", () => {CPUregisters.A=0x80;}, {C:1});
+  runOne(0x4A,"LSR carry+Z", () => {CPUregisters.A=1;}, {C:1,Z:1});
+  runOne(0x2A,"ROL carry-in", () => {CPUregisters.A=0x80;CPUregisters.P.C=1;}, {C:1,N:1});
+  runOne(0x6A,"ROR carry-in", () => {CPUregisters.A=1;CPUregisters.P.C=1;}, {C:1,N:1});
+  runOne(0xE8,"INX wrap", () => {CPUregisters.X=0xFF;}, {Z:1});
+  runOne(0x88,"DEY to Z", () => {CPUregisters.Y=1;}, {Z:1});
+  runOne(0xAA,"TAX neg", () => {CPUregisters.A=0x80;}, {N:1});
+  runOne(0xA8,"TAY zero", () => {CPUregisters.A=0;}, {Z:1});
+  runOne(0x98,"TYA neg", () => {CPUregisters.Y=0xFF;}, {N:1});
+  runOne(0x8A,"TXA neg", () => {CPUregisters.X=0xFF;}, {N:1});
+  runOne(0xBA,"TSX zero", () => {CPUregisters.S=0;}, {Z:1});
+  runOne(0x38,"SEC", () => {}, {C:1});
+  runOne(0x18,"CLC", () => {CPUregisters.P.C=1;}, {C:0});
+  runOne(0x78,"SEI", () => {}, {I:1});
+  runOne(0x58,"CLI", () => {CPUregisters.P.I=1;}, {I:0});
+  runOne(0xF8,"SED", () => {}, {D:1});
+  runOne(0xD8,"CLD", () => {CPUregisters.P.D=1;}, {D:0});
+  runOne(0xB8,"CLV", () => {CPUregisters.P.V=1;}, {V:0});
 
-  resetFlags(); CPUregisters.A = 0x40; let cmp = CPUregisters.A - 0x40;
-  CPUregisters.P.C = +(cmp >= 0); CPUregisters.P.Z = +(cmp === 0); CPUregisters.P.N = (cmp >> 7) & 1;
-  results.push({ test: "CMP equal", flags: dumpFlags() });
+  // ======================
+  // UNOFFICIAL OPCODES
+  // ======================
 
-  // --- Shifts / Rotates ---
-  resetFlags(); let v = 0x80; CPUregisters.P.C = (v >> 7) & 1; v = (v << 1) & 0xFF; CPUregisters.P.N = (v >> 7) & 1; CPUregisters.P.Z = +(v === 0);
-  results.push({ test: "ASL carry out", val: v, flags: dumpFlags() });
+  runOne(0x07,"SLO zp (ASL+ORA)", () => {CPUregisters.A=0x01;systemMemory[1]=0x80;}, {C:1,N:1});
+  runOne(0x27,"RLA zp (ROL+AND)", () => {CPUregisters.A=0xFF;systemMemory[1]=0x80;}, {C:1,N:1});
+  runOne(0x47,"SRE zp (LSR+EOR)", () => {CPUregisters.A=0xFF;systemMemory[1]=0x01;}, {C:1,N:1});
+  runOne(0x67,"RRA zp (ROR+ADC)", () => {CPUregisters.A=0x01;systemMemory[1]=0x01;}, {C:0});
+  runOne(0x87,"SAX zp", () => {CPUregisters.A=0xFF;CPUregisters.X=0x0F;}, {Z:0,N:1});
+  runOne(0xA7,"LAX zp", () => {systemMemory[1]=0x80;}, {N:1});
+  runOne(0x0B,"ANC imm", () => {CPUregisters.A=0x80;systemMemory[1]=0xFF;}, {C:1,N:1});
+  runOne(0x4B,"ALR imm", () => {CPUregisters.A=0xFF;systemMemory[1]=0xFF;}, {C:1,N:1});
+  runOne(0x6B,"ARR imm", () => {CPUregisters.A=0xFF;systemMemory[1]=0xFF;}, {C:1});
+  runOne(0x8B,"XAA imm", () => {CPUregisters.A=0xFF;CPUregisters.X=0xFF;systemMemory[1]=0x0F;}, {N:0});
+  runOne(0x9B,"TAS abs,y", () => {CPUregisters.A=0xFF;CPUregisters.X=0xFF;}, {}); // store only
+  runOne(0x9C,"SHY abs,x", () => {CPUregisters.Y=0xFF;}, {}); 
+  runOne(0x9E,"SHX abs,y", () => {CPUregisters.X=0xFF;}, {}); 
+  runOne(0xBB,"LAS abs,y", () => {systemMemory[1]=0xFF;}, {N:1});
 
-  resetFlags(); let v2 = 0x01; CPUregisters.P.C = v2 & 1; v2 >>= 1; CPUregisters.P.N = (v2 >> 7) & 1; CPUregisters.P.Z = +(v2 === 0);
-  results.push({ test: "LSR carry out", val: v2, flags: dumpFlags() });
-
-  resetFlags(); let v3 = 0x80; let oldC = CPUregisters.P.C; CPUregisters.P.C = (v3 >> 7) & 1; v3 = ((v3 << 1) & 0xFF) | oldC; CPUregisters.P.N = (v3 >> 7) & 1; CPUregisters.P.Z = +(v3 === 0);
-  results.push({ test: "ROL with carry", val: v3, flags: dumpFlags() });
-
-  resetFlags(); let v4 = 0x01; let oldC2 = CPUregisters.P.C; CPUregisters.P.C = v4 & 1; v4 = (v4 >> 1) | (oldC2 << 7); CPUregisters.P.N = (v4 >> 7) & 1; CPUregisters.P.Z = +(v4 === 0);
-  results.push({ test: "ROR with carry", val: v4, flags: dumpFlags() });
-
-  // --- Logic ops ---
-  resetFlags(); CPUregisters.A = 0xFF; let andVal = CPUregisters.A & 0x00; CPUregisters.P.Z = +(andVal === 0); CPUregisters.P.N = (andVal >> 7) & 1;
-  results.push({ test: "AND zero", flags: dumpFlags() });
-
-  resetFlags(); CPUregisters.A = 0x0F; let eorVal = CPUregisters.A ^ 0xFF; CPUregisters.P.Z = +(eorVal === 0); CPUregisters.P.N = (eorVal >> 7) & 1;
-  results.push({ test: "EOR result", flags: dumpFlags() });
-
-  resetFlags(); CPUregisters.A = 0xF0; let oraVal = CPUregisters.A | 0x0F; CPUregisters.P.Z = +(oraVal === 0); CPUregisters.P.N = (oraVal >> 7) & 1;
-  results.push({ test: "ORA result", flags: dumpFlags() });
-
-  // --- BIT test ---
-  resetFlags(); let mem = 0xC0; CPUregisters.A = 0xC0; let bitRes = CPUregisters.A & mem;
-  CPUregisters.P.Z = +(bitRes === 0); CPUregisters.P.N = (mem >> 7) & 1; CPUregisters.P.V = (mem >> 6) & 1;
-  results.push({ test: "BIT set NV", flags: dumpFlags() });
-
-  // --- Increments/Decrements ---
-  resetFlags(); CPUregisters.X = 0xFF; CPUregisters.X = (CPUregisters.X + 1) & 0xFF; CPUregisters.P.Z = +(CPUregisters.X === 0); CPUregisters.P.N = (CPUregisters.X >> 7) & 1;
-  results.push({ test: "INX wrap to 0", X: CPUregisters.X, flags: dumpFlags() });
-
-  resetFlags(); CPUregisters.Y = 0x01; CPUregisters.Y = (CPUregisters.Y - 1) & 0xFF; CPUregisters.P.Z = +(CPUregisters.Y === 0); CPUregisters.P.N = (CPUregisters.Y >> 7) & 1;
-  results.push({ test: "DEY to zero", Y: CPUregisters.Y, flags: dumpFlags() });
-
-  // --- Transfers ---
-  resetFlags(); CPUregisters.A = 0x80; CPUregisters.X = CPUregisters.A; CPUregisters.P.Z = +(CPUregisters.X === 0); CPUregisters.P.N = (CPUregisters.X >> 7) & 1;
-  results.push({ test: "TAX sets N", X: CPUregisters.X, flags: dumpFlags() });
-
-  // --- Status flag control ---
-  resetFlags(); CPUregisters.P.C = 1; results.push({ test: "SEC set C", flags: dumpFlags() });
-  resetFlags(); CPUregisters.P.C = 0; results.push({ test: "CLC clear C", flags: dumpFlags() });
-  resetFlags(); CPUregisters.P.V = 0; results.push({ test: "CLV clear V", flags: dumpFlags() });
-  resetFlags(); CPUregisters.P.D = 1; results.push({ test: "SED set D", flags: dumpFlags() });
-
-  console.table(results);
+  // ======================
+  // PRINT RESULTS
+  // ======================
+  console.table(results.map(r => ({
+    Opcode: r.opcode,
+    Name: r.name,
+    Pass: r.pass,
+    Expected: r.expected,
+    Actual: r.actual
+  })));
 }
+
 
 //=======================================================================+++++===============
 
+//force Vblank
+function forceVBlank() {
+ PPUSTATUS |= 0x80;
+}

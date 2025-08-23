@@ -35,7 +35,7 @@ function mapper(nesHeader) {
   prgRom = flatPrg;
 
   // CHR-ROM stays untouched (already global), no further mapping for Mapper 0
-  // --- Set CPU reset vector from $FFFC-$FFFD (last 4 bytes of PRG region)
+  // this needs to #reset the PPU as well, if you change games, it will be at a random scanline/dot from prior
   resetCPU(); // burn 7 cycles here and reset cycle counter
 }
 

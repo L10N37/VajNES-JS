@@ -31,23 +31,26 @@ function renderFrame(){
 function checkInterrupts() {
   nmiCheckCounter++;
 
-  const edgeMarker = Atomics.load(SHARED.SYNC, 4);
+  // NMI edge latch is at SYNC[6]
+  const edgeMarker = Atomics.load(SHARED.SYNC, 6);
   if (edgeMarker !== 0) {
     nmiServiceCounter++;
-    
+
     if (debugLogging) {
-      console.debug(`[CPU] NMI edge latched (#${nmiServiceCounter}) after ${nmiCheckCounter} checks`);
+      console.debug(
+        `[CPU] NMI edge latched (#${nmiServiceCounter}) after ${nmiCheckCounter} checks`
+      );
     }
 
     nmiCheckCounter = 0;
 
     nmiPendingLocal = true;
-    Atomics.store(SHARED.SYNC, 5, 1);
-    Atomics.store(SHARED.SYNC, 4, 0);
+    Atomics.store(SHARED.SYNC, 5, 1);  // shadow flag
+    Atomics.store(SHARED.SYNC, 6, 0);  // clear edge latch
   }
 
-    // ---- handle interrupts ----
-  if (nmiPendingLocal){
+  // ---- handle interrupts ----
+  if (nmiPendingLocal) {
     serviceNMI();   // adds +7 via addExtraCycles()
     nmiPendingLocal = false;
   }
@@ -55,7 +58,6 @@ function checkInterrupts() {
   if (!CPUregisters.P.I) {
     serviceIRQ();   // adds +7 via addExtraCycles()
   }
-  
 }
 
 // offset handler takes care of prgRom being based @ 0x0000
@@ -79,8 +81,8 @@ function checkInterrupts() {
   // execute opcode handler
   const execFn = OPCODES[code].func;
 
-  console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
-  console.debug("Code @ 0x" + code.toString(16).padStart(2, "0").toUpperCase());
+  //console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
+  //console.debug("Code @ 0x" + code.toString(16).padStart(2, "0").toUpperCase());
 
   if (!execFn) {
     const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
@@ -110,6 +112,9 @@ function checkInterrupts() {
     // send the row for output
     DISASM.appendRow(disasmRow);
   }
+
+  // service interrupts before incrementing PC so we get the correct return address
+  checkInterrupts();
   
   // increment PC to point at next opcode, if PC modified in opcode handler, this adds zero
   CPUregisters.PC = CPUregisters.PC + OPCODES[code].pc;
@@ -124,9 +129,6 @@ function checkInterrupts() {
 
   // if we temporarily enabled the worker, put it back to paused
   if (wasPaused) Atomics.and(SHARED.EVENTS, 0, ~0b00000100); // clear RUN bit
-
-  checkInterrupts();
-
 }
 
 // ====================================== PACED RUN + SAMPLER ======================================
@@ -302,7 +304,7 @@ const OPCODES = [
   { pc:0, cycles:2, func: RTI_IMP },   { pc:2, cycles:6, func: EOR_INDX }, { pc:0, cycles:0, func: null },     { pc:2, cycles:6, func: SRE_INDX },
   { pc:2, cycles:3, func: NOP_ZP },    { pc:2, cycles:3, func: EOR_ZP },   { pc:2, cycles:3, func: LSR_ZP },   { pc:2, cycles:3, func: SRE_ZP },
   { pc:1, cycles:2, func: PHA_IMP },   { pc:2, cycles:2, func: EOR_IMM },  { pc:1, cycles:2, func: LSR_ACC },  { pc:2, cycles:2, func: ALR_IMM },
-  { pc:3, cycles:4, func: JMP_ABS },   { pc:3, cycles:4, func: EOR_ABS },  { pc:3, cycles:4, func: LSR_ABS },  { pc:3, cycles:4, func: SRE_ABS },
+  { pc:0, cycles:4, func: JMP_ABS },   { pc:3, cycles:4, func: EOR_ABS },  { pc:3, cycles:4, func: LSR_ABS },  { pc:3, cycles:4, func: SRE_ABS },
 
   { pc:0, cycles:2, func: BVC_REL },   { pc:2, cycles:5, func: EOR_INDY }, { pc:0, cycles:0, func: null },     { pc:2, cycles:5, func: SRE_INDY },
   { pc:2, cycles:4, func: NOP_ZPX },   { pc:2, cycles:4, func: EOR_ZPX },  { pc:2, cycles:4, func: LSR_ZPX },  { pc:2, cycles:4, func: SRE_ZPX },
@@ -312,7 +314,7 @@ const OPCODES = [
   { pc:0, cycles:2, func: RTS_IMP },   { pc:2, cycles:6, func: ADC_INDX }, { pc:0, cycles:0, func: null },     { pc:2, cycles:6, func: RRA_INDX },
   { pc:2, cycles:3, func: NOP_ZP },    { pc:2, cycles:3, func: ADC_ZP },   { pc:2, cycles:3, func: ROR_ZP },   { pc:2, cycles:3, func: RRA_ZP },
   { pc:1, cycles:2, func: PLA_IMP },   { pc:2, cycles:2, func: ADC_IMM },  { pc:1, cycles:2, func: ROR_ACC },  { pc:2, cycles:2, func: ARR_IMM },
-  { pc:3, cycles:4, func: JMP_IND },   { pc:3, cycles:4, func: ADC_ABS },  { pc:3, cycles:4, func: ROR_ABS },  { pc:3, cycles:4, func: RRA_ABS },
+  { pc:0, cycles:4, func: JMP_IND },   { pc:3, cycles:4, func: ADC_ABS },  { pc:3, cycles:4, func: ROR_ABS },  { pc:3, cycles:4, func: RRA_ABS },
 
   { pc:0, cycles:2, func: BVS_REL },   { pc:2, cycles:5, func: ADC_INDY }, { pc:0, cycles:0, func: null },     { pc:2, cycles:5, func: RRA_INDY },
   { pc:2, cycles:4, func: NOP_ZPX },   { pc:2, cycles:4, func: ADC_ZPX },  { pc:2, cycles:4, func: ROR_ZPX },  { pc:2, cycles:4, func: RRA_ZPX },
