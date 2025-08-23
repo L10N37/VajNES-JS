@@ -1,13 +1,52 @@
 importScripts('/assets/js/ppu-worker-setup.js');
 console.debug("[PPU Worker init]")
-// local to the worker #move to SAB, can not toggle in console
-let ppuDebugLogging = false;
-let cpuPpuSyncTiming = true;
+// ===================== PPU WORKER BOOT HEADER =====================
 
+// --- SharedArrayBuffer setup ---
+if (!self.SHARED) self.SHARED = {};
+
+// EVENTS: single Int32 cell for bit flags
+if (!SHARED.SAB_EVENTS) {
+  SHARED.SAB_EVENTS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  SHARED.EVENTS     = new Int32Array(SHARED.SAB_EVENTS);
+  SHARED.EVENTS[0]  = 0;
+}
+
+// --- Helper to define toggleable bit flags ---
+function defineFlag(name, bitMask) {
+  Object.defineProperty(globalThis, name, {
+    get: () => (Atomics.load(SHARED.EVENTS, 0) & bitMask) !== 0,
+    set: v => {
+      if (v) Atomics.or(SHARED.EVENTS, 0, bitMask);
+      else   Atomics.and(SHARED.EVENTS, 0, ~bitMask);
+    },
+    configurable: true
+  });
+}
+
+// --- Define toggles ---
+defineFlag("ppuDebugLogging", 0b100);   // bit 2
+defineFlag("cpuPpuSyncTiming", 0b1000); // bit 3
+
+// --- Defaults at boot ---
+ppuDebugLogging  = false;
+cpuPpuSyncTiming = true;
+
+// --- Boot log ---
 console.debug(
-  `%c PPU DEBUG LOGGING: ${ppuDebugLogging ? "ON" : "OFF"} `,
+  `[worker boot] ppuDebugLogging=${ppuDebugLogging}  cpuPpuSyncTiming=${cpuPpuSyncTiming}`
+);
+console.debug(
+  `%c PPU DEBUG LOGGING (toggle ppuDebugLogging): ${ppuDebugLogging ? "ON" : "OFF"} `,
   `background:${ppuDebugLogging ? "limegreen" : "crimson"}; color:white; font-weight:bold; padding:2px 6px; border-radius:4px;`
 );
+console.debug(
+  `%c PPU/ CPU Sync Logging (toggle cpuPpuSyncTiming): ${cpuPpuSyncTiming ? "ON" : "OFF"} `,
+  `background:${cpuPpuSyncTiming ? "limegreen" : "crimson"}; color:white; font-weight:bold; padding:2px 6px; border-radius:4px;`
+);
+
+// ================================================================
+
 
 // ---------- Flag helpers ----------
 // ========== SYNC layout  ==========

@@ -1,6 +1,6 @@
 let debugLogging = false;
 console.debug(
-  `%c DEBUG LOGGING: ${debugLogging ? "ON" : "OFF"} `,
+  `%c DEBUG LOGGING (toggle debugLogging): ${debugLogging ? "ON" : "OFF"} `,
   `background:${debugLogging ? "limegreen" : "crimson"}; color:white; font-weight:bold; padding:2px 6px; border-radius:4px;`
 );
 // writeToggle is an internal PPU latch but implemented here on CPU core

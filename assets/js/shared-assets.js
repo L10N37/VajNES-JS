@@ -34,7 +34,9 @@
     SYNC[7] : unused
   */
 
-  // Events bitfield (bit0=NMI, bit1=IRQ)
+  // Events bitfield (bit0=NMI, bit1=IRQ #?? IRQ ) #clean up comments
+  // bit 2 is now ppuDebugLogging, bit 3 is for comparing PPU/CPU timing, i.e. is the PPU up to the 
+  // correct scanline/ dot for the cpu cycles that have burnt
   // Run bit lives in EVENTS[0] (bit 2). Main sets/clears it. Worker only reads it.
   SHARED.SAB_EVENTS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
   SHARED.EVENTS     = new Int32Array(SHARED.SAB_EVENTS);
@@ -118,8 +120,7 @@ try {
   // ------------------------------------------------------------
   const make8  = v => v & 0xFF;
   const make16 = v => v & 0xFFFF;
-
-Object.defineProperties(globalThis, {
+  Object.defineProperties(globalThis, {
   // 8-bit regs
   PPUCTRL:     { get: () => Atomics.load(SHARED.PPU_REGS, 0),  set: v => Atomics.store(SHARED.PPU_REGS, 0, make8(v)), configurable: true },
   PPUMASK:     { get: () => Atomics.load(SHARED.PPU_REGS, 1),  set: v => Atomics.store(SHARED.PPU_REGS, 1, make8(v)), configurable: true },
@@ -141,7 +142,7 @@ Object.defineProperties(globalThis, {
   BG_tileHi:   { get: () => Atomics.load(SHARED.PPU_REGS, 17), set: v => Atomics.store(SHARED.PPU_REGS, 17, make8(v)), configurable: true },
   PPU_FRAME_FLAGS: { get: () => Atomics.load(SHARED.PPU_REGS, 18), set: v => Atomics.store(SHARED.PPU_REGS, 18, make8(v)), configurable: true },
 
-  // 16-bit VRAM address (as single 16-bit value)
+  // 16-bit VRAM address
   VRAM_ADDR:   { get: () => Atomics.load(SHARED.VRAM_ADDR, 0), set: v => Atomics.store(SHARED.VRAM_ADDR, 0, make16(v)), configurable: true },
 
   // clocks
@@ -151,10 +152,20 @@ Object.defineProperties(globalThis, {
   // open bus
   cpuOpenBus:  { get: () => Atomics.load(SHARED.CPU_OPENBUS, 0), set: v => Atomics.store(SHARED.CPU_OPENBUS, 0, make8(v)), configurable: true },
 
-  // events (bit flags) #not needed?
-  nmiPending:  { 
+  // events (bit flags)
+  nmiPending: {
     get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1) !== 0,
     set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1) : Atomics.and(SHARED.EVENTS, 0, ~0b1); },
+    configurable: true
+  },
+  ppuDebugLogging: {
+    get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b100) !== 0,
+    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b100) : Atomics.and(SHARED.EVENTS, 0, ~0b100); },
+    configurable: true
+  },
+  cpuPpuSyncTiming: {
+    get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1000) !== 0,
+    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1000) : Atomics.and(SHARED.EVENTS, 0, ~0b1000); },
     configurable: true
   },
 });
