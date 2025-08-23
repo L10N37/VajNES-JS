@@ -1,47 +1,23 @@
 // tuning - batch and BUDGET_MS = Math.max(0.8 * dt, 10); (pre multiplier)
 // then runPacedWithSampler(50000, 500)
+
 let cpuRunning = false;
-const CPU_BATCH = 1000; // adjust if you want larger inner batches
 
-const NES_W = 256;
-const NES_H = 240;
-/*
-50,0000
-[SUMMARY] elapsed=50010.6 ms
-[SUMMARY] CPU cycles produced=90023494
-[SUMMARY] cycles/sec=1800088  (NES 1789773 → x1.01)
-*/
+// internal only, don't build disasm rows unless the window is open
+let disasmRunning = false;
 
-// ============================
+const CPU_BATCH = 5; // downside: will process this many opcodes prior to pausing... 
+
+let nmiCheckCounter = 0;
+let nmiServiceCounter = 0;
+let nmiPendingLocal=false;
+
 // NTSC timing
-// ============================
 const NES_CPU_HZ    = 1_789_773;           // 1.789773 MHz
 const CYCLES_PER_MS = NES_CPU_HZ / 1000;   // ~1789.773 cycles per ms
-
-function disasmData(disasmCode, disasmOp_, disasmOp__) {
-  // PC16
-  DISASM.RING_U16[0] = CPUregisters.PC & 0xFFFF;
-
-  // opcode + operands
-  DISASM.RING_U8[2]  = disasmCode;
-  DISASM.RING_U8[3]  = disasmOp_;
-  DISASM.RING_U8[4]  = disasmOp__;
-
-  // registers
-  DISASM.RING_U8[5]  = CPUregisters.A;
-  DISASM.RING_U8[6]  = CPUregisters.X;
-  DISASM.RING_U8[7]  = CPUregisters.Y;
-  DISASM.RING_U8[8]  = CPUregisters.S;
-
-  // flags
-  DISASM.RING_U8[9]  = CPUregisters.P.C;
-  DISASM.RING_U8[10] = CPUregisters.P.Z;
-  DISASM.RING_U8[11] = CPUregisters.P.I;
-  DISASM.RING_U8[12] = CPUregisters.P.D;
-  DISASM.RING_U8[13] = CPUregisters.P.V;
-  DISASM.RING_U8[14] = CPUregisters.P.N;
-}
-
+// NTSC Resolution
+const NES_W = 256;
+const NES_H = 240;
 
 function renderFrame(){
     // ---- frame blit ----
@@ -52,9 +28,6 @@ function renderFrame(){
   }
 }
 
-let nmiCheckCounter = 0;
-let nmiServiceCounter = 0;
-let nmiPendingLocal=false;
 function checkInterrupts() {
   nmiCheckCounter++;
 
@@ -63,7 +36,7 @@ function checkInterrupts() {
     nmiServiceCounter++;
     
     if (debugLogging) {
-      console.log(`[CPU] NMI edge latched (#${nmiServiceCounter}) after ${nmiCheckCounter} checks`);
+      console.debug(`[CPU] NMI edge latched (#${nmiServiceCounter}) after ${nmiCheckCounter} checks`);
     }
 
     nmiCheckCounter = 0;
@@ -86,10 +59,12 @@ function checkInterrupts() {
 }
 
 // offset handler takes care of prgRom being based @ 0x0000
-function step() {
+  function step() {
+
+  // kick PPU worker via SAB bit #pointless, it can just wait for cpu cycles and start dotting
+  //Atomics.or(SHARED.EVENTS, 0, 0b00000100);
+
   renderFrame();
-  // we can't catch rows where branches occurred without updating disasm data within every handler
-  // if (debugLogging) console.debug("(pre)PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
 
   // disable CRT fuzz noise
   NoSignalAudio.setEnabled(false);
@@ -104,28 +79,40 @@ function step() {
   // execute opcode handler
   const execFn = OPCODES[code].func;
 
+  console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
+  console.debug("Code @ 0x" + code.toString(16).padStart(2, "0").toUpperCase());
+
   if (!execFn) {
     const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
     console.warn(`Unknown opcode 0x${codeHex}`);
     console.warn(`at PC=$${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
-    if (wasPaused) Atomics.and(SHARED.EVENTS, 0, ~0b00000100); // restore RUN bit if we set it
+
+    // Clear bit 2 (0b00000100) to halt the PPU
+    Atomics.and(SHARED.EVENTS, 0, ~0b00000100);
+
+    // Pause on bad opcode
+    pause();
+
     return;
   }
 
-  // disasm will use code above but we will also grab ops for it
-  const _op   = checkReadOffset(CPUregisters.PC + 1);
-  const __op  = checkReadOffset(CPUregisters.PC + 2);
+    // for disasm
+    const _op   = checkReadOffset(CPUregisters.PC + 1);
+    const __op  = checkReadOffset(CPUregisters.PC + 2);
+    // disasm PC is the current PC, not the next one
+    const disasmPc = CPUregisters.PC;  
 
   execFn();
 
-  // store the data the disassembler needs in the SABs, passing it opcode/operands
-  disasmData(code, _op, __op);
+  if (disasmRunning){
+    // build disasm row now so we have pre handler PC + post handler modifications to regs in a row
+    const disasmRow = buildDisasmRow(code, _op, __op, disasmPc);
+    // send the row for output
+    DISASM.appendRow(disasmRow);
+  }
   
   // increment PC to point at next opcode, if PC modified in opcode handler, this adds zero
   CPUregisters.PC = CPUregisters.PC + OPCODES[code].pc;
-
-  // we can't catch rows where branches occurred without updating disasm data within every handler
-  // if (debugLogging) console.debug("(post)PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
 
   // Base cycles (CPU + PPU budget)
   // coerce a value into an integer | 0
@@ -149,12 +136,9 @@ let __paceCarry = 0;  // keep fractional cycles and (if needed) small deficits
 let __lastT = 0;
 
 // run(): paced to ~NES time using wall-clock
-function run() {
+  function run() {
   if (cpuRunning) return;
   cpuRunning = true;
-
-  // kick PPU worker via SAB bit
-  Atomics.or(SHARED.EVENTS, 0, 0b00000100);
 
   __lastT = performance.now();
   __paceCarry = 0;
@@ -200,7 +184,7 @@ function run() {
 }
 
 // Pause (keeps your existing external API)
-function pause() {
+  function pause() {
   cpuRunning = false;
 
   // stop PPU worker, clear bit 2
@@ -376,7 +360,111 @@ const OPCODES = [
   { pc:3, cycles:4, func: NOP_ABSX },  { pc:3, cycles:4, func: SBC_ABSX }, { pc:3, cycles:4, func: INC_ABSX }, { pc:3, cycles:4, func: ISC_ABSX },
 ];
 
-// so disassembler can access them
-globalThis.DebugCtl = Object.assign(globalThis.DebugCtl || {}, {
-  run, pause, step
-});
+  function buildDisasmRow(opc, op1, op2, pc, len) {
+  // --- ensure correct len for control flow opcodes ---
+  if (len === 0) {
+    if (opc === 0x00 || opc === 0x40 || opc === 0x60) len = 1;     // BRK/RTI/RTS
+    else if (opc === 0x20 || opc === 0x4C || opc === 0x6C) len = 3; // JSR/JMP abs/ind
+    else len = 2; // branches
+  }
+
+  const pad2 = v => v.toString(16).toUpperCase().padStart(2, "0");
+  const pad4 = v => v.toString(16).toUpperCase().padStart(4, "0");
+
+  // --- NES label resolver ---
+  const getLabel = addr => {
+    const hw = {
+      0x2000:"PPUCTRL",0x2001:"PPUMASK",0x2002:"PPUSTATUS",0x2003:"OAMADDR",
+      0x2004:"OAMDATA",0x2005:"PPUSCROLL",0x2006:"PPUADDR",0x2007:"PPUDATA",
+      0x4000:"SQ1_VOL",0x4001:"SQ1_SWEEP",0x4002:"SQ1_LO",0x4003:"SQ1_HI",
+      0x4004:"SQ2_VOL",0x4005:"SQ2_SWEEP",0x4006:"SQ2_LO",0x4007:"SQ2_HI",
+      0x4008:"TRI_LINEAR",0x400A:"TRI_LO",0x400B:"TRI_HI",
+      0x400C:"NOISE_VOL",0x400E:"NOISE_LO",0x400F:"NOISE_HI",
+      0x4010:"DMC_FREQ",0x4011:"DMC_RAW",0x4012:"DMC_START",0x4013:"DMC_LEN",
+      0x4014:"OAMDMA",0x4015:"SND_CHN",0x4016:"JOY1",0x4017:"JOY2"
+    };
+    if (hw[addr]) return hw[addr];
+    if (addr <= 0x00FF) return "$" + pad2(addr);
+    if (addr <= 0x01FF) return "STACK";
+    if (addr <= 0x07FF) return "RAM";
+    if (addr >= 0x8000) return "sub_" + pad4(addr);
+    return "$" + pad4(addr);
+  };
+
+  // --- mnemonic & addressing mode ---
+  const name = OPCODES[opc]?.func?.name || "";
+  const mnemonic = name.split("_")[0]?.toUpperCase() || "???";
+  const mode = name.split("_")[1]?.toUpperCase() || "IMP";
+
+  // --- operand formatting ---
+  let operand = "";
+  switch (mode) {
+    case "IMM":  operand = "#$" + pad2(op1); break;
+    case "ZP":   operand = getLabel(op1); break;
+    case "ZPX":  operand = "$" + pad2(op1) + ",X"; break;
+    case "ZPY":  operand = "$" + pad2(op1) + ",Y"; break;
+    case "ABS":  operand = getLabel((op2 << 8) | op1); break;
+    case "ABSX": operand = getLabel((op2 << 8) | op1) + ",X"; break;
+    case "ABSY": operand = getLabel((op2 << 8) | op1) + ",Y"; break;
+    case "IND":  operand = "($" + pad2(op2) + pad2(op1) + ")"; break;
+    case "INDX": operand = "($" + pad2(op1) + ",X)"; break;
+    case "INDY": operand = "($" + pad2(op1) + "),Y"; break;
+    case "REL": {
+      const offset = (op1 & 0x80) ? op1 - 0x100 : op1;
+      const target = (pc + 2 + offset) & 0xFFFF;
+      operand = getLabel(target);
+      break;
+    }
+    case "ACC": operand = "A"; break;
+    case "IMP": operand = ""; break;
+  }
+
+  // --- raw bytes field ---
+  let opfield = "";
+  if (len === 2) opfield = pad2(op1);
+  else if (len === 3) opfield = `${pad2(op1)} ${pad2(op2)}`;
+
+  const f = CPUregisters.P;
+
+  // --- NOTES column ---
+  let notes = "";
+
+  // Branch resolution
+  switch (mnemonic) {
+    case "BPL": notes = f.N ? "(not taken)" : "(taken)"; break;
+    case "BMI": notes = f.N ? "(taken)" : "(not taken)"; break;
+    case "BVC": notes = f.V ? "(not taken)" : "(taken)"; break;
+    case "BVS": notes = f.V ? "(taken)" : "(not taken)"; break;
+    case "BCC": notes = f.C ? "(not taken)" : "(taken)"; break;
+    case "BCS": notes = f.C ? "(taken)" : "(not taken)"; break;
+    case "BNE": notes = f.Z ? "(not taken)" : "(taken)"; break;
+    case "BEQ": notes = f.Z ? "(taken)" : "(not taken)"; break;
+  }
+
+  // PPU status/control hints
+  if (operand === "PPUSTATUS") {
+    notes = (CPUregisters.A & 0x80) ? "VBlank set" : "VBlank clear";
+  }
+  if (operand === "PPUCTRL") {
+    notes = (CPUregisters.A & 0x80) ? "NMI enabled" : "NMI disabled";
+  }
+
+  // --- final HTML row ---
+  return `<tr>
+    <td class="col-pc">$${pad4(pc)}</td>
+    <td class="col-opc">${pad2(opc)}</td>
+    <td class="col-op">${opfield}</td>
+    <td class="col-mn">${mnemonic} ${operand}</td>
+    <td class="col-notes">${notes}</td>
+    <td class="col-reg">${pad2(CPUregisters.A)}</td>
+    <td class="col-reg">${pad2(CPUregisters.X)}</td>
+    <td class="col-reg">${pad2(CPUregisters.Y)}</td>
+    <td class="col-bit">${f.C ? 1 : 0}</td>
+    <td class="col-bit">${f.Z ? 1 : 0}</td>
+    <td class="col-bit">${f.I ? 1 : 0}</td>
+    <td class="col-bit">${f.D ? 1 : 0}</td>
+    <td class="col-bit">${f.V ? 1 : 0}</td>
+    <td class="col-bit">${f.N ? 1 : 0}</td>
+    <td class="col-reg">${pad2(CPUregisters.S)}</td>
+  </tr>`;
+}

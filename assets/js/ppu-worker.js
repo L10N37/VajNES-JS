@@ -1,7 +1,8 @@
 importScripts('/assets/js/ppu-worker-setup.js');
 console.debug("[PPU Worker init]")
 // local to the worker #move to SAB, can not toggle in console
-ppuDebugLogging = false;
+let ppuDebugLogging = false;
+let cpuPpuSyncTiming = true;
 
 console.debug(
   `%c PPU DEBUG LOGGING: ${ppuDebugLogging ? "ON" : "OFF"} `,
@@ -355,25 +356,26 @@ function startPPULoop() {
   let last = 0;
 
   while (true) {
-    
-    while ((Atomics.load(SHARED.EVENTS, 0) & 0b00000100) !== 0b00000100) {}
-
-    // snapshot → budget → burn
-    const now    = Atomics.load(SHARED.CLOCKS, 1);
+    // CPU posts total PPU cycles in CLOCKS[1]
+    const now = Atomics.load(SHARED.CLOCKS, 1);
     const budget = now - last;
     last = now;
 
     if (budget > 0) {
-      let burned = 0;
-
       for (let i = 0; i < budget; i++) {
         ppuTick();
-        burned++;
       }
 
-      // publish stats
-      Atomics.store(SHARED.SYNC, 0, budget); // cycles available this interval
-      Atomics.store(SHARED.SYNC, 1, burned); // cycles actually burned
+      if (cpuPpuSyncTiming) {
+        const cpuCycles = Atomics.load(SHARED.CLOCKS, 0);
+        console.debug(
+          `[SYNC] Frame=${PPUclock.frame} SL=${PPUclock.scanline} DOT=${PPUclock.dot} CPU=${cpuCycles}`
+        );
+      }
+
+      // publish stats (optional, you might not need these anymore)
+      Atomics.store(SHARED.SYNC, 0, budget); // cycles this interval
+      Atomics.store(SHARED.SYNC, 1, budget); // cycles actually burned
     }
   }
 }

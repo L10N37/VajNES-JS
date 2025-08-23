@@ -90,11 +90,3 @@ function unpackStatus(packed) {
   CPUregisters.P.V = (packed >> 6) & 1;
   CPUregisters.P.N = (packed >> 7) & 1;
 }
-
-// broadcast cpuCycles to disasm on query
-const bc = new BroadcastChannel("nes-disasm");
-bc.onmessage = (e) => {
-  if (e.data?.type === "cycles.request") {
-    bc.postMessage({ type: "cycles.update", value: cpuCycles });
-  }
-};

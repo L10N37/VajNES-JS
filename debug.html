@@ -9,6 +9,25 @@
   <link rel="stylesheet" href="assets/css/style.css" />
   <link rel="stylesheet" href="assets/css/screen.css" />
   <link rel="stylesheet" href="assets/css/customise.css" />
+  <link rel="stylesheet" href="disasm/disasm.css">
+
+    <!-- Fixes new firefox feature 'auto hiding scrollbars/ overlay scrollbars' -->
+    <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow-y: scroll;       /* Always show scrollbar */
+      scrollbar-width: auto;    /* Normal width */
+      scrollbar-gutter: stable; /* No layout shift */
+    }
+    body {
+      font-family: sans-serif;
+    }
+    .content {
+      height: 200vh; /* Just to make page scrollable */
+      background: linear-gradient(#ddd, #aaa);
+    }
+  </style>
 
 </head>
 <body>
@@ -243,8 +262,8 @@
 <script src="assets/js/shared-assets.js"></script>
 
 <script src="assets/js/helpers.js"></script>
-<script src="assets/js/6502.js"></script>
 <script src="assets/js/interrupts.js"></script>
+<script src="assets/js/6502.js"></script>
 <script src="assets/js/memory.js"></script>
 <script src="assets/js/memoryMaps.js"></script>
 
@@ -278,7 +297,10 @@
 <script src="test/standaloneCallInConsoleTests.js"></script>
 <script src="assets/js/logDump.js"></script>
 
+
+<script src="disasm/disasm.js"></script>
 <script src="assets/js/debug.js"></script>
+
 
 <!--tests-->
 <script src="test/ppuSimulation/ppu-sim.js"></script>
@@ -290,21 +312,133 @@
 <!-- purely for disassembler, absolutely nailed the desired outcome/ aesthetics for the window, but can't drag out of DOM -->
 <script src="/disasm/winbox.bundle.min.js"></script>
 <script>
-document.getElementById("open-disasm").onclick = () => {
-  new WinBox({
+function launchDisasmWindow() {
+  const win = new WinBox({
     title: "NES Disassembler",
-    url: "disasm/disasm.html",
     width: 720,
     height: 720,
     x: "center",
     y: "center",
-    overflow: "1",
+    class: ["no-max", "no-min"],
     background: "#111",
     border: 0,
-    // show Close + Fullscreen; hide Min/Max
-    class: ["no-min", "no-max"]
+    onload: () => {
+      console.debug("[winbox] Disasm window loaded.");
+    }
   });
-};
+
+  // Build disasm content dynamically
+  const wrap = document.createElement("div");
+  wrap.className = "wrap";
+  wrap.innerHTML = `
+    <header class="bar">
+      <div class="title">DISASSEMBLER</div>
+      <span id="cycles-wrap" style="margin-left:10px;">
+        CPU Cycles: <span id="cycles-value">--</span>
+        <button id="cycles-update" class="btn">Update</button>
+      </span>
+      <button id="csv-export" class="btn">Export CSV</button>
+      <button id="theme-toggle" class="btn">Theme: Amber</button>
+    </header>
+
+    <main id="view" class="viewport" tabindex="0" role="log" aria-live="polite">
+      <table class="disasm">
+        <thead>
+          <tr class="hdr">
+            <th class="col-pc">PC</th><th class="col-opc">OPC</th><th class="col-op">OP</th>
+            <th class="col-mn">MNEMONIC</th><th class="col-notes">NOTES</th>
+            <th class="col-reg">A</th><th class="col-reg">X</th><th class="col-reg">Y</th>
+            <th class="col-bit">C</th><th class="col-bit">Z</th><th class="col-bit">I</th>
+            <th class="col-bit">D</th><th class="col-bit">V</th><th class="col-bit">N</th>
+            <th class="col-reg">S</th>
+          </tr>
+          <tr class="sep"><td colspan="15"></td></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="scan" aria-hidden="true"></div>
+    </main>
+
+    <footer class="keybar">
+      <span>R = Run</span><span>P = Pause</span><span>S = Step</span>
+      <span>U = Update Cycles</span><span>T = Theme</span>
+    </footer>
+  `;
+
+  win.mount(wrap);
+
+  // Theme toggle
+  const html = wrap.ownerDocument.documentElement;
+  const themeBtn = wrap.querySelector("#theme-toggle");
+  function setTheme(name) {
+    html.setAttribute("data-theme", name);
+    themeBtn.textContent = "Theme: " + (name === "amber" ? "Amber" : "Green");
+  }
+  themeBtn.onclick = () => {
+    const newTheme = html.getAttribute("data-theme") === "amber" ? "green" : "amber";
+    setTheme(newTheme);
+  };
+
+  // CPU Cycle update
+  wrap.querySelector("#cycles-update").onclick = () => {
+    const val = window.DebugCtl?.cpuCycles ?? "--";
+    wrap.querySelector("#cycles-value").textContent = val;
+  };
+
+  // CSV Export
+  wrap.querySelector("#csv-export").onclick = () => {
+    const rows = Array.from(wrap.querySelectorAll("tbody tr"));
+    const csv = rows.map(tr =>
+      Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim()).join(",")
+    ).join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "disasm_log.csv";
+    a.click();
+  };
+
+  // Keyboard support
+  wrap.addEventListener("keydown", e => {
+    if (e.repeat) return;
+    const k = e.key.toLowerCase();
+    if (["input", "textarea"].includes(e.target.tagName.toLowerCase())) return;
+
+    if (k === 'r') window.DebugCtl?.run?.();
+    if (k === 'p') window.DebugCtl?.pause?.();
+    if (k === 's') window.DebugCtl?.step?.();
+    if (k === 'u') wrap.querySelector("#cycles-update").click();
+    if (k === 't') themeBtn.click();
+  });
+
+  // Add row function
+  const rowsEl = wrap.querySelector("#rows");
+  const viewEl = wrap.querySelector("#view");
+  function appendDisasmRow(html) {
+    if (!rowsEl || typeof html !== "string") return;
+    rowsEl.insertAdjacentHTML("beforeend", html);
+    while (rowsEl.children.length > 256) {
+      rowsEl.removeChild(rowsEl.firstElementChild);
+    }
+    if (viewEl) viewEl.scrollTop = viewEl.scrollHeight;
+  }
+
+  // Global handle
+  window.DISASM = { appendRow: appendDisasmRow };
+}
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const disasmBtn = document.getElementById("open-disasm");
+  if (disasmBtn) {
+    disasmBtn.onclick = () => {
+      disasmRunning = true;
+      launchDisasmWindow();
+    };
+  }
+});
 </script>
 
 </body>

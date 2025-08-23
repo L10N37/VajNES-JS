@@ -9,18 +9,15 @@
   --font: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
-html[data-theme="green"] {
+html[data-theme="amber"] {
   --fg: #8cff88;
   --fg-dim: #7de67a;
   --glow: rgba(140, 255, 136, 0.06);
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-html,
-body {
+html, body {
   height: 100%;
   margin: 0;
   background: var(--bg);
@@ -34,7 +31,7 @@ body {
 .wrap {
   position: relative;
   display: grid;
-  grid-template-rows: auto 1fr auto; /* header, content, keybar */
+  grid-template-rows: auto 1fr auto;
   height: 100%;
   background: radial-gradient(120% 100% at 50% 0%, #0d0d0d 0%, var(--bg) 60%);
 }
@@ -42,7 +39,7 @@ body {
 .bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   padding: 8px 12px;
   background: linear-gradient(#121212, #0d0d0d);
   border-bottom: 1px solid var(--chrome);
@@ -58,25 +55,13 @@ body {
   border: 1px solid var(--accent);
   background: #111;
   color: var(--fg);
-  padding: 4px 8px;
+  padding: 4px 18px;
   cursor: pointer;
   font: inherit;
 }
-.btn:active {
-  transform: translateY(1px);
-}
+.btn:active { transform: translateY(1px); }
 
-tr.hdr th {
-  position: sticky;
-  top: 0;
-  background: black;
-  color: white;       /* so text is readable on black */
-  z-index: 2;
-  padding: 12px 8px;  /* increases row height */
-  height: 48px;       /* optional: force a minimum height */
-  line-height: 1.5;   /* improve vertical spacing */
-}
-
+/* Viewport and table */
 .viewport {
   position: relative;
   overflow: auto;
@@ -85,7 +70,6 @@ tr.hdr th {
   scrollbar-color: var(--accent) transparent;
 }
 
-/* Invisible table (frameless grid) */
 .disasm {
   width: 100%;
   border-collapse: collapse;
@@ -96,36 +80,43 @@ tr.hdr th {
 .disasm th,
 .disasm td {
   border: none;
-  padding: 0 6px;
+  padding: 0 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: clip;
   font-variant-ligatures: none;
 }
 
-/* Column widths (tight OP and MNEMONIC) */
-.col-pc    { width: 64px; }
-.col-opc   { width: 48px; }
-.col-op    { width: 56px; }   /* fits "00 00" */
-.col-mn    { width: 160px; }  /* cap to leave room for NOTES */
-.col-reg   { width: 32px; text-align: right; }
-.col-notes { width: auto; }
-
-/* Header + separator */
-.hdr th {
-  color: var(--fg-dim);
+tr.hdr th {
+  position: sticky;
+  top: 0;
+  background: black;
+  color: white;
+  z-index: 2;
+  padding: 6px 4px;
+  height: 32px;
+  line-height: 1.5;
 }
 .sep td {
   height: 1px;
   background: var(--chrome);
 }
 
-/* Sticky key binding bar */
+/* Columns tuned for 720px width */
+.col-pc    { width: 56px; }
+.col-opc   { width: 40px; }
+.col-op    { width: 44px; text-align: center; }
+.col-mnop  { width: 160px; text-align: left; padding-left: 0; } /* MNEMONIC+OPERAND merged */
+.col-notes { width: auto; padding-left: 10px; }
+.col-reg   { width: 28px; text-align: right; }
+.col-bit   { width: 2ch; text-align: center; }
+
+/* Key bar */
 .keybar {
   position: sticky;
   bottom: 0;
   display: flex;
-  gap: 16px;
+  gap: 14px;
   align-items: center;
   padding: 6px 12px;
   border-top: 1px solid var(--chrome);
@@ -134,7 +125,7 @@ tr.hdr th {
   font-size: 12px;
 }
 
-/* CRT scanlines overlay */
+/* CRT overlay */
 .scan {
   pointer-events: none;
   position: absolute;
@@ -154,31 +145,4 @@ tr.hdr th {
   0%   { opacity: 0.50; }
   50%  { opacity: 0.60; }
   100% { opacity: 0.50; }
-}
-
-.disasm th.col-bit, .disasm td:nth-child(9),
-.disasm td:nth-child(10), .disasm td:nth-child(11),
-.disasm td:nth-child(12), .disasm td:nth-child(13),
-.disasm td:nth-child(14), .disasm td:nth-child(15),
-.disasm td:nth-child(16) {
-  text-align: center;
-  width: 1ch;
-}
-
-.disasm th.col-bit,
-.disasm td:nth-child(9),
-.disasm td:nth-child(10),
-.disasm td:nth-child(11),
-.disasm td:nth-child(12),
-.disasm td:nth-child(13),
-.disasm td:nth-child(14),
-.disasm td:nth-child(15),
-.disasm td:nth-child(16) {
-  text-align: center;
-  width: 2ch;     /* bump up from 1ch */
-}
-
-.disasm th.col-mn,
-.disasm td:nth-child(4) {
-  padding-left: 2em;   /* shove right by half an em */
 }

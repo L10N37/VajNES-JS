@@ -143,7 +143,7 @@ function opcodeTablePrint() {
   );
   console.table(opcodeRows);
 }
-//=======================================================
+//====================================================
 
 // worker side ppuBusRead test
 function testPpuBusRead(){
