@@ -14,7 +14,7 @@ function testOamDmaTransfer(page = 0x02) {
 
   // Build expected and actual string outputs
   const expected = Array.from({length: 16}, (_, i) => i.toString(16).padStart(2, '0')).join(' ');
-  const actual   = Array.from(PPU_OAM.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+  const actual   = Array.from(OAM.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
 
   // Log results
   console.debug(
@@ -28,7 +28,7 @@ function testOamDmaTransfer(page = 0x02) {
 
   // Check a specific value
   console.debug(
-    "%cCheck OAM[0x10]: %c" + PPU_OAM[0x10].toString(16) +
+    "%cCheck OAM[0x10]: %c" + OAM[0x10].toString(16) +
     " %c(expected: %c10)",
     "color: orange; font-weight: bold;",
     "color: cyan; font-weight: bold;",
@@ -105,7 +105,7 @@ function testPpuMemorySuite() {
   dmaTransfer(page);
   let oamPass = true;
   for (let i = 0; i < 16; i++) {
-    if (PPU_OAM[i] !== (i & 0xFF)) oamPass = false;
+    if (OAM[i] !== (i & 0xFF)) oamPass = false;
   }
   console.debug(
     `%cOAM [0..15] via DMA: %c${oamPass ? "PASS" : "FAIL"}`,

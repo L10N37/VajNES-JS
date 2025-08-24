@@ -1,7 +1,7 @@
 importScripts('/assets/js/ppu-worker-setup.js');
 console.debug("[PPU Worker init]")
 // ===================== PPU WORKER BOOT HEADER =====================
-
+// #fk all this off, go back to locals, shows on but still have to toggle in console
 // --- SharedArrayBuffer setup ---
 if (!self.SHARED) self.SHARED = {};
 
@@ -29,9 +29,9 @@ defineFlag("ppuDebugLogging", 0b100);   // bit 2
 defineFlag("cpuPpuSyncTiming", 0b1000); // bit 3
 
 // --- Defaults at boot ---
-ppuDebugLogging  = false;
-cpuPpuSyncTiming = true;
-
+let ppuDebugLogging  = false;
+let cpuPpuSyncTiming = false;
+// #fk all this off doesn't work properly
 // --- Boot log ---
 console.debug(
   `[worker boot] ppuDebugLogging=${ppuDebugLogging}  cpuPpuSyncTiming=${cpuPpuSyncTiming}`
@@ -125,13 +125,21 @@ function ppuTick() {
   STORE_CURRENT_FRAME(PPUclock.frame);
 }
 
+// --- Globals for synchronisation bugging in pre render ---
+let maxDrift = 0;
+let driftSum = 0;
+let driftFrames = 0;
+let expectedCycles = 0;
+let expectedCarry  = 0;
+
+// toggle this to turn logging on/off
+let syncLogging = false;  
+
 function preRenderScanline(currentDot) {
   if (currentDot === 1) {
-    // Clear PPU status flags for the new frame
     CLEAR_VBLANK();
     CLEAR_SPRITE0_HIT();
     CLEAR_SPRITE_OVERFLOW();
-
     if (ppuDebugLogging) {
       console.debug(
         `%c[PPU] Pre-render clear @ Frame=${PPUclock.frame}, Scanline=${PPUclock.scanline}`,
@@ -140,12 +148,10 @@ function preRenderScanline(currentDot) {
     }
   }
 
-  // Copy vertical scroll during 280–304 if rendering enabled
   if ((PPUMASK & 0x18) !== 0 && currentDot >= 280 && currentDot <= 304) {
     copyVert();
   }
 
-  // Odd-frame cycle skip at dot 339 if rendering enabled
   if (currentDot === 339 && PPUclock.oddFrame && (PPUMASK & 0x18)) {
     PPUclock.dot++;
     if (ppuDebugLogging) {
@@ -156,25 +162,44 @@ function preRenderScanline(currentDot) {
     }
   }
 
-  // Signal main thread for frame blit
   if (currentDot === 340) {
-    PPU_FRAME_FLAGS = 0b00000001; // Tell main thread to blit the frame
-   
-    let startTime = performance.now();
-    const maxWait = 1000 / 60; // 16.67 ms per frame at 60Hz
-    while (PPU_FRAME_FLAGS !== 0 && (performance.now() - startTime) < maxWait) {
-      // wait until either the flag clears or timeout
-    }
-    // if it didn’t clear in time, just skip this frame
-    PPU_FRAME_FLAGS = 0;
+    postMessage({ type: "frame", frame: PPUclock.frame });
 
-    if (ppuDebugLogging) {
-      console.debug(
-        `%c[PPU] Sent Frame=${PPUclock.frame}`,
-        "color: orange; font-weight: bold;"
-      );
-    }
+    if (PPUclock.frame > 0 && syncLogging) {
+      // exact NTSC ratio: 29780 + 2/3
+      expectedCycles += 29780;
+      expectedCarry  += 2; 
 
+      if (expectedCarry >= 3) {
+        expectedCycles += 1; // add +1 every 3 frames
+        expectedCarry  -= 3;
+      }
+
+      const expected = expectedCycles;
+      const drift    = cpuCycles - expected;
+
+      driftFrames++;
+      driftSum += drift;
+      if (Math.abs(drift) > Math.abs(maxDrift)) {
+        maxDrift = drift;
+      }
+      const avgDrift = Math.round(driftSum / driftFrames);
+
+      // Ignore harmless NTSC fractional drift (~±126)
+      const driftThreshold = 130;  
+
+      if (Math.abs(drift) > driftThreshold) {
+        console.warn(
+          `%c[SYNC WARN] Frame=${PPUclock.frame} | cpuCycles=${cpuCycles} | expected=${expected} | drift=${drift} | max=${maxDrift} | avg=${avgDrift}`,
+          "color: red; font-weight: bold;"
+        );
+      } else {
+        console.debug(
+          `%c[SYNC OK] Frame=${PPUclock.frame} | cpuCycles=${cpuCycles} | expected=${expected} | drift=${drift} | max=${maxDrift} | avg=${avgDrift}`,
+          "color: limegreen; font-weight: bold;"
+        );
+      }
+    }
   }
 }
 
@@ -390,16 +415,12 @@ function resetPPU() {// #fix and use
 }
 
 function startPPULoop() {
-  let last = 0;
-
   while (true) {
-    // CPU posts total PPU cycles in CLOCKS[1]
-    const now = Atomics.load(SHARED.CLOCKS, 1);
-    const budget = now - last;
-    last = now;
+    // Atomically grab the full budget and clear it
+    let budget = Atomics.exchange(SHARED.CLOCKS, 1, 0);
 
     if (budget > 0) {
-      for (let i = 0; i < budget; i++) {
+      while (budget-- > 0) {
         ppuTick();
       }
 
@@ -409,10 +430,6 @@ function startPPULoop() {
           `[SYNC] Frame=${PPUclock.frame} SL=${PPUclock.scanline} DOT=${PPUclock.dot} CPU=${cpuCycles}`
         );
       }
-
-      // publish stats (optional, you might not need these anymore)
-      Atomics.store(SHARED.SYNC, 0, budget); // cycles this interval
-      Atomics.store(SHARED.SYNC, 1, budget); // cycles actually burned
     }
   }
 }

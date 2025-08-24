@@ -184,7 +184,8 @@ try {
     if (d.type === 'ready') {
       console.debug("[main] worker says ready");
     } else {
-      console.debug("[main] worker message:", d);
+      //# remove altogether, spams frames sent
+      //console.debug("[main] worker message:", d);
     }
   });
 

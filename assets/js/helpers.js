@@ -61,3 +61,4 @@ function updateDebugTables() {
 }
 
 function resetSystem(){resetCPU(), ppuResetCounters();}
+

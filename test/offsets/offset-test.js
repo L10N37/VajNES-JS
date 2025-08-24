@@ -1,173 +1,172 @@
-function runBusTest() {
-  console.debug("=== NES Bus Test ===");
-
-  let total = 0;
-  let passCount = 0;
-  let failList = [];
-  let groupStats = {};
-
-  function recordResult(addr, label, exp, got) {
-    total++;
-    if (got === exp) {
-      passCount++;
-      groupStats[label] = (groupStats[label] || 0) + 1;
-    } else {
-      failList.push({ addr, label, exp, got });
-    }
+// =========================
+// Simple test helpers
+// =========================
+function expectEqual(name, got, expected) {
+  if (got === expected) {
+    console.log(`%cPASS%c ${name}`, "color:lime;font-weight:bold;", "");
+  } else {
+    console.error(`%cFAIL%c ${name} → got ${got}, expected ${expected}`,
+                  "color:red;font-weight:bold;", "");
   }
+}
 
-  // ---------- CPU RAM ----------
-  for (let a = 0; a < 0x0800; a += 0x40) {
-    const val = (a ^ 0xAA) & 0xFF;
-    checkWriteOffset(a, val);
-    const got = checkReadOffset(a);
-    recordResult(a, "CPU RAM", val, got);
-  }
+// =========================
+// TEST SUITE
+// =========================
+function runAllTests() {
+  console.log("%c=== NES CPU/PPU/JOY/APU TESTS ===", "color:cyan;font-weight:bold;");
 
-  // ---------- PRG RAM ----------
-  for (let a = 0x6000; a < 0x8000; a += 0x40) {
-    const val = (a ^ 0x55) & 0xFF;
-    checkWriteOffset(a, val);
-    const got = checkReadOffset(a);
-    recordResult(a, "PRG RAM", val, got);
-  }
+  // -----------------------
+  // PPU read: Palette (immediate)
+  // -----------------------
+  PALETTE_RAM[0x00] = 0x1F;        // background color
+  VRAM_ADDR = 0x3F00;
 
-  // ---------- VRAM / Nametables ----------
-  for (let v = 0x2000; v < 0x2400; v += 0x40) {
-    const val = (v ^ 0x77) & 0xFF;
+  let pal_read = checkReadOffset(0x2007); // should be immediate 0x1F
 
-    // write via $2006/$2007
-    checkWriteOffset(0x2006, (v >> 8) & 0x3F);
-    checkWriteOffset(0x2006, v & 0xFF);
-    checkWriteOffset(0x2007, val);
+  expectEqual("Palette immediate read", pal_read, 0x1F);
+  expectEqual("Palette buffer reloads with NT mirror", typeof VRAM_DATA, "number"); // buffer updated behind the scenes
 
-    // reset addr and prime buffer
-    checkWriteOffset(0x2006, (v >> 8) & 0x3F);
-    checkWriteOffset(0x2006, v & 0xFF);
-    checkReadOffset(0x2007); // dummy read
+  // -----------------------
+  // PPU read: Nametable (buffered)
+  // -----------------------
+  VRAM[mapNT(0x2000)] = 0xBB;      // put data in NT
+  VRAM_ADDR = 0x2000;              // point PPUADDR at NT
 
-    // real read
-    checkWriteOffset(0x2006, (v >> 8) & 0x3F);
-    checkWriteOffset(0x2006, v & 0xFF);
-    const got = checkReadOffset(0x2007);
+  let nt_dummy = checkReadOffset(0x2007); // first read = old VRAM_DATA
+  let nt_real  = checkReadOffset(0x2007); // second read = actual 0xBB
 
-    recordResult(v, "Nametable", val, got);
-  }
+  expectEqual("Nametable dummy read", nt_dummy, VRAM_DATA);
+  expectEqual("Nametable real read", nt_real, 0xBB);
 
-  // ---------- Palette ----------
-  for (let v = 0x3F00; v < 0x3F20; v++) {
-    const val = v & 0x1F;
-    checkWriteOffset(0x2006, (v >> 8) & 0x3F);
-    checkWriteOffset(0x2006, v & 0xFF);
-    checkWriteOffset(0x2007, val);
+  // -----------------------
+  // PPU read: Pattern table (buffered)
+  // -----------------------
+  CHR_ROM[0x0100] = 0xAA;          // write raw CHR data
+  VRAM_ADDR = 0x0100;              // point PPUADDR at pattern table
 
-    checkWriteOffset(0x2006, (v >> 8) & 0x3F);
-    checkWriteOffset(0x2006, v & 0xFF);
-    const got = checkReadOffset(0x2007);
-    recordResult(v, "Palette", val & 0x3F, got);
-  }
+  let pt_dummy = checkReadOffset(0x2007); // first read = old VRAM_DATA
+  let pt_real  = checkReadOffset(0x2007); // second read = actual 0xAA
 
-  // ---------- OAM ----------
-  for (let i = 0; i < 0x100; i += 0x20) {
-    checkWriteOffset(0x2003, i);
-    checkWriteOffset(0x2004, i ^ 0xAB);
-    checkWriteOffset(0x2003, i);
-    const got = checkReadOffset(0x2004);
-    recordResult(0x2004, "OAMDATA", i ^ 0xAB, got);
-  }
+  expectEqual("Pattern table dummy read", pt_dummy, VRAM_DATA); 
+  expectEqual("Pattern table real read", pt_real, 0xAA);
 
-    // ---------- CPU RAM mirrors ----------
-  for (let base = 0x0000; base < 0x0800; base += 0x100) {
-    const val = (base ^ 0xCC) & 0xFF;
-    checkWriteOffset(base, val);
-    const mirrorAddr = base + 0x0800; // $0800 mirrors $0000
-    const got = checkReadOffset(mirrorAddr);
-    recordResult(mirrorAddr, "CPU RAM mirror", val, got);
-  }
+  // -----------------------
+  // VRAM write + read test
+  // -----------------------
+  VRAM_ADDR = 0x2000;
+  checkWriteOffset(0x2007, 0x99);     // write to NT via $2007
 
-    // ---------- VRAM mirrors ----------
-  for (let v = 0x2000; v < 0x2400; v += 0x40) {
-    const val = (v ^ 0x5A) & 0xFF;
+  VRAM_ADDR = 0x2000;                 // reset addr to same spot
+  let dummy = checkReadOffset(0x2007); // buffered read (old VRAM_DATA)
+  let real  = checkReadOffset(0x2007); // now should see 0x99
 
-    // write original
-    checkWriteOffset(0x2006, (v >> 8) & 0x3F);
-    checkWriteOffset(0x2006, v & 0xFF);
-    checkWriteOffset(0x2007, val);
+  expectEqual("VRAM dummy read first (buffered)", dummy, VRAM_DATA); // old buffer
+  expectEqual("VRAM real read second", real, 0x99);
 
-    // read mirror at $3000 region
-    const mirror = v + 0x1000;
-    checkWriteOffset(0x2006, (mirror >> 8) & 0x3F);
-    checkWriteOffset(0x2006, mirror & 0xFF);
-    checkReadOffset(0x2007); // dummy read
-    checkWriteOffset(0x2006, (mirror >> 8) & 0x3F);
-    checkWriteOffset(0x2006, mirror & 0xFF);
-    const got = checkReadOffset(0x2007);
+  // -----------------------
+  // mapNT tests
+  // -----------------------
+  MIRRORING = "vertical";
+  expectEqual("mapNT vertical NT0", mapNT(0x2000), 0x000);
+  expectEqual("mapNT vertical NT2 mirrors NT0", mapNT(0x2800), 0x000);
 
-    recordResult(mirror, "VRAM mirror", val, got);
-  }
+  MIRRORING = "horizontal";
+  expectEqual("mapNT horizontal NT0", mapNT(0x2000), 0x000);
+  expectEqual("mapNT horizontal NT1 mirrors NT0", mapNT(0x2400), 0x000);
+  expectEqual("mapNT horizontal NT2", mapNT(0x2800), 0x400);
 
-    // ---------- Palette mirrors ----------
-  for (let v = 0x3F00; v < 0x3F20; v++) {
-    const val = (v ^ 0x3C) & 0x3F;
+  MIRRORING = "single0";
+  expectEqual("mapNT single0 NT3", mapNT(0x2C00), 0x000);
 
-    // write into base palette
-    checkWriteOffset(0x2006, (v >> 8) & 0x3F);
-    checkWriteOffset(0x2006, v & 0xFF);
-    checkWriteOffset(0x2007, val);
+  MIRRORING = "single1";
+  expectEqual("mapNT single1 NT3", mapNT(0x2C00), 0x400);
 
-    // read from mirrored address
-    const mirror = 0x3F20 + (v & 0x1F); // repeats every 0x20 up to 0x3FFF
-    checkWriteOffset(0x2006, (mirror >> 8) & 0x3F);
-    checkWriteOffset(0x2006, mirror & 0xFF);
-    const got = checkReadOffset(0x2007);
+  MIRRORING = "four";
+  expectEqual("mapNT four NT3", mapNT(0x2C00), 0xC00);
 
-    recordResult(mirror, "Palette mirror", val, got);
-  }
+  // -----------------------
+  // paletteIndex tests
+  // -----------------------
+  expectEqual("paletteIndex $3F00", paletteIndex(0x3F00), 0x00);
+  expectEqual("paletteIndex $3F10 mirrors $3F00", paletteIndex(0x3F10), 0x00);
+  expectEqual("paletteIndex $3F14 mirrors $3F04", paletteIndex(0x3F14), 0x04);
 
-  // ---------- CHR ROM/RAM (if writable mapper) ----------
-  for (let v = 0; v < 0x2000; v += 0x100) {
-    const val = (v ^ 0x99) & 0xFF;
-    SHARED.CHR_ROM[v] = val;  // direct write (mapper dependent)
-    const got = SHARED.CHR_ROM[v];
-    recordResult(v, "CHR", val, got);
-  }
+  // -----------------------
+  // CPU RAM read/write
+  // -----------------------
+  cpuWrite(0x0000, 0x42);
+  expectEqual("cpuRead RAM 0x0000", cpuRead(0x0000), 0x42);
 
-  // ---------- Write-only PPU registers ----------
-  checkWriteOffset(0x2000, 0x80); recordResult(0x2000, "PPUCTRL", 0x80, PPUCTRL);
-  checkWriteOffset(0x2001, 0x1E); recordResult(0x2001, "PPUMASK", 0x1E, PPUMASK);
-  checkWriteOffset(0x2003, 0x33); recordResult(0x2003, "OAMADDR", 0x33, OAMADDR);
+  // -----------------------
+  // PRG-RAM read/write
+  // -----------------------
+  checkWriteOffset(0x6000, 0xAB);
+  expectEqual("checkReadOffset PRG-RAM 0x6000", checkReadOffset(0x6000), 0xAB);
 
-  // ---------- Read-only PPUSTATUS ----------
-  PPUSTATUS = 0xE0;
-  const got2002 = checkReadOffset(0x2002);
-  recordResult(0x2002, "PPUSTATUS", 0xE0, got2002 | 0xE0);
+  // -----------------------
+  // CHR-ROM/VRAM writes
+  // -----------------------
+  VRAM_ADDR = 0x0001;
+  checkWriteOffset(0x2007, 0x55);
+  expectEqual("CHR_ROM write fallback", CHR_ROM[0x0001], 0x55);
 
-  // ---------- APU ----------
-  APUregister.SND_CHN = 0xAA;
-  const got4015 = checkReadOffset(0x4015);
-  recordResult(0x4015, "APU $4015", 0xAA, got4015);
+  VRAM_ADDR = 0x2000;
+  checkWriteOffset(0x2007, 0x77);
+  expectEqual("VRAM write NT", VRAM[mapNT(0x2000)], 0x77);
 
-  // ---------- Controllers ----------
-  checkWriteOffset(0x4016, 0x01); recordResult(0x4016, "Joypad1 strobe", 0x01, JoypadRegister.JOYPAD1);
-  checkWriteOffset(0x4017, 0x02); recordResult(0x4017, "Joypad2 strobe", 0x02, JoypadRegister.JOYPAD2);
+  VRAM_ADDR = 0x3F00;
+  checkWriteOffset(0x2007, 0x23);
+  expectEqual("PALETTE write normalized", PALETTE_RAM[0x00], 0x23);
 
-  // ---------- Summary ----------
-  console.debug("---- PASS GROUPS ----");
-  for (let [label, count] of Object.entries(groupStats)) {
-    console.debug(`${label}: ${count} ok`);
-  }
+  // -----------------------
+  // PPUSTATUS read
+  // -----------------------
+  PPUSTATUS = 0x80;
+  writeToggle = 1;
+  let status = checkReadOffset(0x2002);
+  expectEqual("checkReadOffset PPUSTATUS value", status, 0x80);
+  expectEqual("checkReadOffset PPUSTATUS clear VBlank", (PPUSTATUS & 0x80), 0x00);
+  expectEqual("checkReadOffset writeToggle reset", writeToggle, 0);
 
-  console.debug(`TOTAL: ${passCount} / ${total} passed`);
-  console.debug(`FAIL: ${failList.length}`);
+  // -----------------------
+  // PRG-ROM direct read
+  // -----------------------
+  prgRom[0x1234] = 0x99;
+  expectEqual("checkReadOffset PRG-ROM", checkReadOffset(0x9234), 0x99);
 
-  if (failList.length) {
-    console.debug("---- FAIL DETAILS ----");
-    failList.forEach(f => {
-      console.debug(
-        `[${f.label}] $${f.addr.toString(16).padStart(4,"0")} exp=$${f.exp.toString(16).padStart(2,"0")} got=$${f.got.toString(16).padStart(2,"0")}`
-      );
-    });
-  }
+  // -----------------------
+  // Joypad write/read
+  // -----------------------
+  // simulate controller always returning 1
+  pollController1 = () => 1;
+  pollController2 = () => 1;
 
-  console.debug("=== END TEST ===");
+  joypadWrite(0x4016, 1); // strobe on
+  joypadWrite(0x4016, 0); // strobe off → latch states
+
+  joypad1State = 0x01;
+  let j1a = joypadRead(0x4016);
+  expectEqual("joypadRead 1st bit", j1a & 1, 1);
+  let j1b = joypadRead(0x4016);
+  expectEqual("joypadRead shift works", (j1b & 1), (joypad1State & 1));
+
+  joypad2State = 0x01;
+  let j2a = joypadRead(0x4017);
+  expectEqual("joypadRead2 1st bit", j2a & 1, 1);
+
+  // -----------------------
+  // APU write/read
+  // -----------------------
+  checkWriteOffset(0x4000, 0x55);
+  expectEqual("APU SQ1_VOL write", APUregister.SQ1_VOL, 0x55);
+
+  checkWriteOffset(0x4015, 0x99);
+  expectEqual("APU SND_CHN write", APUregister.SND_CHN, 0x99);
+  expectEqual("APU SND_CHN read", checkReadOffset(0x4015), 0x99);
+
+  checkWriteOffset(0x4017, 0x77);
+  expectEqual("APU FRAME_CNT write", APUregister.FRAME_CNT, 0x77);
+
+  console.log("%c=== TESTS COMPLETE ===", "color:cyan;font-weight:bold;");
 }

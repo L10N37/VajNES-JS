@@ -6,7 +6,7 @@ let cpuRunning = false;
 // internal only, don't build disasm rows unless the window is open
 let disasmRunning = false;
 
-const CPU_BATCH = 5; // downside: will process this many opcodes prior to pausing... 
+const CPU_BATCH = 10; // downside: will process this many opcodes prior to pausing... 
 
 let nmiCheckCounter = 0;
 let nmiServiceCounter = 0;
@@ -19,14 +19,13 @@ const CYCLES_PER_MS = NES_CPU_HZ / 1000;   // ~1789.773 cycles per ms
 const NES_W = 256;
 const NES_H = 240;
 
-function renderFrame(){
-    // ---- frame blit ----
-  if (PPU_FRAME_FLAGS == 0b00000001) {
+// RENDER FRAME
+ppuWorker.onmessage = (e) => {
+  if (e.data.type === "frame") {
     blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
-    registerFrameUpdate(); // FPS counter screen overlay
-    PPU_FRAME_FLAGS = 0x00;
+    registerFrameUpdate();
   }
-}
+};
 
 function checkInterrupts() {
   nmiCheckCounter++;
@@ -63,17 +62,23 @@ function checkInterrupts() {
 // offset handler takes care of prgRom being based @ 0x0000
   function step() {
 
-  // kick PPU worker via SAB bit #pointless, it can just wait for cpu cycles and start dotting
-  //Atomics.or(SHARED.EVENTS, 0, 0b00000100);
+  // make sure the PPU is always 3 ticks ahead
+// make sure the PPU is always 3 ticks ahead
+let ppuBudget = Atomics.load(SHARED.CLOCKS, 1);
+while (ppuBudget > 0) {
+  // refresh local copy each spin
+  ppuBudget = Atomics.load(SHARED.CLOCKS, 1);
+  // spin-wait until PPU burns it down
+  // (PPU worker will reset this to 0 when finished)
+  //console.log(`Waiting for PPU budget to deplete... Current budget: ${ppuBudget}`);
+}
 
-  renderFrame();
 
   // disable CRT fuzz noise
   NoSignalAudio.setEnabled(false);
 
   // if we're paused, briefly let the PPU worker run this step
   const wasPaused = !cpuRunning;
-  if (wasPaused) Atomics.or(SHARED.EVENTS, 0, 0b00000100); // set RUN bit
 
   // realigns with our prgRom base being 0x00 by being passed through offset handler
   const code   = checkReadOffset(CPUregisters.PC);
@@ -119,26 +124,24 @@ function checkInterrupts() {
   // increment PC to point at next opcode, if PC modified in opcode handler, this adds zero
   CPUregisters.PC = CPUregisters.PC + OPCODES[code].pc;
 
-  // Base cycles (CPU + PPU budget)
-  // coerce a value into an integer | 0
+  // add cycles
   const cyc = OPCODES[code].cycles | 0;
   if (cyc) {
-    Atomics.add(SHARED.CLOCKS, 0, cyc);
-    Atomics.add(SHARED.CLOCKS, 1, 3 * cyc);
+    addExtraCycles(cyc);
   }
+
+  if (cpuCycles !== Atomics.load(SHARED.CLOCKS, 0)) {
+  console.error(`[CYCLE MISMATCH] cpuCycles=${cpuCycles}, SAB0=${Atomics.load(SHARED.CLOCKS,0)}`);
+}
+
+
 
   // if we temporarily enabled the worker, put it back to paused
   if (wasPaused) Atomics.and(SHARED.EVENTS, 0, ~0b00000100); // clear RUN bit
 }
 
-// ====================================== PACED RUN + SAMPLER ======================================
-// Real-time pacing state
-// runPacedWithSampler(5000, 500)
-let __paceCarry = 0;  // keep fractional cycles and (if needed) small deficits
-let __lastT = 0;
-
 // run(): paced to ~NES time using wall-clock
-  function run() {
+function run() {
   if (cpuRunning) return;
   cpuRunning = true;
 
@@ -162,7 +165,7 @@ let __lastT = 0;
 
       // Time budget scales with dt; allow most of the frame to produce cycles
       // (minimum keeps us from starving on low rAF rates)
-      const BUDGET_MS = Math.max(0.6 * dt, 10);
+      const BUDGET_MS = Math.max(0.8 * dt, 10);
       const deadline  = now + BUDGET_MS;
 
       let produced = 0;
@@ -188,93 +191,9 @@ let __lastT = 0;
 // Pause (keeps your existing external API)
   function pause() {
   cpuRunning = false;
-
-  // stop PPU worker, clear bit 2
-  Atomics.and(SHARED.EVENTS, 0, ~0b00000100);
-
   if (typeof updateDebugTables === 'function') {
     try { updateDebugTables(); } catch (e) {}
   }
-}
-
-// One-call sampler + summary while paced run is active
-// Usage: runPacedWithSampler(5000, 500)
-function runPacedWithSampler(msTotal = 5000, msSample = 500) {
-  if (cpuRunning) { console.warn("[runPacedWithSampler] CPU already running."); return; }
-
-  // start paced loop
-  run();
-
-  const startT   = performance.now();
-  const startCPU = Atomics.load(SHARED.CLOCKS, 0);
-  const startPPU = Atomics.load(SHARED.CLOCKS, 1);
-
-  let last = {
-    t: startT,
-    ev: Atomics.load(SHARED.EVENTS, 0),
-    cpu: startCPU,
-    ppu: startPPU,
-    bud: (SHARED.SYNC ? Atomics.load(SHARED.SYNC, 0) : 0),
-    burn:(SHARED.SYNC ? Atomics.load(SHARED.SYNC, 1) : 0),
-  };
-
-  const bits = n => n.toString(2).padStart(8,'0');
-
-  function logInterval(prev, cur) {
-    const dt   = (cur.t - prev.t);
-    const dcpu = cur.cpu - prev.cpu;
-    const dppu = cur.ppu - prev.ppu;
-    const exp  = 3 * dcpu;   // expected ΔPPU for this interval
-    const util = (cur.bud > 0) ? ((cur.burn / cur.bud) * 100).toFixed(1) : '—';
-    const runOn= (cur.ev & 0b100) ? "ON" : "OFF";
-    console.debug(
-      `EVENTS[0]=${cur.ev} (bits ${bits(cur.ev)}) RUN=${runOn}\n` +
-      `CPU total=${cur.cpu}   ΔCPU=${dcpu}\n` +
-      `PPU total=${cur.ppu}   ΔPPU=${dppu}   expected=${exp}\n` +
-      `budget=${cur.bud}  burned=${cur.burn}  util=${util}%\n` +
-      `interval=${dt.toFixed(2)} ms`
-    );
-  }
-
-  const sampler = setInterval(() => {
-    const cur = {
-      t: performance.now(),
-      ev: Atomics.load(SHARED.EVENTS, 0),
-      cpu: Atomics.load(SHARED.CLOCKS, 0),
-      ppu: Atomics.load(SHARED.CLOCKS, 1),
-      bud: (SHARED.SYNC ? Atomics.load(SHARED.SYNC, 0) : 0),
-      burn:(SHARED.SYNC ? Atomics.load(SHARED.SYNC, 1) : 0),
-    };
-    logInterval(last, cur);
-    last = cur;
-  }, msSample);
-
-  // stop sampler + print summary, leave emu running (call pause() when you want)
-  setTimeout(() => {
-    clearInterval(sampler);
-
-    const stopT   = performance.now();
-    const stopCPU = Atomics.load(SHARED.CLOCKS, 0);
-    const elapsed = stopT - startT;
-    const produced = stopCPU - startCPU;
-    const cps = produced / (elapsed / 1000);
-    const ratio = (cps / NES_CPU_HZ).toFixed(2);
-
-    logInterval(last, {
-      t: stopT,
-      ev: Atomics.load(SHARED.EVENTS, 0),
-      cpu: stopCPU,
-      ppu: Atomics.load(SHARED.CLOCKS, 1),
-      bud: (SHARED.SYNC ? Atomics.load(SHARED.SYNC, 0) : 0),
-      burn:(SHARED.SYNC ? Atomics.load(SHARED.SYNC, 1) : 0),
-    });
-
-    console.debug(
-      `[SUMMARY] elapsed=${elapsed.toFixed(1)} ms\n` +
-      `[SUMMARY] CPU cycles produced=${produced}\n` +
-      `[SUMMARY] cycles/sec=${Math.round(cps)}  (NES ${NES_CPU_HZ} → x${ratio})`
-    );
-  }, msTotal);
 }
 
 // ======================== OPCODE DISPATCH TABLE ========================

@@ -1,14 +1,5 @@
-/* 
-old debugging, as done its job, can't use as these aren't global vars and will log every step with UI refresh
-console.debug(`WRAM cells = ${allWramCells.length} bytes`);
-console.debug(`WRAM cells = ${(allWramCells.length / 1024).toFixed(2)} KB`);
-console.debug(`VRAM cells = ${allVramCells.length} bytes`);
-console.debug(`VRAM cells = ${(allVramCells.length / 1024).toFixed(2)} KB`);
-console.debug(`Cartridge1 space cells = ${allCartSpaceBytes1.length} bytes`);
-console.debug(`Cartridge2 space cells = ${allCartSpaceBytes2.length} bytes`);
-console.debug(`Total Cartridge space = ${(allCartSpaceBytes1.length + allCartSpaceBytes2.length) / 1024} KB`);
-*/
-
+// ================ DEBUG TABLES (WRAM, VRAM, PRG-ROM etc.) ================
+// #update UI with correct data in PPU memory space taken from appropriate variables
 // Chrome has an issue with scroll to view that isn't present on other browsers, only since having 3 separate 
 // tables
 
@@ -796,7 +787,7 @@ if (prgromHeader) {
   const input = document.createElement("input");
   input.type = "text";
   input.value = "8000";
-  input.style.width = "76px";
+  input.style.width = "90px";
   input.style.fontFamily = "monospace";
   input.style.fontSize = "1em";
   input.style.padding = "2px 4px";
@@ -810,12 +801,12 @@ if (prgromHeader) {
   const btn = document.createElement("button");
   btn.textContent = "Set PC";
   btn.style.fontSize = "0.95em";
-  btn.style.padding = "2px 10px";
+  //btn.style.padding = "2px 10px";
   btn.style.border = "1px solid #888";
   btn.style.borderRadius = "4px";
   btn.style.background = "#444";
   btn.style.color = "#fff";
-  btn.style.marginLeft = "2px";
+  btn.style.marginLeft = "10px";
   btn.style.cursor = "pointer";
   btn.onmouseenter = () => btn.style.background = "#666";
   btn.onmouseleave = () => btn.style.background = "#444";

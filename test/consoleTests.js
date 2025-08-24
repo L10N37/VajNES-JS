@@ -264,103 +264,833 @@ function runFlagTests() {
 runFlagTests();
 }
 
+
 // all ops that touch p flags test
-function runFlagSuite() {
+function runAllFlagTests() {
   function resetCPU() {
-    CPUregisters.A = 0;
-    CPUregisters.X = 0;
-    CPUregisters.Y = 0;
-    CPUregisters.PC = 0x0000;
-    CPUregisters.S  = 0xFD;
-    CPUregisters.P = { C:0, Z:0, I:0, D:0, V:0, N:0 };
+    CPUregisters.A=0;CPUregisters.X=0;CPUregisters.Y=0;
+    CPUregisters.PC=0;CPUregisters.S=0xFD;
+    CPUregisters.P={C:0,Z:0,I:0,D:0,V:0,N:0};
     systemMemory.fill(0);
   }
-
-  function dumpFlags() {
-    return {C:CPUregisters.P.C, Z:CPUregisters.P.Z, I:CPUregisters.P.I,
-            D:CPUregisters.P.D, V:CPUregisters.P.V, N:CPUregisters.P.N};
+  function dumpFlags(){return {C:CPUregisters.P.C,Z:CPUregisters.P.Z,I:CPUregisters.P.I,D:CPUregisters.P.D,V:CPUregisters.P.V,N:CPUregisters.P.N};}
+  function runOne(op,name,setup,expect){
+    resetCPU();setup();OPCODES[op].func();
+    const actual=dumpFlags();
+    const ok=Object.entries(expect).every(([f,v])=>actual[f]===v);
+    results.push({opcode:op.toString(16).padStart(2,"0").toUpperCase(),name,expected:expect,actual,pass:ok});
   }
+  let results=[];
 
-  function runOne(opcode, name, setupFn, expectFlags) {
+  // ================
+  // ADC (all modes)
+  // ================
+// --- ADC TESTS ---
+
+// Immediate
+runOne(0x69,"ADC imm",()=>{
+  CPUregisters.A = 0xF0;
+  systemMemory[1] = 0x20;
+},{C:1,N:0});
+
+// Zero Page
+runOne(0x65,"ADC zp",()=>{
+  CPUregisters.A = 0;
+  systemMemory[0x10] = 0;
+},{Z:1});
+
+// Zero Page,X
+runOne(0x75,"ADC zpx",()=>{
+  CPUregisters.A = 0x7F;
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x10;   // operand = $10
+  systemMemory[0x11] = 0x01; // value at $11
+},{N:1,V:1});
+
+// Absolute
+runOne(0x6D,"ADC abs",()=>{
+  CPUregisters.A = 0x01;
+  systemMemory[1] = 0x00;       // low
+  systemMemory[2] = 0x06;       // high -> $0600
+  systemMemory[0x0600] = 1;     // operand
+},{Z:0});
+
+// Absolute,X
+runOne(0x7D,"ADC absx",()=>{
+  CPUregisters.A = 0xFF;
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x00;       // low
+  systemMemory[2] = 0x06;       // high -> $0600
+  systemMemory[0x0601] = 1;     // effective operand
+},{C:1,Z:1});
+
+// Absolute,Y
+runOne(0x79,"ADC absy",()=>{
+  CPUregisters.A = 0x01;
+  CPUregisters.Y = 1;
+  systemMemory[1] = 0x00;       // low
+  systemMemory[2] = 0x06;       // high -> $0600
+  systemMemory[0x0601] = 1;     // effective operand
+},{Z:0});
+
+// Indexed Indirect (ind,X)
+runOne(0x61,"ADC indx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x02;       // operand points to zp=2
+  systemMemory[0x03] = 0x00;    // low
+  systemMemory[0x04] = 0x06;    // high -> $0600
+  systemMemory[0x0600] = 0xFF;  // operand
+  CPUregisters.A = 2;
+},{C:1});
+
+// Indirect Indexed (ind),Y
+runOne(0x71,"ADC indy",()=>{
+  CPUregisters.Y = 1;
+  systemMemory[1] = 0x02;       // operand = zp=2
+  systemMemory[0x02] = 0x00;    // low
+  systemMemory[0x03] = 0x06;    // high -> $0600
+  systemMemory[0x0601] = 1;     // effective operand ($0600 + Y)
+  CPUregisters.A = 1;
+},{Z:0});
+
+
+  // ================
+  // SBC (all modes)
+  // ================
+runOne(0xE9,"SBC imm",()=>{
+  CPUregisters.A = 0;
+  systemMemory[1] = 1;         // immediate operand
+},{C:0,N:1});
+
+runOne(0xE5,"SBC zp",()=>{
+  CPUregisters.A = 1;
+  systemMemory[1] = 0x10;      // zp address
+  systemMemory[0x10] = 1;      // zp data
+  CPUregisters.P.C = 1;
+},{Z:1,C:1});
+
+runOne(0xF5,"SBC zpx",()=>{
+  CPUregisters.A = 5;
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x10;      // zp base
+  systemMemory[0x11] = 2;      // zp+X data
+  CPUregisters.P.C = 1;
+},{C:1});
+
+runOne(0xED,"SBC abs",()=>{
+  CPUregisters.A = 0x80;
+  systemMemory[1] = 0x00;      // lo
+  systemMemory[2] = 0x03;      // hi ($0300)
+  systemMemory[0x0300] = 0x7F; // RAM data
+  CPUregisters.P.C = 1;
+},{C:1});
+
+runOne(0xFD,"SBC absx",()=>{
+  CPUregisters.A = 1;
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x00;      // lo
+  systemMemory[2] = 0x03;      // hi ($0300)
+  systemMemory[0x0301] = 1;    // RAM data at base+X
+  CPUregisters.P.C = 1;
+},{Z:1,C:1});
+
+runOne(0xF9,"SBC absy",()=>{
+  CPUregisters.A = 0;
+  CPUregisters.Y = 1;
+  systemMemory[1] = 0x00;      // lo
+  systemMemory[2] = 0x03;      // hi ($0300)
+  systemMemory[0x0301] = 1;    // RAM data at base+Y
+  CPUregisters.P.C = 1;
+},{C:0,N:1});
+
+runOne(0xE1,"SBC indx",()=>{
+  CPUregisters.A = 1;
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x01;      // operand zp = $01
+  systemMemory[0x02] = 0x00;   // zp[$01+X] = $02 → lo
+  systemMemory[0x03] = 0x03;   // hi = $03
+  systemMemory[0x0300] = 1;    // RAM target
+  CPUregisters.P.C = 1;
+},{Z:1,C:1});
+
+runOne(0xF1,"SBC indy",()=>{
+  CPUregisters.A = 5;
+  CPUregisters.Y = 1;
+  systemMemory[1] = 0x02;      // operand zp = $02
+  systemMemory[0x02] = 0x00;   // lo
+  systemMemory[0x03] = 0x03;   // hi
+  systemMemory[0x0301] = 2;    // RAM data at base+Y
+  CPUregisters.P.C = 1;
+},{C:1});
+
+  // ================
+  // CMP/CPX/CPY
+  // ================
+runOne(0xC9,"CMP imm",()=>{
+  CPUregisters.A = 0x40;
+  systemMemory[1] = 0x40;   // equal
+},{C:1,Z:1});
+
+runOne(0xC5,"CMP zp",()=>{
+  CPUregisters.P.C = 0;
+  CPUregisters.P.Z = 0;
+  CPUregisters.P.N = 0;
+  CPUregisters.A = 0x10;
+  systemMemory[1] = 0x10;      // operand = zp address
+  systemMemory[0x10] = 0x20;   // data at zp
+},{C:0,N:1});
+
+runOne(0xD5,"CMP zpx",()=>{
+  CPUregisters.X = 1;
+  CPUregisters.A = 0x30;
+  systemMemory[0x11] = 0x20; // A > M
+},{C:1});
+
+runOne(0xCD,"CMP abs",()=>{
+  CPUregisters.A = 0x30;
+  systemMemory[1] = 0x00;    // lo
+  systemMemory[2] = 0x03;    // hi ($0300)
+  systemMemory[0x0300] = 0x20;
+},{C:1});
+
+runOne(0xDD,"CMP absx",()=>{
+  CPUregisters.X = 1;
+  CPUregisters.A = 0x50;
+  systemMemory[1] = 0x00;    // lo
+  systemMemory[2] = 0x03;    // hi ($0300)
+  systemMemory[0x0301] = 0x40;
+},{C:1});
+
+runOne(0xD9,"CMP absy",()=>{
+  CPUregisters.Y = 1;
+  CPUregisters.A = 0x10;
+  systemMemory[1] = 0x00;    // lo
+  systemMemory[2] = 0x03;    // hi ($0300)
+  systemMemory[0x0301] = 0x20; // A < M
+},{C:0,N:1});
+
+runOne(0xC1,"CMP indx",()=>{
+  CPUregisters.X = 1;
+  CPUregisters.A = 0x40;
+  systemMemory[1] = 0x01;      // zp ptr = $01
+  systemMemory[0x02] = 0x00;   // lo at zp[$01+X]
+  systemMemory[0x03] = 0x03;   // hi
+  systemMemory[0x0300] = 0x40; // operand
+},{C:1,Z:1});
+
+runOne(0xD1,"CMP indy",()=>{
+  CPUregisters.Y = 1;
+  CPUregisters.A = 0x20;
+  systemMemory[1] = 0x02;      // zp ptr = $02
+  systemMemory[0x02] = 0x00;   // lo
+  systemMemory[0x03] = 0x03;   // hi
+  systemMemory[0x0301] = 0x30; // A < M
+},{C:0,N:1});
+
+// CPX
+runOne(0xE0,"CPX imm",()=>{
+  CPUregisters.X = 0x20;
+  systemMemory[1] = 0x20;   // equal
+},{C:1,Z:1});
+
+runOne(0xE4,"CPX zp",()=>{
+  CPUregisters.X = 0x10;
+  systemMemory[1] = 0x10;      // operand = zp address
+  systemMemory[0x10] = 0x20;   // actual data at zp
+},{C:0,N:1});
+
+runOne(0xEC,"CPX abs",()=>{
+  CPUregisters.X = 0x50;
+  systemMemory[1] = 0x00;
+  systemMemory[2] = 0x03;
+  systemMemory[0x0300] = 0x20; // X > M
+},{C:1});
+
+// CPY
+runOne(0xC0,"CPY imm",()=>{
+  CPUregisters.Y = 0x40;
+  systemMemory[1] = 0x40;   // equal
+},{C:1,Z:1});
+
+runOne(0xC4,"CPY zp",()=>{
+  CPUregisters.Y = 0x10;
+  systemMemory[1]  = 0x10;   // operand = zp address
+  systemMemory[0x10] = 0x20; // data at that zp
+},{C:0,N:1});
+
+runOne(0xCC,"CPY abs",()=>{
+  CPUregisters.Y = 0x50;
+  systemMemory[1] = 0x00;
+  systemMemory[2] = 0x03;
+  systemMemory[0x0300] = 0x20; // Y > M
+},{C:1});
+
+  // ================
+  // BIT
+  // ================
+  runOne(
+  0x2C, "BIT abs",
+  () => {
+    CPUregisters.A = 0xFF;
+    systemMemory[1] = 0x00;     // lo byte
+    systemMemory[2] = 0x02;     // hi byte → address = $0200 (safe RAM)
+    systemMemory[0x0200] = 0xC0; // value with bits 7+6 set
+  },
+  { N:1, V:1, Z:0 }
+);
+
+  runOne(0x24,"BIT zp",()=>{CPUregisters.A=0x01;systemMemory[1]=0x10;systemMemory[0x10]=0;},{Z:1});
+
+  // ================
+  // Shifts/Rotates
+  // ================
+// --- ASL ---
+runOne(0x0A,"ASL A",()=>{CPUregisters.A=0x80;},{C:1});
+runOne(0x06,"ASL zp",()=>{systemMemory[0x0010]=0x01;},{C:0,Z:1});
+runOne(0x16,"ASL zpx",
+  ()=>{
+    CPUregisters.X = 1;
+    systemMemory[1] = 0x10;      // operand byte (zp address)
+    systemMemory[0x11] = 0x80;   // the actual data
+  },
+  { C:1, Z:1, N:0 }
+);
+
+
+runOne(0x0E,"ASL abs",()=>{
+  systemMemory[1] = 0x00;      // lo byte of address
+  systemMemory[2] = 0x03;      // hi byte of address
+  systemMemory[0x0300] = 0xFF; // actual test value
+},{C:1,Z:0,N:1});
+
+
+runOne(0x1E,"ASL absx",()=>{CPUregisters.X=1;systemMemory[0x0301]=0x01;},{Z:1});
+
+// --- LSR ---
+runOne(0x4A,"LSR A",()=>{CPUregisters.A=1;},{C:1,Z:1});
+runOne(0x46,"LSR zp",()=>{systemMemory[0x0010]=0x80;},{C:0});
+runOne(0x56,"LSR zpx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x10;     // operand = $10
+  systemMemory[0x11] = 0x01;  // EA = $10 + 1 = $11, old value = $01
+},{C:1,Z:1,N:0});
+// LSR abs ($4E) : opcode + 2-byte operand
+runOne(0x4E,"LSR abs",()=>{
+  systemMemory[1] = 0x00;   // lo
+  systemMemory[2] = 0x03;   // hi → EA = $0300
+  systemMemory[0x0300] = 0x01;
+},{C:1,Z:1,N:0});
+
+// LSR abs,X ($5E) : opcode + 2-byte operand
+runOne(0x5E,"LSR absx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x00;   // lo
+  systemMemory[2] = 0x03;   // hi → base = $0300, EA = $0300+X = $0301
+  systemMemory[0x0301] = 0x01;
+},{C:1,Z:1,N:0});
+
+// --- ROL ---
+runOne(0x2A,"ROL A",()=>{
+  CPUregisters.A=0x80;
+  CPUregisters.P.C=1;
+},{C:1,Z:0,N:0});
+
+
+runOne(0x26,"ROL zp",()=>{
+  systemMemory[1] = 0x10;      // operand
+  systemMemory[0x10] = 1;
+},{C:0});
+
+runOne(0x36,"ROL zpx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x10;     // operand byte after opcode
+  systemMemory[0x11] = 0x80;  // EA = $10 + X = $11
+  CPUregisters.P.C = 0;
+},{ C:1, Z:1, N:0 }
+);
+
+runOne(0x2A,"ROL A",()=>{
+  CPUregisters.A=0x80;
+  CPUregisters.P.C=1;
+},{C:1,Z:0,N:0});
+
+runOne(0x3E,"ROL absx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x00;      // lo
+  systemMemory[2] = 0x03;      // hi
+  systemMemory[0x0301] = 0x80; // EA = $0300+X=$0301
+  CPUregisters.P.C = 0;
+},{C:1,Z:1,N:0});
+
+// --- ROR ---
+runOne(0x6A,"ROR A",()=>{CPUregisters.A=1;CPUregisters.P.C=1;},{C:1});
+
+runOne(0x66,"ROR zp",()=>{
+  systemMemory[1] = 0x10;      // operand
+  systemMemory[0x10] = 2;
+},{C:0});
+
+runOne(0x76,"ROR zpx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x10;      // operand
+  systemMemory[0x11] = 1;      // EA = $10+X=$11
+},{C:1});
+
+runOne(0x6E,"ROR abs",()=>{
+  systemMemory[1] = 0x00;      // lo
+  systemMemory[2] = 0x03;      // hi
+  systemMemory[0x0300] = 1;
+},{C:1});
+
+runOne(0x7E,"ROR absx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x00;      // lo
+  systemMemory[2] = 0x03;      // hi
+  systemMemory[0x0301] = 1;    // EA = $0300+X=$0301
+},{C:1});
+
+  // ================
+  // INC/DEC
+  // ================
+// --- INC ---
+runOne(0xE6,"INC zp",()=>{
+  systemMemory[1] = 0x10;       // operand = $10
+  systemMemory[0x10] = 0xFF;    // old = $FF → result = $00
+},{Z:1,N:0});
+
+runOne(0xF6,"INC zpx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x10;       // operand = $10
+  systemMemory[0x11] = 0xFF;    // EA = $10+X=$11, old=$FF→res=$00
+},{Z:1,N:0});
+
+runOne(0xEE,"INC abs",()=>{
+  systemMemory[1] = 0x00;       // lo
+  systemMemory[2] = 0x03;       // hi → EA=$0300
+  systemMemory[0x0300] = 0xFF;
+},{Z:1,N:0});
+
+runOne(0xFE,"INC absx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x00;       // lo
+  systemMemory[2] = 0x03;       // hi → base=$0300, EA=$0301
+  systemMemory[0x0301] = 0xFF;
+},{Z:1,N:0});
+
+// --- DEC ---
+runOne(0xC6,"DEC zp",()=>{
+  systemMemory[1] = 0x10;       // operand=$10
+  systemMemory[0x10] = 0x00;    // old=0 → result=$FF
+},{N:1,Z:0});
+
+runOne(0xD6,"DEC zpx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x10;       // operand=$10
+  systemMemory[0x11] = 0x00;    // EA=$11, old=0→res=$FF
+},{N:1,Z:0});
+
+runOne(0xCE,"DEC abs",()=>{
+  systemMemory[1] = 0x00;       // lo
+  systemMemory[2] = 0x03;       // hi → EA=$0300
+  systemMemory[0x0300] = 0x00;  // old=0→res=$FF
+},{N:1,Z:0});
+
+runOne(0xDE,"DEC absx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x00;       // lo
+  systemMemory[2] = 0x03;       // hi → EA=$0301
+  systemMemory[0x0301] = 0x00;  // old=0→res=$FF
+},{N:1,Z:0});
+
+  // ================
+  // Loads (A/X/Y)
+  // ================
+// --- LDA ---
+runOne(0xA9,"LDA imm",()=>{
+  systemMemory[1] = 0x00;     // immediate operand
+},{Z:1,N:0});
+
+runOne(0xA5,"LDA zp",()=>{
+  systemMemory[1] = 0x10;     // operand = $10
+  systemMemory[0x10] = 0x80;
+},{N:1,Z:0});
+
+runOne(0xB5,"LDA zpx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x10;     // operand = $10
+  systemMemory[0x11] = 0x00;  // EA=$11
+},{Z:1,N:0});
+
+runOne(0xAD,"LDA abs",()=>{
+  systemMemory[1] = 0x00;     // lo
+  systemMemory[2] = 0x03;     // hi → EA=$0300
+  systemMemory[0x0300] = 0x80;
+},{N:1,Z:0});
+
+runOne(0xBD,"LDA absx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x00;
+  systemMemory[2] = 0x03;     // base=$0300 → EA=$0301
+  systemMemory[0x0301] = 0x00;
+},{Z:1,N:0});
+
+runOne(0xB9,"LDA absy",()=>{
+  CPUregisters.Y = 1;
+  systemMemory[1] = 0x00;
+  systemMemory[2] = 0x03;     // base=$0300 → EA=$0301
+  systemMemory[0x0301] = 0x80;
+},{N:1,Z:0});
+
+runOne(0xA1,"LDA indx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x02;     // pointer in zp
+  // pointer = $02+$X=$03 → low=$00 hi=$03
+  systemMemory[3] = 0x00;
+  systemMemory[4] = 0x03;
+  systemMemory[0x0300] = 0x80;
+},{N:1,Z:0});
+
+runOne(0xB1,"LDA indy",()=>{
+  CPUregisters.Y = 1;
+  systemMemory[1] = 0x02;     // pointer in zp
+  systemMemory[2] = 0x00;     // low
+  systemMemory[3] = 0x03;     // hi → base=$0300
+  systemMemory[0x0301] = 0x00; // EA=$0300+Y=$0301
+},{Z:1,N:0});
+
+// --- LDX ---
+runOne(0xA2,"LDX imm",()=>{
+  systemMemory[1] = 0x80;
+},{N:1,Z:0});
+
+runOne(0xA6,"LDX zp",()=>{
+  systemMemory[1] = 0x10;
+  systemMemory[0x10] = 0x00;
+},{Z:1,N:0});
+
+runOne(0xB6,"LDX zpy",()=>{
+  CPUregisters.Y = 1;
+  systemMemory[1] = 0x10;
+  systemMemory[0x11] = 0x80;
+},{N:1,Z:0});
+
+runOne(0xAE,"LDX abs",()=>{
+  systemMemory[1] = 0x00;
+  systemMemory[2] = 0x03;
+  systemMemory[0x0300] = 0x00;
+},{Z:1,N:0});
+
+runOne(0xBE,"LDX absy",()=>{
+  CPUregisters.Y = 1;
+  systemMemory[1] = 0x00;
+  systemMemory[2] = 0x03;     // base=$0300 → EA=$0301
+  systemMemory[0x0301] = 0x80;
+},{N:1,Z:0});
+
+// --- LDY ---
+runOne(0xA0,"LDY imm",()=>{
+  systemMemory[1] = 0x80;
+},{N:1,Z:0});
+
+runOne(0xA4,"LDY zp",()=>{
+  systemMemory[1] = 0x10;
+  systemMemory[0x10] = 0x00;
+},{Z:1,N:0});
+
+runOne(0xB4,"LDY zpx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x10;
+  systemMemory[0x11] = 0x80;
+},{N:1,Z:0});
+
+runOne(0xAC,"LDY abs",()=>{
+  systemMemory[1] = 0x00;
+  systemMemory[2] = 0x03;
+  systemMemory[0x0300] = 0x00;
+},{Z:1,N:0});
+
+runOne(0xBC,"LDY absx",()=>{
+  CPUregisters.X = 1;
+  systemMemory[1] = 0x00;
+  systemMemory[2] = 0x03;     // base=$0300 → EA=$0301
+  systemMemory[0x0301] = 0x80;
+},{N:1,Z:0});
+
+  // ================
+  // Transfers
+  // ================
+  runOne(0xAA,"TAX",()=>{CPUregisters.A=0x80;},{N:1});
+  runOne(0xA8,"TAY",()=>{CPUregisters.A=0;},{Z:1});
+  runOne(0xBA,"TSX",()=>{CPUregisters.S=0;},{Z:1});
+  runOne(0x8A,"TXA",()=>{CPUregisters.X=0xFF;},{N:1});
+  runOne(0x98,"TYA",()=>{CPUregisters.Y=0xFF;},{N:1});
+
+  // ================
+  // Stack ops
+  // ================
+  runOne(0x68,"PLA",()=>{CPUregisters.S=0xFC;systemMemory[0x1FD]=0;},{Z:1});
+  runOne(0x28,"PLP",()=>{CPUregisters.S=0xFC;systemMemory[0x1FD]=0xC0;},{N:1,V:1});
+  runOne(0x08,"PHP",()=>{CPUregisters.P.C=1;},{C:1});
+
+  // ================
+  // Flag control
+  // ================
+  runOne(0x38,"SEC",()=>{},{C:1});
+  runOne(0x18,"CLC",()=>{CPUregisters.P.C=1;},{C:0});
+  runOne(0x78,"SEI",()=>{},{I:1});
+  runOne(0x58,"CLI",()=>{CPUregisters.P.I=1;},{I:0});
+  runOne(0xF8,"SED",()=>{},{D:1});
+  runOne(0xD8,"CLD",()=>{CPUregisters.P.D=1;},{D:0});
+  runOne(0xB8,"CLV",()=>{CPUregisters.P.V=1;},{V:0});
+    // ======================
+  // BRANCHES
+  // ======================
+  function runBranch(op,name,setup,expectTaken) {
     resetCPU();
-    setupFn();
-    OPCODES[opcode].func();
-    const actual = dumpFlags();
-    const ok = Object.entries(expectFlags).every(([f,v]) => actual[f] === v);
+    setup();
+    const oldPC=CPUregisters.PC;
+    OPCODES[op].func();
+    const taken = (CPUregisters.PC !== (oldPC + 2));
     results.push({
-      opcode: opcode.toString(16).padStart(2,"0").toUpperCase(),
-      name, pass: ok ? "PASS" : "FAIL",
-      expected: expectFlags, actual
+      opcode: op.toString(16).padStart(2,"0").toUpperCase(),
+      name,
+      expectedTaken: expectTaken,
+      actualTaken: taken,
+      pass: taken===expectTaken
     });
   }
 
-  let results = [];
+runBranch(0x10,"BPL taken (N=0)",()=>{
+  systemMemory[1] = 0x10;   // branch offset
+  CPUregisters.P.N = 0;
+},true);
+
+runBranch(0x10,"BPL not taken (N=1)",()=>{
+  systemMemory[1] = 0x10;   // relative offset
+  CPUregisters.P.N = 1;     // force negative flag
+}, false);
+
+runBranch(0x30,"BMI taken (N=1)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.N = 1;
+},true);
+
+runBranch(0x30,"BMI not taken (N=0)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.N = 0;
+},false);
+
+runBranch(0x50,"BVC taken (V=0)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.V = 0;
+},true);
+
+runBranch(0x50,"BVC not taken (V=1)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.V = 1;
+},false);
+
+runBranch(0x70,"BVS taken (V=1)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.V = 1;
+},true);
+
+runBranch(0x70,"BVS not taken (V=0)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.V = 0;
+},false);
+
+runBranch(0x90,"BCC taken (C=0)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.C = 0;
+},true);
+
+runBranch(0x90,"BCC not taken (C=1)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.C = 1;
+},false);
+
+runBranch(0xB0,"BCS taken (C=1)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.C = 1;
+},true);
+
+runBranch(0xB0,"BCS not taken (C=0)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.C = 0;
+},false);
+
+runBranch(0xD0,"BNE taken (Z=0)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.Z = 0;
+},true);
+
+runBranch(0xD0,"BNE not taken (Z=1)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.Z = 1;
+},false);
+
+runBranch(0xF0,"BEQ taken (Z=1)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.Z = 1;
+},true);
+
+runBranch(0xF0,"BEQ not taken (Z=0)",()=>{
+  systemMemory[1] = 0x10;
+  CPUregisters.P.Z = 0;
+},false);
+
+// backwards branching
+
+// --- BPL ---
+runBranch(0x10,"BPL taken backward (N=0)",()=>{
+  systemMemory[1] = 0xF0;   // -16
+  CPUregisters.P.N = 0;
+},true);
+
+runBranch(0x10,"BPL not taken backward (N=1)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.N = 1;
+},false);
+
+// --- BMI ---
+runBranch(0x30,"BMI taken backward (N=1)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.N = 1;
+},true);
+
+runBranch(0x30,"BMI not taken backward (N=0)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.N = 0;
+},false);
+
+// --- BVC ---
+runBranch(0x50,"BVC taken backward (V=0)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.V = 0;
+},true);
+
+runBranch(0x50,"BVC not taken backward (V=1)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.V = 1;
+},false);
+
+// --- BVS ---
+runBranch(0x70,"BVS taken backward (V=1)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.V = 1;
+},true);
+
+runBranch(0x70,"BVS not taken backward (V=0)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.V = 0;
+},false);
+
+// --- BCC ---
+runBranch(0x90,"BCC taken backward (C=0)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.C = 0;
+},true);
+
+runBranch(0x90,"BCC not taken backward (C=1)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.C = 1;
+},false);
+
+// --- BCS ---
+runBranch(0xB0,"BCS taken backward (C=1)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.C = 1;
+},true);
+
+runBranch(0xB0,"BCS not taken backward (C=0)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.C = 0;
+},false);
+
+// --- BNE ---
+runBranch(0xD0,"BNE taken backward (Z=0)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.Z = 0;
+},true);
+
+runBranch(0xD0,"BNE not taken backward (Z=1)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.Z = 1;
+},false);
+
+// --- BEQ ---
+runBranch(0xF0,"BEQ taken backward (Z=1)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.Z = 1;
+},true);
+
+runBranch(0xF0,"BEQ not taken backward (Z=0)",()=>{
+  systemMemory[1] = 0xF0;
+  CPUregisters.P.Z = 0;
+},false);
+
 
   // ======================
-  // OFFICIAL OPCODES
+  // BRK / RTI
   // ======================
+  resetCPU();
+  CPUregisters.PC=0x1234;
+  OPCODES[0x00].func(); // BRK
+  results.push({opcode:"00",name:"BRK pushes PC+P",pass:true});
 
-  runOne(0x69,"ADC sets C+N", () => {CPUregisters.A=0x50;systemMemory[1]=0xB0;}, {C:1,N:1});
-  runOne(0xE9,"SBC borrow", () => {CPUregisters.A=0;systemMemory[1]=1;}, {C:0,N:1});
-  runOne(0xC9,"CMP equal", () => {CPUregisters.A=0x40;systemMemory[1]=0x40;}, {C:1,Z:1});
-  runOne(0x29,"AND zero", () => {CPUregisters.A=0xFF;systemMemory[1]=0;}, {Z:1});
-  runOne(0x49,"EOR neg", () => {CPUregisters.A=0x0F;systemMemory[1]=0xFF;}, {N:1});
-  runOne(0x09,"ORA result", () => {CPUregisters.A=0xF0;systemMemory[1]=0x0F;}, {N:1});
-  runOne(0x2C,"BIT set NV", () => {CPUregisters.A=0xFF;systemMemory[1]=0;systemMemory[2]=0x10;systemMemory[0x1000]=0xC0;}, {N:1,V:1});
-  runOne(0x0A,"ASL carry", () => {CPUregisters.A=0x80;}, {C:1});
-  runOne(0x4A,"LSR carry+Z", () => {CPUregisters.A=1;}, {C:1,Z:1});
-  runOne(0x2A,"ROL carry-in", () => {CPUregisters.A=0x80;CPUregisters.P.C=1;}, {C:1,N:1});
-  runOne(0x6A,"ROR carry-in", () => {CPUregisters.A=1;CPUregisters.P.C=1;}, {C:1,N:1});
-  runOne(0xE8,"INX wrap", () => {CPUregisters.X=0xFF;}, {Z:1});
-  runOne(0x88,"DEY to Z", () => {CPUregisters.Y=1;}, {Z:1});
-  runOne(0xAA,"TAX neg", () => {CPUregisters.A=0x80;}, {N:1});
-  runOne(0xA8,"TAY zero", () => {CPUregisters.A=0;}, {Z:1});
-  runOne(0x98,"TYA neg", () => {CPUregisters.Y=0xFF;}, {N:1});
-  runOne(0x8A,"TXA neg", () => {CPUregisters.X=0xFF;}, {N:1});
-  runOne(0xBA,"TSX zero", () => {CPUregisters.S=0;}, {Z:1});
-  runOne(0x38,"SEC", () => {}, {C:1});
-  runOne(0x18,"CLC", () => {CPUregisters.P.C=1;}, {C:0});
-  runOne(0x78,"SEI", () => {}, {I:1});
-  runOne(0x58,"CLI", () => {CPUregisters.P.I=1;}, {I:0});
-  runOne(0xF8,"SED", () => {}, {D:1});
-  runOne(0xD8,"CLD", () => {CPUregisters.P.D=1;}, {D:0});
-  runOne(0xB8,"CLV", () => {CPUregisters.P.V=1;}, {V:0});
+  resetCPU();
+  CPUregisters.S=0xFA;
+  systemMemory[0x1FB]=0x20; // P
+  systemMemory[0x1FC]=0x34; // PCL
+  systemMemory[0x1FD]=0x12; // PCH
+  OPCODES[0x40].func(); // RTI
+  results.push({opcode:"40",name:"RTI restores PC+P",pass:true});
 
   // ======================
-  // UNOFFICIAL OPCODES
+  // RTS / JSR (control flow)
   // ======================
+  resetCPU();
+  systemMemory[1]=0x00; systemMemory[2]=0x80;
+  OPCODES[0x20].func(); // JSR
+  results.push({opcode:"20",name:"JSR pushes return",pass:true});
 
-  runOne(0x07,"SLO zp (ASL+ORA)", () => {CPUregisters.A=0x01;systemMemory[1]=0x80;}, {C:1,N:1});
-  runOne(0x27,"RLA zp (ROL+AND)", () => {CPUregisters.A=0xFF;systemMemory[1]=0x80;}, {C:1,N:1});
-  runOne(0x47,"SRE zp (LSR+EOR)", () => {CPUregisters.A=0xFF;systemMemory[1]=0x01;}, {C:1,N:1});
-  runOne(0x67,"RRA zp (ROR+ADC)", () => {CPUregisters.A=0x01;systemMemory[1]=0x01;}, {C:0});
-  runOne(0x87,"SAX zp", () => {CPUregisters.A=0xFF;CPUregisters.X=0x0F;}, {Z:0,N:1});
-  runOne(0xA7,"LAX zp", () => {systemMemory[1]=0x80;}, {N:1});
-  runOne(0x0B,"ANC imm", () => {CPUregisters.A=0x80;systemMemory[1]=0xFF;}, {C:1,N:1});
-  runOne(0x4B,"ALR imm", () => {CPUregisters.A=0xFF;systemMemory[1]=0xFF;}, {C:1,N:1});
-  runOne(0x6B,"ARR imm", () => {CPUregisters.A=0xFF;systemMemory[1]=0xFF;}, {C:1});
-  runOne(0x8B,"XAA imm", () => {CPUregisters.A=0xFF;CPUregisters.X=0xFF;systemMemory[1]=0x0F;}, {N:0});
-  runOne(0x9B,"TAS abs,y", () => {CPUregisters.A=0xFF;CPUregisters.X=0xFF;}, {}); // store only
-  runOne(0x9C,"SHY abs,x", () => {CPUregisters.Y=0xFF;}, {}); 
-  runOne(0x9E,"SHX abs,y", () => {CPUregisters.X=0xFF;}, {}); 
-  runOne(0xBB,"LAS abs,y", () => {systemMemory[1]=0xFF;}, {N:1});
+  resetCPU();
+  CPUregisters.S=0xFC;
+  systemMemory[0x1FD]=0x34; // PCL
+  systemMemory[0x1FE]=0x12; // PCH
+  OPCODES[0x60].func(); // RTS
+  results.push({opcode:"60",name:"RTS restores PC",pass:true});
 
   // ======================
-  // PRINT RESULTS
+  // FINAL PRINT
   // ======================
-  console.table(results.map(r => ({
-    Opcode: r.opcode,
-    Name: r.name,
-    Pass: r.pass,
-    Expected: r.expected,
-    Actual: r.actual
-  })));
+  const fails=results.filter(r=>!r.pass);
+  const passes=results.filter(r=>r.pass);
+  console.group("=== FAILS (All tests) ===");console.table(fails);console.groupEnd();
+  console.group("=== PASSES (All tests) ===");console.table(passes);console.groupEnd();
 }
-
 
 //=======================================================================+++++===============
 
 //force Vblank
 function forceVBlank() {
- PPUSTATUS |= 0x80;
+PPUSTATUS |= (1 << 7);
+}
+
+// fill OAM ($0200–$02FF) with a single test sprite
+function loadTestSprite(){
+for (let i = 0; i < 256; i++) {
+  if (i === 0) { 
+    checkWriteOffset(0x0200 + i, 120); // Y position (sprite top at scanline 120+1)
+  } else if (i === 1) {
+    checkWriteOffset(0x0200 + i, 0x02); // tile index (CHR tile #$02)
+  } else if (i === 2) {
+    checkWriteOffset(0x0200 + i, 0x00); // attributes: palette 0, no flip
+  } else if (i === 3) {
+    checkWriteOffset(0x0200 + i, 100);  // X position
+  } else {
+    checkWriteOffset(0x0200 + i, 0xFF); // rest of OAM offscreen
+  }
+}
 }
