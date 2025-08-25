@@ -25,7 +25,7 @@ function installLiveScalars() {
     t_lo:        { get: () => Atomics.load(SHARED.PPU_REGS, 9),  set: v => Atomics.store(SHARED.PPU_REGS, 9, make8(v)), configurable: true },
     t_hi:        { get: () => Atomics.load(SHARED.PPU_REGS, 10), set: v => Atomics.store(SHARED.PPU_REGS, 10, make8(v)), configurable: true },
     fineX:       { get: () => Atomics.load(SHARED.PPU_REGS, 11), set: v => Atomics.store(SHARED.PPU_REGS, 11, make8(v)), configurable: true },
-    writeToggle: { get: () => Atomics.load(SHARED.PPU_REGS, 12), set: v => Atomics.store(SHARED.PPU_REGS, 12, make8(v)), configurable: true },
+    //writeToggle: { get: () => Atomics.load(SHARED.PPU_REGS, 12), set: v => Atomics.store(SHARED.PPU_REGS, 12, make8(v)), configurable: true },
     VRAM_DATA:   { get: () => Atomics.load(SHARED.PPU_REGS, 13), set: v => Atomics.store(SHARED.PPU_REGS, 13, make8(v)), configurable: true },
     BG_ntByte:   { get: () => Atomics.load(SHARED.PPU_REGS, 14), set: v => Atomics.store(SHARED.PPU_REGS, 14, make8(v)), configurable: true },
     BG_atByte:   { get: () => Atomics.load(SHARED.PPU_REGS, 15), set: v => Atomics.store(SHARED.PPU_REGS, 15, make8(v)), configurable: true },

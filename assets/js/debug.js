@@ -6,15 +6,12 @@ let cpuRunning = false;
 // internal only, don't build disasm rows unless the window is open
 let disasmRunning = false;
 
-const CPU_BATCH = 10; // downside: will process this many opcodes prior to pausing... 
+const CPU_BATCH = 5000; // downside: will process this many opcodes prior to pausing... 
 
 let nmiCheckCounter = 0;
 let nmiServiceCounter = 0;
 let nmiPendingLocal=false;
 
-// NTSC timing
-const NES_CPU_HZ    = 1_789_773;           // 1.789773 MHz
-const CYCLES_PER_MS = NES_CPU_HZ / 1000;   // ~1789.773 cycles per ms
 // NTSC Resolution
 const NES_W = 256;
 const NES_H = 240;
@@ -53,55 +50,57 @@ function checkInterrupts() {
     serviceNMI();   // adds +7 via addExtraCycles()
     nmiPendingLocal = false;
   }
-
-  if (!CPUregisters.P.I) {
+  // temp IRQ block
+  let irqPending = false;
+  if (!CPUregisters.P.I && irqPending) {
     serviceIRQ();   // adds +7 via addExtraCycles()
   }
 }
 
 // offset handler takes care of prgRom being based @ 0x0000
-  function step() {
+window.step = function(param) {
+  // --- new controls ---
+  let useTime = (typeof param === "number" && param < 1); // treat as seconds if <1
+  let burst   = (typeof param === "number" && param >= 1) ? param : 1;
+  let endTime = useTime ? performance.now() + (param * 1000) : 0;
 
-  // make sure the PPU is always 3 ticks ahead
-// make sure the PPU is always 3 ticks ahead
-let ppuBudget = Atomics.load(SHARED.CLOCKS, 1);
-while (ppuBudget > 0) {
-  // refresh local copy each spin
-  ppuBudget = Atomics.load(SHARED.CLOCKS, 1);
-  // spin-wait until PPU burns it down
-  // (PPU worker will reset this to 0 when finished)
-  //console.log(`Waiting for PPU budget to deplete... Current budget: ${ppuBudget}`);
-}
+  while (burst > 0 && (!useTime || performance.now() < endTime)) {
 
+    // make sure the PPU is always 3 ticks ahead (stall)
+    let ppuBudget = Atomics.load(SHARED.CLOCKS, 1);
+    while (ppuBudget > 0) {
+      // refresh local copy each spin
+      ppuBudget = Atomics.load(SHARED.CLOCKS, 1);
+    }
 
-  // disable CRT fuzz noise
-  NoSignalAudio.setEnabled(false);
+    // disable CRT fuzz noise
+    NoSignalAudio.setEnabled(false);
 
-  // if we're paused, briefly let the PPU worker run this step
-  const wasPaused = !cpuRunning;
+    // if we're paused, briefly let the PPU worker run this step
+    const wasPaused = !cpuRunning;
 
-  // realigns with our prgRom base being 0x00 by being passed through offset handler
-  const code   = checkReadOffset(CPUregisters.PC);
+    // realigns with our prgRom base being 0x00 by being passed through offset handler
+    const code   = checkReadOffset(CPUregisters.PC);
 
-  // execute opcode handler
-  const execFn = OPCODES[code].func;
+    // execute opcode handler
+    const execFn = OPCODES[code].func;
 
-  //console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
-  //console.debug("Code @ 0x" + code.toString(16).padStart(2, "0").toUpperCase());
+    //console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
+    //console.debug("Code @ 0x" + code.toString(16).padStart(2, "0").toUpperCase());
 
-  if (!execFn) {
-    const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
-    console.warn(`Unknown opcode 0x${codeHex}`);
-    console.warn(`at PC=$${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
+    if (!execFn) {
+      const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
+      console.warn(`Unknown opcode 0x${codeHex}`);
+      console.warn(`at PC=$${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
 
-    // Clear bit 2 (0b00000100) to halt the PPU
-    Atomics.and(SHARED.EVENTS, 0, ~0b00000100);
+      // Clear bit 2 (0b00000100) to halt the PPU
+      Atomics.and(SHARED.EVENTS, 0, ~0b00000100);
 
-    // Pause on bad opcode
-    pause();
+      // Pause on bad opcode
+      pause();
 
-    return;
-  }
+      return;
+    }
 
     // for disasm
     const _op   = checkReadOffset(CPUregisters.PC + 1);
@@ -109,87 +108,69 @@ while (ppuBudget > 0) {
     // disasm PC is the current PC, not the next one
     const disasmPc = CPUregisters.PC;  
 
-  execFn();
+    execFn();
 
-  if (disasmRunning){
-    // build disasm row now so we have pre handler PC + post handler modifications to regs in a row
-    const disasmRow = buildDisasmRow(code, _op, __op, disasmPc);
-    // send the row for output
-    DISASM.appendRow(disasmRow);
-  }
-
-  // service interrupts before incrementing PC so we get the correct return address
-  checkInterrupts();
-  
-  // increment PC to point at next opcode, if PC modified in opcode handler, this adds zero
-  CPUregisters.PC = CPUregisters.PC + OPCODES[code].pc;
-
-  // add cycles
-  const cyc = OPCODES[code].cycles | 0;
-  if (cyc) {
-    addExtraCycles(cyc);
-  }
-
-  if (cpuCycles !== Atomics.load(SHARED.CLOCKS, 0)) {
-  console.error(`[CYCLE MISMATCH] cpuCycles=${cpuCycles}, SAB0=${Atomics.load(SHARED.CLOCKS,0)}`);
-}
-
-
-
-  // if we temporarily enabled the worker, put it back to paused
-  if (wasPaused) Atomics.and(SHARED.EVENTS, 0, ~0b00000100); // clear RUN bit
-}
-
-// run(): paced to ~NES time using wall-clock
-function run() {
-  if (cpuRunning) return;
-  cpuRunning = true;
-
-  __lastT = performance.now();
-  __paceCarry = 0;
-
-  (function pacedLoop() {
-    if (!cpuRunning) return;
-
-    const now = performance.now();
-    const dt  = now - __lastT;                 // ms since last frame (~16.7ms on rAF)
-    __lastT   = now;
-
-    // How many cycles *should* elapse since last tick + carry
-    let targetFloat = dt * CYCLES_PER_MS + __paceCarry;
-    let target      = targetFloat | 0;         // floor to int
-    __paceCarry     = targetFloat - target;    // keep fractional remainder only
-
-    if (target > 0) {
-      const startCycles = Atomics.load(SHARED.CLOCKS, 0);
-
-      // Time budget scales with dt; allow most of the frame to produce cycles
-      // (minimum keeps us from starving on low rAF rates)
-      const BUDGET_MS = Math.max(0.8 * dt, 10);
-      const deadline  = now + BUDGET_MS;
-
-      let produced = 0;
-      while (produced < target && performance.now() < deadline) {
-        // small batches to stay responsive
-        for (let i = 0; i < CPU_BATCH; i++) step();
-        produced = Atomics.load(SHARED.CLOCKS, 0) - startCycles;
-      }
-
-      // If we missed the target, roll the deficit forward as positive carry so we *try* to catch up.
-      if (produced < target) {
-        __paceCarry += (target - produced);
-        // Clamp to avoid runaway (no more than ~2 frames worth)
-        const MAX_CARRY = 2 * 16.7 * CYCLES_PER_MS;
-        if (__paceCarry > MAX_CARRY) __paceCarry = MAX_CARRY;
-      }
+    if (disasmRunning){
+      // build disasm row now so we have pre handler PC + post handler modifications to regs in a row
+      const disasmRow = buildDisasmRow(code, _op, __op, disasmPc);
+      // send the row for output
+      DISASM.appendRow(disasmRow);
     }
 
-    requestAnimationFrame(pacedLoop);
-  })();
+    // increment PC to point at next opcode, if PC modified in opcode handler, this adds zero
+    CPUregisters.PC = CPUregisters.PC + OPCODES[code].pc;
+
+    // add cycles
+    const cyc = OPCODES[code].cycles | 0;
+    if (cyc) {
+      addExtraCycles(cyc);
+    }
+    // service interrupts
+    checkInterrupts();
+
+    burst--;
+  }
+}
+
+// how many ms worth of instructions per frame (16.67 ≈ 60FPS)
+let FRAME_TIME = 0.01667 /4;  // seconds
+
+function run() {
+  if (cpuRunning) return;  // already running
+  cpuRunning = true;
+
+  function loop() {
+    if (!cpuRunning) return; // stop cleanly on pause()
+
+    // run one frame's worth of instructions
+    step(FRAME_TIME);
+
+    // schedule next frame
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
+}
+
+window.run = function() {
+  console.debug("running");
+  cpuRunning = true;
+
+  const BURST_SIZE = 80000;  // how many opcodes per chunk
+  const YIELD_MS   = 0.2;    // small pause to let browser/UI breathe
+
+  function loop() {
+    if (!cpuRunning) return; // stop if paused
+
+    step(BURST_SIZE);        // run a whole chunk of opcodes
+    setTimeout(loop, YIELD_MS); // queue next chunk ASAP
+  }
+
+  loop(); // start it off
 }
 
 // Pause (keeps your existing external API)
-  function pause() {
+  window.pause = function() {
   cpuRunning = false;
   if (typeof updateDebugTables === 'function') {
     try { updateDebugTables(); } catch (e) {}

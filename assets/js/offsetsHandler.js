@@ -5,13 +5,14 @@ console.debug(
 );
 
 // writeToggle is an internal PPU latch but implemented here on CPU core
+globalThis.writeToggle = 0;
 
 // Mapper should tell us mirroring; fall back to horizontal if not available.
 let MIRRORING = (typeof mapperGetMirroring === "function")
   ? mapperGetMirroring()
   : "horizontal";
 
-// Pattern table read (CHR ROM/RAM). If you support CHR-RAM writes, add a mapperChrWrite handler.
+// Pattern table read (CHR ROM/RAM). For CHR-RAM writes, add mapperChrWrite handler.
 function chrRead(addr14) {
   return CHR_ROM[addr14 & 0x1FFF] & 0xFF;
 }
@@ -39,125 +40,86 @@ function paletteIndex(addr14) {
   if ((p & 0x13) === 0x10) p &= ~0x10;
   return p;
 }
-
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
   let value;
 
   if (addr < 0x2000) {
     value = cpuRead(addr);
+    if (debugLogging) console.debug(`[READ CPU-RAM] $${addr.toString(16).padStart(4,"0")} -> ${value.toString(16).padStart(2,"0")}`);
+  }
 
-  } else if (addr < 0x4000) {
+  else if (addr < 0x4000) {
     const reg = 0x2000 + (addr & 0x7);
-
     switch (reg) {
       case 0x2002: { // PPUSTATUS
         value = PPUSTATUS;
         PPUSTATUS &= ~0x80;
         writeToggle = 0;
-        if (debugLogging) {
-          console.debug(`[READ PPUSTATUS] $2002 -> ${value.toString(16).padStart(2,"0")}`);
-        }
+        if (debugLogging) console.debug(`[READ PPUSTATUS] $2002 -> ${value.toString(16).padStart(2,"0")}`);
         break;
       }
-
       case 0x2004: { // OAMDATA
         value = OAM[OAMADDR & 0xFF];
-        if (debugLogging) {
-          console.debug(`[READ OAMDATA] $2004 -> ${value.toString(16).padStart(2,"0")}`);
-        }
+        if (debugLogging) console.debug(`[READ OAMDATA] $2004 -> ${value.toString(16).padStart(2,"0")}`);
         break;
       }
-
-      case 0x2007: { // PPUDATA read
+      case 0x2007: { // PPUDATA
         const v = VRAM_ADDR & 0x3FFF;
         let ret;
-
         if (v < 0x2000) {
-          // Pattern tables → buffered
-          const fetched = chrRead(v);
           ret = VRAM_DATA;
-          VRAM_DATA = fetched;
-
+          VRAM_DATA = chrRead(v);
         } else if (v < 0x3F00) {
-          // Nametables → buffered
-          const fetched = VRAM[mapNT(v)] & 0xFF;
-          ret = VRAM_DATA;
-          VRAM_DATA = fetched;
-
+        ret = VRAM_DATA;
+        VRAM_DATA = VRAM[mapNT(v)] & 0xFF;  // load next into buffer
+                
         } else {
-          // Palette RAM → immediate (no buffer)
           const p = paletteIndex(v);
           ret = PALETTE_RAM[p] & 0x3F;
-
-          // Palette reads still refresh the buffer with the NT mirror
           const ntMirror = (v - 0x1000) & 0x3FFF;
           VRAM_DATA = (ntMirror < 0x2000)
             ? chrRead(ntMirror)
             : (VRAM[mapNT(ntMirror)] & 0xFF);
         }
-
-        // Auto-increment
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
-
-        value = ret & 0xFF;
-
-        if (debugLogging) {
-          console.debug(
-            `[READ PPUDATA] addr=$${v.toString(16).padStart(4,"0")} -> ` +
-            `$${value.toString(16).padStart(2,"0")} (buf=$${VRAM_DATA.toString(16).padStart(2,"0")})`
-          );
-        }
+        value = ret;
+        if (debugLogging) console.debug(`[READ PPUDATA] $2007 -> ${value.toString(16).padStart(2,"0")}`);
+        break;
+      }
+      default: {
+        value = cpuOpenBus;
+        if (debugLogging) console.debug(`[READ PPU-OPENBUS] $${reg.toString(16)} -> ${value.toString(16).padStart(2,"0")}`);
         break;
       }
     }
+  }
 
-  } else if (addr < 0x4020) {
+  else if (addr < 0x4020) {
     value = (addr === 0x4016 || addr === 0x4017) ? joypadRead(addr) : apuRead(addr);
-    if (debugLogging) {
-      console.debug(`[READ IO] $${addr.toString(16)} -> ${value.toString(16).padStart(2,"0")}`);
-    }
+    if (debugLogging) console.debug(`[READ IO] $${addr.toString(16)} -> ${value.toString(16).padStart(2,"0")}`);
+  }
 
-  } else if (addr < 0x6000) {
+  else if (addr < 0x6000) {
     value = cpuOpenBus;
-    if (debugLogging) {
-      console.debug(`[READ EXPANSION] $${addr.toString(16)} -> ${value.toString(16).padStart(2,"0")}`);
-    }
+    if (debugLogging) console.debug(`[READ EXPANSION] $${addr.toString(16)} -> ${value.toString(16).padStart(2,"0")}`);
+  }
 
-  } else if (addr < 0x8000) {
+  else if (addr < 0x8000) {
     value = prgRam[addr - 0x6000];
-    if (debugLogging) {
-      console.debug(`[READ PRG-RAM] $${addr.toString(16)} -> ${value.toString(16).padStart(2,"0")}`);
-    }
+    if (debugLogging) console.debug(`[READ PRG-RAM] $${addr.toString(16)} -> ${value.toString(16).padStart(2,"0")}`);
+  }
 
-  } else {
-    // --- PRG ROM region ($8000–$FFFF) ---
-    if (addr >= 0xFFFA) {
-      // Always read vectors directly from PRG ROM
-      const offset = addr - 0x8000;
-      value = prgRom[offset];
-      if (debugLogging) {
-        console.debug(`[READ VECTOR] $${addr.toString(16)} -> ${value.toString(16).padStart(2,"0")}`);
-      }
-    } else {
-      // Normal PRG-ROM read via mapper
-      value = mapperReadPRG(addr);
-
-      // NROM-128 (16 KB) mirror handling:
-      if (prgRom.length === 0x4000 && addr >= 0xC000) {
-        value = prgRom[addr - 0xC000];
-      }
-
-      if (debugLogging) {
-        console.debug(`[READ PRG-ROM] $${addr.toString(16)} -> ${value.toString(16).padStart(2,"0")}`);
-      }
-    }
+  else {
+    value = mapperReadPRG(addr);
+    if (debugLogging) console.debug(`[READ PRG-ROM] $${addr.toString(16)} -> ${value.toString(16).padStart(2,"0")}`);
   }
 
   cpuOpenBus = value & 0xFF;
   return value & 0xFF;
 }
+
 
 function checkWriteOffset(address, value) {
   const addr = address & 0xFFFF;
@@ -170,125 +132,153 @@ function checkWriteOffset(address, value) {
     const reg = 0x2000 + (addr & 0x7);
 
     switch (reg) {
-      case 0x2000: { // PPUCTRL
+      // --- PPUCTRL ---
+      case 0x2000: {
         const wasEnabled = (PPUCTRL & 0x80) !== 0;
         PPUCTRL = value;
 
-        // Update temp VRAM address nametable bits
-        let t = ((t_hi << 8) | t_lo) & 0xFFFF;
-        t = (t & 0xF3FF) | ((value & 0x03) << 10);
-        t_hi = (t >>> 8) & 0xFF;
-        t_lo = t & 0xFF;
+        const nowEnabled = (value & 0x80) !== 0;
+        const vblankNow = (typeof SHARED !== "undefined" && SHARED.SYNC)
+          ? Atomics.load(SHARED.SYNC, 5)
+          : ((PPUSTATUS >>> 7) & 1);
 
-        // Decide if NMI should be armed this frame
-        if (!wasEnabled && (PPUSTATUS & 0x80)) {
-          Atomics.store(SHARED.SYNC, 6, 0); // block NMI this frame
-        } else {
-          Atomics.store(SHARED.SYNC, 6, 1); // allow NMI on next VBlank
+        if (!nowEnabled) {
+          Atomics.store(SHARED.SYNC, 6, 0);
         }
+
+        if (!wasEnabled && nowEnabled && vblankNow) {
+          const frame = Atomics.load(SHARED.SYNC, 4);
+          const sl    = Atomics.load(SHARED.SYNC, 2);
+          const dot   = Atomics.load(SHARED.SYNC, 3);
+          const edgeMarker =
+            ((frame & 0xFFFF) << 16) |
+            ((sl    & 0x1FF)  << 7 ) |
+            ( dot   & 0x7F);
+          Atomics.store(SHARED.SYNC, 6, edgeMarker);
+        }
+
         break;
       }
 
-      case 0x2001: { // PPUMASK
+      // --- PPUMASK ---
+      case 0x2001: {
         PPUMASK = value;
         break;
       }
 
-      case 0x2003: { // OAMADDR
+      // --- OAMADDR ---
+      case 0x2003: {
         OAMADDR = value;
         break;
       }
 
-      case 0x2004: { // OAMDATA
+      // --- OAMDATA ---
+      case 0x2004: {
         OAM[OAMADDR] = value;
         OAMADDR = (OAMADDR + 1) & 0xFF;
         break;
       }
 
-      case 0x2005: { // PPUSCROLL
-        let t = ((t_hi << 8) | t_lo) & 0xFFFF;
-        if ((writeToggle & 1) === 0) {
+      // --- PPUSCROLL ---
+      case 0x2005: {
+        let t = ((t_hi << 8) | t_lo) & 0x3FFF;
+        const step = (writeToggle === 0) ? "hi" : "lo";
+
+        if (writeToggle === 0) {
           SCROLL_X = value;
           fineX = value & 0x07;
           t = (t & ~0x001F) | ((value >>> 3) & 0x1F);
+          writeToggle = 1;
         } else {
           SCROLL_Y = value;
           t = (t & ~(0x7000 | 0x03E0))
             | ((value & 0x07) << 12)
             | (((value >>> 3) & 0x1F) << 5);
-        }
-        t_hi = (t >>> 8) & 0xFF;
-        t_lo = t & 0xFF;
-        writeToggle ^= 1;
-        break;
-      }
-
-      case 0x2006: { // PPUADDR
-        let t = ((t_hi << 8) | t_lo) & 0x3FFF; // reconstruct 14-bit temp VRAM address
-
-        if ((writeToggle & 1) === 0) {
-          // First write: high 6 bits of address
-          t = (t & 0x00FF) | ((value & 0x3F) << 8);
-        } else {
-          // Second write: low 8 bits
-          t = (t & 0x7F00) | value;
-          VRAM_ADDR = t & 0x3FFF; // latch full address into current VRAM address
+          writeToggle = 0;
         }
 
-        t &= 0x3FFF; // mask to 14 bits
         t_hi = (t >>> 8) & 0xFF;
         t_lo = t & 0xFF;
-
-        writeToggle ^= 1;
 
         if (debugLogging) {
           console.debug(
-            `[WRITE PPUADDR] step=${(writeToggle & 1) ? "hi" : "lo"} ` +
-            `t=$${t.toString(16).padStart(4,"0")} VRAM_ADDR=$${VRAM_ADDR.toString(16).padStart(4,"0")}`
+            `[WRITE PPUSCROLL] step=${step} ` +
+            `t=$${t.toString(16).padStart(4,"0")} ` +
+            `SCROLL_X=${SCROLL_X} SCROLL_Y=${SCROLL_Y}`
           );
         }
         break;
       }
 
-      case 0x2007: { // PPUDATA write
+      // --- PPUADDR ---
+      case 0x2006: {
+        let t = ((t_hi << 8) | t_lo) & 0x3FFF;
+        const step = (writeToggle === 0) ? "hi" : "lo";
+
+        if (writeToggle === 0) {
+          t = (t & 0x00FF) | ((value & 0x3F) << 8);
+          writeToggle = 1;
+        } else {
+          t = (t & 0x3F00) | value;
+          VRAM_ADDR = t & 0x3FFF;
+          writeToggle = 0;
+        }
+
+        t_hi = (t >>> 8) & 0xFF;
+        t_lo = t & 0xFF;
+
+        if (debugLogging) {
+          console.debug(
+            `[WRITE PPUADDR] step=${step} ` +
+            `t=$${t.toString(16).padStart(4,"0")} ` +
+            `VRAM_ADDR=$${VRAM_ADDR.toString(16).padStart(4,"0")} ` +
+            `(writeToggle=${writeToggle})`
+          );
+        }
+        break;
+      }
+
+      // --- PPUDATA ---
+      case 0x2007: {
         const v = VRAM_ADDR & 0x3FFF;
 
         if (v < 0x2000) {
-          // Pattern tables (CHR)
           if (typeof mapperChrWrite === "function") {
             mapperChrWrite(v & 0x1FFF, value);
           } else {
-            // fallback for CHR-RAM
             CHR_ROM[v & 0x1FFF] = value;
           }
-
         } else if (v < 0x3F00) {
-          // Nametables
           VRAM[mapNT(v)] = value;
-
         } else {
-          // Palette RAM
           const idx = paletteIndex(v);
           const val6 = value & 0x3F;
           PALETTE_RAM[idx] = val6;
 
-          // Universal background mirrors
           if ((idx & 0x03) === 0) {
             PALETTE_RAM[0x00] = val6;
             PALETTE_RAM[0x04] = val6;
             PALETTE_RAM[0x08] = val6;
             PALETTE_RAM[0x0C] = val6;
           }
+
+          if (debugLogging) {
+            console.debug(
+              `%c[PALETTE WRITE] PC=$${CPUregisters.PC.toString(16).padStart(4,"0")} ` +
+              `VRAM=$${v.toString(16).padStart(4,"0")} idx=${idx} <= $${value.toString(16).padStart(2,"0")}`,
+              "color: violet; font-weight:bold;"
+            );
+          }
         }
 
-        // Auto-increment
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
 
         if (debugLogging) {
           console.debug(
-            `[WRITE PPUDATA] addr=$${v.toString(16).padStart(4,"0")} <= ` +
-            `$${value.toString(16).padStart(2,"0")}`
+            `[CPU->PPU] PC=$${CPUregisters.PC.toString(16).padStart(4,"0")} ` +
+            `A=$${CPUregisters.A.toString(16).padStart(2,"0")} ` +
+            `-> VRAM[$${v.toString(16).padStart(4,"0")}]=$${value.toString(16).padStart(2,"0")}`
           );
         }
         break;
@@ -297,56 +287,36 @@ function checkWriteOffset(address, value) {
 
   } else if (addr === 0x4014) {
     dmaTransfer(value);
-    if (debugLogging) {
-      console.debug(`[WRITE OAMDMA] $4014 <= ${value.toString(16).padStart(2,"0")}`);
-    }
+    if (debugLogging) console.debug(`[WRITE OAMDMA] $4014 <= $${value.toString(16).padStart(2,"0")}`);
 
   } else if (addr === 0x4016) {
     joypadWrite(addr, value);
-    if (debugLogging) {
-      console.debug(`[WRITE JOY] $4016 <= ${value.toString(16).padStart(2,"0")}`);
-    }
+    if (debugLogging) console.debug(`[WRITE JOY] $4016 <= $${value.toString(16).padStart(2,"0")}`);
 
   } else if (addr === 0x4017) {
     APUregister.FRAME_CNT = value;
     cpuOpenBus = value;
-    if (debugLogging) {
-      console.debug(`[WRITE APU FRAME_CNT] $4017 <= ${value.toString(16).padStart(2,"0")}`);
-    }
+    if (debugLogging) console.debug(`[WRITE APU FRAME_CNT] $4017 <= $${value.toString(16).padStart(2,"0")}`);
 
   } else if (addr < 0x4020) {
     apuWrite(addr, value);
-    if (debugLogging) {
-      console.debug(`[WRITE APU] $${addr.toString(16)} <= ${value.toString(16).padStart(2,"0")}`);
-    }
+    if (debugLogging) console.debug(`[WRITE APU] $${addr.toString(16)} <= $${value.toString(16).padStart(2,"0")}`);
 
   } else if (addr < 0x6000) {
     cpuOpenBus = value;
-    if (debugLogging) {
-      console.debug(`[WRITE EXPANSION] $${addr.toString(16)} <= ${value.toString(16).padStart(2,"0")}`);
-    }
+    if (debugLogging) console.debug(`[WRITE EXPANSION] $${addr.toString(16)} <= $${value.toString(16).padStart(2,"0")}`);
 
   } else if (addr < 0x8000) {
     prgRam[addr - 0x6000] = value;
-    if (debugLogging) {
-      console.debug(`[WRITE PRG-RAM] $${addr.toString(16)} <= ${value.toString(16).padStart(2,"0")}`);
-    }
+    if (debugLogging) console.debug(`[WRITE PRG-RAM] $${addr.toString(16)} <= $${value.toString(16).padStart(2,"0")}`);
 
   } else {
-    // Protect PRG-ROM vectors and mirroring
     if (addr >= 0xFFFA) {
-      if (debugLogging) {
-        console.warn(`[WRITE BLOCKED: VECTOR] $${addr.toString(16)} <= ${value.toString(16).padStart(2,"0")}`);
-      }
+      if (debugLogging) console.warn(`[WRITE BLOCKED: VECTOR] $${addr.toString(16)} <= $${value.toString(16).padStart(2,"0")}`);
       return;
     }
-
-    // Allow mapper to handle otherwise
     mapperWritePRG(addr, value);
-
-    if (debugLogging) {
-      console.debug(`[WRITE PRG-ROM] $${addr.toString(16)} <= ${value.toString(16).padStart(2,"0")}`);
-    }
+    if (debugLogging) console.debug(`[WRITE PRG-ROM] $${addr.toString(16)} <= $${value.toString(16).padStart(2,"0")}`);
   }
 
   cpuOpenBus = value;
@@ -355,9 +325,7 @@ function checkWriteOffset(address, value) {
 function cpuRead(addr) {
   addr &= 0xFFFF;
   let val = systemMemory[addr & 0x7FF] & 0xFF;
-  if (debugLogging) {
-    console.debug(`[READ CPU-RAM] $${addr.toString(16).padStart(4,"0")} -> ${val.toString(16).padStart(2,"0")}`);
-  }
+  if (debugLogging) console.debug(`[READ CPU-RAM] $${addr.toString(16).padStart(4,"0")} -> ${val.toString(16).padStart(2,"0")}`);
   cpuOpenBus = val;
   return val;
 }
@@ -366,9 +334,7 @@ function cpuWrite(addr, value) {
   addr &= 0xFFFF;
   value &= 0xFF;
   systemMemory[addr & 0x7FF] = value;
-  if (debugLogging) {
-    console.debug(`[WRITE CPU-RAM] $${addr.toString(16).padStart(4,"0")} <= ${value.toString(16).padStart(2,"0")}`);
-  }
+  if (debugLogging) console.debug(`[WRITE CPU-RAM] $${addr.toString(16).padStart(4,"0")} <= ${value.toString(16).padStart(2,"0")}`);
   cpuOpenBus = value;
 }
 
@@ -380,7 +346,6 @@ function mapperWritePRG(addr, value) {
   // NROM PRG is read-only, but some test ROMs poke it
   prgRom[addr - 0x8000] = value;
 }
-
 
 function apuWrite(address, value) {
   switch (address) {
@@ -410,8 +375,12 @@ function apuWrite(address, value) {
     case 0x4015: APUregister.SND_CHN = value;    cpuOpenBus = value; break;
     case 0x4017: APUregister.FRAME_CNT = value;  cpuOpenBus = value; break;
 
-    default:
+    case 0x4016: 
       cpuOpenBus = value;
+      if (typeof joypadWrite === "function") joypadWrite(address, value);
+      break;
+
+    default:
       break;
   }
 }
@@ -429,7 +398,6 @@ function apuRead(address) {
 function pollController1() {}
 function pollController2() {}
 
-// --- Joypad write ($4016 strobe latch) ---
 function joypadWrite(address, value) {
   if (address === 0x4016) {
     let oldStrobe = joypadStrobe;
@@ -440,40 +408,26 @@ function joypadWrite(address, value) {
       joypad2State = pollController2();
     }
     JoypadRegister.JOYPAD1 = value;
+  } else if (address === 0x4017) {
+    joypadStrobe = value & 1;
+    cpuOpenBus = value;
+    JoypadRegister.JOYPAD2 = value;
   }
 }
 
-// --- Joypad read ($4016/$4017 shift register) ---
 function joypadRead(address) {
-  let result = 0x40; // bits 6 and 7 reflect open bus / noise
-
+  let result = 0x40; // bits 6 and 7 open bus
   if (address === 0x4016) {
-    // Controller 1
-    result |= joypadStrobe
-      ? (pollController1() & 1)
-      : (joypad1State & 1);
-
-    if (!joypadStrobe) {
-      joypad1State = (joypad1State >> 1) | 0x80;
-    }
-
+    result |= joypadStrobe ? (pollController1() & 1) : (joypad1State & 1);
+    if (!joypadStrobe) joypad1State = (joypad1State >> 1) | 0x80;
     cpuOpenBus = result;
     return result;
   }
-
   if (address === 0x4017) {
-    // Controller 2
-    result |= joypadStrobe
-      ? (pollController2() & 1)
-      : (joypad2State & 1);
-
-    if (!joypadStrobe) {
-      joypad2State = (joypad2State >> 1) | 0x80;
-    }
-
+    result |= joypadStrobe ? (pollController2() & 1) : (joypad2State & 1);
+    if (!joypadStrobe) joypad2State = (joypad2State >> 1) | 0x80;
     cpuOpenBus = result;
     return result;
   }
-
   return cpuOpenBus;
 }
