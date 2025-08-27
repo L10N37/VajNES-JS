@@ -776,9 +776,9 @@ if (prgromHeader) {
   container.style.gap = "4px";
   container.style.marginLeft = "12px";
 
-  // 0x prefix cell
+  // $ prefix cell
   const prefix = document.createElement("span");
-  prefix.textContent = "0x";
+  prefix.textContent = "$";
   prefix.style.fontFamily = "monospace";
   prefix.style.fontSize = "1em";
   container.appendChild(prefix);

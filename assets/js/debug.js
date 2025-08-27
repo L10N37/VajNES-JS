@@ -1,6 +1,3 @@
-// tuning - batch and BUDGET_MS = Math.max(0.8 * dt, 10); (pre multiplier)
-// then runPacedWithSampler(50000, 500)
-
 let cpuRunning = false;
 
 // internal only, don't build disasm rows unless the window is open
@@ -19,7 +16,8 @@ const NES_H = 240;
 // RENDER FRAME
 ppuWorker.onmessage = (e) => {
   if (e.data.type === "frame") {
-    blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
+    //blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
+    quickRenderNametable0(); // hack
     registerFrameUpdate();
   }
 };
@@ -57,119 +55,122 @@ function checkInterrupts() {
   }
 }
 
-// offset handler takes care of prgRom being based @ 0x0000
-window.step = function(param) {
-  // --- new controls ---
-  let useTime = (typeof param === "number" && param < 1); // treat as seconds if <1
-  let burst   = (typeof param === "number" && param >= 1) ? param : 1;
-  let endTime = useTime ? performance.now() + (param * 1000) : 0;
+window.step = function() {
 
-  while (burst > 0 && (!useTime || performance.now() < endTime)) {
+  // make sure the PPU is always 3 ticks ahead (stall) -> non locking
+  if (Atomics.load(SHARED.CLOCKS, 1) > 0) {
+    // yield immediately; we’ll try again next tick
+    return;
+  }
 
-    // make sure the PPU is always 3 ticks ahead (stall)
-    let ppuBudget = Atomics.load(SHARED.CLOCKS, 1);
-    while (ppuBudget > 0) {
-      // refresh local copy each spin
-      ppuBudget = Atomics.load(SHARED.CLOCKS, 1);
-    }
+  // disable CRT fuzz noise
+  NoSignalAudio.setEnabled(false);
 
-    // disable CRT fuzz noise
-    NoSignalAudio.setEnabled(false);
+  // fetch opcode
+  const code = checkReadOffset(CPUregisters.PC);
+  const execFn = OPCODES[code].func;
 
-    // if we're paused, briefly let the PPU worker run this step
-    const wasPaused = !cpuRunning;
+  if (!cpuRunning) return; // bail if paused
 
-    // realigns with our prgRom base being 0x00 by being passed through offset handler
-    const code   = checkReadOffset(CPUregisters.PC);
+  if (!execFn) {
+    const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
+    console.warn(`Unknown opcode 0x${codeHex}`);
+    console.warn(`at PC=$${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
+    pause();
+    return;
+  }
 
-    // execute opcode handler
-    const execFn = OPCODES[code].func;
+  // prefetch operands for disasm
+  const _op  = checkReadOffset(CPUregisters.PC + 1);
+  const __op = checkReadOffset(CPUregisters.PC + 2);
+  const disasmPc = CPUregisters.PC;
 
-    //console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
-    //console.debug("Code @ 0x" + code.toString(16).padStart(2, "0").toUpperCase());
-
-    if (!execFn) {
-      const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
-      console.warn(`Unknown opcode 0x${codeHex}`);
-      console.warn(`at PC=$${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
-
-      // Clear bit 2 (0b00000100) to halt the PPU
-      Atomics.and(SHARED.EVENTS, 0, ~0b00000100);
-
-      // Pause on bad opcode
+  // breakpoint: opcode (before executing), allow step-over of the current bp once
+  if (bpStepOnce) {
+    bpStepOnce = false; // consume the one-time bypass
+  } else {
+    bpCheckOpcode(code, disasmPc);
+    if (breakPending) {
+      if (disasmRunning) {
+        const row = buildDisasmRow(code, _op, __op, disasmPc);
+        DISASM.appendRow(row);
+      }
       pause();
-
-      return;
+      breakPending = false;
+      return; // stop before executing instruction
     }
-
-    // for disasm
-    const _op   = checkReadOffset(CPUregisters.PC + 1);
-    const __op  = checkReadOffset(CPUregisters.PC + 2);
-    // disasm PC is the current PC, not the next one
-    const disasmPc = CPUregisters.PC;  
-
-    execFn();
-
-    if (disasmRunning){
-      // build disasm row now so we have pre handler PC + post handler modifications to regs in a row
-      const disasmRow = buildDisasmRow(code, _op, __op, disasmPc);
-      // send the row for output
-      DISASM.appendRow(disasmRow);
-    }
-
-    // increment PC to point at next opcode, if PC modified in opcode handler, this adds zero
-    CPUregisters.PC = CPUregisters.PC + OPCODES[code].pc;
-
-    // add cycles
-    const cyc = OPCODES[code].cycles | 0;
-    if (cyc) {
-      addExtraCycles(cyc);
-    }
-    // service interrupts
-    checkInterrupts();
-
-    burst--;
-  }
-}
-
-// how many ms worth of instructions per frame (16.67 ≈ 60FPS)
-let FRAME_TIME = 0.01667 /4;  // seconds
-
-function run() {
-  if (cpuRunning) return;  // already running
-  cpuRunning = true;
-
-  function loop() {
-    if (!cpuRunning) return; // stop cleanly on pause()
-
-    // run one frame's worth of instructions
-    step(FRAME_TIME);
-
-    // schedule next frame
-    requestAnimationFrame(loop);
   }
 
-  requestAnimationFrame(loop);
-}
+  // execute handler
+  execFn();
+
+  if (disasmRunning) {
+    const disasmRow = buildDisasmRow(code, _op, __op, disasmPc);
+    DISASM.appendRow(disasmRow);
+  }
+
+  // increment PC if the handler didn’t change it
+  CPUregisters.PC = (CPUregisters.PC + OPCODES[code].pc) & 0xFFFF;
+
+  // add cycles
+  const cyc = OPCODES[code].cycles | 0;
+  if (cyc) addExtraCycles(cyc);
+
+  // service interrupts
+  checkInterrupts();
+
+  // breakpoint check
+  if (breakPending) {
+    pause();
+    breakPending = false;
+  }
+};
 
 window.run = function() {
-  console.debug("running");
+  console.debug("running (NTSC paced)");
   cpuRunning = true;
 
-  const BURST_SIZE = 80000;  // how many opcodes per chunk
-  const YIELD_MS   = 0.2;    // small pause to let browser/UI breathe
+  const CPU_FREQ = 1789773; // Hz
+  const CYCLES_PER_MS = CPU_FREQ / 1000; // ~1789.8
+  let cyclesExecuted = 0;
+  let startTime = performance.now();
 
   function loop() {
-    if (!cpuRunning) return; // stop if paused
+    if (!cpuRunning) return;
 
-    step(BURST_SIZE);        // run a whole chunk of opcodes
-    setTimeout(loop, YIELD_MS); // queue next chunk ASAP
+    const now = performance.now();
+    const elapsedMs = now - startTime;
+
+    // target cycles at this wall time
+    const targetCycles = elapsedMs * CYCLES_PER_MS;
+
+    // soft caps to keep UI responsive
+    const MAX_CHUNK = 800;     // max instructions per tick
+    const MAX_MS    = 8;       // max wall time per tick
+    const tickStart = now;
+    let iter = 0;
+
+    // run instructions until caught up (but yield regularly)
+    while (cyclesExecuted < targetCycles && cpuRunning) {
+      const pcBefore = CPUregisters.PC;
+      step(); // executes one instruction in sync with PPU
+
+      // if pause() happened inside step(), stop and don't add cycles
+      if (!cpuRunning) break;
+
+      const cyc = OPCODES[checkReadOffset(pcBefore)].cycles | 0;
+      cyclesExecuted += cyc;
+
+      iter++;
+      if (iter >= MAX_CHUNK || (performance.now() - tickStart) > MAX_MS) break;
+    }
+
+    setTimeout(loop, 0); // yield ASAP
   }
 
-  loop(); // start it off
-}
+  loop();
+};
 
-// Pause (keeps your existing external API)
   window.pause = function() {
   cpuRunning = false;
   if (typeof updateDebugTables === 'function') {

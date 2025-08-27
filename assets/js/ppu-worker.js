@@ -1,41 +1,11 @@
 importScripts('/assets/js/ppu-worker-setup.js');
 console.debug("[PPU Worker init]")
-// ===================== PPU WORKER BOOT HEADER =====================
-// #fk all this off, go back to locals, shows on but still have to toggle in console
-// --- SharedArrayBuffer setup ---
-if (!self.SHARED) self.SHARED = {};
 
-// EVENTS: single Int32 cell for bit flags
-if (!SHARED.SAB_EVENTS) {
-  SHARED.SAB_EVENTS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
-  SHARED.EVENTS     = new Int32Array(SHARED.SAB_EVENTS);
-  SHARED.EVENTS[0]  = 0;
-}
-
-// --- Helper to define toggleable bit flags ---
-function defineFlag(name, bitMask) {
-  Object.defineProperty(globalThis, name, {
-    get: () => (Atomics.load(SHARED.EVENTS, 0) & bitMask) !== 0,
-    set: v => {
-      if (v) Atomics.or(SHARED.EVENTS, 0, bitMask);
-      else   Atomics.and(SHARED.EVENTS, 0, ~bitMask);
-    },
-    configurable: true
-  });
-}
-
-// --- Define toggles ---
-defineFlag("ppuDebugLogging", 0b100);   // bit 2
-defineFlag("cpuPpuSyncTiming", 0b1000); // bit 3
-
-// --- Defaults at boot ---
 let ppuDebugLogging  = false;
 let cpuPpuSyncTiming = false;
 
 let prevVblank = 0;
 
-// #fk all this off doesn't work properly
-// --- Boot log ---
 console.debug(
   `[worker boot] ppuDebugLogging=${ppuDebugLogging}  cpuPpuSyncTiming=${cpuPpuSyncTiming}`
 );
@@ -47,9 +17,6 @@ console.debug(
   `%c PPU/ CPU Sync Logging (toggle cpuPpuSyncTiming): ${cpuPpuSyncTiming ? "ON" : "OFF"} `,
   `background:${cpuPpuSyncTiming ? "limegreen" : "crimson"}; color:white; font-weight:bold; padding:2px 6px; border-radius:4px;`
 );
-
-// ================================================================
-
 
 // ---------- Flag helpers ----------
 // ========== SYNC layout  ==========
@@ -102,8 +69,15 @@ const background = {
   ntByte: 0, atByte: 0, tileLo: 0, tileHi: 0
 };
 
-function t_get() { return ((t_hi & 0xFF) << 8) | (t_lo & 0xFF); }
-function t_set(v) { v &= 0x7FFF; t_lo = v & 0xFF; t_hi = (v >> 8) & 0xFF; }
+// use SABs
+function t_get() {
+  return ((t_hi & 0xFF) << 8) | (t_lo & 0xFF);  // SAB backed
+}
+function t_set(v) {
+  v &= 0x7FFF;
+  t_lo = v & 0xFF;   // SAB
+  t_hi = (v >> 8) & 0xFF; // SAB
+}
 
 function ppuTick() {
   // run handler for the current scanline at the current dot
@@ -160,7 +134,7 @@ function preRenderScanline(currentDot) {
   }
 
   // Odd-frame cycle skip (NTSC quirk)
-  if (currentDot === 339 && PPUclock.oddFrame) {
+  if (currentDot === 339 && PPUclock.oddFrame && (PPUMASK & 0x18)) {
     PPUclock.dot++;
     if (ppuDebugLogging) {
       console.debug(
@@ -200,8 +174,9 @@ function visibleScanline(currentDot) {
   const inFetch   = (currentDot >= 2 && currentDot <= 257) || (currentDot >= 321 && currentDot <= 336);
   const phase     = (currentDot - 1) & 7; // same as %8 but cheaper
 
-  // --- Shifters tick during fetch region regardless of rendering ---
-  if (inFetch) {
+  // --- Shifters tick only while outputting pixels (dots 2..256) ---
+  const shiftNow = (PPUMASK & 0x18) && currentDot >= 2 && currentDot <= 256;
+  if (shiftNow) {
     background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
     background.bgShiftHi = (background.bgShiftHi << 1) & 0xFFFF;
     background.atShiftLo = (background.atShiftLo << 1) & 0xFFFF;
@@ -222,7 +197,7 @@ function visibleScanline(currentDot) {
         const attAddr = 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07);
         const shift   = ((v >> 4) & 4) | (v & 2);
         const atBits  = (ppuBusRead(attAddr) >> shift) & 3;
-        background.atByte = (atBits << 2) & 0xFF;
+        background.atByte = atBits & 0x03;
         BG_atByte = background.atByte;
         break;
       }
@@ -324,7 +299,7 @@ function reloadBGShifters() {
 
 // Hardware-accurate BG palette mapping (final 0..63 index)
 function emitPixelHardwarePalette() {
-  const fx = (fineX & 7);
+  const fx = (fineX & 7); // SAB
 
   const p0  = (background.bgShiftLo >> (15 - fx)) & 1;
   const p1  = (background.bgShiftHi >> (15 - fx)) & 1;
@@ -384,13 +359,13 @@ function incY() {
 
 function copyHoriz() {
   // Copy horizontal coarse X + horizontal nametable from t → v
-  const t = (t_hi << 8) | t_lo;
-  VRAM_ADDR = (VRAM_ADDR & ~0x041F) | (t & 0x041F);
+  const t = (t_hi << 8) | t_lo; // SAB
+  VRAM_ADDR = (VRAM_ADDR & ~0x041F) | (t & 0x041F); // SAB
 }
 
 function copyVert() {
-  const t = (t_hi << 8) | t_lo;
-  VRAM_ADDR = (VRAM_ADDR & ~0x7BE0) | (t & 0x7BE0);
+  const t = (t_hi << 8) | t_lo; // SAB
+  VRAM_ADDR = (VRAM_ADDR & ~0x7BE0) | (t & 0x7BE0); // SAB
 }
 
 // ---------- Bus access  ----------

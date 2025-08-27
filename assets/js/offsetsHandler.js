@@ -4,7 +4,9 @@ console.debug(
   `background:${debugLogging ? "limegreen" : "crimson"}; color:white; font-weight:bold; padding:2px 6px; border-radius:4px;`
 );
 
-// writeToggle is an internal PPU latch but implemented here on CPU core
+breakPending = false;
+
+// writeToggle is an internal PPU latch but implemented here on CPU core, globalThis for logdump
 globalThis.writeToggle = 0;
 
 // Mapper should tell us mirroring; fall back to horizontal if not available.
@@ -44,9 +46,11 @@ function checkReadOffset(address) {
   const addr = address & 0xFFFF;
   let value;
 
+  bpCheckRead(addr);
+
   if (addr < 0x2000) {
     value = cpuRead(addr);
-    if (debugLogging) console.debug(`[READ CPU-RAM] $${addr.toString(16).padStart(4,"0")} -> ${value.toString(16).padStart(2,"0")}`);
+
   }
 
   else if (addr < 0x4000) {
@@ -125,6 +129,8 @@ function checkWriteOffset(address, value) {
   const addr = address & 0xFFFF;
   value &= 0xFF;
 
+  bpCheckWrite(addr, value);
+
   if (addr < 0x2000) {
     cpuWrite(addr, value);
 
@@ -138,7 +144,7 @@ function checkWriteOffset(address, value) {
         PPUCTRL = value;
 
         const nowEnabled = (value & 0x80) !== 0;
-        const vblankNow = (typeof SHARED !== "undefined" && SHARED.SYNC)
+        const vblankNow = (SHARED.SYNC)
           ? Atomics.load(SHARED.SYNC, 5)
           : ((PPUSTATUS >>> 7) & 1);
 
@@ -178,9 +184,12 @@ function checkWriteOffset(address, value) {
         OAMADDR = (OAMADDR + 1) & 0xFF;
         break;
       }
-
+      
       // --- PPUSCROLL ---
       case 0x2005: {
+
+        //breakHere();
+
         let t = ((t_hi << 8) | t_lo) & 0x3FFF;
         const step = (writeToggle === 0) ? "hi" : "lo";
 
@@ -251,15 +260,21 @@ function checkWriteOffset(address, value) {
         } else if (v < 0x3F00) {
           VRAM[mapNT(v)] = value;
         } else {
-          const idx = paletteIndex(v);
+          // --- Palette write ($3F00–$3F1F) ---
+          const idx  = paletteIndex(v);     // folds $3F10/$14/$18/$1C to $3F00/$04/$08/$0C
           const val6 = value & 0x3F;
-          PALETTE_RAM[idx] = val6;
 
+          // Write only if changed (avoid redundant stores)
+          if (PALETTE_RAM[idx] !== val6) {
+            PALETTE_RAM[idx] = val6;
+          }
+
+          // Keep the universal BG quartet (0x00, 0x04, 0x08, 0x0C) in sync
           if ((idx & 0x03) === 0) {
-            PALETTE_RAM[0x00] = val6;
-            PALETTE_RAM[0x04] = val6;
-            PALETTE_RAM[0x08] = val6;
-            PALETTE_RAM[0x0C] = val6;
+            if (idx !== 0x00 && PALETTE_RAM[0x00] !== val6) PALETTE_RAM[0x00] = val6;
+            if (idx !== 0x04 && PALETTE_RAM[0x04] !== val6) PALETTE_RAM[0x04] = val6;
+            if (idx !== 0x08 && PALETTE_RAM[0x08] !== val6) PALETTE_RAM[0x08] = val6;
+            if (idx !== 0x0C && PALETTE_RAM[0x0C] !== val6) PALETTE_RAM[0x0C] = val6;
           }
 
           if (debugLogging) {
@@ -283,6 +298,7 @@ function checkWriteOffset(address, value) {
         }
         break;
       }
+
     }
 
   } else if (addr === 0x4014) {
