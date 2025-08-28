@@ -631,18 +631,27 @@ function ADC_ABSX() {
 }
 
 function ADC_ABSY() {
-  const lo   = checkReadOffset(CPUregisters.PC + 1);
-  const hi   = checkReadOffset(CPUregisters.PC + 2);
+  const lo   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const hi   = checkReadOffset(CPUregisters.PC + 2) & 0xFF;
   const base = (hi << 8) | lo;
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
 
-  const val  = checkReadOffset(addr) & 0xFF;
-  const cin  = CPUregisters.P.C & 1;
-  const dec  = (CPUregisters.P.D === 1);
+  // page-cross penalty (+1 cycle)
+  if ( ((base ^ addr) & 0xFF00) !== 0 ) addExtraCycles(1);
 
-  CPUregisters.A = adc_core(CPUregisters.A, val, cin, dec);
+  const a  = CPUregisters.A & 0xFF;
+  const v  = checkReadOffset(addr) & 0xFF;
+  const c  = CPUregisters.P.C & 1;
 
-  if ((addr & 0xFF00) !== (base & 0xFF00)) addExtraCycles(1);
+  const sum = a + v + c;
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = (((~(a ^ v) & (a ^ res)) >> 7) & 1);
+
+  CPUregisters.A = res;
 }
 
 function ADC_INDX() {
@@ -2276,27 +2285,53 @@ function ISC_ZPX() {
 }
 
 function ISC_ABSX() {
-  const addressess = ((checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1)) + CPUregisters.X;
-  let value = (checkReadOffset(addressess) + 1) & 0xFF;
-  checkWriteOffset(addressess, value);
+  const lo   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const hi   = checkReadOffset(CPUregisters.PC + 2) & 0xFF;
+  const base = (hi << 8) | lo;
+  const addr = (base + CPUregisters.X) & 0xFFFF;
 
-  CPUregisters.A = (CPUregisters.A - value - (CPUregisters.P.C ? 0 : 1)) & 0xFF;
+  const m0 = checkReadOffset(addr) & 0xFF;
+  const m1 = (m0 + 1) & 0xFF;
+  checkWriteOffset(addr, m1);
 
-  CPUregisters.P.C = (CPUregisters.A < 0x100) ? 1 : 0;
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  const a = CPUregisters.A & 0xFF;
+  const b = (~m1) & 0xFF;
+  const c = CPUregisters.P.C & 1;
+
+  const sum = a + b + c;
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function ISC_ABSY() {
-  const addressess = ((checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1)) + CPUregisters.Y;
-  let value = (checkReadOffset(addressess) + 1) & 0xFF;
-  checkWriteOffset(addressess, value);
+  const lo   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const hi   = checkReadOffset(CPUregisters.PC + 2) & 0xFF;
+  const base = (hi << 8) | lo;
+  const addr = (base + CPUregisters.Y) & 0xFFFF;
 
-  CPUregisters.A = (CPUregisters.A - value - (CPUregisters.P.C ? 0 : 1)) & 0xFF;
+  const m0 = checkReadOffset(addr) & 0xFF;
+  const m1 = (m0 + 1) & 0xFF;
+  checkWriteOffset(addr, m1);
 
-  CPUregisters.P.C = (CPUregisters.A < 0x100) ? 1 : 0;
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  const a = CPUregisters.A & 0xFF;
+  const b = (~m1) & 0xFF;
+  const c = CPUregisters.P.C & 1;
+
+  const sum = a + b + c;
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function ISC_INDX() {
@@ -2743,24 +2778,30 @@ function DOP_IMM() {
 
 // 0x9C — SHY (SAY) — Store (Y & (high byte of addr + 1)) to (abs + X)
 function SHY_ABSX() {
-  const lo = checkReadOffset(CPUregisters.PC + 1);
-  const hi = checkReadOffset(CPUregisters.PC + 2);
-  const baseAddr = (hi << 8) | lo;
-  const addr = (baseAddr + CPUregisters.X) & 0xFFFF;
-  const value = CPUregisters.Y & (((addr >> 8) + 1) & 0xFF);
+  const lo = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const hi = checkReadOffset(CPUregisters.PC + 2) & 0xFF;
+  const x  = CPUregisters.X & 0xFF;
+
+  const effLo = (lo + x) & 0xFF;          // low-byte add, no carry into high
+  const addr  = (hi << 8) | effLo;        // buggy addressing uses original high byte
+  const mask  = (hi + 1) & 0xFF;          // value mask based on (base high + 1)
+
+  const value = CPUregisters.Y & mask;
   checkWriteOffset(addr, value);
-  // No extra cycles (base is 5)
 }
 
 // 0x9E — SHX (SXA) — Store (X & (high byte of addr + 1)) to (abs + Y)
 function SHX_ABSY() {
-  const lo = checkReadOffset(CPUregisters.PC + 1);
-  const hi = checkReadOffset(CPUregisters.PC + 2);
-  const baseAddr = (hi << 8) | lo;
-  const addr = (baseAddr + CPUregisters.Y) & 0xFFFF;
-  const value = CPUregisters.X & (((addr >> 8) + 1) & 0xFF);
+  const lo  = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const hi  = checkReadOffset(CPUregisters.PC + 2) & 0xFF;
+  const y   = CPUregisters.Y & 0xFF;
+
+  const effLo = (lo + y) & 0xFF;                  // buggy addressing: high byte does not carry
+  const addr  = (hi << 8) | effLo;
+  const mask  = (hi + 1) & 0xFF;                  // value mask uses (base high + 1)
+
+  const value = CPUregisters.X & mask;
   checkWriteOffset(addr, value);
-  // No extra cycles (base is 5)
 }
 
 // 0x9B — TAS (SHS) — (A & X) to SP, also store (A & X & (high byte of addr + 1)) to (abs + Y)
