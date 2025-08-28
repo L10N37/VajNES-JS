@@ -601,6 +601,7 @@ function ADC_IMM() {
   const sum = a + val + c;           // 0..0x1FF
   const res = sum & 0xFF;
 
+
   CPUregisters.P.C = (sum >> 8) & 1;                                   // carry out
   CPUregisters.P.Z = ((res === 0) & 1);                                // zero
   CPUregisters.P.N = (res >> 7) & 1;                                   // negative
@@ -675,12 +676,13 @@ function ADC_INDY() {
 }
 
 function AND_ZP() {
-let operand = checkReadOffset(CPUregisters.PC +1);
-let val = checkReadOffset(operand) & 0xFF;
-let result =CPUregisters.A & val & 0xFF;
-CPUregisters.A = result
-if (CPUregisters.A === 0x00) CPUregisters.P.Z = 1;
-if (CPUregisters & 0x80) CPUregisters.P.N = 1;
+  const operand = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const val     = checkReadOffset(operand) & 0xFF;
+  const res     = (CPUregisters.A & val) & 0xFF;
+
+  CPUregisters.A   = res;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
 }
 
 function AND_ZPX() {
@@ -2251,17 +2253,26 @@ function DCP_INDY() {
   CPUregisters.P.N = ((result & 0x80) !== 0) ? 1 : 0;
 }
 
-
 function ISC_ZPX() {
-  const pointer = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
-  let value = (checkReadOffset(pointer) + 1) & 0xFF;
-  checkWriteOffset(pointer, value);
+  const pointer = (checkReadOffset(CPUregisters.PC + 1) + (CPUregisters.X & 0xFF)) & 0xFF;
+  const old     = checkReadOffset(pointer) & 0xFF;
+  const incv    = (old + 1) & 0xFF;
+  checkWriteOffset(pointer, incv);
 
-  CPUregisters.A = (CPUregisters.A - value - (CPUregisters.P.C ? 0 : 1)) & 0xFF;
+  const a = CPUregisters.A & 0xFF;
+  const m = incv;
+  const b = (~m) & 0xFF;
+  const c = CPUregisters.P.C & 1;
 
-  CPUregisters.P.C = (CPUregisters.A < 0x100) ? 1 : 0;
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  const sum = a + b + c;
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function ISC_ABSX() {
@@ -2406,18 +2417,24 @@ function SLO_ZPX() {
 }
 
 function ISC_ZP() {
-  const address = checkReadOffset(CPUregisters.PC +1);
-  // increment memory at ZP address
-  const newVal = (checkReadOffset(address) + 1) & 0xFF;
-  checkWriteOffset(address, newVal);
+  const addr = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const m0   = checkReadOffset(addr) & 0xFF;
+  const m1   = (m0 + 1) & 0xFF;
+  checkWriteOffset(addr, m1);
 
-  // subtract with borrow = 1 – C
-  const borrow = 1 - CPUregisters.P.C;
-  const result = CPUregisters.A - newVal - borrow;
-  CPUregisters.P.C = result >= 0 ? 1 : 0;
-  CPUregisters.A   = result & 0xFF;
-  CPUregisters.P.Z = CPUregisters.A === 0 ? 1 : 0;
-  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0 ? 1 : 0;
+  const a = CPUregisters.A & 0xFF;
+  const b = (~m1) & 0xFF;
+  const c = CPUregisters.P.C & 1;
+
+  const sum = a + b + c;
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function ISC_ABS() {
