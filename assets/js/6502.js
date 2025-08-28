@@ -555,6 +555,7 @@ function ADC_ABS() {
   CPUregisters.A = result & 0xFF;
 }
 
+/* decimal mode ignored on NES
 // Shared core: do 8-bit add with carry in either binary or BCD.
 // Mirrors classic 6502 behavior: V computed from binary add even in BCD.
 function adc_core(a, val, carryIn, decimal) {
@@ -590,6 +591,7 @@ function adc_core(a, val, carryIn, decimal) {
 
   return res;
 }
+*/
 
 function ADC_IMM() {
   const val = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
@@ -655,17 +657,26 @@ function ADC_ABSY() {
 }
 
 function ADC_INDX() {
-  const operand = checkReadOffset(CPUregisters.PC + 1);
-  const ptr     = (operand + CPUregisters.X) & 0xFF;
-  const lo      = checkReadOffset(ptr);
-  const hi      = checkReadOffset((ptr + 1) & 0xFF);
-  const addr    = (hi << 8) | lo;
-  const val     = checkReadOffset(addr) & 0xFF;
+  const zp   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const ptr  = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  const cin  = CPUregisters.P.C & 1;
-  const dec  = (CPUregisters.P.D === 1);
+  const lo   = checkReadOffset(ptr) & 0xFF;
+  const hi   = checkReadOffset((ptr + 1) & 0xFF) & 0xFF;   // zero-page wraps
+  const addr = (hi << 8) | lo;
 
-  CPUregisters.A = adc_core(CPUregisters.A, val, cin, dec);
+  const a  = CPUregisters.A & 0xFF;
+  const v  = checkReadOffset(addr) & 0xFF;
+  const c  = CPUregisters.P.C & 1;
+
+  const sum = a + v + c;
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ v) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function ADC_INDY() {
@@ -1594,12 +1605,25 @@ function SBC_ABSY() {
 }
 
 function SBC_INDX() {
-  const zp = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X);
-  const lo = checkReadOffset(zp);
-  const hi = checkReadOffset(zp + 1);
+  const zp   = (checkReadOffset(CPUregisters.PC + 1) + (CPUregisters.X & 0xFF)) & 0xFF;
+  const lo   = checkReadOffset(zp) & 0xFF;
+  const hi   = checkReadOffset((zp + 1) & 0xFF) & 0xFF;   // zero-page wrap
   const addr = (hi << 8) | lo;
-  const value = checkReadOffset(addr) & 0xFF;
-  CPUregisters.A = sbc_core(CPUregisters.A, value, CPUregisters.P.C);
+
+  const a = CPUregisters.A & 0xFF;
+  const m = checkReadOffset(addr) & 0xFF;
+  const b = (~m) & 0xFF;                 // SBC as A + (~M) + C
+  const c = CPUregisters.P.C & 1;
+
+  const sum = a + b + c;                 // 0..0x1FF
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;     // carry = no borrow
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function SBC_INDY() {
@@ -1891,30 +1915,33 @@ function STX_ABS() {
     CPUregisters.P.N = (val >> 7) & 1;
   }
   
-  function RRA_INDX() {
-    const zp = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X);
-    const addr = checkReadOffset(zp) | (checkReadOffset((zp + 1) & 0xFF) << 8);
-    let val = checkReadOffset(addr);
+function RRA_INDX() {
+  const zp   = (checkReadOffset(CPUregisters.PC + 1) + (CPUregisters.X & 0xFF)) & 0xFF;
+  const lo   = checkReadOffset(zp) & 0xFF;
+  const hi   = checkReadOffset((zp + 1) & 0xFF) & 0xFF;   // zero page wraps
+  const addr = (hi << 8) | lo;
 
-    // --- ROR memory (inline) ---
-    const oldCarry = CPUregisters.P.C;
-    CPUregisters.P.C = val & 0x01;               // new carry from bit 0
-    val = (val >> 1) | (oldCarry << 7);
-    checkWriteOffset(addr, val);
+  let val = checkReadOffset(addr) & 0xFF;
 
-    // --- ADC (A + val + carry) ---
-    let acc = CPUregisters.A;
-    let carry = CPUregisters.P.C ? 1 : 0;
-    let result = acc + val + carry;
+  // --- ROR memory ---
+  const oldC = CPUregisters.P.C & 1;
+  CPUregisters.P.C = val & 1;
+  val = ((val >> 1) | (oldC << 7)) & 0xFF;
+  checkWriteOffset(addr, val);
 
-    // Flags
-    CPUregisters.P.N = (result >> 7) & 1;
-    CPUregisters.P.Z = +((result & 0xFF) === 0);
-    CPUregisters.P.V = +(((~(acc ^ val) & (acc ^ result)) & 0x80) !== 0);
-    CPUregisters.P.C = +(result > 0xFF);
+  // --- ADC (A + val + carry) ---
+  const a = CPUregisters.A & 0xFF;
+  const c = CPUregisters.P.C & 1;
+  const sum = a + val + c;
+  const res = sum & 0xFF;
 
-    CPUregisters.A = result & 0xFF;
-  }
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ val) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
+}
 
 function RRA_INDY() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
@@ -2335,16 +2362,30 @@ function ISC_ABSY() {
 }
 
 function ISC_INDX() {
-  const pointer = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
-  const addressess = (checkReadOffset((pointer + 1) & 0xFF) << 8) | checkReadOffset(pointer);
-  let value = (checkReadOffset(addressess) + 1) & 0xFF;
-  checkWriteOffset(addressess, value);
+  const zp   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const ptr  = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  CPUregisters.A = (CPUregisters.A - value - (CPUregisters.P.C ? 0 : 1)) & 0xFF;
+  const lo   = checkReadOffset(ptr) & 0xFF;
+  const hi   = checkReadOffset((ptr + 1) & 0xFF) & 0xFF;  // ZP wrap
+  const addr = (hi << 8) | lo;
 
-  CPUregisters.P.C = (CPUregisters.A < 0x100) ? 1 : 0;
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  const m0 = checkReadOffset(addr) & 0xFF;
+  const m1 = (m0 + 1) & 0xFF;
+  checkWriteOffset(addr, m1);
+
+  const a   = CPUregisters.A & 0xFF;
+  const b   = (~m1) & 0xFF;
+  const c   = CPUregisters.P.C & 1;
+
+  const sum = a + b + c;
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function ISC_INDY() {
