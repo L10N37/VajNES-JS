@@ -139,17 +139,36 @@ function addExtraCycles(x) {
   Prioritise implementing IRQ support for popular mappers like MMC3 (4), MMC5 (5), and VRC6 (22).
 */
 function BRK_IMP() {
-  const ret = (CPUregisters.PC + 2) & 0xFFFF;       // BRK pushes PC+2
-  pushStack((ret >> 8) & 0xFF);                     // PCH
-  pushStack(ret & 0xFF);                            // PCL
-  pushStatus(true);                                 // B=1 only for BRK/PHP
+  const pc = CPUregisters.PC & 0xFFFF;
+  // --- dummy fetch of padding byte ---
+  const padAddr = (pc + 1) & 0xFFFF;
+  const padVal  = checkReadOffset(padAddr);
+  const ret = (pc + 2) & 0xFFFF;
+  // Push high
+  const retHi = (ret >> 8) & 0xFF;
+  cpuWrite(0x100 | CPUregisters.S, retHi);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  // Push low
+  const retLo = ret & 0xFF;
+  cpuWrite(0x100 | CPUregisters.S, retLo);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  // Build status byte
+  let statusByte = 0b00110000; // B=1, D=1
+  statusByte |= (CPUregisters.P.C & 1) << 0;
+  statusByte |= (CPUregisters.P.Z & 1) << 1;
+  statusByte |= (CPUregisters.P.I & 1) << 2;
+  statusByte |= (CPUregisters.P.D & 1) << 3;
+  statusByte |= (CPUregisters.P.V & 1) << 6;
+  statusByte |= (CPUregisters.P.N & 1) << 7;
+
+  cpuWrite(0x100 | CPUregisters.S, statusByte);
+  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+  // Set I after push
   CPUregisters.P.I = 1;
-
-  const lo = checkReadOffset(0xFFFE);
-  const hi = checkReadOffset(0xFFFF);
+  // Fetch vector
+  const lo = checkReadOffset(0xFFFE) & 0xFF;
+  const hi = checkReadOffset(0xFFFF) & 0xFF;
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
-
-  addExtraCycles(5);                                // + base 2 = 7
 }
 
 function LDA_IMM() {

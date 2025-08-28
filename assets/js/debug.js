@@ -166,7 +166,7 @@ window.run = function() {
 // move pc/cyc directly to opcode handlers eventually to optimise
 // all opcodes setting PC manually have zero increment
 const OPCODES = [
-  { pc:1, cycles:2, func: BRK_IMP },   { pc:2, cycles:6, func: ORA_INDX }, { pc:1, cycles:2, func: KIL_IMP },  { pc:2, cycles:8, func: SLO_INDX }, // 6->8
+  { pc:0, cycles:7, func: BRK_IMP },   { pc:2, cycles:6, func: ORA_INDX }, { pc:1, cycles:2, func: KIL_IMP },  { pc:2, cycles:8, func: SLO_INDX }, // 6->8
   { pc:2, cycles:3, func: NOP_ZP },    { pc:2, cycles:3, func: ORA_ZP },   { pc:2, cycles:5, func: ASL_ZP },   { pc:2, cycles:5, func: SLO_ZP },   // ASL 3->5
   { pc:1, cycles:2, func: PHP_IMP },   { pc:2, cycles:2, func: ORA_IMM },  { pc:1, cycles:2, func: ASL_ACC },  { pc:2, cycles:2, func: ANC_IMM },
   { pc:3, cycles:4, func: NOP_ABS },   { pc:3, cycles:4, func: ORA_ABS },  { pc:3, cycles:6, func: ASL_ABS },  { pc:3, cycles:6, func: SLO_ABS },  // ASL/SLO 4->6
