@@ -234,17 +234,19 @@ function LDA_INDX() {
 }
 
 function LDA_INDY() {
-  const zp = checkReadOffset(CPUregisters.PC + 1);
-  const lo = checkReadOffset(zp);
-  const hi = checkReadOffset(zp + 1);
+  const zp   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const lo   = checkReadOffset(zp) & 0xFF;
+  const hi   = checkReadOffset((zp + 1) & 0xFF) & 0xFF;   // zero-page wrap
   const base = (hi << 8) | lo;
-  const address = (base + CPUregisters.Y) & 0xFFFF;
+  const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
 
-  CPUregisters.A = checkReadOffset(address, true);
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-    // Add a cycle if page boundary is crossed when adding Y
-  if ((base & 0xFF00) !== (address & 0xFF00)) addExtraCycles(1);//cpuCycles = (cpuCycles + 1) & 0xFFFF;
+  // page-cross penalty (+1)
+  if ( ((base ^ addr) & 0xFF00) !== 0 ) addExtraCycles(1);
+
+  const v = checkReadOffset(addr) & 0xFF;
+  CPUregisters.A   = v;
+  CPUregisters.P.Z = ((v === 0) & 1);
+  CPUregisters.P.N = (v >> 7) & 1;
 }
 
 function STA_ZP() {
@@ -680,19 +682,28 @@ function ADC_INDX() {
 }
 
 function ADC_INDY() {
-  const operand = checkReadOffset(CPUregisters.PC + 1) ;
-  const lo      = checkReadOffset(operand);
-  const hi      = checkReadOffset((operand + 1) & 0xFF);
-  const base    = (hi << 8) | lo;
-  const addr    = (base + CPUregisters.Y) & 0xFFFF;
-  const val     = checkReadOffset(addr) & 0xFF;
+  const zp   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const lo   = checkReadOffset(zp) & 0xFF;
+  const hi   = checkReadOffset((zp + 1) & 0xFF) & 0xFF;   // ZP wrap
+  const base = (hi << 8) | lo;
+  const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
 
-  const cin  = CPUregisters.P.C & 1;
-  const dec  = (CPUregisters.P.D === 1);
+  // page-cross penalty (+1)
+  if ( ((base ^ addr) & 0xFF00) !== 0 ) addExtraCycles(1);
 
-  CPUregisters.A = adc_core(CPUregisters.A, val, cin, dec);
+  const a   = CPUregisters.A & 0xFF;
+  const v   = checkReadOffset(addr) & 0xFF;
+  const c   = CPUregisters.P.C & 1;
 
-  if ((addr & 0xFF00) !== (base & 0xFF00)) addExtraCycles(1);
+  const sum = a + v + c;
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ v) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function AND_ZP() {
@@ -1627,15 +1638,29 @@ function SBC_INDX() {
 }
 
 function SBC_INDY() {
-  const zp = checkReadOffset(CPUregisters.PC + 1);
-  const lo = checkReadOffset(zp);
-  const hi = checkReadOffset((zp + 1));
+  const zp   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const lo   = checkReadOffset(zp) & 0xFF;
+  const hi   = checkReadOffset((zp + 1) & 0xFF) & 0xFF;   // zero-page wrap
   const base = (hi << 8) | lo;
-  const addr = (base + CPUregisters.Y) & 0xFFFF;
-  const value = checkReadOffset(addr) & 0xFF;
-  CPUregisters.A = sbc_core(CPUregisters.A, value, CPUregisters.P.C);
+  const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
 
-  if ((addr & 0xFF00) !== (base & 0xFF00)) addExtraCycles(1);
+  // page-cross penalty (+1)
+  if ( ((base ^ addr) & 0xFF00) !== 0 ) addExtraCycles(1);
+
+  const a = CPUregisters.A & 0xFF;
+  const m = checkReadOffset(addr) & 0xFF;
+  const b = (~m) & 0xFF;                 // SBC as A + (~M) + C
+  const c = CPUregisters.P.C & 1;
+
+  const sum = a + b + c;                 // 0..0x1FF
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;     // carry = no borrow
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 // TYA - Transfer Y to A (implied)
@@ -1944,29 +1969,32 @@ function RRA_INDX() {
 }
 
 function RRA_INDY() {
-  const zp = checkReadOffset(CPUregisters.PC + 1);
-  const base = checkReadOffset(zp) | (checkReadOffset(zp + 1) << 8);
-  const addr = (base + CPUregisters.Y) & 0xFFFF;
-  let val = checkReadOffset(addr);
+  const zp   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const lo   = checkReadOffset(zp) & 0xFF;
+  const hi   = checkReadOffset((zp + 1) & 0xFF) & 0xFF;   // ZP wrap
+  const base = (hi << 8) | lo;
+  const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
 
-  // --- ROR (rotate right through carry) ---
-  const oldCarry = CPUregisters.P.C;
-  CPUregisters.P.C = val & 0x01;                // new carry from bit 0
-  val = (val >> 1) | (oldCarry << 7);
-  checkWriteOffset(addr, val);
+  let m = checkReadOffset(addr) & 0xFF;
 
-  // --- ADC (A + val + carry) ---
-  let acc = CPUregisters.A;
-  let carry = CPUregisters.P.C ? 1 : 0;
-  let result = acc + val + carry;
+  // ROR memory through carry
+  const oldC = CPUregisters.P.C & 1;
+  CPUregisters.P.C = m & 1;
+  m = ((m >> 1) | (oldC << 7)) & 0xFF;
+  checkWriteOffset(addr, m);
 
-  // Flags
-  CPUregisters.P.N = (result >> 7) & 1;                                // Negative
-  CPUregisters.P.Z = +((result & 0xFF) === 0);                         // Zero
-  CPUregisters.P.V = +(((~(acc ^ val) & (acc ^ result)) & 0x80) !== 0); // Overflow
-  CPUregisters.P.C = +(result > 0xFF);                                 // Carry
+  // ADC A + m + C (binary on NES)
+  const a   = CPUregisters.A & 0xFF;
+  const c   = CPUregisters.P.C & 1;
+  const sum = a + m + c;
+  const res = sum & 0xFF;
 
-  CPUregisters.A = result & 0xFF;
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ m) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function RRA_ZP() {
@@ -2389,17 +2417,29 @@ function ISC_INDX() {
 }
 
 function ISC_INDY() {
-  const pointer = checkReadOffset(CPUregisters.PC + 1);
-  const base = (checkReadOffset((pointer + 1) & 0xFF) << 8) | checkReadOffset(pointer);
-  const addressess = base + CPUregisters.Y;
-  let value = (checkReadOffset(addressess) + 1) & 0xFF;
-  checkWriteOffset(addressess, value);
+  const zp   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const lo   = checkReadOffset(zp) & 0xFF;
+  const hi   = checkReadOffset((zp + 1) & 0xFF) & 0xFF;
+  const base = (hi << 8) | lo;
+  const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
 
-  CPUregisters.A = (CPUregisters.A - value - (CPUregisters.P.C ? 0 : 1)) & 0xFF;
+  const m0 = checkReadOffset(addr) & 0xFF;
+  const m1 = (m0 + 1) & 0xFF;
+  checkWriteOffset(addr, m1);
 
-  CPUregisters.P.C = (CPUregisters.A < 0x100) ? 1 : 0;
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  const a   = CPUregisters.A & 0xFF;
+  const b   = (~m1) & 0xFF;
+  const c   = CPUregisters.P.C & 1;
+
+  const sum = a + b + c;
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function SLO_ZP() {
