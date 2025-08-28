@@ -2438,20 +2438,27 @@ function ISC_ZP() {
 }
 
 function ISC_ABS() {
-  const lo = checkReadOffset(CPUregisters.PC +1);
-  const hi = checkReadOffset(CPUregisters.PC +2);
-  const address = (hi << 8) | lo;
-  // increment memory at ABS address
-  const newVal = (checkReadOffset(address) + 1) & 0xFF;
-  checkWriteOffset(address, newVal);
+  const lo = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  const hi = checkReadOffset(CPUregisters.PC + 2) & 0xFF;
+  const addr = (hi << 8) | lo;
 
-  // subtract with borrow = 1 – C
-  const borrow = 1 - CPUregisters.P.C;
-  const result = CPUregisters.A - newVal - borrow;
-  CPUregisters.P.C = result >= 0 ? 1 : 0;
-  CPUregisters.A   = result & 0xFF;
-  CPUregisters.P.Z = CPUregisters.A === 0 ? 1 : 0;
-  CPUregisters.P.N = (CPUregisters.A & 0x80) !== 0 ? 1 : 0;
+  const m0 = checkReadOffset(addr) & 0xFF;
+  const m1 = (m0 + 1) & 0xFF;
+  checkWriteOffset(addr, m1);
+
+  const a = CPUregisters.A & 0xFF;
+  const b = (~m1) & 0xFF;
+  const c = CPUregisters.P.C & 1;
+
+  const sum = a + b + c;
+  const res = sum & 0xFF;
+
+  CPUregisters.P.C = (sum >> 8) & 1;
+  CPUregisters.P.Z = ((res === 0) & 1);
+  CPUregisters.P.N = (res >> 7) & 1;
+  CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
+
+  CPUregisters.A = res;
 }
 
 function RLA_ZP() {
