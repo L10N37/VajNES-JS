@@ -331,7 +331,7 @@ function checkWriteOffset(address, value) {
       if (debugLogging) console.warn(`[WRITE BLOCKED: VECTOR] $${addr.toString(16)} <= $${value.toString(16).padStart(2,"0")}`);
       return;
     }
-    mapperWritePRG(addr, value);
+    //mapperWritePRG(addr, value);
     if (debugLogging) console.debug(`[WRITE PRG-ROM] $${addr.toString(16)} <= $${value.toString(16).padStart(2,"0")}`);
   }
 
