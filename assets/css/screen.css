@@ -56,10 +56,11 @@ These can be referenced by ID or class */
   box-sizing: border-box;
 }
 /* BLACK UNDERLAY, UTMOST REAR, no canvas, just black backdrop modal */
+/*
 .blackScreenModal {
   display: none;
   position: fixed;
-  z-index: 0; /* random negative utmost rear z index */
+  z-index: 0;
   left: 0;
   top: 0;
   width: 100%;
@@ -67,7 +68,7 @@ These can be referenced by ID or class */
   overflow: show;
   background-color: black;
 }
-
+*/
 
 /* all other styling, z index stuff put on top for layering */
 .scanlineSimulationModal {

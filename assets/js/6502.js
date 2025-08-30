@@ -174,33 +174,117 @@ function BRK_IMP() {
 function LDA_IMM() {
   CPUregisters.A = checkReadOffset(CPUregisters.PC + 1);
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
 }
 
 function LDA_ZP() {
-  const address = checkReadOffset(CPUregisters.PC + 1);
-  CPUregisters.A = checkReadOffset(address);
+  const addr = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  CPUregisters.A = checkReadOffset(addr);
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
 }
 
 function LDA_ZPX() {
-  const address = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
-  CPUregisters.A = checkReadOffset(address);
+  const base = checkReadOffset(CPUregisters.PC + 1);
+  const addr = (base + CPUregisters.X) & 0xFF;  // wrap in zero page
+  CPUregisters.A = checkReadOffset(addr);
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
 }
 
 function LDA_ABS() {
-  const address = (checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1);
-  CPUregisters.A = checkReadOffset(address);
+  const low  = checkReadOffset(CPUregisters.PC + 1);
+  const high = checkReadOffset(CPUregisters.PC + 2);
+  const addr = (high << 8) | low;
+  CPUregisters.A = checkReadOffset(addr);
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
+}
+
+function LDA_ABSX() {
+  const low  = checkReadOffset(CPUregisters.PC + 1);
+  const high = checkReadOffset(CPUregisters.PC + 2);
+  const base = (high << 8) | low;
+  const addr = (base + CPUregisters.X) & 0xFFFF;
+
+  // Dummy read on page cross
+  if ((base & 0xFF00) !== (addr & 0xFF00)) {
+    const dummy = (base & 0xFF00) | (addr & 0x00FF);
+    checkReadOffset(dummy);
+    addExtraCycles(1);
+  }
+
+  CPUregisters.A = checkReadOffset(addr);
+  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
+}
+
+function LDA_ABSY() {
+  const low  = checkReadOffset(CPUregisters.PC + 1);
+  const high = checkReadOffset(CPUregisters.PC + 2);
+  const base = (high << 8) | low;
+  const addr = (base + CPUregisters.Y) & 0xFFFF;
+
+  if ((base & 0xFF00) !== (addr & 0xFF00)) {
+    const dummy = (base & 0xFF00) | (addr & 0x00FF);
+    checkReadOffset(dummy);
+    addExtraCycles(1);
+  }
+
+  CPUregisters.A = checkReadOffset(addr);
+  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
+}
+
+function LDA_INDX() {  // (zp,X)
+  const zp    = checkReadOffset(CPUregisters.PC + 1);
+  const ptr   = (zp + CPUregisters.X) & 0xFF;
+  const low   = checkReadOffset(ptr);
+  const high  = checkReadOffset((ptr + 1) & 0xFF);
+  const addr  = (high << 8) | low;
+  CPUregisters.A = checkReadOffset(addr);
+  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
+}
+
+function LDA_INDY() {  // (zp),Y
+  const zp    = checkReadOffset(CPUregisters.PC + 1);
+  const low   = checkReadOffset(zp);
+  const high  = checkReadOffset((zp + 1) & 0xFF);
+  const base  = (high << 8) | low;
+  const addr  = (base + CPUregisters.Y) & 0xFFFF;
+
+  if ((base & 0xFF00) !== (addr & 0xFF00)) {
+    const dummy = (base & 0xFF00) | (addr & 0x00FF);
+    checkReadOffset(dummy);
+    addExtraCycles(1);
+  }
+
+  CPUregisters.A = checkReadOffset(addr);
+  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
 }
 
 function STA_ABSX() {
-  const address = ((checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1)) + CPUregisters.X;
-  checkWriteOffset(address, CPUregisters.A);
+  // Correct operand fetch order: low, then high
+  const low  = checkReadOffset(CPUregisters.PC + 1);
+  const high = checkReadOffset(CPUregisters.PC + 2);
+  const base = ((high << 8) | low) & 0xFFFF;
+
+  const X    = CPUregisters.X & 0xFF;
+  const addr = (base + X) & 0xFFFF;
+
+  // abs,X store is always 5 cycles total → base(4) +1
+  addExtraCycles(1);
+
+  // If page crossed, do the required dummy read at old page + new low byte
+  if (((base ^ addr) & 0xFF00) !== 0) {
+    const dummy = (base & 0xFF00) | (addr & 0x00FF);
+    checkReadOffset(dummy); // required by cpu_dummy_reads test #4
+  }
+
+  // Final write to the true effective address
+  checkWriteOffset(addr, CPUregisters.A & 0xFF);
 }
 
 function AND_IMM() {
@@ -213,93 +297,71 @@ function AND_IMM() {
   // C, V unchanged; no PC update here if your LUT advances PC.
 }
 
-function LDA_ABSX() {
-  const low  = checkReadOffset(CPUregisters.PC + 1);
-  const high = checkReadOffset(CPUregisters.PC + 2);
-  const base = (high << 8) | low;
-  const addr = (base + CPUregisters.X) & 0xFFFF;
-
-  // --- page-cross penalty (+1 cycle if address crosses page) ---
-  if ( ((base ^ addr) & 0xFF00) !== 0 ) addExtraCycles(1);
-
-  CPUregisters.A = checkReadOffset(addr);
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
-}
-
-function LDA_ABSY() {
-  const lo = checkReadOffset(CPUregisters.PC + 1);
-  const hi = checkReadOffset(CPUregisters.PC + 2);
-  const base = (hi << 8) | lo;
-  const address = (base + CPUregisters.Y) & 0xFFFF;
-
-  CPUregisters.A = checkReadOffset(address);
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-
-  // Detect page boundary crossing
-  if ((base & 0xFF00) !== (address & 0xFF00)) {
-    //cpuCycles = (cpuCycles + 1) & 0xFFFF;
-    addExtraCycles(1);
-  }
-}
-
-function LDA_INDX() {
-  const zpaddress = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
-  const address = ((checkReadOffset((zpaddress + 1) & 0xFF) << 8) | checkReadOffset(zpaddress)) & 0xFFFF;
-  CPUregisters.A = checkReadOffset(address);
-  CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-}
-
-function LDA_INDY() {
-  const zp   = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
-  const lo   = checkReadOffset(zp) & 0xFF;
-  const hi   = checkReadOffset((zp + 1) & 0xFF) & 0xFF;   // zero-page wrap
-  const base = (hi << 8) | lo;
-  const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
-
-  // page-cross penalty (+1)
-  if ( ((base ^ addr) & 0xFF00) !== 0 ) addExtraCycles(1);
-
-  const v = checkReadOffset(addr) & 0xFF;
-  CPUregisters.A   = v;
-  CPUregisters.P.Z = ((v === 0) & 1);
-  CPUregisters.P.N = (v >> 7) & 1;
-}
-
 function STA_ZP() {
-  const address = checkReadOffset(CPUregisters.PC + 1);
-  checkWriteOffset(address, CPUregisters.A);
+  const addr = checkReadOffset(CPUregisters.PC + 1) & 0xFF;
+  checkWriteOffset(addr, CPUregisters.A & 0xFF);
+  // 3 cycles total (base cycles only)
 }
 
 function STA_ZPX() {
-  const address = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
-  checkWriteOffset(address, CPUregisters.A);
+  const base = checkReadOffset(CPUregisters.PC + 1);
+  const addr = (base + CPUregisters.X) & 0xFF;
+  checkWriteOffset(addr, CPUregisters.A & 0xFF);
+  addExtraCycles(1); // total 4 cycles
 }
 
 function STA_ABS() {
-  const address = (checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1);
-  checkWriteOffset(address, CPUregisters.A);
+  const low  = checkReadOffset(CPUregisters.PC + 1);
+  const high = checkReadOffset(CPUregisters.PC + 2);
+  const addr = ((high << 8) | low) & 0xFFFF;
+  checkWriteOffset(addr, CPUregisters.A & 0xFF);
+  // total 4 cycles
 }
 
 function STA_ABSY() {
-  const base = (checkReadOffset(CPUregisters.PC + 2) << 8) | checkReadOffset(CPUregisters.PC + 1);
-  const address = (base + CPUregisters.Y) & 0xFFFF;
-  checkWriteOffset(address, CPUregisters.A);
+  const low  = checkReadOffset(CPUregisters.PC + 1);
+  const high = checkReadOffset(CPUregisters.PC + 2);
+  const base = (high << 8) | low;
+  const addr = (base + CPUregisters.Y) & 0xFFFF;
+
+  addExtraCycles(1); // base(4)+1 = 5 cycles
+
+  // dummy read if page crossed
+  if ((base & 0xFF00) !== (addr & 0xFF00)) {
+    const dummy = (base & 0xFF00) | (addr & 0x00FF);
+    checkReadOffset(dummy);
+  }
+
+  checkWriteOffset(addr, CPUregisters.A & 0xFF);
 }
 
 function STA_INDX() {
-  const zpaddress = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF;
-  const address = (checkReadOffset((zpaddress + 1) & 0xFF) << 8) | checkReadOffset(zpaddress);
-  checkWriteOffset(address, CPUregisters.A);
+  const zp     = checkReadOffset(CPUregisters.PC + 1);
+  const zpaddr = (zp + CPUregisters.X) & 0xFF;
+  const low    = checkReadOffset(zpaddr);
+  const high   = checkReadOffset((zpaddr + 1) & 0xFF);
+  const addr   = (high << 8) | low;
+
+  checkWriteOffset(addr, CPUregisters.A & 0xFF);
+  addExtraCycles(2); // total 6 cycles
 }
 
 function STA_INDY() {
-  const zpaddress = checkReadOffset(CPUregisters.PC + 1);
-  const base = (checkReadOffset((zpaddress + 1) & 0xFF) << 8) | checkReadOffset(zpaddress);
-  const address = (base + CPUregisters.Y) & 0xFFFF;
-  checkWriteOffset(address, CPUregisters.A);
+  const zp    = checkReadOffset(CPUregisters.PC + 1);
+  const low   = checkReadOffset(zp);
+  const high  = checkReadOffset((zp + 1) & 0xFF);
+  const base  = (high << 8) | low;
+  const addr  = (base + CPUregisters.Y) & 0xFFFF;
+
+  addExtraCycles(1); // base(5)+1 = 6 cycles
+
+  // dummy read if page crossed
+  if ((base & 0xFF00) !== (addr & 0xFF00)) {
+    const dummy = (base & 0xFF00) | (addr & 0x00FF);
+    checkReadOffset(dummy);
+  }
+
+  checkWriteOffset(addr, CPUregisters.A & 0xFF);
 }
 
 // Flag manipulation instructions
@@ -841,20 +903,18 @@ function ASL_ACC() {
 // ---------- ASL $nn  (ZP) total = 5 cycles → extra = +2 ----------
 function ASL_ZP() {
   const op  = checkReadOffset(CPUregisters.PC + 1);
-  const ea  = op; // zero-page address
+  const ea  = op & 0xFF; // zero-page address
 
   const old = checkReadOffset(ea) & 0xFF;
-  checkWriteOffset(ea, old);                // dummy write (RMW bus pattern)
+  checkWriteOffset(ea, old);                // dummy write (old value)
 
   const res = (old << 1) & 0xFF;
   CPUregisters.P.C = (old >>> 7) & 1;
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = (res >>> 7) & 1;
-  checkWriteOffset(ea, res);                // final write
+  checkWriteOffset(ea, res);                // final write (new value)
 
-  //cpuCycles = (cpuCycles + 2) & 0xFFFF; // base(3) + 2 = 5
-  addExtraCycles(2);
-
+  addExtraCycles(2); // total = 5 cycles
 }
 
 // ---------- ASL $nn,X (ZP,X) total = 6 cycles → extra = +2 ----------
@@ -863,53 +923,52 @@ function ASL_ZPX() {
   const ea = (op + (CPUregisters.X & 0xFF)) & 0xFF; // zero-page wrap
 
   const old = checkReadOffset(ea) & 0xFF;
-  checkWriteOffset(ea, old); // dummy write
+  checkWriteOffset(ea, old);                // dummy write
 
   const res = (old << 1) & 0xFF;
   CPUregisters.P.C = (old >>> 7) & 1;
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = (res >>> 7) & 1;
+  checkWriteOffset(ea, res);                // final write
 
-  checkWriteOffset(ea, res); // final write
-  addExtraCycles(2);
+  addExtraCycles(2); // total = 6 cycles
 }
 
 // ---------- ASL $nnnn (ABS) total = 6 cycles → extra = +2 ----------
 function ASL_ABS() {
-  const lo  = checkReadOffset(CPUregisters.PC + 1);
-  const hi  = checkReadOffset(CPUregisters.PC + 2);
-  const ea  = ((hi << 8) | lo) & 0xFFFF;
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
+  const ea = ((hi << 8) | lo) & 0xFFFF;
 
   const old = checkReadOffset(ea) & 0xFF;
-  checkWriteOffset(ea, old);                // dummy
+  checkWriteOffset(ea, old);                // dummy write
 
   const res = (old << 1) & 0xFF;
   CPUregisters.P.C = (old >>> 7) & 1;
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = (res >>> 7) & 1;
-  checkWriteOffset(ea, res);                // final
+  checkWriteOffset(ea, res);                // final write
 
- //cpuCycles = (cpuCycles + 2) & 0xFFFF; // base(4) + 2 = 6
- addExtraCycles(2);
+  addExtraCycles(2); // total = 6 cycles
 }
 
 // ---------- ASL $nnnn,X (ABS,X) total = 7 cycles → extra = +3 ----------
 function ASL_ABSX() {
-  const lo   = checkReadOffset(CPUregisters.PC + 1);
-  const hi   = checkReadOffset(CPUregisters.PC + 2);
-  const ea   = (((hi << 8) | lo) + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  const lo = checkReadOffset(CPUregisters.PC + 1);
+  const hi = checkReadOffset(CPUregisters.PC + 2);
+  const base = (hi << 8) | lo;
+  const ea = (base + (CPUregisters.X & 0xFF)) & 0xFFFF; // final effective addr
 
-  const old  = checkReadOffset(ea) & 0xFF;
-  checkWriteOffset(ea, old);                // dummy
+  const old = checkReadOffset(ea) & 0xFF;
+  checkWriteOffset(ea, old);                // dummy write (old value)
 
-  const res  = (old << 1) & 0xFF;
+  const res = (old << 1) & 0xFF;
   CPUregisters.P.C = (old >>> 7) & 1;
   CPUregisters.P.Z = (res === 0) ? 1 : 0;
   CPUregisters.P.N = (res >>> 7) & 1;
-  checkWriteOffset(ea, res);                // final
+  checkWriteOffset(ea, res);                // final write (new value)
 
-  //cpuCycles = (cpuCycles + 3) & 0xFFFF; // base(4) + 3 = 7 (fixed; no page-cross add for RMW)
-  addExtraCycles(3);
+  addExtraCycles(3); // total = 7 cycles always, no page-cross check
 }
 
 function BIT_ZP() {
@@ -3061,6 +3120,7 @@ function BVS_REL() {
   }
 }
 
+////////////////////////////////////////////////////////////////////////
 function KIL_IMP(){}
 
 /*

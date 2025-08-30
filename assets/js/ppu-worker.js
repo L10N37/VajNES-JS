@@ -1,22 +1,7 @@
 importScripts('/assets/js/ppu-worker-setup.js');
 console.debug("[PPU Worker init]")
 
-let ppuDebugLogging  = false;
-let cpuPpuSyncTiming = false;
-
 let prevVblank = 0;
-
-console.debug(
-  `[worker boot] ppuDebugLogging=${ppuDebugLogging}  cpuPpuSyncTiming=${cpuPpuSyncTiming}`
-);
-console.debug(
-  `%c PPU DEBUG LOGGING (toggle ppuDebugLogging): ${ppuDebugLogging ? "ON" : "OFF"} `,
-  `background:${ppuDebugLogging ? "limegreen" : "crimson"}; color:white; font-weight:bold; padding:2px 6px; border-radius:4px;`
-);
-console.debug(
-  `%c PPU/ CPU Sync Logging (toggle cpuPpuSyncTiming): ${cpuPpuSyncTiming ? "ON" : "OFF"} `,
-  `background:${cpuPpuSyncTiming ? "limegreen" : "crimson"}; color:white; font-weight:bold; padding:2px 6px; border-radius:4px;`
-);
 
 // ---------- Flag helpers ----------
 // ========== SYNC layout  ==========
@@ -80,15 +65,14 @@ function t_set(v) {
 }
 
 function ppuTick() {
-  // run handler for the current scanline at the current dot
+  // run handler for current scanline/dot
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
 
-  // advance dot/scanline/frame counters
+  // advance dot
   PPUclock.dot++;
   if (PPUclock.dot >= DOTS_PER_SCANLINE) {
     PPUclock.dot = 0;
     PPUclock.scanline++;
-    // wrap around, back to the first scanline when incremented above scanline count
     if (PPUclock.scanline > 261) {
       PPUclock.scanline = 0;
       PPUclock.frame++;
@@ -96,7 +80,20 @@ function ppuTick() {
     }
   }
 
-  // publish timing into SABs
+  // *** Odd-frame skip  ***
+  if (
+    PPUclock.scanline === 261 &&
+    PPUclock.dot === 339 &&         // right before wrap
+    PPUclock.oddFrame &&
+    (PPUMASK & 0x18)
+  ) {
+    PPUclock.dot = 0;               // skip straight to new frame
+    PPUclock.scanline = 0;
+    PPUclock.frame++;
+    PPUclock.oddFrame = !PPUclock.oddFrame;
+  }
+
+  // publish timing
   STORE_CURRENT_SCANLINE(PPUclock.scanline);
   STORE_CURRENT_DOT(PPUclock.dot);
   STORE_CURRENT_FRAME(PPUclock.frame);
@@ -120,31 +117,13 @@ function preRenderScanline(currentDot) {
     CLEAR_VBLANK();          // clears PPUSTATUS bit7 and SYNC[5]
     CLEAR_SPRITE0_HIT();
     CLEAR_SPRITE_OVERFLOW();
-
-    if (ppuDebugLogging) {
-      console.debug(
-        `%c[PPU] Pre-render clear @ Frame=${PPUclock.frame}, Scanline=${PPUclock.scanline}`,
-        "color: cyan; font-weight: bold;"
-      );
-    }
   }
 
   if (currentDot >= 280 && currentDot <= 304) {
     copyVert();
   }
 
-  // Odd-frame cycle skip (NTSC quirk)
-  if (currentDot === 339 && PPUclock.oddFrame && (PPUMASK & 0x18)) {
-    PPUclock.dot++;
-    if (ppuDebugLogging) {
-      console.debug(
-        `%c[PPU] Odd-frame cycle skip @ Frame=${PPUclock.frame}`,
-        "color: orange; font-weight: bold;"
-      );
-    }
-  }
-
-  // End-of-frame bookkeeping + drift diagnostics (unchanged)
+  // End-of-frame bookkeeping + drift diagnostics
   if (currentDot === 340) {
     postMessage({ type: "frame", frame: PPUclock.frame });
 
@@ -260,13 +239,6 @@ function vblankStartScanline(currentDot) {
           (currentDot & 0x7F);
         Atomics.store(SHARED.SYNC, 6, edgeMarker); // NMI pending set once per frame
       }
-    }
-
-    if (ppuDebugLogging) {
-      console.debug(
-        `%c[PPU] NMI EDGE -> Frame=${PPUclock.frame}, Scanline=${PPUclock.scanline}, Dot=${currentDot}`,
-        "color: magenta; font-weight: bold;"
-      );
     }
   }
 }
@@ -398,13 +370,6 @@ function startPPULoop() {
     if (budget > 0) {
       while (budget-- > 0) {
         ppuTick();
-      }
-
-      if (cpuPpuSyncTiming) {
-        const cpuCycles = Atomics.load(SHARED.CLOCKS, 0);
-        console.debug(
-          `[SYNC] Frame=${PPUclock.frame} SL=${PPUclock.scanline} DOT=${PPUclock.dot} CPU=${cpuCycles}`
-        );
       }
     }
   }
