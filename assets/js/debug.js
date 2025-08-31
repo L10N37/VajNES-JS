@@ -61,6 +61,9 @@ const CPU_BATCH     = 8;
 const MAX_CARRY     = 2 * 16.7 * CYCLES_PER_MS;
 
 window.step = function() {
+
+  // ensure when using BREAKs we turn logging off between steps, only log at the break
+  debugLogging = false;
   
   NoSignalAudio.setEnabled(false);
 

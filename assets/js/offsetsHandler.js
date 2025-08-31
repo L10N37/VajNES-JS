@@ -71,25 +71,38 @@ function checkReadOffset(address) {
       case 0x2007: { // PPUDATA
         const v = VRAM_ADDR & 0x3FFF;
         let ret;
-        if (v < 0x2000) {
+
+        if (v < 0x3F00) {
+          // Non-palette: buffered
           ret = VRAM_DATA;
-          VRAM_DATA = chrRead(v);
-        } else if (v < 0x3F00) {
-        ret = VRAM_DATA;
-        VRAM_DATA = VRAM[mapNT(v)] & 0xFF;  // load next into buffer
-                
+          if (v < 0x2000) {
+            VRAM_DATA = chrRead(v & 0x1FFF) & 0xFF;
+          } else {
+            VRAM_DATA = VRAM[mapNT(v)] & 0xFF;
+          }
         } else {
+          // Palette: direct, bypass buffer
           const p = paletteIndex(v);
           ret = PALETTE_RAM[p] & 0x3F;
-          const ntMirror = (v - 0x1000) & 0x3FFF;
-          VRAM_DATA = (ntMirror < 0x2000)
-            ? chrRead(ntMirror)
-            : (VRAM[mapNT(ntMirror)] & 0xFF);
+
+          // But still refill buffer from nametable behind palette ($3Fxx -> $2Fxx)
+          const ntMirror = v & 0x2FFF;
+          if (ntMirror < 0x2000) {
+            VRAM_DATA = chrRead(ntMirror & 0x1FFF) & 0xFF;
+          } else {
+            VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
+          }
         }
+
+        // Auto-increment VRAM address
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
-        value = ret;
-        if (debugLogging) console.debug(`[READ PPUDATA] $2007 -> ${value.toString(16).padStart(2,"0")}`);
+
+        value = ret & 0xFF;
+
+        if (debugLogging) {
+          console.debug(`[READ PPUDATA] v=$${v.toString(16)} -> $${value.toString(16).padStart(2,"0")} buf=$${VRAM_DATA.toString(16).padStart(2,"0")}`);
+        }
         break;
       }
       default: {
@@ -331,7 +344,7 @@ function checkWriteOffset(address, value) {
       if (debugLogging) console.warn(`[WRITE BLOCKED: VECTOR] $${addr.toString(16)} <= $${value.toString(16).padStart(2,"0")}`);
       return;
     }
-    //mapperWritePRG(addr, value);
+    mapperWritePRG(addr, value);
     if (debugLogging) console.debug(`[WRITE PRG-ROM] $${addr.toString(16)} <= $${value.toString(16).padStart(2,"0")}`);
   }
 
@@ -360,7 +373,8 @@ function mapperReadPRG(addr) {
 
 function mapperWritePRG(addr, value) {
   // NROM PRG is read-only, but some test ROMs poke it
-  prgRom[addr - 0x8000] = value;
+  // causes a fail on CPU_DUMMY_WRITES_OAM test rom
+  //prgRom[addr - 0x8000] = value;
 }
 
 function apuWrite(address, value) {

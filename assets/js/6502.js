@@ -50,7 +50,8 @@ function resetCPU() {
   Atomics.store(SHARED.SYNC, 5, 0); // vblank shadow
   Atomics.store(SHARED.SYNC, 6, 0); // nmi edge
   PPUSTATUS &= ~0x80;
-
+  VRAM_DATA = 0x00;
+  writeToggle = 0; 
   SHARED.VRAM.fill(0x00);
   systemMemory.fill(0x00); // may not happen on a real system
   CPUregisters.A = 0x00;
