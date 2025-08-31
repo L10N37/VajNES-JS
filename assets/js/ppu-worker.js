@@ -31,7 +31,8 @@ const SCANLINES_PER_FRAME = 262;
 const NES_W = 256;
 const NES_H = 240;
 
-const PPUclock = { dot: 0, scanline: 0, frame: 0, oddFrame: false };
+// NES first frame is always odd, which we are calling frame zero here instead of 1
+const PPUclock = { dot: 0, scanline: 0, frame: 0, oddFrame: true };
 
 const background = {
   bgShiftLo: 0, bgShiftHi: 0,
@@ -51,29 +52,26 @@ function t_set(v) {
 function ppuTick() {
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
 
-  // Odd-frame skip
+  // Increment dot normally
+  PPUclock.dot++;
+
+  // --- Odd frame skip (shorten pre-render by 1 dot) ---
   if (
-    PPUclock.scanline === 261 &&
-    PPUclock.dot === 339 &&
+    PPUclock.scanline === 0 &&         // pre-render scanline in YOUR system
+    PPUclock.dot === 0 &&              // we just wrapped past last dot
     PPUclock.oddFrame &&
     (PPUMASK & 0x18) !== 0
   ) {
-    PPUclock.dot = 0;
-    PPUclock.scanline = 0;
-    PPUclock.frame++;
-    PPUclock.oddFrame = !PPUclock.oddFrame;
-
-    STORE_CURRENT_SCANLINE(PPUclock.scanline);
-    STORE_CURRENT_DOT(PPUclock.dot);
-    STORE_CURRENT_FRAME(PPUclock.frame);
-    return;
+    // Skip dot 0 → jump ahead one extra
+    PPUclock.dot++;
   }
 
-  PPUclock.dot++;
+  // --- Wrap dot/scanline/frame ---
   if (PPUclock.dot >= DOTS_PER_SCANLINE) {
     PPUclock.dot = 0;
     PPUclock.scanline++;
-    if (PPUclock.scanline > 261) {
+
+    if (PPUclock.scanline >= SCANLINES_PER_FRAME) {
       PPUclock.scanline = 0;
       PPUclock.frame++;
       PPUclock.oddFrame = !PPUclock.oddFrame;
@@ -85,6 +83,7 @@ function ppuTick() {
   STORE_CURRENT_FRAME(PPUclock.frame);
 }
 
+
 let maxDrift = 0;
 let driftSum = 0;
 let driftFrames = 0;
@@ -93,57 +92,72 @@ let expectedCarry  = 0;
 
 let syncLogging = true;  
 
+// add near your globals
+let renderActiveThisFrame = false;
+
+// --- preRenderScanline ---
 function preRenderScanline(currentDot) {
-  if (PPUclock.scanline === 261 && (currentDot === 339 || currentDot === 340)) {
-    console.log("pre-render last dots",
-      "frame", PPUclock.frame,
-      "dot", currentDot,
-      "odd", PPUclock.oddFrame,
-      "mask", (PPUMASK & 0x18) ? "render" : "idle");
-  }
+  switch (true) {
+    case (currentDot === 1):
+      // latch rendering state for THIS frame at dot 1 of pre-render
+      renderActiveThisFrame = (PPUMASK & 0x18) !== 0;
 
-  if (currentDot === 1) {
-    prevVblank = 0;
-    CLEAR_VBLANK();
-    CLEAR_SPRITE0_HIT();
-    CLEAR_SPRITE_OVERFLOW();
-  }
+      prevVblank = 0;
+      CLEAR_VBLANK();
+      CLEAR_SPRITE0_HIT();
+      CLEAR_SPRITE_OVERFLOW();
+      break;
 
-  if (currentDot >= 280 && currentDot <= 304) {
-    copyVert();
-  }
+    case (currentDot >= 280 && currentDot <= 304):
+      copyVert();
+      break;
 
-  if (currentDot === 340) {
-    postMessage({ type: "frame", frame: PPUclock.frame });
+    case (currentDot === 340): {
+      const justFinishedFrame = PPUclock.frame;
+      const isOdd = (justFinishedFrame & 1) === 1;
 
-    if (PPUclock.frame > 0 && syncLogging) {
-      expectedCycles += 29780;
-      expectedCarry  += 2;
-      if (expectedCarry >= 3) {
-        expectedCycles += 1;
-        expectedCarry  -= 3;
+      // Short frame only if odd + rendering was latched ON at dot 1
+      const skippedFrame = (isOdd && renderActiveThisFrame);
+
+      // Always advance expectedCycles (skip changes count to 29781)
+      if (justFinishedFrame > 0) {
+        expectedCycles += skippedFrame ? 29781 : 29780;
       }
 
-      const expected = expectedCycles;
-      const drift    = cpuCycles - expected;
+      // Only notify renderer when not a skipped frame
+      if (!skippedFrame) {
+        postMessage({ type: "frame", frame: justFinishedFrame });
+      }
 
-      driftFrames++;
-      driftSum += drift;
-      if (Math.abs(drift) > Math.abs(maxDrift)) maxDrift = drift;
-      const avgDrift = Math.round(driftSum / driftFrames);
+      // Logging/drift (ignore bootstrap 0)
+      if (justFinishedFrame > 0) {
+        const frameType =
+          skippedFrame ? "ODD(render)" :
+          isOdd        ? "ODD(idle)"   :
+                         "EVEN";
 
-      const driftThreshold = 130;
-      const msg =
-        `[SYNC ${Math.abs(drift) > driftThreshold ? "WARN" : "OK"}] ` +
-        `Frame=${PPUclock.frame} | cpuCycles=${cpuCycles} | expected=${expected} ` +
-        `| drift=${drift} | max=${maxDrift} | avg=${avgDrift}`;
+        const expected = expectedCycles;
+        const drift    = cpuCycles - expected;
 
-      console[Math.abs(drift) > driftThreshold ? "warn" : "debug"](
-        `%c${msg}`,
-        Math.abs(drift) > driftThreshold
+        driftFrames++;
+        driftSum += drift;
+        if (Math.abs(drift) > Math.abs(maxDrift)) maxDrift = drift;
+        const avgDrift = Math.round(driftSum / driftFrames);
+
+        const warn = Math.abs(drift) > 130;
+        const color = warn
           ? "color:red;font-weight:bold;"
-          : "color:limegreen;font-weight:bold;"
-      );
+          : (frameType === "ODD(render)" ? "color:lightgreen;font-weight:bold;"
+                                         : "color:limegreen;font-weight:bold;");
+
+        const msg =
+          `[SYNC ${warn ? "WARN" : "OK"}] ` +
+          `Frame=${justFinishedFrame} (${frameType}) | cpuCycles=${cpuCycles} | expected=${expected} ` +
+          `| drift=${drift} | max=${maxDrift} | avg=${avgDrift}`;
+
+        console[warn ? "warn" : "debug"](`%c${msg}`, color);
+      }
+      break;
     }
   }
 }
@@ -335,11 +349,7 @@ function ppuBusRead(addr) {
   return ret;
 }
 
-function resetPPU() {
-  PPUclock.dot = 0; PPUclock.scanline = 261; PPUclock.frame = 0; PPUclock.oddFrame = false;
-  t_set(0); fineX = 0;
-  if (paletteIndexFrame && paletteIndexFrame.fill) paletteIndexFrame.fill(0);
-}
+// add reset and be able to call from main, message to here to reset variables
 
 function startPPULoop() {
   while (true) {
