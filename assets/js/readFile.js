@@ -52,6 +52,11 @@ function readFile(input) {
     console.debug(`[HEADER] PRG banks: ${prgBanks} (${prgSize} bytes), CHR banks: ${chrBanks} (${chrSize} bytes)`);
     console.debug(`[HEADER] Mapper: ${((romBytes[6] >> 4) | (romBytes[7] & 0xF0))}, Mirroring: ${romBytes[6] & 0x01 ? 'Vertical' : 'Horizontal'}`);
 
+    // ---- Determine mirroring mode from header ----
+    const fourScreen   = (nesHeader[6] & 0x08) !== 0;
+    const verticalFlag = (nesHeader[6] & 0x01) !== 0;
+    MIRRORING = fourScreen ? 'four' : (verticalFlag ? 'vertical' : 'horizontal');
+
     // ---- Slice out PRG-ROM ----
     prgRom = romBytes.slice(16, 16 + prgSize);
 
@@ -69,8 +74,9 @@ function readFile(input) {
     console.debug(`[Loader] CHR is ${chrIsRAM ? 'RAM' : 'ROM'}; size=${CHR_ROM.byteLength} bytes`);
 
     // --- Mapper setup ---
-    mapper(romBytes.slice(0, 16));
+    mapper(nesHeader);
 
+    // Update debug tables
     updateDebugTables();
 
     // Notify PPU worker ROM is ready

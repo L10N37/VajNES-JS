@@ -28,6 +28,13 @@ const SET_SPRITE_OVERFLOW   = () => { PPUSTATUS |=  0x20; };
 const DOTS_PER_SCANLINE   = 341;
 const SCANLINES_PER_FRAME = 262;
 
+Object.defineProperty(globalThis, "rendering", {
+  configurable: true,
+  get() { return (PPUMASK & 0x18) !== 0; }  // evaluates when read
+});
+
+//const rendering = (PPUMASK & 0x18) !== 0;
+
 const NES_W = 256;
 const NES_H = 240;
 
@@ -90,7 +97,7 @@ let driftFrames = 0;
 let expectedCycles = 0;
 let expectedCarry  = 0;
 
-let syncLogging = true;  
+let syncLogging = false;  
 
 // add near your globals
 let renderActiveThisFrame = false;
@@ -130,7 +137,7 @@ function preRenderScanline(currentDot) {
       }
 
       // Logging/drift (ignore bootstrap 0)
-      if (justFinishedFrame > 0) {
+      if (justFinishedFrame > 0 && syncLogging) {
         const frameType =
           skippedFrame ? "ODD(render)" :
           isOdd        ? "ODD(idle)"   :
@@ -163,7 +170,7 @@ function preRenderScanline(currentDot) {
 }
 
 function visibleScanline(currentDot) {
-  const rendering = (PPUMASK & 0x18) !== 0;
+  
   const inFetch   = (currentDot >= 2 && currentDot <= 257) || (currentDot >= 321 && currentDot <= 336);
   const phase     = (currentDot - 1) & 7;
 
@@ -290,6 +297,7 @@ function emitPixelHardwarePalette() {
 }
 
 function incCoarseX() {
+  if (!rendering) return;                  // only advance when rendering
   let v = VRAM_ADDR;
   if ((v & 0x001F) === 31) {
     v &= ~0x001F;
@@ -301,6 +309,7 @@ function incCoarseX() {
 }
 
 function incY() {
+  if (!rendering) return;                  // only advance when rendering
   let v = VRAM_ADDR;
   if ((v & 0x7000) !== 0x7000) {
     v = (v + 0x1000) & 0x7FFF;
@@ -320,33 +329,31 @@ function incY() {
 }
 
 function copyHoriz() {
+  if (!rendering) return;                  // only copy when rendering
   const t = (t_hi << 8) | t_lo;
   VRAM_ADDR = (VRAM_ADDR & ~0x041F) | (t & 0x041F);
 }
 
 function copyVert() {
+  if (!rendering) return;                  // only copy when rendering
   const t = (t_hi << 8) | t_lo;
   VRAM_ADDR = (VRAM_ADDR & ~0x7BE0) | (t & 0x7BE0);
 }
 
 function ppuBusRead(addr) {
   addr &= 0x3FFF;
+
   if (addr < 0x2000) {
     return CHR_ROM[addr & 0x1FFF] & 0xFF;
   }
   if (addr < 0x3F00) {
     return VRAM[(addr - 0x2000) & 0x07FF] & 0xFF;
   }
+
+  // Palette read: mirror $3F10/14/18/1C → $3F00/04/08/0C
   let p = addr & 0x1F;
   if ((p & 0x13) === 0x10) p &= ~0x10;
-  const ret = PALETTE_RAM[p] & 0x3F;
-  const ntMirror = addr & 0x2FFF;
-  if (ntMirror < 0x2000) {
-    VRAM_DATA = chrRead(ntMirror & 0x1FFF) & 0xFF;
-  } else {
-    VRAM_DATA = VRAM[(ntMirror - 0x2000) & 0x07FF] & 0xFF;
-  }
-  return ret;
+  return PALETTE_RAM[p] & 0x3F;
 }
 
 // add reset and be able to call from main, message to here to reset variables
