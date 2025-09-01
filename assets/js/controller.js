@@ -2,10 +2,6 @@
 
 let JoypadRegister = { JOYPAD1: 0x00, JOYPAD2: 0x00 };
 
-let joypadStrobe = 0; // $4016 bit 0, latching
-let joypad1State = 0; // Shift register for controller 1
-let joypad2State = 0; // Shift register for controller 2
-
-//dummys
-function pollController1() { return 0x00; }
-function pollController2() { return 0x00; }
+//let joypadStrobe = 0; // $4016 bit 0, latching
+//let joypad1State = 0; // Shift register for controller 1
+//let joypad2State = 0; // Shift register for controller 2

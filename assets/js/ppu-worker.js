@@ -99,7 +99,6 @@ let expectedCarry  = 0;
 
 let syncLogging = false;  
 
-// add near your globals
 let renderActiveThisFrame = false;
 
 // --- preRenderScanline ---

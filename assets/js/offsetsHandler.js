@@ -369,39 +369,153 @@ function apuRead(address) {
   }
 }
 
-function pollController1() {}
-function pollController2() {}
+// ================= NES Joypad (P1 keyboard) — no globalThis, with debug =================
 
-function joypadWrite(address, value) {
-  if (address === 0x4016) {
-    let oldStrobe = joypadStrobe;
-    joypadStrobe = value & 1;
-    cpuOpenBus = value;
-    if (oldStrobe && !joypadStrobe) {
-      joypad1State = pollController1();
-      joypad2State = pollController2();
+// Internal state (module/file scope)
+let joypadStrobe = 0;      // $4016 bit0
+let joypad1Buttons = 0x00; // live button mask (polled on latch)
+let joypad2Buttons = 0x00; // reserved (P2)
+let joypad1State   = 0x00; // latched & shifted by reads
+let joypad2State   = 0x00; // latched & shifted by reads
+
+// Bit layout (LSB → MSB): A, B, Select, Start, Up, Down, Left, Right
+const NES_BUTTON = {
+  A: 0, B: 1, Select: 2, Start: 3, Up: 4, Down: 5, Left: 6, Right: 7
+};
+
+// Keyboard → buttons (layout-independent via e.code)
+const codeToButtonP1 = {
+  KeyX: NES_BUTTON.A,           // A = X
+  KeyZ: NES_BUTTON.B,           // B = Z
+  Backspace: NES_BUTTON.Select, // Select = Backspace
+  Enter: NES_BUTTON.Start,      // Start = Enter
+  NumpadEnter: NES_BUTTON.Start,
+  ArrowUp: NES_BUTTON.Up,
+  ArrowDown: NES_BUTTON.Down,
+  ArrowLeft: NES_BUTTON.Left,
+  ArrowRight: NES_BUTTON.Right
+};
+
+// Bind keyboard once (no globals)
+let _kbBound = false;
+(function bindJoypadKeyboardOnce(){
+  if (_kbBound) return;
+  _kbBound = true;
+
+  const kbdHandler = (isDown) => (e) => {
+    const btn = codeToButtonP1[e.code];
+    if (btn === undefined) return;
+    if (isDown) joypad1Buttons |=  (1 << btn);
+    else        joypad1Buttons &= ~(1 << btn);
+    if (debugLogging) {
+      console.debug(
+        "[JOY]", isDown ? "keydown" : "keyup",
+        e.code, "P1:", joypad1Buttons.toString(2).padStart(8, "0")
+      );
     }
-    JoypadRegister.JOYPAD1 = value;
-  } else if (address === 0x4017) {
-    joypadStrobe = value & 1;
-    cpuOpenBus = value;
-    JoypadRegister.JOYPAD2 = value;
+    e.preventDefault();
+  };
+
+  window.addEventListener("keydown", kbdHandler(true),  { passive: false });
+  window.addEventListener("keyup",   kbdHandler(false), { passive: false });
+})();
+
+// Pollers (what gets latched on $4016 falling edge)
+function pollController1() { return joypad1Buttons & 0xFF; }
+function pollController2() { return joypad2Buttons & 0xFF; }
+
+// Latch helpers
+function latchIfFallingEdge(oldStrobe, newStrobe) {
+  // NES: when strobe goes 1→0, copy live buttons into 8-bit shift regs
+  if (oldStrobe && !newStrobe) {
+    joypad1State = pollController1();
+    joypad2State = pollController2();
+    if (debugLogging) {
+      console.debug(
+        "[JOY] LATCH P1:", joypad1State.toString(2).padStart(8, "0"),
+        "P2:", joypad2State.toString(2).padStart(8, "0")
+      );
+    }
   }
 }
 
-function joypadRead(address) {
-  let result = 0x40; // bits 6 and 7 open bus
+// ---- CPU <-> Joypad I/O ----
+
+// $4016/$4017 write
+function joypadWrite(address, value) {
+  value &= 0xFF;
+
   if (address === 0x4016) {
-    result |= joypadStrobe ? (pollController1() & 1) : (joypad1State & 1);
-    if (!joypadStrobe) joypad1State = (joypad1State >> 1) | 0x80;
-    cpuOpenBus = result;
-    return result;
+    const old = joypadStrobe & 1;
+    const now = value & 1;
+    joypadStrobe = now;
+
+    // open bus mirrors written value
+    cpuOpenBus = value & 0xFF;
+
+    latchIfFallingEdge(old, now);
+
+    // mirror (for your debug/inspection)
+    JoypadRegister.JOYPAD1 = value;
+
+    if (debugLogging) {
+      console.debug(`[W $4016 JOY] val=$${value.toString(16).padStart(2,"0")} strobe=${now}`);
+    }
+
+  } else if (address === 0x4017) {
+    // You keep strobe behavior unified (matches your previous code)
+    joypadStrobe = value & 1;
+    cpuOpenBus = value & 0xFF;
+    JoypadRegister.JOYPAD2 = value;
+
+    if (debugLogging) {
+      console.debug(`[W $4017 JOY] val=$${value.toString(16).padStart(2,"0")} strobe=${joypadStrobe}`);
+    }
   }
+}
+
+// $4016/$4017 read (bit0 = serial stream; bit6 open bus commonly high)
+function joypadRead(address) {
+  let result = 0x40; // keep bit6 set like your core
+
+  if (address === 0x4016) {
+    const strobe = joypadStrobe & 1;
+
+    // strobe=1 → read live A repeatedly; strobe=0 → shift latched bits LSB-first
+    const bit = strobe ? (pollController1() & 1) : (joypad1State & 1);
+    result |= bit;
+
+    if (!strobe) joypad1State = ((joypad1State >> 1) | 0x80) & 0xFF;
+
+    cpuOpenBus = result & 0xFF;
+
+    if (debugLogging) {
+      console.debug(
+        `[R $4016 JOY] -> $${result.toString(16).padStart(2,"0")} ` +
+        `P1_shift=${joypad1State.toString(2).padStart(8,"0")}`
+      );
+    }
+    return result & 0xFF;
+  }
+
   if (address === 0x4017) {
-    result |= joypadStrobe ? (pollController2() & 1) : (joypad2State & 1);
-    if (!joypadStrobe) joypad2State = (joypad2State >> 1) | 0x80;
-    cpuOpenBus = result;
-    return result;
+    const strobe = joypadStrobe & 1;
+    const bit = strobe ? (pollController2() & 1) : (joypad2State & 1);
+    result |= bit;
+
+    if (!strobe) joypad2State = ((joypad2State >> 1) | 0x80) & 0xFF;
+
+    cpuOpenBus = result & 0xFF;
+
+    if (debugLogging) {
+      console.debug(
+        `[R $4017 JOY] -> $${result.toString(16).padStart(2,"0")} ` +
+        `P2_shift=${joypad2State.toString(2).padStart(8,"0")}`
+      );
+    }
+    return result & 0xFF;
   }
-  return cpuOpenBus;
+
+  // unmapped: return bus
+  return cpuOpenBus & 0xFF;
 }

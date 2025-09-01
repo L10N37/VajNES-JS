@@ -14,7 +14,7 @@ const NES_H = 240;
 // RENDER FRAME
 ppuWorker.onmessage = (e) => {
   if (e.data.type === "frame") {
-    //blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
+   // blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
     quickRenderNametable0(); // hack
     registerFrameUpdate();
   }
