@@ -830,6 +830,7 @@ function ROL_ABSX() {
   CPUregisters.P.Z = (result === 0) ? 1 : 0;
   CPUregisters.P.N = (result & 0x80) ? 1 : 0;
 }
+
 function TXS_IMP() {
   addExtraCycles(1); // C1
   CPUregisters.S = CPUregisters.X;
@@ -1313,22 +1314,24 @@ function ASL_ABS() {
 
 // ---------- ASL $nnnn,X (ABS,X) — 7 cycles ----------
 function ASL_ABSX() {
-  addExtraCycles(1); // C1
+  addExtraCycles(1); // C1 fetch opcode
   const lo = checkReadOffset(CPUregisters.PC + 1); addExtraCycles(1); // C2
   const hi = checkReadOffset(CPUregisters.PC + 2); addExtraCycles(1); // C3
   const base = (hi << 8) | lo;
-  const ea = (base + (CPUregisters.X & 0xFF)) & 0xFFFF; addExtraCycles(1); // C4 (index add)
+  const ea = (base + (CPUregisters.X & 0xFF)) & 0xFFFF; addExtraCycles(1); // C4 index
 
-  const old = checkReadOffset(ea) & 0xFF;           addExtraCycles(1); // C5
-  checkWriteOffset(ea, old);                        addExtraCycles(1); // C6 (dummy)
+  const old = checkReadOffset(ea) & 0xFF;            addExtraCycles(1); // C5 read original
+  checkWriteOffset(ea, old);                         addExtraCycles(1); // C6 dummy write (unmodified)
 
-  const res = (old << 1) & 0xFF;
+  // === result computed AFTER dummy write, so bus saw old value ===
+  const result = (old << 1) & 0xFF;
   CPUregisters.P.C = (old >>> 7) & 1;
-  CPUregisters.P.Z = (res === 0) ? 1 : 0;
-  CPUregisters.P.N = (res >>> 7) & 1;
+  CPUregisters.P.Z = (result === 0) ? 1 : 0;
+  CPUregisters.P.N = (result >>> 7) & 1;
 
-  checkWriteOffset(ea, res);                        addExtraCycles(1); // C7
+  checkWriteOffset(ea, result);                      addExtraCycles(1); // C7 final write (modified)
 }
+
 
 // ---------- BIT $nn (ZP) — 3 cycles ----------
 function BIT_ZP() {

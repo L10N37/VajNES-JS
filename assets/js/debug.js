@@ -23,8 +23,9 @@ function cpuStall(){
 // RENDER FRAME
 ppuWorker.onmessage = (e) => {
   if (e.data.type === "frame") {
-   // blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
-    quickRenderNametable0(); // hack
+    // proper scanline accurate rendering (scrolling etc.)
+    blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
+    //quickRenderNametable0(); // hack
     registerFrameUpdate();
   }
 };

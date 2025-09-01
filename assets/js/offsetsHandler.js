@@ -54,13 +54,25 @@ function checkReadOffset(address) {
 
       case 0x2002: { // PPUSTATUS
         const obBefore = cpuOpenBus & 0xFF;
-        value = PPUSTATUS & 0xFF;
-        PPUSTATUS &= ~0x80;       // clear V
-        writeToggle = 0;          // latch reset
-        if (debugLogging) console.debug(`[R $2002 PPUSTATUS] val=$${value.toString(16)} busBefore=$${obBefore.toString(16)} toggle->0`);
-        // Open-bus effect: high 3 from bus, low 5 from status
-        cpuOpenBus = ((obBefore & 0xE0) | (value & 0x1F)) & 0xFF;
-        return value & 0xFF;
+        const stat     = PPUSTATUS & 0xFF;
+
+        // Value seen on the bus: high 3 from status, low 5 from previous bus
+        const ret = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
+
+        // Side effects
+        PPUSTATUS  &= ~0x80; // clear VBlank
+        writeToggle = 0;     // reset $2005/$2006 latch
+
+        // Update open bus AFTER the read: low 5 become status low 5
+        cpuOpenBus = ((obBefore & 0xE0) | (stat & 0x1F)) & 0xFF;
+
+        if (debugLogging) {
+          console.debug(
+            `[R $2002 PPUSTATUS] ret=$${ret.toString(16)} ` +
+            `obBefore=$${obBefore.toString(16)} obAfter=$${cpuOpenBus.toString(16)} toggle->0`
+          );
+        }
+        return ret;
       }
 
       case 0x2004: { // OAMDATA

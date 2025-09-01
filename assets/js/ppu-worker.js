@@ -39,7 +39,7 @@ const NES_W = 256;
 const NES_H = 240;
 
 // NES first frame is always odd, which we are calling frame zero here instead of 1
-const PPUclock = { dot: 0, scanline: 0, frame: 0, oddFrame: true };
+const PPUclock = { dot: 0, scanline: 0, frame: 0, oddFrame: false };
 
 const background = {
   bgShiftLo: 0, bgShiftHi: 0,
@@ -59,37 +59,30 @@ function t_set(v) {
 function ppuTick() {
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
 
-  // Increment dot normally
-  PPUclock.dot++;
-
   // --- Odd frame skip (shorten pre-render by 1 dot) ---
-  if (
-    PPUclock.scanline === 0 &&         // pre-render scanline in YOUR system
-    PPUclock.dot === 0 &&              // we just wrapped past last dot
-    PPUclock.oddFrame &&
-    (PPUMASK & 0x18) !== 0
-  ) {
-    // Skip dot 0 → jump ahead one extra
-    PPUclock.dot++;
+  // Skip dot 340 on pre-render if rendering was latched ON for this frame.
+  if (PPUclock.scanline === 0 &&
+      PPUclock.dot === 340 &&
+      PPUclock.oddFrame &&
+      renderActiveThisFrame) {
+    PPUclock.dot++; // jump over 340 → wrap block will run below
   }
 
   // --- Wrap dot/scanline/frame ---
   if (PPUclock.dot >= DOTS_PER_SCANLINE) {
     PPUclock.dot = 0;
     PPUclock.scanline++;
-
     if (PPUclock.scanline >= SCANLINES_PER_FRAME) {
       PPUclock.scanline = 0;
       PPUclock.frame++;
       PPUclock.oddFrame = !PPUclock.oddFrame;
     }
   }
-
   STORE_CURRENT_SCANLINE(PPUclock.scanline);
   STORE_CURRENT_DOT(PPUclock.dot);
   STORE_CURRENT_FRAME(PPUclock.frame);
+  PPUclock.dot++;
 }
-
 
 let maxDrift = 0;
 let driftSum = 0;
@@ -101,79 +94,121 @@ let syncLogging = true;
 
 let renderActiveThisFrame = false;
 
-// --- preRenderScanline ---
 function preRenderScanline(currentDot) {
-  switch (true) {
-    case (currentDot === 1):
-      // latch rendering state for THIS frame at dot 1 of pre-render
-      renderActiveThisFrame = (PPUMASK & 0x18) !== 0;
+  // dot 1: latch render state, clear status
+  if (currentDot === 1) {
+    renderActiveThisFrame = (PPUMASK & 0x18) !== 0;
+    prevVblank = 0;
+    CLEAR_VBLANK();
+    CLEAR_SPRITE0_HIT();
+    CLEAR_SPRITE_OVERFLOW();
+  }
 
-      prevVblank = 0;
-      CLEAR_VBLANK();
-      CLEAR_SPRITE0_HIT();
-      CLEAR_SPRITE_OVERFLOW();
-      break;
+  // dot 256/257: normal scroll ops
+  if (currentDot === 256) incY();
+  if (currentDot === 257) copyHoriz();
 
-    case (currentDot >= 280 && currentDot <= 304):
-      copyVert();
-      break;
+  // dots 280..304: copy vertical scroll (t → v)
+  if (currentDot >= 280 && currentDot <= 304) copyVert();
 
-    case (currentDot === 340): {
-      const justFinishedFrame = PPUclock.frame;
-      const isOdd = (justFinishedFrame & 1) === 1;
+  // BG fetch window (prefetch next scanline): 2–256, 321–336
+  const inFetch = (currentDot >= 2 && currentDot <= 256) ||
+                  (currentDot >= 321 && currentDot <= 336);
+  const phase = (currentDot - 1) & 7;
 
-      // Short frame only if odd + rendering was latched ON at dot 1
-      const skippedFrame = (isOdd && renderActiveThisFrame);
+  // reload shifters on phase 0 (incl. dot 1 and 257)
+  if (phase === 0 && (inFetch || currentDot === 1 || currentDot === 257)) {
+    reloadBGShifters();
+  }
 
-      // Always advance expectedCycles (skip changes count to 29781)
-      if (justFinishedFrame > 0) {
-        expectedCycles += skippedFrame ? 29781 : 29780;
-      }
+  // advance shifters while rendering (keeps pipeline aligned)
+  if (rendering && currentDot >= 2 && currentDot <= 256) {
+    background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
+    background.bgShiftHi = (background.bgShiftHi << 1) & 0xFFFF;
+    background.atShiftLo = (background.atShiftLo << 1) & 0xFFFF;
+    background.atShiftHi = (background.atShiftHi << 1) & 0xFFFF;
+  }
 
-      // Only notify renderer when not a skipped frame
-      if (!skippedFrame) {
-        postMessage({ type: "frame", frame: justFinishedFrame });
-      }
+  // tile fetch sequence
+  if (inFetch) {
+    const v = VRAM_ADDR;
+    switch (phase) {
+      case 1: // NT
+        background.ntByte = ppuBusRead(0x2000 | (v & 0x0FFF));
+        BG_ntByte = background.ntByte;
+        break;
+      case 3: // AT
+        const attAddr = 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07);
+        const shift   = ((v >> 4) & 4) | (v & 2);
+        const atBits  = (ppuBusRead(attAddr) >> shift) & 3;
+        background.atByte = atBits & 0x03;
+        BG_atByte = background.atByte;
+        break;
+      case 5: // pattern low
+        const fineYLo = (v >> 12) & 0x7;
+        const baseLo  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineYLo;
+        background.tileLo = ppuBusRead(baseLo);
+        BG_tileLo = background.tileLo;
+        break;
+      case 7: // pattern high
+        const fineYHi = (v >> 12) & 0x7;
+        const baseHi  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineYHi + 8;
+        background.tileHi = ppuBusRead(baseHi);
+        BG_tileHi = background.tileHi;
+        break;
+      case 0: // end of fetch group: coarse X++
+        if (inFetch && rendering) incCoarseX();
+        break;
+    }
+  }
 
-      // Logging/drift (ignore bootstrap 0)
-      if (justFinishedFrame > 0 && syncLogging) {
-        const frameType =
-          skippedFrame ? "ODD(render)" :
-          isOdd        ? "ODD(idle)"   :
-                         "EVEN";
-
-        const expected = expectedCycles;
-        const drift    = cpuCycles - expected;
-
-        driftFrames++;
-        driftSum += drift;
-        if (Math.abs(drift) > Math.abs(maxDrift)) maxDrift = drift;
-        const avgDrift = Math.round(driftSum / driftFrames);
-
-        const warn = Math.abs(drift) > 130;
-        const color = warn
-          ? "color:red;font-weight:bold;"
-          : (frameType === "ODD(render)" ? "color:lightgreen;font-weight:bold;"
-                                         : "color:limegreen;font-weight:bold;");
-
-        const msg =
-          `[SYNC ${warn ? "WARN" : "OK"}] ` +
-          `Frame=${justFinishedFrame} (${frameType}) | cpuCycles=${cpuCycles} | expected=${expected} ` +
-          `| drift=${drift} | max=${maxDrift} | avg=${avgDrift}`;
-
-        console[warn ? "warn" : "debug"](`%c${msg}`, color);
-      }
-      break;
+  // dot 340: frame-end accounting / drift log
+  if (currentDot === 340) {
+    const justFinishedFrame = PPUclock.frame;
+    const skippedFrame = (PPUclock.oddFrame && renderActiveThisFrame);
+    if (justFinishedFrame > 0) {
+      expectedCycles += skippedFrame ? 29781 : 29780;
+    }
+    if (!skippedFrame) {
+      postMessage({ type: "frame", frame: justFinishedFrame });
+    }
+    if (justFinishedFrame > 0 && syncLogging) {
+      const frameType = skippedFrame ? "ODD(render)" :
+                        (PPUclock.oddFrame ? "ODD(idle)" : "EVEN");
+      const expected = expectedCycles;
+      const drift    = cpuCycles - expected;
+      driftFrames++;
+      driftSum += drift;
+      if (Math.abs(drift) > Math.abs(maxDrift)) maxDrift = drift;
+      const avgDrift = Math.round(driftSum / driftFrames);
+      const warn  = Math.abs(drift) > 130;
+      const color = warn
+        ? "color:red;font-weight:bold;"
+        : (frameType === "ODD(render)" ? "color:lightgreen;font-weight:bold;" : "color:limegreen;font-weight:bold;");
+      const msg =
+        `[SYNC ${warn ? "WARN" : "OK"}] ` +
+        `Frame=${justFinishedFrame} (${frameType}) | cpuCycles=${cpuCycles} | expected=${expected} ` +
+        `| drift=${drift} | max=${maxDrift} | avg=${avgDrift}`;
+      console[warn ? "warn" : "debug"](`%c${msg}`, color);
     }
   }
 }
 
 function visibleScanline(currentDot) {
-  
-  const inFetch   = (currentDot >= 2 && currentDot <= 257) || (currentDot >= 321 && currentDot <= 336);
-  const phase     = (currentDot - 1) & 7;
+  // Determine fetch window (2–256, 321–336)
+  const inFetch = (currentDot >= 2 && currentDot <= 256) ||
+                  (currentDot >= 321 && currentDot <= 336);
 
-  const shiftNow = (PPUMASK & 0x18) && currentDot >= 2 && currentDot <= 256;
+  // Current 8-dot phase
+  const phase = (currentDot - 1) & 7;
+
+  // Reload shifters on phase 0, dot 1 (prime first tile), and dot 257 (pipeline reload)
+  if (phase === 0 && (inFetch || currentDot === 1 || currentDot === 257)) {
+    reloadBGShifters();
+  }
+
+  // Shift background and attribute shifters while rendering visible dots
+  const shiftNow = rendering && currentDot >= 2 && currentDot <= 256;
   if (shiftNow) {
     background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
     background.bgShiftHi = (background.bgShiftHi << 1) & 0xFFFF;
@@ -181,48 +216,54 @@ function visibleScanline(currentDot) {
     background.atShiftHi = (background.atShiftHi << 1) & 0xFFFF;
   }
 
+  // Tile fetch pipeline
   if (inFetch) {
     const v = VRAM_ADDR;
     switch (phase) {
-      case 1: {
+      case 1: // Name table byte
         background.ntByte = ppuBusRead(0x2000 | (v & 0x0FFF));
         BG_ntByte = background.ntByte;
         break;
-      }
-      case 3: {
+      case 3: // Attribute table byte
         const attAddr = 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07);
         const shift   = ((v >> 4) & 4) | (v & 2);
         const atBits  = (ppuBusRead(attAddr) >> shift) & 3;
         background.atByte = atBits & 0x03;
         BG_atByte = background.atByte;
         break;
-      }
-      case 5: {
-        const fineY = (v >> 12) & 0x7;
-        const tile  = background.ntByte;
-        const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + (tile << 4) + fineY;
-        background.tileLo = ppuBusRead(base);
+      case 5: // Pattern table low byte
+        const fineYLo = (v >> 12) & 0x7;
+        const tileLo  = background.ntByte;
+        const baseLo  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + (tileLo << 4) + fineYLo;
+        background.tileLo = ppuBusRead(baseLo);
         BG_tileLo = background.tileLo;
         break;
-      }
-      case 7: {
-        const fineY = (v >> 12) & 0x7;
-        const tile  = background.ntByte;
-        const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + (tile << 4) + fineY + 8;
-        background.tileHi = ppuBusRead(base);
+      case 7: // Pattern table high byte
+        const fineYHi = (v >> 12) & 0x7;
+        const tileHi  = background.ntByte;
+        const baseHi  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + (tileHi << 4) + fineYHi + 8;
+        background.tileHi = ppuBusRead(baseHi);
         BG_tileHi = background.tileHi;
         break;
-      }
-      case 0: {
-        reloadBGShifters();
-        if (currentDot === 256) incY(); else incCoarseX();
-        break;
-      }
     }
   }
 
-  if (currentDot === 257) copyHoriz();
-  if (currentDot === 1) reloadBGShifters();
+  // Increment coarse X at end of each tile fetch
+  if (inFetch && phase === 7) {
+    incCoarseX();
+  }
+
+  // Increment vertical scroll at dot 256
+  if (currentDot === 256) {
+    incY();
+  }
+
+  // Copy horizontal scroll bits at dot 257
+  if (currentDot === 257) {
+    copyHoriz();
+  }
+
+  // Output pixel color during visible dots
   if (rendering && currentDot >= 1 && currentDot <= 256) {
     emitPixelHardwarePalette();
   }
@@ -274,20 +315,24 @@ function reloadBGShifters() {
 }
 
 function emitPixelHardwarePalette() {
-  const fx = (fineX & 7);
-  const p0  = (background.bgShiftLo >> (15 - fx)) & 1;
-  const p1  = (background.bgShiftHi >> (15 - fx)) & 1;
-  const a0  = (background.atShiftLo >> (15 - fx)) & 1;
-  const a1  = (background.atShiftHi >> (15 - fx)) & 1;
-  const color2 = (p1 << 1) | p0;
-  const attr2  = (a1 << 1) | a0;
-  let finalIndex;
-  if (color2 === 0) {
-    finalIndex = ppuBusRead(0x3F00) & 0x3F;
-  } else {
-    const low5 = ((attr2 << 2) + (1 + color2)) & 0x1F;
-    finalIndex = ppuBusRead(0x3F00 | low5) & 0x3F;
-  }
+  const fx  = (fineX & 7);
+  const bit = 15 - fx;
+
+  const p0 = (background.bgShiftLo >> bit) & 1;
+  const p1 = (background.bgShiftHi >> bit) & 1;
+  const a0 = (background.atShiftLo >> bit) & 1;
+  const a1 = (background.atShiftHi >> bit) & 1;
+
+  const color2 = (p1 << 1) | p0;   // 0..3
+  const attr2  = (a1 << 1) | a0;   // 0..3
+
+  // Match quickRenderNametable0(): color2==0 -> universal BG (index 0),
+  // otherwise sub-palette = (attr2<<2) | color2 (indices 1..3)
+  const palLow5 = (color2 === 0) ? 0 : ((attr2 << 2) | color2);
+
+  // Use ppuBusRead so $3F10/$14/$18/$1C mirroring is honored automatically
+  const finalIndex = ppuBusRead(0x3F00 | palLow5) & 0x3F;
+
   const x = (PPUclock.dot - 1) | 0;
   const y = PPUclock.scanline | 0;
   if (x >= 0 && x < NES_W && y >= 0 && y < NES_H) {
