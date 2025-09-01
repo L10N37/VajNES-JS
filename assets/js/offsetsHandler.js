@@ -6,6 +6,8 @@ breakPending = false;
 // writeToggle is an internal PPU latch but implemented here on CPU core, globalThis for logdump
 globalThis.writeToggle = 0;
 
+let isDummyWrite = true;
+
 // Pattern table read (CHR ROM/RAM). For CHR-RAM writes, add mapperChrWrite handler.
 function chrRead(addr14) {
   return CHR_ROM[addr14 & 0x1FFF] & 0xFF;
@@ -67,45 +69,54 @@ function checkReadOffset(address) {
         break;
       }
 
-      case 0x2007: { // PPUDATA
-        const v = VRAM_ADDR & 0x3FFF;
-        const bufBefore = VRAM_DATA & 0xFF;
-        let ret;
+      case 0x2007: { // PPUDATA Read
+          const v = VRAM_ADDR & 0x3FFF;
+          const bufBefore = VRAM_DATA & 0xFF;
+          let ret;
 
-        if (v < 0x3F00) {
-          // Non-palette: buffered
-          ret = bufBefore;
-          if (v < 0x2000) {
-            VRAM_DATA = chrRead(v & 0x1FFF) & 0xFF;
+          if (v < 0x3F00) {
+              // Non-palette region: return buffer, then refill
+              ret = bufBefore;
+
+              if (v < 0x2000) {
+                  // CHR region
+                  VRAM_DATA = chrRead(v & 0x1FFF) & 0xFF;
+              } else {
+                  // Nametable region
+                  VRAM_DATA = VRAM[mapNT(v)] & 0xFF;
+              }
+
           } else {
-            VRAM_DATA = VRAM[mapNT(v)] & 0xFF;
+              // Palette region: direct read, but refill buffer from mirrored $2Fxx
+              const p = paletteIndex(v);
+              ret = (PALETTE_RAM[p] & 0x3F) & 0xFF;
+
+              const ntMirror = v & 0x2FFF; // mirror back into $0000–$2FFF for buffer refill
+              if (ntMirror < 0x2000) {
+                  VRAM_DATA = chrRead(ntMirror & 0x1FFF) & 0xFF;
+              } else {
+                  VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
+              }
           }
-        } else {
-          // Palette: direct, but still refill buffer from $2Fxx
-          const p = paletteIndex(v);
-          ret = (PALETTE_RAM[p] & 0x3F) & 0xFF;
-          const ntMirror = v & 0x2FFF;
-          if (ntMirror < 0x2000) {
-            VRAM_DATA = chrRead(ntMirror & 0x1FFF) & 0xFF;
-          } else {
-            VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
+
+          // VRAM address increment after read
+          const inc = (PPUCTRL & 0x04) ? 32 : 1;
+          VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
+
+          // Returned value
+          const value = ret & 0xFF;
+
+          if (debugLogging) {
+              console.debug(
+                  `[R $2007 PPUDATA] v=$${v.toString(16)} ` +
+                  `val=$${value.toString(16)} bufBefore=$${bufBefore.toString(16)} ` +
+                  `bufAfter=$${(VRAM_DATA & 0xFF).toString(16)} inc=${inc}`
+              );
           }
-        }
 
-        const inc = (PPUCTRL & 0x04) ? 32 : 1;
-        VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
-        value = ret & 0xFF;
-
-        if (debugLogging) {
-          console.debug(
-            `[R $2007 PPUDATA] v=$${v.toString(16)} val=$${value.toString(16)} ` +
-            `bufBefore=$${bufBefore.toString(16)} bufAfter=$${(VRAM_DATA&0xFF).toString(16)} inc=${inc}`
-          );
-        }
-
-        // Open-bus effect: bus becomes returned byte
-        cpuOpenBus = value & 0xFF;
-        return value & 0xFF;
+          // Open-bus effect: bus becomes returned byte
+          cpuOpenBus = value;
+          return value;
       }
 
       default: {
@@ -217,47 +228,69 @@ function checkWriteOffset(address, value) {
         break;
       }
 
-      case 0x2006: { // PPUADDR
-        let t = ((t_hi << 8) | t_lo) & 0x3FFF;
-        const step = (writeToggle === 0) ? "hi" : "lo";
-        if (writeToggle === 0) {
-          t = (t & 0x00FF) | ((value & 0x3F) << 8);
-          writeToggle = 1;
-        } else {
-          t = (t & 0x3F00) | value;
-          VRAM_ADDR = t & 0x3FFF;
-          writeToggle = 0;
-        }
-        t_hi = (t >>> 8) & 0xFF;
-        t_lo = t & 0xFF;
-        if (debugLogging) console.debug(`[W $2006 PPUADDR] ${step} val=$${value.toString(16)} VRAM_ADDR=$${VRAM_ADDR.toString(16)} toggle=${writeToggle}`);
-        break;
-      }
+    case 0x2006: { // PPUADDR
+        cpuOpenBus = value;  // always update open bus
 
-      case 0x2007: { // PPUDATA
+        if (debugLogging) {
+            console.debug(`[DBG $2006] WRITE value=$${value.toString(16)} writeToggle=${writeToggle} VRAM_ADDR(before)=$${VRAM_ADDR.toString(16)}`);
+        }
+
+        // First write sets high byte, second write sets low byte and updates VRAM
+        if (writeToggle === 0) {
+            t_hi = value & 0x3F;
+            writeToggle = 1;
+            if (debugLogging) console.debug(`[DBG $2006] High byte latched = $${t_hi.toString(16)}`);
+        } else {
+            t_lo = value;
+            VRAM_ADDR = ((t_hi << 8) | t_lo) & 0x3FFF;
+            writeToggle = 0;
+            if (debugLogging) console.debug(`[DBG $2006] Low byte latched = $${t_lo.toString(16)} -> VRAM_ADDR=$${VRAM_ADDR.toString(16)}`);
+        }
+
+        if (debugLogging) {
+            const step = (writeToggle === 0) ? "lo" : "hi";
+            console.debug(`[DBG $2006] Completed write (${step}) toggle=${writeToggle}`);
+        }
+        break;
+    }
+
+    case 0x2007: { // PPUDATA
+        cpuOpenBus = value;  // always update open bus
+
         const v = VRAM_ADDR & 0x3FFF;
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
-        if (v < 0x2000) {
-          if (typeof mapperChrWrite === "function") { mapperChrWrite(v & 0x1FFF, value); }
-          else { CHR_ROM[v & 0x1FFF] = value; }
-        } else if (v < 0x3F00) {
-          VRAM[mapNT(v)] = value;
-        } else {
-          const idx  = paletteIndex(v);
-          const val6 = value & 0x3F;
-          if (PALETTE_RAM[idx] !== val6) PALETTE_RAM[idx] = val6;
-          if ((idx & 0x03) === 0) {
-            if (idx !== 0x00 && PALETTE_RAM[0x00] !== val6) PALETTE_RAM[0x00] = val6;
-            if (idx !== 0x04 && PALETTE_RAM[0x04] !== val6) PALETTE_RAM[0x04] = val6;
-            if (idx !== 0x08 && PALETTE_RAM[0x08] !== val6) PALETTE_RAM[0x08] = val6;
-            if (idx !== 0x0C && PALETTE_RAM[0x0C] !== val6) PALETTE_RAM[0x0C] = val6;
-          }
+
+        if (debugLogging) {
+            console.debug(`[DBG $2007] WRITE value=$${value.toString(16)} v(before)=$${v.toString(16)} inc=${inc}`);
         }
+
+        // Perform the memory write
+        if (v < 0x2000) {
+            if (typeof mapperChrWrite === "function") mapperChrWrite(v & 0x1FFF, value);
+            else CHR_ROM[v & 0x1FFF] = value;
+        } else if (v < 0x3F00) {
+            VRAM[mapNT(v)] = value;
+        } else {
+            const idx  = paletteIndex(v);
+            const val6 = value & 0x3F;
+            if (PALETTE_RAM[idx] !== val6) PALETTE_RAM[idx] = val6;
+            if ((idx & 0x03) === 0) {
+                if (idx !== 0x00 && PALETTE_RAM[0x00] !== val6) PALETTE_RAM[0x00] = val6;
+                if (idx !== 0x04 && PALETTE_RAM[0x04] !== val6) PALETTE_RAM[0x04] = val6;
+                if (idx !== 0x08 && PALETTE_RAM[0x08] !== val6) PALETTE_RAM[0x08] = val6;
+                if (idx !== 0x0C && PALETTE_RAM[0x0C] !== val6) PALETTE_RAM[0x0C] = val6;
+            }
+        }
+
+        // Increment VRAM after every write
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
-        if (debugLogging) console.debug(`[W $2007 PPUDATA] v=$${v.toString(16)} val=$${value.toString(16)} inc=${inc} v_after=$${VRAM_ADDR.toString(16)}`);
+
+        if (debugLogging) {
+            console.debug(`[DBG $2007] v(after)=$${VRAM_ADDR.toString(16)} cpuOpenBus=$${cpuOpenBus.toString(16)}`);
+        }
         break;
-      }
     }
+}
 
     // ---- inline open-bus drive for PPU writes (no helper) ----
     // Masks: [ $2000=0x68, $2001=0xE7, $2002(read-only), $2003=0xFF, $2004=0xFF*, $2005=0x7F?, $2006=0xFF, $2007=0xFF ]

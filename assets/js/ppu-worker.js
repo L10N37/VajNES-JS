@@ -97,7 +97,7 @@ let driftFrames = 0;
 let expectedCycles = 0;
 let expectedCarry  = 0;
 
-let syncLogging = false;  
+let syncLogging = true;  
 
 let renderActiveThisFrame = false;
 
