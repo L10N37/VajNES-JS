@@ -57,7 +57,7 @@ function resetCPU() {
   CPUregisters.A = 0x00;
   CPUregisters.X = 0x00;
   CPUregisters.Y = 0x00;
-  CPUregisters.S = 0xFD; // unsure, should be $FC at reset
+  CPUregisters.S = 0xFF; // unsure, should be $FC at reset
   CPUregisters.P = {
       C: 0,    // Carry
       Z: 0,    // Zero
@@ -4601,7 +4601,7 @@ function AXA_ABSY() {
   addExtraCycles(1);
 }
 
-function AXA_INDY() {
+function AXA_INDY() { // SHA in Accuracy Coin
   // C1: opcode
   addExtraCycles(1);
 

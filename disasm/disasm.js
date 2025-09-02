@@ -270,15 +270,14 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 
-
-
-
-
-
-
-
 // ---- Disassembler Window ----
 let disasmWin = null;
+
+// ensure the global exists (no window.) — safe guard, won't redefine if present
+if (typeof perFrameStep === "undefined") {
+  // If not defined by host, default it so the UI won't crash.
+  perFrameStep = false;
+}
 
 function launchDisasmWindow() {
   if (disasmWin) {
@@ -315,6 +314,7 @@ function launchDisasmWindow() {
         CPU Cycles: <span id="cycles-value">--</span>
         <button id="cycles-update" class="btn">Update</button>
       </span>
+      <span id="frame-step" style="margin-left:10px;opacity:.85;">Per-Frame (run): OFF</span>
       <button id="csv-export" class="btn">Export CSV</button>
       <button id="theme-toggle" class="btn"></button>
     </header>
@@ -339,7 +339,7 @@ function launchDisasmWindow() {
 
     <footer class="keybar">
       <span>R = Run</span><span>P = Pause</span><span>S = Step</span>
-      <span>U = Update Cycles</span><span>T = Theme</span><span>B = Breakpoints</span>
+      <span>F = Per-Frame (run)</span><span>U = Update Cycles</span><span>T = Theme</span><span>B = Breakpoints</span>
     </footer>
   `;
 
@@ -349,6 +349,7 @@ function launchDisasmWindow() {
   const rowsEl = wrap.querySelector("#rows");
   const viewEl = wrap.querySelector("#view");
   const themeBtn = wrap.querySelector("#theme-toggle");
+  const fsEl = wrap.querySelector("#frame-step");
 
   let currentTheme = html.getAttribute("data-theme") || "amber";
   function setTheme(name) {
@@ -359,8 +360,15 @@ function launchDisasmWindow() {
   setTheme(currentTheme);
   themeBtn.onclick = () => setTheme(currentTheme === "amber" ? "green" : "amber");
 
+  function updateFS() {
+    if (!fsEl) return;
+    fsEl.textContent = "Per-Frame (run): " + (perFrameStep ? "ON" : "OFF");
+    fsEl.style.opacity = perFrameStep ? "1" : ".85";
+  }
+  updateFS();
+
   wrap.querySelector("#cycles-update").onclick = () => {
-    const val = window.DebugCtl?.cpuCycles ?? "--";
+    const val = DebugCtl?.cpuCycles ?? "--";
     wrap.querySelector("#cycles-value").textContent = val;
   };
 
@@ -375,14 +383,16 @@ function launchDisasmWindow() {
     a.click();
   };
 
+  // Keybinds inside the Disasm window
   wrap.addEventListener("keydown", e => {
     if (e.repeat) return;
     const tag = (e.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea") return;
     const k = e.key.toLowerCase();
-    if (k === "r") window.DebugCtl?.run?.();
-    else if (k === "p") window.DebugCtl?.pause?.();
-    else if (k === "s") window.DebugCtl?.step?.();
+    if (k === "r") DebugCtl?.run?.();
+    else if (k === "p") DebugCtl?.pause?.();
+    else if (k === "s") DebugCtl?.step?.();
+    else if (k === "f") { perFrameStep = !perFrameStep; updateFS(); }
     else if (k === "u") wrap.querySelector("#cycles-update")?.click();
     else if (k === "t") themeBtn?.click();
     else if (k === "escape" && disasmWin) disasmWin.close();
@@ -400,6 +410,7 @@ function launchDisasmWindow() {
   window.DISASM = { appendRow: appendDisasmRow };
   viewEl?.focus();
 }
+
 
 // ---- Debug control shim ----
 window.DebugCtl = window.DebugCtl || {};

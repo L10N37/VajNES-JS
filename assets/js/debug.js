@@ -2,7 +2,7 @@ let cpuRunning = false;
 
 // internal only, don't build disasm rows unless the window is open
 let disasmRunning = false;
-
+let perFrameStep = false;
 let nmiCheckCounter = 0;
 let nmiServiceCounter = 0;
 let nmiPendingLocal=false;
@@ -27,6 +27,8 @@ ppuWorker.onmessage = (e) => {
     blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
     //quickRenderNametable0(); // hack
     registerFrameUpdate();
+
+    if (perFrameStep) pause();
   }
 };
 

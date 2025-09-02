@@ -266,44 +266,32 @@ function checkWriteOffset(address, value) {
         break;
     }
 
-    case 0x2007: { // PPUDATA
-        cpuOpenBus = value;  // always update open bus
+    case 0x2007: { // PPUDATA write
+      cpuOpenBus = value;
 
-        const v = VRAM_ADDR & 0x3FFF;
-        const inc = (PPUCTRL & 0x04) ? 32 : 1;
+      const v   = VRAM_ADDR & 0x3FFF;
+      const inc = (PPUCTRL & 0x04) ? 32 : 1;
 
-        if (debugLogging) {
-            console.debug(`[DBG $2007] WRITE value=$${value.toString(16)} v(before)=$${v.toString(16)} inc=${inc}`);
-        }
+      if (v < 0x2000) {
+        if (typeof mapperChrWrite === "function") mapperChrWrite(v & 0x1FFF, value);
+        else CHR_ROM[v & 0x1FFF] = value;
+      } else if (v < 0x3F00) {
+        VRAM[mapNT(v)] = value;
+      } else {
+        // Palette region: fold $3F10/$14/$18/$1C mirrors, DO NOT replicate across 00/04/08/0C
+        const idx  = paletteIndex(v);     // folds 3F1x → 3F0x as per hardware
+        const val6 = value & 0x3F;
+        PALETTE_RAM[idx] = val6;
+      }
 
-        // Perform the memory write
-        if (v < 0x2000) {
-            if (typeof mapperChrWrite === "function") mapperChrWrite(v & 0x1FFF, value);
-            else CHR_ROM[v & 0x1FFF] = value;
-        } else if (v < 0x3F00) {
-            VRAM[mapNT(v)] = value;
-        } else {
-            const idx  = paletteIndex(v);
-            const val6 = value & 0x3F;
-            if (PALETTE_RAM[idx] !== val6) PALETTE_RAM[idx] = val6;
-            if ((idx & 0x03) === 0) {
-                if (idx !== 0x00 && PALETTE_RAM[0x00] !== val6) PALETTE_RAM[0x00] = val6;
-                if (idx !== 0x04 && PALETTE_RAM[0x04] !== val6) PALETTE_RAM[0x04] = val6;
-                if (idx !== 0x08 && PALETTE_RAM[0x08] !== val6) PALETTE_RAM[0x08] = val6;
-                if (idx !== 0x0C && PALETTE_RAM[0x0C] !== val6) PALETTE_RAM[0x0C] = val6;
-            }
-        }
+      VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
 
-        // Increment VRAM after every write
-        VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
-
-        if (debugLogging) {
-            console.debug(`[DBG $2007] v(after)=$${VRAM_ADDR.toString(16)} cpuOpenBus=$${cpuOpenBus.toString(16)}`);
-        }
-        break;
+      if (debugLogging) {
+        console.debug(`[DBG $2007] v(after)=$${VRAM_ADDR.toString(16)} cpuOpenBus=$${cpuOpenBus.toString(16)}`);
+      }
+      break;
     }
 }
-
     // ---- inline open-bus drive for PPU writes (no helper) ----
     // Masks: [ $2000=0x68, $2001=0xE7, $2002(read-only), $2003=0xFF, $2004=0xFF*, $2005=0x7F?, $2006=0xFF, $2007=0xFF ]
     // Special case for $2004 when OAMADDR%4==2 -> 0xE3
