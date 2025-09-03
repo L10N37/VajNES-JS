@@ -1,12 +1,18 @@
 // now internally toggled with breakpoints
 let debugLogging = false;
 
+let ppuOpenBus = 0x00;
+
 breakPending = false;
 
 // writeToggle is an internal PPU latch but implemented here on CPU core, globalThis for logdump
 globalThis.writeToggle = 0;
 
 let isDummyWrite = true;
+
+// Tracks the two writes of a single RMW $2007
+let rmw2007Armed = false;     // false → first write will arm, second will fire
+let rmw2007BaseAddr = 0;      // latch original v (before any $2007 increments)
 
 // Pattern table read (CHR ROM/RAM). For CHR-RAM writes, add mapperChrWrite handler.
 function chrRead(addr14) {
@@ -53,86 +59,77 @@ function checkReadOffset(address) {
     switch (reg) {
 
       case 0x2002: { // PPUSTATUS
-        const obBefore = cpuOpenBus & 0xFF;
+        const obBefore = ppuOpenBus & 0xFF;
         const stat     = PPUSTATUS & 0xFF;
 
-        // Value seen on the bus: high 3 from status, low 5 from previous bus
+        // high 3 from status, low 5 from previous PPU bus
         const ret = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
 
-        // Side effects
+        // side effects
         PPUSTATUS  &= ~0x80; // clear VBlank
         writeToggle = 0;     // reset $2005/$2006 latch
 
-        // Update open bus AFTER the read: low 5 become status low 5
-        cpuOpenBus = ((obBefore & 0xE0) | (stat & 0x1F)) & 0xFF;
+        // update PPU bus AFTER the read: low 5 become status low 5
+        ppuOpenBus = ((obBefore & 0xE0) | (stat & 0x1F)) & 0xFF;
+        cpuOpenBus = ppuOpenBus; // optional mirror
 
         if (debugLogging) {
           console.debug(
             `[R $2002 PPUSTATUS] ret=$${ret.toString(16)} ` +
-            `obBefore=$${obBefore.toString(16)} obAfter=$${cpuOpenBus.toString(16)} toggle->0`
+            `ppuOBefore=$${obBefore.toString(16)} ppuOAfter=$${ppuOpenBus.toString(16)} toggle->0`
           );
         }
         return ret;
       }
 
-      case 0x2004: { // OAMDATA
+      case 0x2004: { // OAMDATA (read value, do not update PPU bus latch)
         value = OAM[OAMADDR & 0xFF] & 0xFF;
         if (debugLogging) console.debug(`[R $2004 OAMDATA] val=$${value.toString(16)} OAMADDR=$${(OAMADDR&0xFF).toString(16)}`);
         break;
       }
 
-      case 0x2007: { // PPUDATA Read
-          const v = VRAM_ADDR & 0x3FFF;
-          const bufBefore = VRAM_DATA & 0xFF;
-          let ret;
+      case 0x2007: { // PPUDATA read
+        const v = VRAM_ADDR & 0x3FFF;
+        const bufBefore = VRAM_DATA & 0xFF;
+        let ret;
 
-          if (v < 0x3F00) {
-              // Non-palette region: return buffer, then refill
-              ret = bufBefore;
+        if (v < 0x3F00) {
+          // Non-palette region: return buffer, then refill
+          ret = bufBefore;
+          if (v < 0x2000) VRAM_DATA = chrRead(v & 0x1FFF) & 0xFF;
+          else            VRAM_DATA = VRAM[mapNT(v)] & 0xFF;
+        } else {
+          // Palette region: direct read, but refill buffer from mirrored $2Fxx
+          const p = paletteIndex(v);
+          ret = (PALETTE_RAM[p] & 0x3F) & 0xFF;
 
-              if (v < 0x2000) {
-                  // CHR region
-                  VRAM_DATA = chrRead(v & 0x1FFF) & 0xFF;
-              } else {
-                  // Nametable region
-                  VRAM_DATA = VRAM[mapNT(v)] & 0xFF;
-              }
+          const ntMirror = v & 0x2FFF;
+          if (ntMirror < 0x2000) VRAM_DATA = chrRead(ntMirror & 0x1FFF) & 0xFF;
+          else                   VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
+        }
 
-          } else {
-              // Palette region: direct read, but refill buffer from mirrored $2Fxx
-              const p = paletteIndex(v);
-              ret = (PALETTE_RAM[p] & 0x3F) & 0xFF;
+        const inc = (PPUCTRL & 0x04) ? 32 : 1;
+        VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
 
-              const ntMirror = v & 0x2FFF; // mirror back into $0000–$2FFF for buffer refill
-              if (ntMirror < 0x2000) {
-                  VRAM_DATA = chrRead(ntMirror & 0x1FFF) & 0xFF;
-              } else {
-                  VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
-              }
-          }
+        const out = ret & 0xFF;
 
-          // VRAM address increment after read
-          const inc = (PPUCTRL & 0x04) ? 32 : 1;
-          VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
+        if (debugLogging) {
+          console.debug(
+            `[R $2007 PPUDATA] v=$${v.toString(16)} ` +
+            `val=$${out.toString(16)} bufBefore=$${bufBefore.toString(16)} ` +
+            `bufAfter=$${(VRAM_DATA & 0xFF).toString(16)} inc=${inc}`
+          );
+        }
 
-          // Returned value
-          const value = ret & 0xFF;
-
-          if (debugLogging) {
-              console.debug(
-                  `[R $2007 PPUDATA] v=$${v.toString(16)} ` +
-                  `val=$${value.toString(16)} bufBefore=$${bufBefore.toString(16)} ` +
-                  `bufAfter=$${(VRAM_DATA & 0xFF).toString(16)} inc=${inc}`
-              );
-          }
-
-          // Open-bus effect: bus becomes returned byte
-          cpuOpenBus = value;
-          return value;
+        // PPU read drives the PPU bus; optionally mirror to CPU bus
+        ppuOpenBus = out;
+        cpuOpenBus = out; // optional mirror
+        return out;
       }
 
       default: {
-        value = cpuOpenBus & 0xFF;
+        // write-only regs return current PPU bus value; do not modify it
+        value = ppuOpenBus & 0xFF;
         if (debugLogging) console.debug(`[R PPU-OPENBUS] $${reg.toString(16)} -> $${value.toString(16)}`);
         break;
       }
@@ -163,6 +160,9 @@ function checkReadOffset(address) {
   return value & 0xFF;
 }
 
+// gate threshold from power-on to when PPU registers actually start working
+const PPU_WRITE_GATE_CYCLES = 29658;
+
 function checkWriteOffset(address, value) {
   const addr = address & 0xFFFF;
   value &= 0xFF;
@@ -177,14 +177,19 @@ function checkWriteOffset(address, value) {
     const reg = 0x2000 + (addr & 0x7);
     const idx = reg & 0x7;
 
-    switch (reg) {
+    // Gate early writes only for these
+    const gateThis = (reg === 0x2000 || reg === 0x2001 || reg === 0x2005 || reg === 0x2006);
+    const gated = gateThis && (cpuCycles < PPU_WRITE_GATE_CYCLES);
+    if (gated) {
+      if (debugLogging) console.debug(`[PPU-GATE] Ignored write $${reg.toString(16)} val=$${value.toString(16)} @${cpuCycles}`);
+      return;
+    }
 
+    switch (reg) {
       case 0x2000: { // PPUCTRL
         const wasEN = (PPUCTRL & 0x80) !== 0;
         PPUCTRL = value & 0xFF;
         if (debugLogging) console.debug(`[W $2000 PPUCTRL] val=$${value.toString(16)} wasEN=${wasEN?1:0}`);
-
-        // NMI edge marker bookkeeping (unchanged from your version)
         const nowEN = (value & 0x80) !== 0;
         if (!wasEN && nowEN && (PPUSTATUS & 0x80)) {
           const frame = SHARED?.SYNC ? Atomics.load(SHARED.SYNC, 4) : 0;
@@ -240,89 +245,83 @@ function checkWriteOffset(address, value) {
         break;
       }
 
-    case 0x2006: { // PPUADDR
-        cpuOpenBus = value;  // always update open bus
-
-        if (debugLogging) {
-            console.debug(`[DBG $2006] WRITE value=$${value.toString(16)} writeToggle=${writeToggle} VRAM_ADDR(before)=$${VRAM_ADDR.toString(16)}`);
-        }
-
-        // First write sets high byte, second write sets low byte and updates VRAM
-        if (writeToggle === 0) {
-            t_hi = value & 0x3F;
-            writeToggle = 1;
-            if (debugLogging) console.debug(`[DBG $2006] High byte latched = $${t_hi.toString(16)}`);
-        } else {
-            t_lo = value;
-            VRAM_ADDR = ((t_hi << 8) | t_lo) & 0x3FFF;
-            writeToggle = 0;
-            if (debugLogging) console.debug(`[DBG $2006] Low byte latched = $${t_lo.toString(16)} -> VRAM_ADDR=$${VRAM_ADDR.toString(16)}`);
-        }
-
-        if (debugLogging) {
-            const step = (writeToggle === 0) ? "lo" : "hi";
-            console.debug(`[DBG $2006] Completed write (${step}) toggle=${writeToggle}`);
-        }
+      case 0x2006: { // PPUADDR
+        // do NOT touch cpuOpenBus here; bus is driven by mask block below to ppuOpenBus
+        if (writeToggle === 0) { t_hi = value & 0x3F; writeToggle = 1; }
+        else { t_lo = value; VRAM_ADDR = ((t_hi << 8) | t_lo) & 0x3FFF; writeToggle = 0; }
         break;
-    }
-
-    case 0x2007: { // PPUDATA write
-      cpuOpenBus = value;
-
-      const v   = VRAM_ADDR & 0x3FFF;
-      const inc = (PPUCTRL & 0x04) ? 32 : 1;
-
-      if (v < 0x2000) {
-        if (typeof mapperChrWrite === "function") mapperChrWrite(v & 0x1FFF, value);
-        else CHR_ROM[v & 0x1FFF] = value;
-      } else if (v < 0x3F00) {
-        VRAM[mapNT(v)] = value;
-      } else {
-        // Palette region: fold $3F10/$14/$18/$1C mirrors, DO NOT replicate across 00/04/08/0C
-        const idx  = paletteIndex(v);     // folds 3F1x → 3F0x as per hardware
-        const val6 = value & 0x3F;
-        PALETTE_RAM[idx] = val6;
       }
 
-      VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
+      case 0x2007: { // PPUDATA write
+        // do NOT touch cpuOpenBus here; bus is driven by mask block below to ppuOpenBus
 
-      if (debugLogging) {
-        console.debug(`[DBG $2007] v(after)=$${VRAM_ADDR.toString(16)} cpuOpenBus=$${cpuOpenBus.toString(16)}`);
+        const v   = VRAM_ADDR & 0x3FFF;
+        const inc = (PPUCTRL & 0x04) ? 32 : 1;
+
+        if (debugLogging) {
+          console.debug(`[W $2007] RMW=${currentIsRMW ? "1" : "0"} v=$${v.toString(16)} val=$${(value & 0xFF).toString(16)}`);
+        }
+
+        // normal write at v
+        if (v < 0x2000) {
+          if (typeof mapperChrWrite === "function") mapperChrWrite(v & 0x1FFF, value);
+          else CHR_ROM[v & 0x1FFF] = value;
+        } else if (v < 0x3F00) {
+          VRAM[mapNT(v)] = value;
+        } else {
+          PALETTE_RAM[paletteIndex(v)] = value & 0x3F;
+        }
+
+        // RMW extra write (second write of pair), nametable only
+        if (currentIsRMW) {
+          if (!rmw2007Armed) {
+            rmw2007Armed = true;
+            rmw2007BaseAddr = v;
+          } else {
+            addExtraCycles(1);
+            if (rmw2007BaseAddr >= 0x2000 && rmw2007BaseAddr < 0x3F00) {
+              const extraAddr = ((rmw2007BaseAddr & 0xFF00) | (value & 0xFF)) & 0x3FFF;
+              if (extraAddr >= 0x2000 && extraAddr < 0x3F00) {
+                VRAM[mapNT(extraAddr)] = value;
+                if (debugLogging) {
+                  console.debug(`[RMW $2007 extra] base=$${rmw2007BaseAddr.toString(16)} extra=$${extraAddr.toString(16)} val=$${(value & 0xFF).toString(16)}`);
+                }
+              }
+            }
+            rmw2007Armed = false;
+          }
+        } else {
+          rmw2007Armed = false;
+        }
+
+        VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
+        break;
       }
-      break;
     }
-}
-    // ---- inline open-bus drive for PPU writes (no helper) ----
-    // Masks: [ $2000=0x68, $2001=0xE7, $2002(read-only), $2003=0xFF, $2004=0xFF*, $2005=0x7F?, $2006=0xFF, $2007=0xFF ]
-    // Special case for $2004 when OAMADDR%4==2 -> 0xE3
+
+    // ---- open-bus drive for PPU writes: drive the *PPU* bus latch ----
     let andMask;
-    if (idx === 0) andMask = 0x68;
-    else if (idx === 1) andMask = 0xE7;
-    else if (idx === 4) andMask = ((OAMADDR & 3) === 2) ? 0xE3 : 0xFF;
-    else if (idx === 5) andMask = 0x7F;
-    else andMask = 0xFF;
+    if (idx === 0) andMask = 0x68;                                   // $2000
+    else if (idx === 1) andMask = 0xE7;                              // $2001
+    else if (idx === 4) andMask = ((OAMADDR & 3) === 2) ? 0xE3 : 0xFF; // $2004 (mask when OAMADDR%4==2)
+    else if (idx === 5) andMask = 0x7F;                              // $2005
+    else andMask = 0xFF;                                             // $2002/$2003/$2006/$2007
 
-    const before = cpuOpenBus & 0xFF;
-    cpuOpenBus = ((before & ~andMask) | (value & andMask)) & 0xFF;
-    if (debugLogging) {
-      console.debug(
-        `[BUS WRITE $${reg.toString(16)}] val=$${value.toString(16).padStart(2,"0")} and=$${andMask.toString(16).padStart(2,"0")} ` +
-        `bus_before=$${before.toString(16).padStart(2,"0")} -> bus_after=$${cpuOpenBus.toString(16).padStart(2,"0")}`
-      );
-    }
+    const before = ppuOpenBus & 0xFF;
+    ppuOpenBus = ((before & ~andMask) | (value & andMask)) & 0xFF;
+    cpuOpenBus = ppuOpenBus; // optional mirror for logging/open bus elsewhere
     return;
   }
 
-  else if (addr === 0x4014) { dmaTransfer(value); if (debugLogging) console.debug(`[W $4014 OAMDMA] val=$${value.toString(16)}`); }
-  else if (addr === 0x4016) { joypadWrite(addr, value); if (debugLogging) console.debug(`[W $4016 JOY] val=$${value.toString(16)}`); }
-  else if (addr === 0x4017) { APUregister.FRAME_CNT = value; cpuOpenBus = value; if (debugLogging) console.debug(`[W $4017 APUFCNT] val=$${value.toString(16)}`); }
-  else if (addr < 0x4020)   { apuWrite(addr, value); if (debugLogging) console.debug(`[W APU] $${addr.toString(16)} val=$${value.toString(16)}`); }
-  else if (addr < 0x6000)   { cpuOpenBus = value; if (debugLogging) console.debug(`[W EXP] $${addr.toString(16)} val=$${value.toString(16)}`); }
-  else if (addr < 0x8000)   { prgRam[addr - 0x6000] = value; if (debugLogging) console.debug(`[W PRG-RAM] $${addr.toString(16)} val=$${value.toString(16)}`); }
+  else if (addr === 0x4014) { dmaTransfer(value); }
+  else if (addr === 0x4016) { joypadWrite(addr, value); }
+  else if (addr === 0x4017) { APUregister.FRAME_CNT = value; cpuOpenBus = value; }
+  else if (addr < 0x4020)   { apuWrite(addr, value); }
+  else if (addr < 0x6000)   { cpuOpenBus = value; }
+  else if (addr < 0x8000)   { prgRam[addr - 0x6000] = value; }
   else {
-    if (addr >= 0xFFFA) { if (debugLogging) console.warn(`[W BLOCKED VEC] $${addr.toString(16)} val=$${value.toString(16)}`); return; }
+    if (addr >= 0xFFFA) return;
     mapperWritePRG(addr, value);
-    if (debugLogging) console.debug(`[W PRG-ROM] $${addr.toString(16)} val=$${value.toString(16)}`);
   }
 
   cpuOpenBus = value & 0xFF;

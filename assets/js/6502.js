@@ -4601,7 +4601,13 @@ function AXA_ABSY() {
   addExtraCycles(1);
 }
 
-function AXA_INDY() { // SHA in Accuracy Coin 0x93, missing dummy write?
+// RP2A03G quirk profile (Variant A):
+// - Data written = (A & X) & (H_plus_1)
+// - If (lo + Y) crosses a page, the WRITE ADDRESS HIGH BYTE is corrupted:
+//     finalHigh = (effectiveHigh) & (A & X)
+// Here H_plus_1 = (base pointer high + 1). For a page-cross case, H_plus_1 == effectiveHigh.
+
+function AXA_INDY() { // $93
   // C1: opcode
   addExtraCycles(1);
 
@@ -4609,19 +4615,42 @@ function AXA_INDY() { // SHA in Accuracy Coin 0x93, missing dummy write?
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   addExtraCycles(1);
 
-  // C3: read lo @zp
+  // C3: read low (zp)
   const lo = checkReadOffset(zp) & 0xFF;
   addExtraCycles(1);
 
-  // C4: read hi @(zp+1)
+  // C4: read high (zp+1)
   const hi = checkReadOffset((zp + 1) & 0xFF) & 0xFF;
   addExtraCycles(1);
 
-  // C5: compute EA = base+Y and do store
-  const base    = ((hi << 8) | lo) & 0xFFFF;
-  const address = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
-  const value   = (CPUregisters.A & CPUregisters.X) & (((address >> 8) + 1) & 0xFF);
-  checkWriteOffset(address, value);
+  const y     = CPUregisters.Y & 0xFF;
+  const sum   = (lo + y) >>> 0;
+  const effLo = sum & 0xFF;
+  const carry = (sum >> 8) & 1;
+
+  // C5: dummy read at uncarried page (hi : effLo)
+  void checkReadOffset(((hi << 8) | effLo) & 0xFFFF);
+  addExtraCycles(1);
+
+  // Effective (uncorrupted) high after carry:
+  const effHi     = (hi + carry) & 0xFF;
+  const ax        = (CPUregisters.A & CPUregisters.X) & 0xFF;
+  const H_plus_1  = (hi + 1) & 0xFF;      // equals effHi when carry=1 (the intentional test case)
+
+  // Variant A: data mask
+  const value = (ax & H_plus_1) & 0xFF;
+
+  // *** Unstable high-byte quirk for $93 (as per AccuracyCoin): ***
+  // If page-crossed, corrupt the write address high byte like SHX/SHA abs,Y:
+  // finalHigh = effHi & ax
+  // If NOT crossed, leave it as effHi.
+  // fail for 6 now, identifies revision 1 CPU behaviour
+  // 6: If the RDY line goes low 2 cycles before the write cycle, the target address of the instruction was not the correct value after the test.
+  const finalHi = carry ? (effHi & ax) & 0xFF : effHi;
+  const addr    = ((finalHi << 8) | effLo) & 0xFFFF;
+
+  // C6: write
+  checkWriteOffset(addr, value);
   addExtraCycles(1);
 }
 

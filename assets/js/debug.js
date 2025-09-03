@@ -1,5 +1,8 @@
 let cpuRunning = false;
 
+// notes on LUT below
+let currentIsRMW = false;
+
 // internal only, don't build disasm rows unless the window is open
 let disasmRunning = false;
 let perFrameStep = false;
@@ -20,18 +23,14 @@ function cpuStall(){
     }
 }
 
-// RENDER FRAME
-ppuWorker.onmessage = (e) => {
-  if (e.data.type === "frame") {
+function renderFrame(){
     // proper scanline accurate rendering (scrolling etc.)
     blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
-    // frame processed, PPU will continue (controls 60fps throttle)
-    PPU_FRAME_FLAGS = 0x00;
     //quickRenderNametable0(); // hack
     registerFrameUpdate();
-    if (perFrameStep) pause();
-  }
-};
+    paletteIndexFrame.fill(0);   // ideally pre render scanline dot 1, but this works
+    if (perFrameStep) pause();   
+}
 
 function checkInterrupts() {
   nmiCheckCounter++;
@@ -72,6 +71,10 @@ const FPS      = 60.0988;
 const FRAME_MS = 1000 / FPS;       // ~16.64 ms
 
 window.step = function () {
+
+  if (PPU_FRAME_FLAGS === 0x01) renderFrame();
+  PPU_FRAME_FLAGS = 0x00;
+
   debugLogging = false;
   NoSignalAudio.setEnabled(false);
   if (!cpuRunning) return 0;
@@ -83,6 +86,9 @@ window.step = function () {
   }
 
   const code = checkReadOffset(CPUregisters.PC);
+  // check if the opcode is a RMW instruction
+  currentIsRMW = rmwTable[code]; 
+
   const op = OPCODES[code];
   if (!op || !op.func) {
     const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
@@ -114,6 +120,7 @@ window.step = function () {
   // Measure cycles consumed by this opcode (handlers call addExtraCycles internally)
   const before = Atomics.load(SHARED.CLOCKS, 0);   // CPU cycle counter
   op.func();                                       // executes and calls addExtraCycles(...) multiple times
+
   const after  = Atomics.load(SHARED.CLOCKS, 0);
   const used   = (after - before) | 0;
 
@@ -292,6 +299,27 @@ const OPCODES = [
   { pc:1, func: SED_IMP },   { pc:3, func: SBC_ABSY }, { pc:1, func: NOP },      { pc:3, func: ISC_ABSY },
   { pc:3, func: NOP_ABSX },  { pc:3, func: SBC_ABSX }, { pc:3, func: INC_ABSX }, { pc:3, func: ISC_ABSX },
 ];
+  /*
+  because im too lazy to modify every RMW handler to pass a parameter RMW = true to checkWriteOffset
+  so we are using this LUT + a global
+  in fact, the opcodes themselves were plucked straight from the test rom Source code
+  future update, may consider the extra parameter in checkWriteOffset and modifying handlers for listed opcodes
+  ; OK; Verifying opcodes...
+  ; 0E2E4E6ECEEE 1E3E5E7EDEFE 
+  ; 0F2F4F6FCFEF 1F3F5F7FDFFF 
+  ; 03234363C3E3 13335373D3F3 
+  ; 1B3B5B7BDBFB
+  */    
+  const rmwTable = new Array(256).fill(false);
+  [
+    0x0E,0x2E,0x4E,0x6E,0xCE,0xEE,
+    0x1E,0x3E,0x5E,0x7E,0xDE,0xFE,
+    0x0F,0x2F,0x4F,0x6F,0xCF,0xEF,
+    0x1F,0x3F,0x5F,0x7F,0xDF,0xFF,
+    0x03,0x23,0x43,0x63,0xC3,0xE3,
+    0x13,0x33,0x53,0x73,0xD3,0xF3,
+    0x1B,0x3B,0x5B,0x7B,0xDB,0xFB
+  ].forEach(op => rmwTable[op] = true);
 
 
   function buildDisasmRow(opc, op1, op2, pc, len) {

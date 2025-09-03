@@ -44,6 +44,8 @@ const MASK_SPR_SHOW_LEFT8 = 0x04; // 1 = show sprites in leftmost 8 pixels
 const MASK_BG_ENABLE      = 0x08; // 1 = show background
 const MASK_SPR_ENABLE     = 0x10; // 1 = show sprites
 
+let ppuInitDone = false; // first frame we do not touch nmi/ vblank
+
 // ---- Live rendering flag ----
 Object.defineProperty(globalThis, 'rendering', {
   configurable: true,
@@ -51,7 +53,7 @@ Object.defineProperty(globalThis, 'rendering', {
 });
 
 // ---- Clock state ----
-const PPUclock = { dot: 0, scanline: 0, frame: 0, oddFrame: false };
+const PPUclock = { dot: 0, scanline: 261, frame: 0, oddFrame: false };
 
 // ---- Background pipeline ----
 const background = {
@@ -80,8 +82,8 @@ let budgetLocal = 0; // dots available to run immediately
 
 // ---- Tick ----
 function ppuTick() {
-  // Odd frame short pre-render: consume dot 0 w/o executing handler when rendering ON
-  if (PPUclock.scanline === 0 && PPUclock.dot === 0 && PPUclock.oddFrame && rendering) {
+  // Odd-frame short pre-render: skip dot 0 when rendering
+  if (PPUclock.scanline === 261 && PPUclock.dot === 0 && PPUclock.oddFrame && rendering) {
     PPUclock.dot = 1;
     STORE_CURRENT_SCANLINE(PPUclock.scanline);
     STORE_CURRENT_DOT(PPUclock.dot);
@@ -89,21 +91,33 @@ function ppuTick() {
     return;
   }
 
-  const dot = PPUclock.dot | 0;                 // 0..340
-  scanlineLUT[PPUclock.scanline](dot);          // do dot work
+  // Execute one dot
+  scanlineLUT[PPUclock.scanline](PPUclock.dot);
 
-  if (PPUclock.dot >= DOTS_PER_SCANLINE - 1) {  // wrap at 340
+  // Advance dot/scanline
+  if (PPUclock.dot === DOTS_PER_SCANLINE - 1) {   // 340 → wrap
     PPUclock.dot = 0;
-    PPUclock.scanline++;
-    if (PPUclock.scanline >= SCANLINES_PER_FRAME) {
+
+    if (PPUclock.scanline === 260) {
+      // End of vblank idle → pre-render (261)
+      PPUclock.scanline = 261;
+
+    } else if (PPUclock.scanline === 261) {
+      // End of pre-render → start new frame at visible 0
       PPUclock.scanline = 0;
       PPUclock.frame++;
       PPUclock.oddFrame = !PPUclock.oddFrame;
+
+    } else {
+      // Visible/post/vblank start → next line
+      PPUclock.scanline++;
     }
+
   } else {
     PPUclock.dot++;
   }
 
+  // Publish
   STORE_CURRENT_SCANLINE(PPUclock.scanline);
   STORE_CURRENT_DOT(PPUclock.dot);
   STORE_CURRENT_FRAME(PPUclock.frame);
@@ -111,12 +125,15 @@ function ppuTick() {
 
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
+  
   if (dot === 1) {
+    if (!ppuInitDone) ppuInitDone = true;
     renderActiveThisFrame = (PPUMASK & 0x18) !== 0;
     prevVblank = 0;
     CLEAR_VBLANK();
     CLEAR_SPRITE0_HIT();
     CLEAR_SPRITE_OVERFLOW();
+   // paletteIndexFrame.fill(0); // clear our pixel data/ frame else always render last frame during 'blank' screens
   }
 
   if (rendering && dot === 256) incY();
@@ -126,9 +143,8 @@ function preRenderScanline(dot) {
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
   const phase   = (dot - 1) & 7;
 
-  if (rendering && phase === 0 && (inFetch || dot === 1 || dot === 257)) {
-    reloadBGShifters();
-  }
+  // reload only like a visible line would: phase-0 in 9..257 (never 321..336)
+  if (rendering && phase === 0 && dot >= 9 && dot <= 257) reloadBGShifters();
 
   if (rendering && dot >= 2 && dot <= 256) {
     background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
@@ -185,8 +201,9 @@ function preRenderScanline(dot) {
       if (expectedPpuRem >= 3) { expectedCycles++; expectedPpuRem -= 3; }
     }
 
-    // Post completed frame
-    postMessage({ type: 'frame', frame: finishedFrame });
+    // notify main thread that a frame is ready
+    PPU_FRAME_FLAGS = 0x01;
+    //postMessage({ type: 'frame', frame: finishedFrame });
 
     // Backlog-aware drift (CPU cycles)
     const queued = Atomics.load(SHARED.CLOCKS, SYNC_PPU_BUDGET) | 0;
@@ -226,13 +243,23 @@ function preRenderScanline(dot) {
 }
 
 function visibleScanline(dot) {
+  const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
-  const phase   = (dot - 1) & 7;
 
-  // Emit BG only if BG is enabled
+  // Dot 1: load the first tile fetched at 321–336 into the shifters
+  if ((PPUMASK & MASK_BG_ENABLE) && dot === 1) {
+    reloadBGShifters();
+  }
+
+  // Phase-0 reloads every 8 pixels in 9..257
+  if ((PPUMASK & MASK_BG_ENABLE) && phase === 0 && dot >= 9 && dot <= 257) {
+    reloadBGShifters();
+  }
+
+  // Emit + shift pixels 1..256 (shift only if < 256 so 257 is ready for next scanline)
   if ((PPUMASK & MASK_BG_ENABLE) && dot >= 1 && dot <= 256) {
     emitPixelHardwarePalette();
-    if (dot <= 255) {
+    if (dot < 256) {
       background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
       background.bgShiftHi = (background.bgShiftHi << 1) & 0xFFFF;
       background.atShiftLo = (background.atShiftLo << 1) & 0xFFFF;
@@ -240,10 +267,7 @@ function visibleScanline(dot) {
     }
   }
 
-  if ((PPUMASK & MASK_BG_ENABLE) && phase === 0 && (inFetch || dot === 1 || dot === 257)) {
-    reloadBGShifters();
-  }
-
+  // Tile fetches (no reload here)
   if ((PPUMASK & MASK_BG_ENABLE) && inFetch) {
     const v = VRAM_ADDR;
     switch (phase) {
@@ -266,24 +290,28 @@ function visibleScanline(dot) {
       }
     }
   }
-  if (rendering && dot === 256) incY();     // scroll still advances if either BG or SPR is on
+
+  if (rendering && dot === 256) incY();
   if (rendering && dot === 257) copyHoriz();
 }
 
 function postRenderScanline(_) { /* no-op */ }
 
+// Gated first frame (PPU INIT)
 function vblankStartScanline(dot) {
-  if (dot === 1) {
-    SET_VBLANK();
-    if (!prevVblank) {
-      prevVblank = 1;
-      if (PPUCTRL & 0x80) {
-        const marker =
-          ((PPUclock.frame & 0xFFFF) << 16) |
-          ((PPUclock.scanline & 0x1FF) << 7) |
-          (dot & 0x7F);
-        SET_NMI_EDGE(marker);
-      }
+  if (dot !== 1) return;
+  if (!ppuInitDone) return;
+
+  SET_VBLANK();
+  
+  if (!prevVblank) {
+    prevVblank = 1;
+    if (PPUCTRL & 0x80) {
+      const marker =
+        ((PPUclock.frame & 0xFFFF) << 16) |
+        ((PPUclock.scanline & 0x1FF) << 7) |
+        (dot & 0x7F);
+      SET_NMI_EDGE(marker);
     }
   }
 }
@@ -292,11 +320,11 @@ function vblankIdleScanline(_) { /* no-op */ }
 
 // ---- Scanline LUT (0-based; 0 = pre-render) ----
 const scanlineLUT = new Array(262);
-scanlineLUT[0] = preRenderScanline;                  // pre-render (-1)
-for (let i = 1; i <= 240; i++) scanlineLUT[i] = visibleScanline; // visible (0..239)
-scanlineLUT[241] = postRenderScanline;               // post-render (240)
-scanlineLUT[242] = vblankStartScanline;              // vblank start (241)
-for (let i = 243; i <= 261; i++) scanlineLUT[i] = vblankIdleScanline; // vblank idle (242..260)
+for (let i = 0; i <= 239; i++) scanlineLUT[i] = visibleScanline; // visible 0–239
+scanlineLUT[240] = postRenderScanline;                           // post-render
+scanlineLUT[241] = vblankStartScanline;                          // vblank start
+for (let i = 242; i <= 260; i++) scanlineLUT[i] = vblankIdleScanline; // vblank idle
+scanlineLUT[261] = preRenderScanline;                            // pre-render (last)
 
 // ---- Helpers: shifters, pixels, scroll, bus ----
 function reloadBGShifters() {
@@ -326,6 +354,7 @@ function emitPixelHardwarePalette() {
 
   const x = (PPUclock.dot - 1) | 0;
   const y = PPUclock.scanline | 0;
+  if (y >= 240) return; // guard: no pixels on pre-render/vblank
 
   // Left-8 BG mask: force background transparency in x<8 if disabled
   if (x < 8 && (PPUMASK & 0x02) === 0) {
