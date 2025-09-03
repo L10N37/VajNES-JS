@@ -25,9 +25,10 @@ ppuWorker.onmessage = (e) => {
   if (e.data.type === "frame") {
     // proper scanline accurate rendering (scrolling etc.)
     blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
+    // frame processed, PPU will continue (controls 60fps throttle)
+    PPU_FRAME_FLAGS = 0x00;
     //quickRenderNametable0(); // hack
     registerFrameUpdate();
-
     if (perFrameStep) pause();
   }
 };
@@ -65,37 +66,36 @@ function checkInterrupts() {
   }
 }
 
-let __paceCarry = 0;
-let __lastT = 0;
-const NES_CPU_HZ    = 1_789_773;
-const CYCLES_PER_MS = NES_CPU_HZ / 1000;
-const CPU_BATCH     = 8;
-const MAX_CARRY     = 2 * 16.7 * CYCLES_PER_MS;
+// ===== NTSC constants =====
+const CPU_HZ   = 1789773;          // NTSC 2A03
+const FPS      = 60.0988;
+const FRAME_MS = 1000 / FPS;       // ~16.64 ms
 
-window.step = function() {
-
-  // ensure when using BREAKs we turn logging off between steps, only log at the break
+window.step = function () {
   debugLogging = false;
-  
   NoSignalAudio.setEnabled(false);
+  if (!cpuRunning) return 0;
+
+  // DMA first: returns 1 or 2 cycles per call (or 0 if finished)
+  if (DMA.active) {
+    const used = dmaMicroStep();   // calls addExtraCycles() internally
+    return used | 0;
+  }
 
   const code = checkReadOffset(CPUregisters.PC);
-  const execFn = OPCODES[code].func;
-  if (!cpuRunning) return;
-
-  if (!execFn) {
+  const op = OPCODES[code];
+  if (!op || !op.func) {
     const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
     console.warn(`Unknown opcode 0x${codeHex}`);
     console.warn(`at PC=$${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
     pause();
-    return;
+    return 0;
   }
 
-  const _op  = checkReadOffset(CPUregisters.PC + 1);
-  const __op = checkReadOffset(CPUregisters.PC + 2);
+  const _op  = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF);
+  const __op = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF);
   const disasmPc = CPUregisters.PC;
 
-  // Breakpoint logic with step-over
   if (bpStepOnce) {
     bpStepOnce = false;
   } else {
@@ -104,72 +104,108 @@ window.step = function() {
       if (disasmRunning) DISASM.appendRow(buildDisasmRow(code, _op, __op, disasmPc));
       pause();
       breakPending = false;
-      return;
+      return 0;
     }
   }
 
+  // Lock CPU/PPU as per your model
   cpuStall();
-  execFn();
+
+  // Measure cycles consumed by this opcode (handlers call addExtraCycles internally)
+  const before = Atomics.load(SHARED.CLOCKS, 0);   // CPU cycle counter
+  op.func();                                       // executes and calls addExtraCycles(...) multiple times
+  const after  = Atomics.load(SHARED.CLOCKS, 0);
+  const used   = (after - before) | 0;
 
   if (disasmRunning) DISASM.appendRow(buildDisasmRow(code, _op, __op, disasmPc));
 
-  CPUregisters.PC = (CPUregisters.PC + OPCODES[code].pc) & 0xFFFF;
-
-  const cyc = OPCODES[code].cycles | 0;
-  if (cyc) addExtraCycles(cyc);
+  // Advance PC according to the opcode metadata
+  CPUregisters.PC = (CPUregisters.PC + op.pc) & 0xFFFF;
 
   checkInterrupts();
+
+  // Return actual CPU cycles the opcode consumed
+  return used;
 };
 
-window.run = function() {
-  if (cpuRunning) return;
-  cpuRunning = true;
+// ===== NTSC-paced turbo scheduler =====
+const BURST_INSNS = 250;        // inner burst granularity
+const SLICE_MS    = 12;         // responsive cross-browser
+const PAINT_MS    = FRAME_MS;   // ~16.64 ms (NTSC-aligned)
 
-  __lastT = performance.now();
-  __paceCarry = 0;
+let lastPaint     = 0;
+let lastTickTime  = 0;
+let cycleBudget   = 0;
 
-  (function pacedLoop() {
-    if (!cpuRunning) return;
+// Cap runaway budget after throttling (e.g., background tab)
+const MAX_BUDGET_CYCLES = CPU_HZ * 0.20; // ~200ms worth
 
-    const now = performance.now();
-    const dt  = now - __lastT;
-    __lastT   = now;
+const chan = new MessageChannel();
+const post = () => chan.port2.postMessage(0);
 
-    let targetFloat = dt * CYCLES_PER_MS + __paceCarry;
-    let target      = targetFloat | 0;
-    __paceCarry     = targetFloat - target;
+chan.port1.onmessage = function pump() {
+  if (!cpuRunning) return;
 
-    if (target > 0) {
-      const startCycles = Atomics.load(SHARED.CLOCKS, 0);
-      const BUDGET_MS   = Math.max(0.6 * dt, 10);
-      const deadline    = now + BUDGET_MS;
+  // 1) Fund budget from elapsed wall time
+  const now = performance.now();
+  const dt  = Math.max(0, now - (lastTickTime || now));
+  lastTickTime = now;
 
-      let produced = 0;
-      while (produced < target && performance.now() < deadline) {
-        for (let i = 0; i < CPU_BATCH; i++) {
-          if (!cpuRunning) break;   // instant pause check
-          step();
-        }
-        if (!cpuRunning) break;     // bail out mid-frame if paused
-        produced = Atomics.load(SHARED.CLOCKS, 0) - startCycles;
-      }
+  cycleBudget += (CPU_HZ * dt) / 1000;
+  if (cycleBudget > MAX_BUDGET_CYCLES) cycleBudget = MAX_BUDGET_CYCLES;
 
-      if (produced < target) {
-        __paceCarry += (target - produced);
-        if (__paceCarry > MAX_CARRY) __paceCarry = MAX_CARRY;
+  // 2) Spend budget within a micro-slice
+  const sliceStart = now;
+
+  do {
+    for (let i = 0; i < BURST_INSNS; i++) {
+      if (!cpuRunning) break;
+      if (cycleBudget <= 0) break;
+
+      const used = step() | 0;   // returns the REAL cycles (DMA or opcode)
+      if (used > 0) {
+        cycleBudget -= used;
+        if (cycleBudget < 0) cycleBudget = 0;
+      } else {
+        // paused/break/unknown opcode path; avoid spinning
+        break;
       }
     }
 
-    if (cpuRunning) requestAnimationFrame(pacedLoop);
-  })();
+    // Yield if input is pending
+    if (navigator.scheduling?.isInputPending?.({ includeContinuous: true })) break;
+
+  } while (
+    cpuRunning &&
+    cycleBudget > 0 &&
+    (performance.now() - sliceStart) < SLICE_MS
+  );
+
+  // 3) Force a real paint roughly once per NTSC frame
+  const t = performance.now();
+  if (t - lastPaint >= PAINT_MS) {
+    lastPaint = t;
+    requestAnimationFrame(() => { if (cpuRunning) post(); });
+  } else {
+    post();
+  }
 };
 
-  window.pause = function() {
+window.run = function () {
+  if (cpuRunning) return;
+  cpuRunning   = true;
+  lastPaint    = performance.now();
+  lastTickTime = lastPaint;
+  cycleBudget  = 0;
+  post();
+};
+
+window.pause = function () {
   cpuRunning = false;
   if (typeof updateDebugTables === 'function') {
-    try { updateDebugTables(); } catch (e) {}
+    try { updateDebugTables(); } catch (_) {}
   }
-}
+};
 
 // ======================== OPCODE DISPATCH TABLE ========================
 // move pc/cyc directly to opcode handlers eventually to optimise

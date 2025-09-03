@@ -31,7 +31,7 @@ let CPUregisters = {
   Y: 0x00,
   // initialized to 0xFF on power-up or reset?
   // https://www.nesdev.org/wiki/Stack
-  S: 0xFD, // this is confusing, changed to init as $FD
+  S: 0xFF,
   PC: 0x8000, // got sick of loading a dummy rom/ setting in console/ setting in the GUI, lets just start with this
   P: {
       C: 0,    // Carry
@@ -4601,7 +4601,7 @@ function AXA_ABSY() {
   addExtraCycles(1);
 }
 
-function AXA_INDY() { // SHA in Accuracy Coin
+function AXA_INDY() { // SHA in Accuracy Coin 0x93, missing dummy write?
   // C1: opcode
   addExtraCycles(1);
 

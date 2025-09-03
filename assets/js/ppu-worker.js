@@ -73,7 +73,7 @@ let expectedPpuRem = 0;  // carry of PPU%3
 
 let driftBaseline = null;
 let driftFrames = 0, driftSum = 0, maxDrift = 0;
-let syncLogging = true;
+let syncLogging = false;
 
 // ---- Local execution budget ----
 let budgetLocal = 0; // dots available to run immediately

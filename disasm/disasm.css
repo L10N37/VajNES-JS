@@ -1,4 +1,4 @@
-:root {
+:root { /* #fix, overwrites main root, kills background changes */
   --bg: #0a0a0a;
   --fg: #ffb86b;
   --fg-dim: #dca56a;
