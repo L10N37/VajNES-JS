@@ -28,7 +28,8 @@ function renderFrame(){
     blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
     //quickRenderNametable0(); // hack
     registerFrameUpdate();
-    paletteIndexFrame.fill(0);   // ideally pre render scanline dot 1, but this works
+    const bgColor = PALETTE_RAM[0x00]; // always fill 'blank' screen with universal BG colour
+    paletteIndexFrame.fill(bgColor);
     if (perFrameStep) pause();   
 }
 
