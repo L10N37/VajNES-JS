@@ -309,6 +309,10 @@ const OPCODES = [
   ; 0F2F4F6FCFEF 1F3F5F7FDFFF 
   ; 03234363C3E3 13335373D3F3 
   ; 1B3B5B7BDBFB
+
+  above test ROM solved, all nothing to do with this, all this logic to pass accuracy coin "extra 2007 write" ughhhhh, something wrong here
+  shouldn't have to modify the $2007 handler with a hack to pass a rom test, the opcode handler already does dummy write, then actual
+  modified value write.
   */    
   const rmwTable = new Array(256).fill(false);
   [
