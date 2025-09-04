@@ -9,6 +9,15 @@
 importScripts('/assets/js/ppu-worker-setup.js');
 console.debug('[PPU Worker init]');
 
+// Prefetch latches for the *next* scanline (captures during 321–336)
+const nextLine = {
+  t0: { lo:0, hi:0, at:0 },  // first tile of next line
+  t1: { lo:0, hi:0, at:0 },  // second tile of next line
+};
+
+// Debug: fine-pixel adjust ONLY the first visible row (scanline 0). -7..+7
+let PPU_FIRST_ROW_FINE_SKEW = 32;
+
 // ---- Shared indices ----
 const SYNC_CPU_CYCLES   = 0;
 const SYNC_PPU_BUDGET   = 1;
@@ -136,15 +145,13 @@ function preRenderScanline(dot) {
    // paletteIndexFrame.fill(0); // clear our pixel data/ frame else always render last frame during 'blank' screens
   }
 
+  // these align the first visible row
   if (rendering && dot === 256) incY();
   if (rendering && dot === 257) copyHoriz();
   if (rendering && dot >= 280 && dot <= 304) copyVert();
 
-  const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
+  const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 340);
   const phase   = (dot - 1) & 7;
-
-  // reload only like a visible line would: phase-0 in 9..257 (never 321..336)
-  if (rendering && phase === 0 && dot >= 9 && dot <= 257) reloadBGShifters();
 
   if (rendering && dot >= 2 && dot <= 256) {
     background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
@@ -181,7 +188,7 @@ function preRenderScanline(dot) {
         const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineY + 8;
         background.tileHi = ppuBusRead(base);
         BG_tileHi = background.tileHi;
-        incCoarseX();
+        //incCoarseX();
         break;
       }
     }
@@ -246,17 +253,32 @@ function visibleScanline(dot) {
   const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
 
-  // Dot 1: load the first tile fetched at 321–336 into the shifters
   if ((PPUMASK & MASK_BG_ENABLE) && dot === 1) {
-    reloadBGShifters();
+    // --- Load tile #0 (nextLine.t0) into high half of shifters ---
+    background.bgShiftLo = (nextLine.t0.lo & 0xFF) << 8;
+    background.bgShiftHi = (nextLine.t0.hi & 0xFF) << 8;
+
+    const atLoHi0 = (nextLine.t0.at & 0x01) ? 0xFF00 : 0x0000;
+    const atHiHi0 = (nextLine.t0.at & 0x02) ? 0xFF00 : 0x0000;
+    background.atShiftLo = atLoHi0;
+    background.atShiftHi = atHiHi0;
+
+    // --- Load tile #1 (nextLine.t1) into low half of shifters ---
+    background.bgShiftLo |= (nextLine.t1.lo & 0xFF);
+    background.bgShiftHi |= (nextLine.t1.hi & 0xFF);
+
+    const atLo1 = (nextLine.t1.at & 0x01) ? 0x00FF : 0x0000;
+    const atHi1 = (nextLine.t1.at & 0x02) ? 0x00FF : 0x0000;
+    background.atShiftLo |= atLo1;
+    background.atShiftHi |= atHi1;
   }
 
-  // Phase-0 reloads every 8 pixels in 9..257
+  // Phase-0 reloads each tile (9..257)
   if ((PPUMASK & MASK_BG_ENABLE) && phase === 0 && dot >= 9 && dot <= 257) {
-    reloadBGShifters();
+    reloadBGShifters(false);
   }
 
-  // Emit + shift pixels 1..256 (shift only if < 256 so 257 is ready for next scanline)
+  // Emit + shift pixels 1..256 (unchanged)
   if ((PPUMASK & MASK_BG_ENABLE) && dot >= 1 && dot <= 256) {
     emitPixelHardwarePalette();
     if (dot < 256) {
@@ -271,22 +293,45 @@ function visibleScanline(dot) {
   if ((PPUMASK & MASK_BG_ENABLE) && inFetch) {
     const v = VRAM_ADDR;
     switch (phase) {
-      case 1: background.ntByte = ppuBusRead(0x2000 | (v & 0x0FFF)); BG_ntByte = background.ntByte; break;
+      case 1: {
+        background.ntByte = ppuBusRead(0x2000 | (v & 0x0FFF));
+        BG_ntByte = background.ntByte;
+        break;
+      }
       case 3: {
         const attAddr = 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07);
         const shift   = ((v >> 4) & 4) | (v & 2);
         const atBits  = (ppuBusRead(attAddr) >> shift) & 3;
-        background.atByte = atBits & 0x03; BG_atByte = background.atByte; break;
+        background.atByte = atBits & 0x03;
+        BG_atByte = background.atByte;
+        break;
       }
       case 5: {
         const fineY = (v >> 12) & 0x7;
         const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineY;
-        background.tileLo = ppuBusRead(base); BG_tileLo = background.tileLo; break;
+        background.tileLo = ppuBusRead(base) & 0xFF;
+        BG_tileLo = background.tileLo;
+        break;
       }
       case 7: {
         const fineY = (v >> 12) & 0x7;
         const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineY + 8;
-        background.tileHi = ppuBusRead(base); BG_tileHi = background.tileHi; incCoarseX(); break;
+        background.tileHi = (ppuBusRead(base) & 0xFF);
+        BG_tileHi = background.tileHi;
+
+        // Commit completed next-line tiles at the end of each 8-dot fetch
+        if (dot === 328) { // next-line tile #0 is now complete
+          nextLine.t0.lo = background.tileLo;
+          nextLine.t0.hi = background.tileHi;
+          nextLine.t0.at = background.atByte & 0x03;
+        } else if (dot === 336) { // next-line tile #1 is now complete
+          nextLine.t1.lo = background.tileLo;
+          nextLine.t1.hi = background.tileHi;
+          nextLine.t1.at = background.atByte & 0x03;
+        }
+
+        incCoarseX();
+        break;
       }
     }
   }
@@ -327,17 +372,31 @@ for (let i = 242; i <= 260; i++) scanlineLUT[i] = vblankIdleScanline; // vblank 
 scanlineLUT[261] = preRenderScanline;                            // pre-render (last)
 
 // ---- Helpers: shifters, pixels, scroll, bus ----
-function reloadBGShifters() {
-// Real hardware: reload happens at phase 0 *after* the last pixel of the previous tile
-// So the first 8 pixels after dot 1 come from whatever junk was in the shifters
-background.bgShiftLo = (background.bgShiftLo & 0xFF00) | (background.tileLo & 0xFF);
-background.bgShiftHi = (background.bgShiftHi & 0xFF00) | (background.tileHi & 0xFF);
+function reloadBGShifters(startOfScanline = false) {
+  if (startOfScanline) {
+    // Preload freshly fetched tile into the HIGH byte so bit15.. maps to the new tile immediately
+    background.bgShiftLo = (background.tileLo & 0xFF) << 8;
+    background.bgShiftHi = (background.tileHi & 0xFF) << 8;
 
-const atLo = (background.atByte & 0x01) ? 0xFF : 0x00;
-const atHi = (background.atByte & 0x02) ? 0xFF : 0x00;
-background.atShiftLo = (background.atShiftLo & 0xFF00) | atLo;
-background.atShiftHi = (background.atShiftHi & 0xFF00) | atHi;
+    const atLoHi = (background.atByte & 0x01) ? 0xFF00 : 0x0000;
+    const atHiHi = (background.atByte & 0x02) ? 0xFF00 : 0x0000;
+    background.atShiftLo = atLoHi;
+    background.atShiftHi = atHiHi;
+  } else {
+    // Normal phase-0 reloads every 8 pixels
+    background.bgShiftLo = (background.bgShiftLo & 0xFF00) | (background.tileLo & 0xFF);
+    background.bgShiftHi = (background.bgShiftHi & 0xFF00) | (background.tileHi & 0xFF);
+
+    const atLo = (background.atByte & 0x01) ? 0x00FF : 0x0000;
+    const atHi = (background.atByte & 0x02) ? 0x00FF : 0x0000;
+    background.atShiftLo = (background.atShiftLo & 0xFF00) | atLo;
+    background.atShiftHi = (background.atShiftHi & 0xFF00) | atHi;
+  }
 }
+
+// debug horizontal offset in pixels
+let BG_DEBUG_X_OFFSET = 0;     // shift frame left (negative number of dots) or right (positive)
+let BG_DEBUG_Y_OFFSET = 0;     // shift frame up or down a number of scanlines
 
 function emitPixelHardwarePalette() {
   const fx  = (fineX & 7);
@@ -348,35 +407,36 @@ function emitPixelHardwarePalette() {
   const a0 = (background.atShiftLo >> bit) & 1;
   const a1 = (background.atShiftHi >> bit) & 1;
 
-  // 2-bit pattern and attribute
-  let color2 = (p1 << 1) | p0;      // 0..3
-  const attr2  = (a1 << 1) | a0;    // 0..3
+  let color2 = (p1 << 1) | p0;
+  const attr2 = (a1 << 1) | a0;
 
-  const x = (PPUclock.dot - 1) | 0;
-  const y = PPUclock.scanline | 0;
-  if (y >= 240) return; // guard: no pixels on pre-render/vblank
+  // --- output coordinates with debug offsets ---
+  let x = (PPUclock.dot - 1) + BG_DEBUG_X_OFFSET;
+  let y = (PPUclock.scanline) - BG_DEBUG_Y_OFFSET;
 
-  // Left-8 BG mask: force background transparency in x<8 if disabled
-  if (x < 8 && (PPUMASK & 0x02) === 0) {
-    color2 = 0;
+  // wrap-around guard
+  if (x < 0 || x >= NES_W) return;
+  if (y < 0 || y >= NES_H) return;
+
+  // left-8 BG mask
+  if (x < 8 && (PPUMASK & MASK_BG_SHOW_LEFT8) === 0) {
+      color2 = 0; // force backdrop
   }
 
-  // Resolve palette index (6-bit)
+  // palette lookup
   let palIndex6;
   if (color2 === 0) {
-    // Use universal background color exactly from $3F00
+    // universal background color from $3F00
     palIndex6 = PALETTE_RAM[0] & 0x3F;
   } else {
-    const palLow5 = ((attr2 << 2) | color2) & 0x1F; // 1..15 within subpalette
+    const palLow5 = ((attr2 << 2) | color2) & 0x1F;
     palIndex6 = ppuBusRead(0x3F00 | palLow5) & 0x3F;
   }
 
-  // Optional: greyscale bit (PPUMASK bit 0)
+  // greyscale bit
   if (PPUMASK & 0x01) palIndex6 &= 0x30;
 
-  if (x >= 0 && x < NES_W && y >= 0 && y < NES_H) {
-    paletteIndexFrame[y * NES_W + x] = palIndex6;
-  }
+  paletteIndexFrame[y * NES_W + x] = palIndex6;
 }
 
 function incCoarseX() {
