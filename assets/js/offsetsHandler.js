@@ -8,8 +8,6 @@ breakPending = false;
 // writeToggle is an internal PPU latch but implemented here on CPU core, globalThis for logdump
 globalThis.writeToggle = 0;
 
-let isDummyWrite = true;
-
 // Tracks the two writes of a single RMW $2007
 let rmw2007Armed = false;     // false → first write will arm, second will fire
 let rmw2007BaseAddr = 0;      // latch original v (before any $2007 increments)
@@ -65,19 +63,28 @@ function checkReadOffset(address) {
         // high 3 from status, low 5 from previous PPU bus
         const ret = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
 
-        // side effects
-        PPUSTATUS  &= ~0x80; // clear VBlank
-        writeToggle = 0;     // reset $2005/$2006 latch
+        // Side effects (immediate)
+        const wasVBlank = (stat & 0x80) !== 0;
 
-        ppuOpenBus = ret;         // bus now holds what was read
-        cpuOpenBus = ret;         // optional mirror
+        // If we read on the same cycle as vblank set, ret may have bit7=1.
+        // In all cases, reading clears vblank immediately and suppresses NMI this frame.
+        PPUSTATUS &= ~0x80;                               // clear VBlank
+        Atomics.store(SHARED.SYNC, 5, 0);                 // SYNC_VBLANK_FLAG mirror -> 0
+        writeToggle = 0;                                  // reset $2005/$2006 latch
 
-        if (debugLogging) {
-          console.debug(
-            `[R $2002 PPUSTATUS] ret=$${ret.toString(16)} ` +
-            `ppuOBefore=$${obBefore.toString(16)} ppuOAfter=$${ppuOpenBus.toString(16)} toggle->0`
-          );
+        // Open-bus update
+        ppuOpenBus = ret;
+        cpuOpenBus = ret;
+
+        // Suppress NMI if read returned bit7=1 (same-cycle read during set)
+        if (ret & 0x80) {
+          Atomics.store(SHARED.SYNC, 6, 0);               // SYNC_NMI_EDGE = 0
         }
+
+        if (wasVBlank) {
+          console.debug("2002 Vblank clear:", cpuCycles);
+        }
+
         return ret;
       }
 

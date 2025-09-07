@@ -5,7 +5,7 @@
 // - Drift = cpuCycles - expectedCycles - floor(backlogPPU/3); backlogPPU = local + queued
 // - If drift > 0 at frame end, immediately grant drift*3 PPU dots into local budget
 // - Logging uses baseline offset for stable green on static scenes
-
+//    #drift control now disabled
 importScripts('/assets/js/ppu-worker-setup.js');
 console.debug('[PPU Worker init]');
 
@@ -16,7 +16,9 @@ const nextLine = {
 };
 
 // Debug: fine-pixel adjust ONLY the first visible row (scanline 0). -7..+7
-let PPU_FIRST_ROW_FINE_SKEW = 32;
+let PPU_FIRST_ROW_FINE_SKEW = 32; //delete
+
+let budgetCarry = 0;
 
 // ---- Shared indices ----
 const SYNC_CPU_CYCLES   = 0;
@@ -86,8 +88,13 @@ let driftBaseline = null;
 let driftFrames = 0, driftSum = 0, maxDrift = 0;
 let syncLogging = false;
 
+let driftCPUset   = 0;
+let driftCPUclear = 0;
+let driftCpuAtVblankSet = 0;
+
+
 // ---- Local execution budget ----
-let budgetLocal = 0; // dots available to run immediately
+let budgetLocal = 0; // dots available to run immediatelyz
 
 // ---- Tick ----
 function ppuTick() {
@@ -132,17 +139,27 @@ function ppuTick() {
   STORE_CURRENT_FRAME(PPUclock.frame);
 }
 
+// carries remaining budget into a worker global, clears budget so CPU can execute a step
+// and give the chance for the CPU to instantly *see* what the PPU has done
+function timingCritical(){
+  budgetCarry = (budgetLocal - 1) | 0;   // carry remainder after this dot
+  if (budgetCarry < 0) budgetCarry = 0;
+  budgetLocal = 0;                       // forces immediate CPU turn
+}
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
   
   if (dot === 1) {
+    CLEAR_VBLANK();
+    console.debug("Vblank Clear:", cpuCycles, "Δ", cpuCycles - driftCPUset);
+    driftCPUclear = cpuCycles;
+    timingCritical();
+
     if (!ppuInitDone) ppuInitDone = true;
     renderActiveThisFrame = (PPUMASK & 0x18) !== 0;
     prevVblank = 0;
-    CLEAR_VBLANK();
     CLEAR_SPRITE0_HIT();
     CLEAR_SPRITE_OVERFLOW();
-   // paletteIndexFrame.fill(0); // clear our pixel data/ frame else always render last frame during 'blank' screens
   }
 
   // these align the first visible row
@@ -150,7 +167,7 @@ function preRenderScanline(dot) {
   if (rendering && dot === 257) copyHoriz();
   if (rendering && dot >= 280 && dot <= 304) copyVert();
 
-  const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 340);
+  const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
   const phase   = (dot - 1) & 7;
 
   if (rendering && dot >= 2 && dot <= 256) {
@@ -188,7 +205,18 @@ function preRenderScanline(dot) {
         const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineY + 8;
         background.tileHi = ppuBusRead(base);
         BG_tileHi = background.tileHi;
-        //incCoarseX();
+
+        if (dot === 328) {
+          nextLine.t0.lo = background.tileLo;
+          nextLine.t0.hi = background.tileHi;
+          nextLine.t0.at = background.atByte & 0x03;
+        } else if (dot === 336) {
+          nextLine.t1.lo = background.tileLo;
+          nextLine.t1.hi = background.tileHi;
+          nextLine.t1.at = background.atByte & 0x03;
+        }
+
+        incCoarseX();
         break;
       }
     }
@@ -210,8 +238,9 @@ function preRenderScanline(dot) {
 
     // notify main thread that a frame is ready
     PPU_FRAME_FLAGS = 0x01;
-    //postMessage({ type: 'frame', frame: finishedFrame });
+    timingCritical();
 
+    /*
     // Backlog-aware drift (CPU cycles)
     const queued = Atomics.load(SHARED.CLOCKS, SYNC_PPU_BUDGET) | 0;
     const backlogPPU = (budgetLocal + queued) | 0;
@@ -222,9 +251,15 @@ function preRenderScanline(dot) {
     if (rawDriftCPU > 0) {
       budgetLocal += (rawDriftCPU * 3) | 0;
     }
+    */
 
     // Logging (baseline keeps stable "green" on static scenes)
     if (finishedFrame > 0 && syncLogging) {
+      const queued = Atomics.load(SHARED.CLOCKS, SYNC_PPU_BUDGET) | 0;
+      const backlogPPU = (budgetLocal + queued) | 0;
+      const backlogCPU = (backlogPPU / 3) | 0;
+      const rawDriftCPU = (cpuCycles - expectedCycles - backlogCPU) | 0;
+
       const frameType = PPUclock.oddFrame ? (shortPre ? 'ODD(render, short pre)' : 'ODD(idle)') : 'EVEN';
       if (driftBaseline === null) driftBaseline = rawDriftCPU;
       const drift = rawDriftCPU - driftBaseline;
@@ -348,7 +383,10 @@ function vblankStartScanline(dot) {
   if (!ppuInitDone) return;
 
   SET_VBLANK();
-  
+  console.debug("Vblank Set", cpuCycles);
+  driftCPUset = cpuCycles;
+  timingCritical(); // CPU can read $2002 here to cancel NMI
+
   if (!prevVblank) {
     prevVblank = 1;
     if (PPUCTRL & 0x80) {
@@ -357,6 +395,7 @@ function vblankStartScanline(dot) {
         ((PPUclock.scanline & 0x1FF) << 7) |
         (dot & 0x7F);
       SET_NMI_EDGE(marker);
+      timingCritical();
     }
   }
 }
@@ -487,8 +526,14 @@ function ppuBusRead(addr) {
 // ---- Main loop (drains shared queue to local; local is visible to frame-end logic) ----
 function startPPULoop() {
   while (true) {
-    const pulled = Atomics.exchange(SHARED.CLOCKS, SYNC_PPU_BUDGET, 0) | 0;
+    if (budgetCarry > 0) { budgetLocal += budgetCarry; budgetCarry = 0; }
+    const pulled = Atomics.exchange(SHARED.CLOCKS, SYNC_PPU_BUDGET, 0)|0;
     if (pulled) budgetLocal += pulled;
+
+    if (budgetCarry > 0) {
+      budgetLocal += budgetCarry;
+      budgetCarry = 0;
+    }
 
     if (budgetLocal <= 0) continue;
 

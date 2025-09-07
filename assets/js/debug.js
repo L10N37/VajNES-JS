@@ -8,7 +8,6 @@ let disasmRunning = false;
 let perFrameStep = false;
 let nmiCheckCounter = 0;
 let nmiServiceCounter = 0;
-let nmiPendingLocal=false;
 
 // NTSC Resolution
 const NES_W = 256;
@@ -49,21 +48,11 @@ function checkInterrupts() {
 
     nmiCheckCounter = 0;
 
-    nmiPendingLocal = true;
+    nmiPending = true;
     Atomics.store(SHARED.SYNC, 5, 1);  // shadow flag
     Atomics.store(SHARED.SYNC, 6, 0);  // clear edge latch
   }
 
-  // ---- handle interrupts ----
-  if (nmiPendingLocal) {
-    serviceNMI();   // adds +7 via addExtraCycles()
-    nmiPendingLocal = false;
-  }
-  // temp IRQ block
-  let irqPending = false;
-  if (!CPUregisters.P.I && irqPending) {
-    serviceIRQ();   // adds +7 via addExtraCycles()
-  }
 }
 
 // ===== NTSC constants =====
@@ -115,8 +104,7 @@ window.step = function () {
     }
   }
 
-  // Lock CPU/PPU as per your model
-  cpuStall();
+  cpuStall(); // Critical !
 
   // Measure cycles consumed by this opcode (handlers call addExtraCycles internally)
   const before = Atomics.load(SHARED.CLOCKS, 0);   // CPU cycle counter
@@ -130,7 +118,22 @@ window.step = function () {
   // Advance PC according to the opcode metadata
   CPUregisters.PC = (CPUregisters.PC + op.pc) & 0xFFFF;
 
-  checkInterrupts();
+  //=================================================
+  // ---- handle interrupts ----
+  if (nmiPending) {
+    serviceNMI();   // adds +7 via addExtraCycles()
+    nmiPending = false;
+  }
+  // temp IRQ block
+  let irqPending = false;
+  if (!CPUregisters.P.I && irqPending) {
+    serviceIRQ();   // adds +7 via addExtraCycles()
+  }
+  checkInterrupts(); 
+  // set the flag here, check if NMI is due NEXT step
+  // this order is specifically coded to pass NMI control tests
+  // i.e. do not call checkInterrupts prior to handling of interrupts
+  //=================================================
 
   // Return actual CPU cycles the opcode consumed
   return used;
