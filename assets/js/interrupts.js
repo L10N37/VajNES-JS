@@ -8,12 +8,12 @@ function serviceNMI() {
   // Push PCH
   checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), (pc >> 8) & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  addExtraCycles(1);
+  addCycles(1);
 
   // Push PCL
   checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), pc & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  addExtraCycles(1);
+  addCycles(1);
 
   // Build status byte: U=1, B=0 → 0b00100000
   let p = 0b00100000;
@@ -27,21 +27,21 @@ function serviceNMI() {
   // Push P
   checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), p & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  addExtraCycles(1);
+  addCycles(1);
 
   // Set I
   CPUregisters.P.I = 1;
-  addExtraCycles(1);
+  addCycles(1);
 
   // Vector fetch
   const lo = checkReadOffset(0xFFFA);
-  addExtraCycles(1);
+  addCycles(1);
   const hi = checkReadOffset(0xFFFB);
-  addExtraCycles(1);
+  addCycles(1);
 
   // Set PC
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
-  addExtraCycles(1);
+  addCycles(1);
 }
 
 function serviceIRQ() {
@@ -50,12 +50,12 @@ function serviceIRQ() {
   // Push PCH
   checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), (pc >> 8) & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  addExtraCycles(1);
+  addCycles(1);
 
   // Push PCL
   checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), pc & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  addExtraCycles(1);
+  addCycles(1);
 
   // U=1, B=0
   let p = 0b00100000;
@@ -69,76 +69,88 @@ function serviceIRQ() {
   // Push P
   checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), p & 0xFF);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  addExtraCycles(1);
+  addCycles(1);
 
   // Set I
   CPUregisters.P.I = 1;
-  addExtraCycles(1);
+  addCycles(1);
 
   // Vector fetch
   const lo = checkReadOffset(0xFFFE);
-  addExtraCycles(1);
+  addCycles(1);
   const hi = checkReadOffset(0xFFFF);
-  addExtraCycles(1);
+  addCycles(1);
 
   // Set PC
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
-  addExtraCycles(1);
+  addCycles(1);
 }
 
 // not an interrupt, get it TF out of the way for now #relocate
+
 // ===== OAM DMA ($4014) =====
 // Copies 256 bytes from CPU RAM page (value << 8) into PPU OAM.
-// Adds 513 cycles if CPU is on even cycle, 514 if odd.
-// ----- DMA state -----
+// Adds 513 cycles if CPU starts on odd cycle, 514 if even.
+// Microstepped: 1 CPU cycle per call (PPU +3 each).
+
 const DMA = {
   active: false,
-  addr:   0,   // source address (page << 8)
-  index:  0,   // 0..255
-  pad:    0,   // 1 or 2 CPU-cycle alignment pad (odd->1, even->2)
+  page:   0x00,    // high byte written to $4014
+  addr:   0x0000,  // page<<8 | index
+  index:  0,       // 0..255
+  tmp:    0,       // latched byte (read phase)
+  phase:  0,       // 0=read phase, 1=write phase
+  pad:    0        // 1 or 2 initial alignment cycles
 };
 
 function dmaTransfer(value) {
-  const curCycles = Atomics.load(SHARED.CLOCKS, 0);
+  const cur = Atomics.load(SHARED.CLOCKS, 0) | 0;
 
   DMA.active = true;
-  DMA.addr   = (value & 0xFF) << 8;
+  DMA.page   = value & 0xFF;
+  DMA.addr   = (DMA.page << 8) | 0;
   DMA.index  = 0;
-  // Parity rule: even start => 514 total (pad=2), odd start => 513 total (pad=1)
-  DMA.pad    = (curCycles & 1) ? 1 : 2;
+  DMA.tmp    = 0;
+  DMA.phase  = 0;
 
-  // We will repeatedly stall per micro-step to keep CPU/PPU in lockstep.
-  cpuStall();
+  // If current CPU cycle is odd -> 1-cycle pad (total 513), else 2-cycle pad (total 514)
+  DMA.pad = (cur & 1) ? 1 : 2;
 }
 
-// Advance DMA by one micro-step; return CPU cycles consumed (1 or 2)
-// Call this at the TOP of `step()` when DMA is active.
+// Call at TOP of step(); returns cycles spent this microstep (0 or 1)
 function dmaMicroStep() {
-  // 1) Burn the initial 1/2-cycle pad first
+  if (!DMA.active) return 0;
+
+  // Initial alignment pad
   if (DMA.pad > 0) {
     DMA.pad -= 1;
-    addExtraCycles(1);  // adds 1 CPU cycle (PPU +3 handled inside)
-    // Keep CPU/PPU step-locked: stall until PPU burns the tick
-    cpuStall();
+    addCycles(1);              // exactly 1 CPU cycle (PPU +3 inside)
     return 1;
   }
 
-  // 2) Transfer next byte (2 CPU cycles per byte)
+  // Transfer: one byte = 2 microsteps (read then write), each 1 CPU cycle
   if (DMA.index < 256) {
-    const data = cpuRead(DMA.addr);
-    // Write to OAM; if your pipeline expects $2004 writes, use cpuWrite(0x2004, data)
-    OAM[DMA.index] = data;
+    if (DMA.phase === 0) {
+      // READ phase (1 cycle)
+      DMA.tmp   = cpuRead(DMA.addr);
+      DMA.phase = 1;
+      addCycles(1);
+      return 1;
+    } else {
+      // WRITE phase (1 cycle)
+      // If you emulate $2004 semantics elsewhere, prefer: cpuWrite(0x2004, DMA.tmp)
+      OAM[DMA.index] = DMA.tmp & 0xFF;
 
-    DMA.addr  = (DMA.addr + 1) & 0xFFFF;
-    DMA.index += 1;
+      DMA.addr  = (DMA.addr + 1) & 0xFFFF;
+      DMA.index += 1;
+      DMA.phase  = 0;
 
-    addExtraCycles(2);  // adds 2 CPU cycles (PPU +6 inside)
-    cpuStall();         // let PPU burn those 2*3 ticks before continuing
-    return 2;
+      addCycles(1);
+      return 1;
+    }
   }
 
-  // 3) Done: unstall and clear DMA
+  // Done
   DMA.active = false;
-  if (typeof cpuUnstall === 'function') cpuUnstall();
   return 0;
 }

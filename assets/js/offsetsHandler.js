@@ -286,7 +286,7 @@ function checkWriteOffset(address, value) {
         if (currentIsRMW) {
           if (!rmw2007Armed) { rmw2007Armed = true; rmw2007BaseAddr = v; }
           else {
-            addExtraCycles(1);
+           // addCycles(1); // does this quirk consume a tick? i mean, it should
             if (rmw2007BaseAddr >= 0x2000 && rmw2007BaseAddr < 0x3F00) {
               const extraAddr = ((rmw2007BaseAddr & 0xFF00) | (value & 0xFF)) & 0x3FFF;
               if (extraAddr >= 0x2000 && extraAddr < 0x3F00) {

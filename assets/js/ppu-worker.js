@@ -2,10 +2,6 @@
 // Notes:
 // - 341 dots/scanline (0..340), 262 scanlines/frame (0..261)
 // - Odd-frame short pre-render: consume 1 dot (skip work at pre-render dot 0)
-// - Drift = cpuCycles - expectedCycles - floor(backlogPPU/3); backlogPPU = local + queued
-// - If drift > 0 at frame end, immediately grant drift*3 PPU dots into local budget
-// - Logging uses baseline offset for stable green on static scenes
-//    #drift control now disabled
 importScripts('/assets/js/ppu-worker-setup.js');
 console.debug('[PPU Worker init]');
 
@@ -17,8 +13,6 @@ const nextLine = {
 
 // Debug: fine-pixel adjust ONLY the first visible row (scanline 0). -7..+7
 let PPU_FIRST_ROW_FINE_SKEW = 32; //delete
-
-let budgetCarry = 0;
 
 // ---- Shared indices ----
 const SYNC_CPU_CYCLES   = 0;
@@ -81,20 +75,10 @@ function t_set(v) { v &= 0x7FFF; t_lo = v & 0xFF; t_hi = (v >> 8) & 0xFF; }
 let prevVblank = 0;
 let renderActiveThisFrame = false;
 
-let expectedCycles = 0;  // expected CPU cycles to date
-let expectedPpuRem = 0;  // carry of PPU%3
-
-let driftBaseline = null;
-let driftFrames = 0, driftSum = 0, maxDrift = 0;
-let syncLogging = false;
-
-let driftCPUset   = 0;
-let driftCPUclear = 0;
-let driftCpuAtVblankSet = 0;
-
-
 // ---- Local execution budget ----
-let budgetLocal = 0; // dots available to run immediatelyz
+let budgetLocal = 0; // dots available to run immediately
+
+let VBL_lastSetCPU = 0;
 
 // ---- Tick ----
 function ppuTick() {
@@ -111,49 +95,43 @@ function ppuTick() {
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
 
   // Advance dot/scanline
-  if (PPUclock.dot === DOTS_PER_SCANLINE - 1) {   // 340 → wrap
+  if (PPUclock.dot === DOTS_PER_SCANLINE - 1) {
     PPUclock.dot = 0;
 
     if (PPUclock.scanline === 260) {
-      // End of vblank idle → pre-render (261)
       PPUclock.scanline = 261;
-
     } else if (PPUclock.scanline === 261) {
-      // End of pre-render → start new frame at visible 0
       PPUclock.scanline = 0;
       PPUclock.frame++;
       PPUclock.oddFrame = !PPUclock.oddFrame;
-
     } else {
-      // Visible/post/vblank start → next line
       PPUclock.scanline++;
     }
-
   } else {
     PPUclock.dot++;
   }
 
-  // Publish
+  // Publish new position
   STORE_CURRENT_SCANLINE(PPUclock.scanline);
   STORE_CURRENT_DOT(PPUclock.dot);
   STORE_CURRENT_FRAME(PPUclock.frame);
 }
 
-// carries remaining budget into a worker global, clears budget so CPU can execute a step
-// and give the chance for the CPU to instantly *see* what the PPU has done
-function timingCritical(){
-  budgetCarry = (budgetLocal - 1) | 0;   // carry remainder after this dot
-  if (budgetCarry < 0) budgetCarry = 0;
-  budgetLocal = 0;                       // forces immediate CPU turn
-}
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
-  
   if (dot === 1) {
     CLEAR_VBLANK();
-    console.debug("Vblank Clear:", cpuCycles, "Δ", cpuCycles - driftCPUset);
-    driftCPUclear = cpuCycles;
-    timingCritical();
+
+    const delta    = (cpuCycles - VBL_lastSetCPU) | 0;
+    const shortPre = (PPUclock.oddFrame && (PPUMASK & 0x18) !== 0) ? 1 : 0;
+    const expDots  = 20 * 341 - shortPre;
+    const expLo    = Math.floor(expDots / 3) - 2;
+    const expHi    = Math.ceil(expDots / 3) + 2;
+    const ok       = (delta >= expLo && delta <= expHi);
+    // generally 2273/2274 depending on odd or even frame
+    console.debug(
+      `Vblank Clear: ${cpuCycles} Δ ${delta} ${ok ? 'PASS' : 'FAIL'} [exp ${expLo}..${expHi}]`
+    );
 
     if (!ppuInitDone) ppuInitDone = true;
     renderActiveThisFrame = (PPUMASK & 0x18) !== 0;
@@ -162,7 +140,6 @@ function preRenderScanline(dot) {
     CLEAR_SPRITE_OVERFLOW();
   }
 
-  // these align the first visible row
   if (rendering && dot === 256) incY();
   if (rendering && dot === 257) copyHoriz();
   if (rendering && dot >= 280 && dot <= 304) copyVert();
@@ -195,14 +172,16 @@ function preRenderScanline(dot) {
       }
       case 5: {
         const fineY = (v >> 12) & 0x7;
-        const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineY;
+        const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) +
+                      ((background.ntByte & 0xFF) << 4) + fineY;
         background.tileLo = ppuBusRead(base);
         BG_tileLo = background.tileLo;
         break;
       }
       case 7: {
         const fineY = (v >> 12) & 0x7;
-        const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineY + 8;
+        const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) +
+                      ((background.ntByte & 0xFF) << 4) + fineY + 8;
         background.tileHi = ppuBusRead(base);
         BG_tileHi = background.tileHi;
 
@@ -222,65 +201,8 @@ function preRenderScanline(dot) {
     }
   }
 
-  // Frame end
   if (dot === 340) {
-
-    const finishedFrame = PPUclock.frame;
-    const shortPre      = (PPUclock.oddFrame && renderActiveThisFrame);
-
-    // Expected CPU cycles += PPU-per-frame / 3 with remainder carry
-    if (finishedFrame > 0) {
-      const ppuThis = 89342 - (shortPre ? 1 : 0);
-      expectedCycles += (ppuThis / 3) | 0;     // 29780
-      expectedPpuRem += (ppuThis % 3);         // +1/+2
-      if (expectedPpuRem >= 3) { expectedCycles++; expectedPpuRem -= 3; }
-    }
-
-    // notify main thread that a frame is ready
     PPU_FRAME_FLAGS = 0x01;
-    timingCritical();
-
-    /*
-    // Backlog-aware drift (CPU cycles)
-    const queued = Atomics.load(SHARED.CLOCKS, SYNC_PPU_BUDGET) | 0;
-    const backlogPPU = (budgetLocal + queued) | 0;
-    const backlogCPU = (backlogPPU / 3) | 0; // floor
-    const rawDriftCPU = (cpuCycles - expectedCycles - backlogCPU) | 0;
-
-    // Immediate self-correction: grant exact deficit (in PPU dots)
-    if (rawDriftCPU > 0) {
-      budgetLocal += (rawDriftCPU * 3) | 0;
-    }
-    */
-
-    // Logging (baseline keeps stable "green" on static scenes)
-    if (finishedFrame > 0 && syncLogging) {
-      const queued = Atomics.load(SHARED.CLOCKS, SYNC_PPU_BUDGET) | 0;
-      const backlogPPU = (budgetLocal + queued) | 0;
-      const backlogCPU = (backlogPPU / 3) | 0;
-      const rawDriftCPU = (cpuCycles - expectedCycles - backlogCPU) | 0;
-
-      const frameType = PPUclock.oddFrame ? (shortPre ? 'ODD(render, short pre)' : 'ODD(idle)') : 'EVEN';
-      if (driftBaseline === null) driftBaseline = rawDriftCPU;
-      const drift = rawDriftCPU - driftBaseline;
-
-      driftFrames++;
-      driftSum += drift;
-      if (Math.abs(drift) > Math.abs(maxDrift)) maxDrift = drift;
-      const avg = Math.round(driftSum / driftFrames);
-      const warn = Math.abs(drift) > 130;
-
-      const color = warn
-        ? 'color:red;font-weight:bold;'
-        : (frameType.startsWith('ODD(render') ? 'color:lightgreen;font-weight:bold;' : 'color:limegreen;font-weight:bold;');
-
-      const msg =
-        `[SYNC ${warn ? 'WARN' : 'OK'}] ` +
-        `Frame=${finishedFrame} (${frameType}) | cpuCycles=${cpuCycles} | ` +
-        `expected=${expectedCycles} | backlogPPU=${backlogPPU} | ` +
-        `drift=${drift} | max=${maxDrift} | avg=${avg}`;
-      console[warn ? 'warn' : 'debug'](`%c${msg}`, color);
-    }
   }
 }
 
@@ -289,7 +211,6 @@ function visibleScanline(dot) {
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
 
   if ((PPUMASK & MASK_BG_ENABLE) && dot === 1) {
-    // --- Load tile #0 (nextLine.t0) into high half of shifters ---
     background.bgShiftLo = (nextLine.t0.lo & 0xFF) << 8;
     background.bgShiftHi = (nextLine.t0.hi & 0xFF) << 8;
 
@@ -298,7 +219,6 @@ function visibleScanline(dot) {
     background.atShiftLo = atLoHi0;
     background.atShiftHi = atHiHi0;
 
-    // --- Load tile #1 (nextLine.t1) into low half of shifters ---
     background.bgShiftLo |= (nextLine.t1.lo & 0xFF);
     background.bgShiftHi |= (nextLine.t1.hi & 0xFF);
 
@@ -308,12 +228,10 @@ function visibleScanline(dot) {
     background.atShiftHi |= atHi1;
   }
 
-  // Phase-0 reloads each tile (9..257)
   if ((PPUMASK & MASK_BG_ENABLE) && phase === 0 && dot >= 9 && dot <= 257) {
     reloadBGShifters(false);
   }
 
-  // Emit + shift pixels 1..256 (unchanged)
   if ((PPUMASK & MASK_BG_ENABLE) && dot >= 1 && dot <= 256) {
     emitPixelHardwarePalette();
     if (dot < 256) {
@@ -324,7 +242,6 @@ function visibleScanline(dot) {
     }
   }
 
-  // Tile fetches (no reload here)
   if ((PPUMASK & MASK_BG_ENABLE) && inFetch) {
     const v = VRAM_ADDR;
     switch (phase) {
@@ -354,12 +271,11 @@ function visibleScanline(dot) {
         background.tileHi = (ppuBusRead(base) & 0xFF);
         BG_tileHi = background.tileHi;
 
-        // Commit completed next-line tiles at the end of each 8-dot fetch
-        if (dot === 328) { // next-line tile #0 is now complete
+        if (dot === 328) {
           nextLine.t0.lo = background.tileLo;
           nextLine.t0.hi = background.tileHi;
           nextLine.t0.at = background.atByte & 0x03;
-        } else if (dot === 336) { // next-line tile #1 is now complete
+        } else if (dot === 336) {
           nextLine.t1.lo = background.tileLo;
           nextLine.t1.hi = background.tileHi;
           nextLine.t1.at = background.atByte & 0x03;
@@ -375,7 +291,7 @@ function visibleScanline(dot) {
   if (rendering && dot === 257) copyHoriz();
 }
 
-function postRenderScanline(_) { /* no-op */ }
+function postRenderScanline(dot) { return; }
 
 // Gated first frame (PPU INIT)
 function vblankStartScanline(dot) {
@@ -384,8 +300,7 @@ function vblankStartScanline(dot) {
 
   SET_VBLANK();
   console.debug("Vblank Set", cpuCycles);
-  driftCPUset = cpuCycles;
-  timingCritical(); // CPU can read $2002 here to cancel NMI
+  VBL_lastSetCPU = cpuCycles;
 
   if (!prevVblank) {
     prevVblank = 1;
@@ -395,7 +310,6 @@ function vblankStartScanline(dot) {
         ((PPUclock.scanline & 0x1FF) << 7) |
         (dot & 0x7F);
       SET_NMI_EDGE(marker);
-      timingCritical();
     }
   }
 }
@@ -413,7 +327,6 @@ scanlineLUT[261] = preRenderScanline;                            // pre-render (
 // ---- Helpers: shifters, pixels, scroll, bus ----
 function reloadBGShifters(startOfScanline = false) {
   if (startOfScanline) {
-    // Preload freshly fetched tile into the HIGH byte so bit15.. maps to the new tile immediately
     background.bgShiftLo = (background.tileLo & 0xFF) << 8;
     background.bgShiftHi = (background.tileHi & 0xFF) << 8;
 
@@ -422,7 +335,6 @@ function reloadBGShifters(startOfScanline = false) {
     background.atShiftLo = atLoHi;
     background.atShiftHi = atHiHi;
   } else {
-    // Normal phase-0 reloads every 8 pixels
     background.bgShiftLo = (background.bgShiftLo & 0xFF00) | (background.tileLo & 0xFF);
     background.bgShiftHi = (background.bgShiftHi & 0xFF00) | (background.tileHi & 0xFF);
 
@@ -449,30 +361,24 @@ function emitPixelHardwarePalette() {
   let color2 = (p1 << 1) | p0;
   const attr2 = (a1 << 1) | a0;
 
-  // --- output coordinates with debug offsets ---
   let x = (PPUclock.dot - 1) + BG_DEBUG_X_OFFSET;
   let y = (PPUclock.scanline) - BG_DEBUG_Y_OFFSET;
 
-  // wrap-around guard
   if (x < 0 || x >= NES_W) return;
   if (y < 0 || y >= NES_H) return;
 
-  // left-8 BG mask
   if (x < 8 && (PPUMASK & MASK_BG_SHOW_LEFT8) === 0) {
-      color2 = 0; // force backdrop
+      color2 = 0;
   }
 
-  // palette lookup
   let palIndex6;
   if (color2 === 0) {
-    // universal background color from $3F00
     palIndex6 = PALETTE_RAM[0] & 0x3F;
   } else {
     const palLow5 = ((attr2 << 2) | color2) & 0x1F;
     palIndex6 = ppuBusRead(0x3F00 | palLow5) & 0x3F;
   }
 
-  // greyscale bit
   if (PPUMASK & 0x01) palIndex6 &= 0x30;
 
   paletteIndexFrame[y * NES_W + x] = palIndex6;
@@ -526,19 +432,13 @@ function ppuBusRead(addr) {
 // ---- Main loop (drains shared queue to local; local is visible to frame-end logic) ----
 function startPPULoop() {
   while (true) {
-    if (budgetCarry > 0) { budgetLocal += budgetCarry; budgetCarry = 0; }
     const pulled = Atomics.exchange(SHARED.CLOCKS, SYNC_PPU_BUDGET, 0)|0;
     if (pulled) budgetLocal += pulled;
-
-    if (budgetCarry > 0) {
-      budgetLocal += budgetCarry;
-      budgetCarry = 0;
-    }
 
     if (budgetLocal <= 0) continue;
 
     do {
       ppuTick();
-    } while (--budgetLocal > 0);
+    } while (--budgetLocal != 0);
   }
 }

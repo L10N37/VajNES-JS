@@ -71,7 +71,7 @@ window.step = function () {
 
   // DMA first: returns 1 or 2 cycles per call (or 0 if finished)
   if (DMA.active) {
-    const used = dmaMicroStep();   // calls addExtraCycles() internally
+    const used = dmaMicroStep();   // calls addCycles() internally
     return used | 0;
   }
 
@@ -104,11 +104,9 @@ window.step = function () {
     }
   }
 
-  cpuStall(); // Critical !
-
-  // Measure cycles consumed by this opcode (handlers call addExtraCycles internally)
+  // Measure cycles consumed by this opcode (handlers call addCycles internally)
   const before = Atomics.load(SHARED.CLOCKS, 0);   // CPU cycle counter
-  op.func();                                       // executes and calls addExtraCycles(...) multiple times
+  op.func();                                       // executes and calls addCycles(...) multiple times
 
   const after  = Atomics.load(SHARED.CLOCKS, 0);
   const used   = (after - before) | 0;
@@ -121,14 +119,15 @@ window.step = function () {
   //=================================================
   // ---- handle interrupts ----
   if (nmiPending) {
-    serviceNMI();   // adds +7 via addExtraCycles()
+    serviceNMI();   // adds +7 via addCycles()
     nmiPending = false;
   }
   // temp IRQ block
   let irqPending = false;
   if (!CPUregisters.P.I && irqPending) {
-    serviceIRQ();   // adds +7 via addExtraCycles()
+    serviceIRQ();   // adds +7 via addCycles()
   }
+
   checkInterrupts(); 
   // set the flag here, check if NMI is due NEXT step
   // this order is specifically coded to pass NMI control tests
