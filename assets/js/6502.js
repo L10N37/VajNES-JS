@@ -100,10 +100,19 @@ function addCycles(x) {
   // Advance PPU cycles: fixed 3x ratio
   Atomics.add(SHARED.CLOCKS, 1, 3 * x);
 
+    if (decayTimer > 0) {
+      decayTimer--;
+      if (decayTimer == 0) {
+          ppuOpenBus = 0; // fully decayed after ~1 sec
+      }
+  } else {
+      // reload with ~1 second of CPU cycles
+      decayTimer = 1789772;
+  }
+
   // Ensure PPU catches up before CPU continues
   cpuStall();
 }
-
 
 /*
   NES Mappers That Use IRQs (Interrupt Requests):

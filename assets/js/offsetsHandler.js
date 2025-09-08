@@ -2,7 +2,7 @@
 let debugLogging = false;
 
 let ppuOpenBus = 0x00;
-
+let decayTimer = 0;
 breakPending = false;
 
 // writeToggle is an internal PPU latch but implemented here on CPU core, globalThis for logdump
@@ -66,19 +66,18 @@ function checkReadOffset(address) {
         // Side effects (immediate)
         const wasVBlank = (stat & 0x80) !== 0;
 
-        // If we read on the same cycle as vblank set, ret may have bit7=1.
-        // In all cases, reading clears vblank immediately and suppresses NMI this frame.
-        PPUSTATUS &= ~0x80;                               // clear VBlank
-        Atomics.store(SHARED.SYNC, 5, 0);                 // SYNC_VBLANK_FLAG mirror -> 0
-        writeToggle = 0;                                  // reset $2005/$2006 latch
+        // Clear VBlank immediately and reset toggle
+        PPUSTATUS &= ~0x80;
+        Atomics.store(SHARED.SYNC, 5, 0);   // SYNC_VBLANK_FLAG mirror -> 0
+        writeToggle = 0;                    // reset $2005/$2006 latch
 
         // Open-bus update
         ppuOpenBus = ret;
         cpuOpenBus = ret;
 
-        // Suppress NMI if read returned bit7=1 (same-cycle read during set)
+        // If read returns bit7=1 (same PPU dot as V set), suppress NMI for the rest of THIS vblank.
         if (ret & 0x80) {
-          Atomics.store(SHARED.SYNC, 6, 0);               // SYNC_NMI_EDGE = 0
+          Atomics.store(SHARED.SYNC, 7, 1);
         }
 
         if (wasVBlank) {

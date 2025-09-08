@@ -119,8 +119,9 @@ function ppuTick() {
 
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
-  if (dot === 1) {
+  if (dot === 1 && ppuInitDone) {
     CLEAR_VBLANK();
+    Atomics.store(SHARED.SYNC, 7, 0); // reset NMI suppression
 
     const delta    = (cpuCycles - VBL_lastSetCPU) | 0;
     const shortPre = (PPUclock.oddFrame && (PPUMASK & 0x18) !== 0) ? 1 : 0;
@@ -133,7 +134,6 @@ function preRenderScanline(dot) {
       `Vblank Clear: ${cpuCycles} Δ ${delta} ${ok ? 'PASS' : 'FAIL'} [exp ${expLo}..${expHi}]`
     );
 
-    if (!ppuInitDone) ppuInitDone = true;
     renderActiveThisFrame = (PPUMASK & 0x18) !== 0;
     prevVblank = 0;
     CLEAR_SPRITE0_HIT();
@@ -203,6 +203,7 @@ function preRenderScanline(dot) {
 
   if (dot === 340) {
     PPU_FRAME_FLAGS = 0x01;
+    if (!ppuInitDone) ppuInitDone = true;
   }
 }
 
@@ -435,10 +436,11 @@ function startPPULoop() {
     const pulled = Atomics.exchange(SHARED.CLOCKS, SYNC_PPU_BUDGET, 0)|0;
     if (pulled) budgetLocal += pulled;
 
-    if (budgetLocal <= 0) continue;
+    if (budgetLocal === 0) continue;
 
     do {
       ppuTick();
-    } while (--budgetLocal != 0);
+      budgetLocal --;
+    } while (budgetLocal);
   }
 }

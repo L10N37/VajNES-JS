@@ -48,8 +48,7 @@ function checkInterrupts() {
 
     nmiCheckCounter = 0;
 
-    nmiPending = true;
-    Atomics.store(SHARED.SYNC, 5, 1);  // shadow flag
+    if (Atomics.load(SHARED.SYNC, 7) === 0) nmiPending = true;
     Atomics.store(SHARED.SYNC, 6, 0);  // clear edge latch
   }
 
@@ -118,6 +117,7 @@ window.step = function () {
 
   //=================================================
   // ---- handle interrupts ----
+  // Only take NMI if it's pending *and not suppressed this vblank*
   if (nmiPending) {
     serviceNMI();   // adds +7 via addCycles()
     nmiPending = false;
