@@ -44,17 +44,17 @@ function installLiveScalars() {
     cpuOpenBus:  { get: () => Atomics.load(SHARED.CPU_OPENBUS, 0), set: v => Atomics.store(SHARED.CPU_OPENBUS, 0, make8(v)), configurable: true },
 
     // events (bit flags)
-    nmiPending: {
+    nmiSuppression: {
       get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1) !== 0,
       set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1) : Atomics.and(SHARED.EVENTS, 0, ~0b1); },
       configurable: true
     },
-    ppuDebugLogging: {
+    unused: {
       get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b100) !== 0,
       set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b100) : Atomics.and(SHARED.EVENTS, 0, ~0b100); },
       configurable: true
     },
-    cpuPpuSyncTiming: {
+    cpuStallFlag: {
       get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1000) !== 0,
       set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1000) : Atomics.and(SHARED.EVENTS, 0, ~0b1000); },
       configurable: true

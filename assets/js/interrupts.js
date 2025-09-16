@@ -39,9 +39,22 @@ function serviceNMI() {
   const hi = checkReadOffset(0xFFFB);
   addCycles(1);
 
-  // Set PC
+  // Set PC to NMI vector
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
   addCycles(1);
+
+  PPU_FRAME_FLAGS &= ~0b00000100;  // clear the NMI edge, it has been serviced
+
+  // === Logging: NMI PC loaded ===
+  const frame = Atomics.load(SHARED.SYNC, 4);
+  const sl    = Atomics.load(SHARED.SYNC, 2);
+  const dot   = Atomics.load(SHARED.SYNC, 3);
+
+  console.debug(
+    `%c[NMI VECTOR LOADED → PC=$${CPUregisters.PC.toString(16).padStart(4,"0")}] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
+    "color:black;background:yellow;font-weight:bold;font-size:14px;"
+  );
+
 }
 
 function serviceIRQ() {
@@ -138,8 +151,7 @@ function dmaMicroStep() {
       return 1;
     } else {
       // WRITE phase (1 cycle)
-      // If you emulate $2004 semantics elsewhere, prefer: cpuWrite(0x2004, DMA.tmp)
-      OAM[DMA.index] = DMA.tmp & 0xFF;
+      cpuWrite(0x2004, DMA.tmp);
 
       DMA.addr  = (DMA.addr + 1) & 0xFFFF;
       DMA.index += 1;

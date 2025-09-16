@@ -57,8 +57,34 @@ function checkReadOffset(address) {
     switch (reg) {
 
       case 0x2002: { // PPUSTATUS
+
         const obBefore = ppuOpenBus & 0xFF;
         const stat     = PPUSTATUS & 0xFF;
+
+
+        // If read returns bit7=1 (same PPU dot as V set), suppress NMI for the rest of THIS vblank.
+        const sl = Atomics.load(SHARED.SYNC, 2);
+        const dot = Atomics.load(SHARED.SYNC, 3);
+        const fr = Atomics.load(SHARED.SYNC, 4);
+
+        // if CPU has $2002 read at scanline 241 dot 0, we are going to cancel the 
+        // Vblank ever happening (CPU is in first, so we can't clear it, we instead
+        // prevent it from ever getting set), this gives a vblank begin pass on test roms
+
+        // this though, will kill NMI suppression tests, which expect to see it set then
+        // then cleared on its peeks on some iterations
+
+        // there is a work around at vblank end as well, if we clear Vblank at 261/1
+        // we pass vblank end tests as length of vblank dot to dot is correct, but we fail
+        // NMI at vblank end, if we instead clear at 261/0, we pass NMI at vblank end, but
+        // fail vblank end test
+        if (sl === 241 && dot === 0) {
+            nmiSuppression = true;
+            console.debug(
+              `%c[NMI SUPPRESS SET] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot}`,
+              "color:black;background:cyan;font-weight:bold;font-size:14px;"
+            );
+        }
 
         // high 3 from status, low 5 from previous PPU bus
         const ret = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
@@ -75,15 +101,9 @@ function checkReadOffset(address) {
         ppuOpenBus = ret;
         cpuOpenBus = ret;
 
-        // If read returns bit7=1 (same PPU dot as V set), suppress NMI for the rest of THIS vblank.
-        if (ret & 0x80) {
-          Atomics.store(SHARED.SYNC, 7, 1);
-        }
-
         if (wasVBlank) {
           console.debug("2002 Vblank clear:", cpuCycles);
         }
-
         return ret;
       }
 
@@ -202,20 +222,28 @@ function checkWriteOffset(address, value) {
     }
 
     switch (reg) {
+      /*
+      TEST_NMI_Disabled_VBL_Start_Expected_Results:
+						; This $FF could be a 00, or a 01, so skip it in the evaluation.
+	.byte $00, $00, $00, $FF, $01, $01, $01
+  */
       case 0x2000: { // PPUCTRL
         const wasEN = (PPUCTRL & 0x80) !== 0;
         PPUCTRL = value & 0xFF;
         if (debugLogging) console.debug(`[W $2000 PPUCTRL] val=$${value.toString(16)} wasEN=${wasEN?1:0}`);
         const nowEN = (value & 0x80) !== 0;
+        
+        // mid VBL NMI edges, NMI bit in PPUCTRL has transitioned from 0 -> 1 mid VBL
+        //const ppuIsInVblank = (PPU_FRAME_FLAGS & 0b00000010) !== 0;
         if (!wasEN && nowEN && (PPUSTATUS & 0x80)) {
-          const frame = SHARED?.SYNC ? Atomics.load(SHARED.SYNC, 4) : 0;
-          const sl    = SHARED?.SYNC ? Atomics.load(SHARED.SYNC, 2) : 0;
-          const dot   = SHARED?.SYNC ? Atomics.load(SHARED.SYNC, 3) : 0;
-          const edgeMarker = ((frame & 0xFFFF) << 16) | ((sl & 0x1FF) << 7) | (dot & 0x7F);
-          SHARED?.SYNC && Atomics.store(SHARED.SYNC, 6, edgeMarker);
-          if (debugLogging) console.debug(`[PPUCTRL NMI EDGE] frame=${frame} sl=${sl} dot=${dot}`);
+          const sl = Atomics.load(SHARED.SYNC, 2);
+          const dot = Atomics.load(SHARED.SYNC, 3);
+          const fr = Atomics.load(SHARED.SYNC, 4);
+
+          PPU_FRAME_FLAGS |= 0b00000100; // set NMI edge marker
+          /*if (debugLogging)*/ console.debug(`[PPUCTRL NMI EDGE] frame=${fr} sl=${sl} dot=${dot}`);
         }
-        if (!(value & 0x80)) SHARED?.SYNC && Atomics.store(SHARED.SYNC, 6, 0);
+
         break;
       }
 

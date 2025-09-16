@@ -6,21 +6,12 @@ let currentIsRMW = false;
 // internal only, don't build disasm rows unless the window is open
 let disasmRunning = false;
 let perFrameStep = false;
-let nmiCheckCounter = 0;
-let nmiServiceCounter = 0;
+
+let nmiPending = false;
 
 // NTSC Resolution
 const NES_W = 256;
 const NES_H = 240;
-
-function cpuStall(){
-    // make sure the PPU is always 3 ticks ahead (stall)
-    let ppuBudget = Atomics.load(SHARED.CLOCKS, 1);
-    while (ppuBudget > 0) {
-    // refresh local copy each spin
-    ppuBudget = Atomics.load(SHARED.CLOCKS, 1);
-    }
-}
 
 function renderFrame(){
     // proper scanline accurate rendering (scrolling etc.)
@@ -29,29 +20,25 @@ function renderFrame(){
     registerFrameUpdate();
     const bgColor = PALETTE_RAM[0x00]; // always fill 'blank' screen with universal BG colour
     paletteIndexFrame.fill(bgColor);
-    if (perFrameStep) pause();   
+    if (perFrameStep) pause();
+    PPU_FRAME_FLAGS &= 0b11111110;
 }
 
 function checkInterrupts() {
-  nmiCheckCounter++;
+const frame = Atomics.load(SHARED.SYNC, 4);
+const sl    = Atomics.load(SHARED.SYNC, 2);
+const dot   = Atomics.load(SHARED.SYNC, 3);
+  const nmiEdgeExists = PPU_FRAME_FLAGS & 0b00000100;
+  if (nmiEdgeExists) {
+    if (!nmiSuppression) {
+      nmiPending = true;
 
-  // NMI edge latch is at SYNC[6]
-  const edgeMarker = Atomics.load(SHARED.SYNC, 6);
-  if (edgeMarker !== 0) {
-    nmiServiceCounter++;
-
-    if (debugLogging) {
       console.debug(
-        `[CPU] NMI edge latched (#${nmiServiceCounter}) after ${nmiCheckCounter} checks`
+        `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
+        "color:black;background:lime;font-weight:bold;font-size:14px;"
       );
     }
-
-    nmiCheckCounter = 0;
-
-    if (Atomics.load(SHARED.SYNC, 7) === 0) nmiPending = true;
-    Atomics.store(SHARED.SYNC, 6, 0);  // clear edge latch
   }
-
 }
 
 // ===== NTSC constants =====
@@ -61,8 +48,7 @@ const FRAME_MS = 1000 / FPS;       // ~16.64 ms
 
 window.step = function () {
 
-  if (PPU_FRAME_FLAGS === 0x01) renderFrame();
-  PPU_FRAME_FLAGS = 0x00;
+  if (PPU_FRAME_FLAGS & 0b00000001) renderFrame();
 
   debugLogging = false;
   NoSignalAudio.setEnabled(false);
@@ -79,6 +65,7 @@ window.step = function () {
   currentIsRMW = rmwTable[code]; 
 
   const op = OPCODES[code];
+
   if (!op || !op.func) {
     const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
     console.warn(`Unknown opcode 0x${codeHex}`);
@@ -104,10 +91,9 @@ window.step = function () {
   }
 
   // Measure cycles consumed by this opcode (handlers call addCycles internally)
-  const before = Atomics.load(SHARED.CLOCKS, 0);   // CPU cycle counter
+  const before = cpuCycles;
   op.func();                                       // executes and calls addCycles(...) multiple times
-
-  const after  = Atomics.load(SHARED.CLOCKS, 0);
+  const after  = cpuCycles;
   const used   = (after - before) | 0;
 
   if (disasmRunning) DISASM.appendRow(buildDisasmRow(code, _op, __op, disasmPc));
@@ -119,9 +105,19 @@ window.step = function () {
   // ---- handle interrupts ----
   // Only take NMI if it's pending *and not suppressed this vblank*
   if (nmiPending) {
-    serviceNMI();   // adds +7 via addCycles()
+    const frame = Atomics.load(SHARED.SYNC, 4);
+    const sl    = Atomics.load(SHARED.SYNC, 2);
+    const dot   = Atomics.load(SHARED.SYNC, 3);
+
+    console.debug(
+      `%c[NMI FIRED → handler entered] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
+      "color:white;background:red;font-weight:bold;font-size:14px;"
+    );
+
+    serviceNMI();   // consumes 7 cycles, pushes PC/flags, loads $FFFA/$FFFB
     nmiPending = false;
   }
+
   // temp IRQ block
   let irqPending = false;
   if (!CPUregisters.P.I && irqPending) {

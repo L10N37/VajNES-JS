@@ -78,9 +78,6 @@ function readFile(input) {
 
     // Update debug tables
     updateDebugTables();
-
-    // Notify PPU worker ROM is ready
-    ppuWorker.postMessage({ type: 'romReady' });
   };
 
   reader.onerror = function () {
