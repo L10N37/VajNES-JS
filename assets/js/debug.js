@@ -7,7 +7,7 @@ let currentIsRMW = false;
 let disasmRunning = false;
 let perFrameStep = false;
 
-let nmiPending = false;
+let nmiPending = null;
 
 // NTSC Resolution
 const NES_W = 256;
@@ -33,7 +33,7 @@ const nmiEnabled = (PPUCTRL & 0x80) != 0;
   const nmiEdgeExists = (PPU_FRAME_FLAGS & 0b00000100) != 0;
 
   if (nmiEdgeExists){
-      nmiPending = true;
+      nmiPending = frame;
       console.debug(
         `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
         "color:black;background:lime;font-weight:bold;font-size:14px;"
@@ -109,12 +109,12 @@ window.step = function () {
     const dot   = Atomics.load(SHARED.SYNC, 3);
 
     console.debug(
-      `%c[NMI FIRED → handler entered] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
+      `%c[NMI handler entered, final checks may cancel] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
       "color:white;background:red;font-weight:bold;font-size:14px;"
     );
 
     serviceNMI();   // consumes 7 cycles, pushes PC/flags, loads $FFFA/$FFFB
-    nmiPending = false;
+    nmiPending = 0;
   }
 
   // temp IRQ block

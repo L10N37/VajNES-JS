@@ -97,7 +97,7 @@ function frameLogging() {
     (oddFrame && rendering ? " (short frame, -1 tick)" : "");
 
   console.debug(
-    `Vblank Clear: ppuTicks=${totalTicks} frame=${PPUclock.frame} Δ=${deltaPPU} ` +
+    `Vblank Clear: ppuTicks=${totalTicks} frame=${PPUclock.frame-1} Δ=${deltaPPU} ` +
     `${ok ? 'PASS' : 'FAIL'} [exp ${expDots}] (${frameState})`
   );
 }
@@ -116,7 +116,12 @@ function preRenderScanline(dot) {
   if (dot === 1 && ppuInitDone) {
     CLEAR_VBLANK();
 
-    // find out why adding a tick makes NMI disabled at vblank pass, but fail all other -> no longer gives a pass since patching nmi @ vblank end
+  nmiSuppression = false;
+  doNotSetVblank = false;
+
+    // clearing NMI edges around here kills NMI at Vblank end test!
+
+    // find out why adding (not its deducint a tick in the right place, ppuCycles--) a tick makes NMI disabled at vblank pass, but fail all other -> no longer gives a pass since patching nmi @ vblank end
     // video timing tests (except vblank start hack)
     // find out why clearing vblank at dot 0 makes NMI at vblank end pass, but vblank end fail -> patched
 
@@ -312,7 +317,7 @@ function vblankStartScanline(dot) {
      09-even_odd_frames.nes
 
      also passing
-
+     NMI suppression (A.C) & 06-suppression.nes
 
      to do
      08-nmi_off_timing.nes -> 
@@ -336,9 +341,9 @@ function vblankStartScanline(dot) {
     `PPU set Vblank, dot 1 frame=${PPUclock.frame} cpu=${cpuCycles} vblank=${(PPUSTATUS & 0x80)?1:0}`
    );
   }
-    
+    vblankBitIsSet = (PPUSTATUS & 0b1000000) !== 0;
     const nmiBitIsSet = (PPUCTRL & 0b10000000) !== 0;
-    if (nmiBitIsSet && !nmiSuppression ) {
+    if (nmiBitIsSet && !nmiSuppression && vblankBitIsSet) {
     // set NMI edge marker
     PPU_FRAME_FLAGS |= 0b00000100;
     console.debug(
@@ -347,10 +352,6 @@ function vblankStartScanline(dot) {
   }
 }
 
-  if (dot === 340) {
-    nmiSuppression = false;
-    doNotSetVblank = false;
-  }
 }
 
 function vblankIdleScanline(dot) { 
@@ -487,7 +488,6 @@ function ppuTick() {
     PPUclock.scanline === 261 && PPUclock.dot === 340) {
     PPUclock.scanline = 0;
     PPUclock.dot = 0;
-    PPUclock.frame++;
     PPUclock.oddFrame = !PPUclock.oddFrame;
     nmiAtVblankEnd = false;
   }
@@ -495,11 +495,15 @@ function ppuTick() {
   // --- Operate the current dot ---
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
 
+  if (PPUclock.scanline === 260 && PPUclock.dot === 340) {
+  PPUclock.frame++;
+  PPUclock.oddFrame = !PPUclock.oddFrame;
+  }
+
   // --- Regular scanline wrap ---
   if (PPUclock.scanline === 261 && PPUclock.dot === 340) {
     PPUclock.scanline = 0;
     PPUclock.dot = -1; // next loop increment brings it to 0
-    PPUclock.frame++;
     PPUclock.oddFrame = !PPUclock.oddFrame;
   }
   // --- Normal scanline increment ---
@@ -518,7 +522,7 @@ function startPPULoop() {
 
     while (totalTicks < target) {
         ppuTick();
-        
+              
         // store last operated frame/dot/scanline, notes below
         STORE_CURRENT_FRAME(PPUclock.frame);
         STORE_CURRENT_DOT(PPUclock.dot);

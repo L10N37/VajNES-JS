@@ -72,7 +72,7 @@ On an NTSC machine, the VBL flag is cleared 6820 PPU clocks, or exactly 20 scanl
 after it is set. In other words, it's cleared at the start of the pre-render scanline.
 */
       case 0x2002: { // PPUSTATUS
-
+        
         const sl = Atomics.load(SHARED.SYNC, 2);
         const dot = Atomics.load(SHARED.SYNC, 3);
         const fr = Atomics.load(SHARED.SYNC, 4);
@@ -95,9 +95,8 @@ after it is set. In other words, it's cleared at the start of the pre-render sca
           "color:black;background:cyan;font-weight:bold;font-size:14px;"
         );
         PPU_FRAME_FLAGS &= ~0b00000100;  // clear the NMI edge
-        nmiPending = false; // just in case the edge transitioned to our timing latch, can that too
+        nmiPending = 0; // just in case the edge transitioned to our timing latch, can that too
         nmiSuppression = true; // just to be sure
-
         }
 
         const obBefore = ppuOpenBus & 0xFF;
@@ -111,6 +110,7 @@ after it is set. In other words, it's cleared at the start of the pre-render sca
 
         // Clear VBlank immediately and reset toggle
         PPUSTATUS &= ~0x80;
+
         writeToggle = 0;                    // reset $2005/$2006 latch
 
         // Open-bus update

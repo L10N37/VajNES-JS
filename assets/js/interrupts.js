@@ -8,6 +8,33 @@ function serviceNMI() {
 
   if (debugLogging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
   
+// nmiPending (NMI timing latch) now contains the frame it was generated
+// if the frame doesn't match the current frame, don't fire the NMI, it was generated on vblank boundaries
+// i.e a test ROM created an NMI edge at 260/338, this armed at dot 0 of 261 ..but that's a new frame!
+// also exposed a frame counter bug, fixed.
+
+// extra guard,  needed?
+const inVBlank = 
+  (sl === 241 && dot >= 1) ||   // VBlank starts on scanline 241, dot 1
+  (sl >= 242 && sl <= 260);     // All of scanlines 242–260
+// temp logging , like most of it
+  if (nmiPending !== frame) {
+    console.log(
+      `[NMI DEBUG] ppu=${ppuCycles} cpu=${cpuCycles} ` +
+      `sl=${sl} dot=${dot} frame=${frame}`
+    );
+  }
+/*
+Had this NMI sneak through, past the suppression flag (do not set), so added nmiSuppression
+here as a final guard
+
+[NMI and VBL set cancelled] frame=92 cpu=2767329 ppu=8301987 sl=241 dot=0 offsetsHandler.js:83:21
+[NMI ARMED] cpu=2767330 ppu=8301990 frame=92 sl=241 dot=3 debug.js:37:15
+[NMI FIRED → handler entered] cpu=2767332 ppu=8301996 frame=92 sl=241 dot=9 debug.js:111:13
+[NMI VECTOR LOADED → PC=$e308] cpu=2767339 ppu=8302017 frame=92 sl=241 dot=9 interrupts.js:69:11
+Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no render) ppu-worker.js:99:11
+*/
+  if (!nmiSuppression){
   const pc = CPUregisters.PC & 0xFFFF;
 
   // Push PCH
@@ -53,6 +80,7 @@ function serviceNMI() {
     "color:black;background:yellow;font-weight:bold;font-size:14px;"
 
   );
+}
 
 }
 
