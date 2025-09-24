@@ -77,6 +77,7 @@ NMI at Vblank End sets these NMI edges
 
 let VBL_lastClearPPU = 0;
 let totalTicks = 0;
+//BROKEN, likely not needed anymore anyway!
 function frameLogging() {
   const deltaPPU = (totalTicks - VBL_lastClearPPU) | 0;
   VBL_lastClearPPU = totalTicks;
@@ -125,7 +126,7 @@ function preRenderScanline(dot) {
     // video timing tests (except vblank start hack)
     // find out why clearing vblank at dot 0 makes NMI at vblank end pass, but vblank end fail -> patched
 
-    frameLogging();
+    //frameLogging(); // broken
 
     CLEAR_SPRITE0_HIT();
     CLEAR_SPRITE_OVERFLOW();
@@ -497,7 +498,6 @@ function ppuTick() {
 
   if (PPUclock.scanline === 260 && PPUclock.dot === 340) {
   PPUclock.frame++;
-  PPUclock.oddFrame = !PPUclock.oddFrame;
   }
 
   // --- Regular scanline wrap ---
