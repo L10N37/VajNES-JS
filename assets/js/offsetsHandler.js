@@ -56,35 +56,52 @@ function checkReadOffset(address) {
     const reg = 0x2000 + (addr & 0x7);
     switch (reg) {
 
+/*
+Reading $2002 within a few PPU clocks of when VBL is set results in special-case behavior. 
+
+Reading one PPU clock before reads it as clear and never sets the flag or generates NMI for that frame. -> done
+
+Reading on the same PPU clock or one later reads it as set, clears it, and suppresses the NMI for that frame. -> done
+
+ Reading two or more PPU clocks before/after it's set behaves normally (reads flag's value, clears it, 
+ and doesn't affect NMI operation). This suppression behavior is due to the $2002 read pulling the NMI 
+ line back up too quickly after it drops (NMI is active low) for the CPU to see it. 
+ (CPU inputs like NMI are sampled each clock.)
+
+On an NTSC machine, the VBL flag is cleared 6820 PPU clocks, or exactly 20 scanlines, 
+after it is set. In other words, it's cleared at the start of the pre-render scanline.
+*/
       case 0x2002: { // PPUSTATUS
 
-        const obBefore = ppuOpenBus & 0xFF;
-        const stat     = PPUSTATUS & 0xFF;
-
-
-        // If read returns bit7=1 (same PPU dot as V set), suppress NMI for the rest of THIS vblank.
         const sl = Atomics.load(SHARED.SYNC, 2);
         const dot = Atomics.load(SHARED.SYNC, 3);
         const fr = Atomics.load(SHARED.SYNC, 4);
 
-        // if CPU has $2002 read at scanline 241 dot 0, we are going to cancel the 
-        // Vblank ever happening (CPU is in first, so we can't clear it, we instead
-        // prevent it from ever getting set), this gives a vblank begin pass on test roms
-
-        // this though, will kill NMI suppression tests, which expect to see it set then
-        // then cleared on its peeks on some iterations
-
-        // there is a work around at vblank end as well, if we clear Vblank at 261/1
-        // we pass vblank end tests as length of vblank dot to dot is correct, but we fail
-        // NMI at vblank end, if we instead clear at 261/0, we pass NMI at vblank end, but
-        // fail vblank end test
-        if (sl === 241 && dot === 0) {
+        if (sl === 241 && dot === 0){
+            doNotSetVblank = true;
             nmiSuppression = true;
             console.debug(
-              `%c[NMI SUPPRESS SET] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot}`,
+              `%c[NMI and VBL set cancelled] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot}`,
               "color:black;background:cyan;font-weight:bold;font-size:14px;"
             );
         }
+
+        if (sl === 241 && (dot === 1 || dot === 2)){      
+        console.debug(
+          `%c[VBL will be cleared] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot} ` +
+          `vblank=${(PPUSTATUS & 0x80) ? 1 : 0} ` +
+          `nmiEdge=${(PPU_FRAME_FLAGS & 0b00000100) ? 1 : 0} ` +
+          `(If NMI edge exists, it will be cancelled)`,
+          "color:black;background:cyan;font-weight:bold;font-size:14px;"
+        );
+        PPU_FRAME_FLAGS &= ~0b00000100;  // clear the NMI edge
+        nmiPending = false; // just in case the edge transitioned to our timing latch, can that too
+        nmiSuppression = true; // just to be sure
+
+        }
+
+        const obBefore = ppuOpenBus & 0xFF;
+        const stat     = PPUSTATUS & 0xFF;
 
         // high 3 from status, low 5 from previous PPU bus
         const ret = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
@@ -94,16 +111,16 @@ function checkReadOffset(address) {
 
         // Clear VBlank immediately and reset toggle
         PPUSTATUS &= ~0x80;
-        Atomics.store(SHARED.SYNC, 5, 0);   // SYNC_VBLANK_FLAG mirror -> 0
         writeToggle = 0;                    // reset $2005/$2006 latch
 
         // Open-bus update
         ppuOpenBus = ret;
         cpuOpenBus = ret;
 
-        if (wasVBlank) {
-          console.debug("2002 Vblank clear:", cpuCycles);
-        }
+      if (wasVBlank) {
+        console.debug("2002 Vblank clear:", cpuCycles, "Frame:", fr);
+      }
+
         return ret;
       }
 
@@ -233,13 +250,12 @@ function checkWriteOffset(address, value) {
         if (debugLogging) console.debug(`[W $2000 PPUCTRL] val=$${value.toString(16)} wasEN=${wasEN?1:0}`);
         const nowEN = (value & 0x80) !== 0;
         
-        // mid VBL NMI edges, NMI bit in PPUCTRL has transitioned from 0 -> 1 mid VBL
+        // mid VBL NMI edges, NMI bit in PPUCTRL has transitioned from 0 -> 1 mid VBL (VBL flag is set)
         //const ppuIsInVblank = (PPU_FRAME_FLAGS & 0b00000010) !== 0;
         if (!wasEN && nowEN && (PPUSTATUS & 0x80)) {
           const sl = Atomics.load(SHARED.SYNC, 2);
           const dot = Atomics.load(SHARED.SYNC, 3);
           const fr = Atomics.load(SHARED.SYNC, 4);
-
           PPU_FRAME_FLAGS |= 0b00000100; // set NMI edge marker
           /*if (debugLogging)*/ console.debug(`[PPUCTRL NMI EDGE] frame=${fr} sl=${sl} dot=${dot}`);
         }
@@ -460,19 +476,36 @@ let _kbBound = false;
   if (_kbBound) return;
   _kbBound = true;
 
-  const kbdHandler = (isDown) => (e) => {
-    const btn = codeToButtonP1[e.code];
-    if (btn === undefined) return;
-    if (isDown) joypad1Buttons |=  (1 << btn);
-    else        joypad1Buttons &= ~(1 << btn);
-    if (debugLogging) {
-      console.debug(
-        "[JOY]", isDown ? "keydown" : "keyup",
-        e.code, "P1:", joypad1Buttons.toString(2).padStart(8, "0")
-      );
+const kbdHandler = (isDown) => (e) => {
+  const btn = codeToButtonP1[e.code];
+  if (btn === undefined) return;
+
+  if (isDown) {
+    joypad1Buttons |= (1 << btn);
+
+    /*
+    if (e.code === "KeyX") {
+      perFrameStep = true;
+      if (debugLogging) {
+        console.debug("[STEP] armed via KeyX (perFrameStep = true)");
+      }
     }
-    e.preventDefault();
-  };
+    */
+   
+  } else {
+    joypad1Buttons &= ~(1 << btn);
+  }
+
+  if (debugLogging) {
+    console.debug(
+      "[JOY]", isDown ? "keydown" : "keyup",
+      e.code, "P1:", joypad1Buttons.toString(2, 2).padStart(8, "0")
+    );
+  }
+
+  e.preventDefault();
+};
+
 
   window.addEventListener("keydown", kbdHandler(true),  { passive: false });
   window.addEventListener("keyup",   kbdHandler(false), { passive: false });

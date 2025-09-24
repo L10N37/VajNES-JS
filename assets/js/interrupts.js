@@ -1,8 +1,13 @@
 // ======== Interrupts ======== 
 // https://www.nesdev.org/wiki/CPU_interrupts
 function serviceNMI() {
-  if (debugLogging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
 
+  const sl    = Atomics.load(SHARED.SYNC, 2);
+  const dot   = Atomics.load(SHARED.SYNC, 3);
+  const frame = Atomics.load(SHARED.SYNC, 4);
+
+  if (debugLogging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
+  
   const pc = CPUregisters.PC & 0xFFFF;
 
   // Push PCH
@@ -43,16 +48,10 @@ function serviceNMI() {
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
   addCycles(1);
 
-  PPU_FRAME_FLAGS &= ~0b00000100;  // clear the NMI edge, it has been serviced
-
-  // === Logging: NMI PC loaded ===
-  const frame = Atomics.load(SHARED.SYNC, 4);
-  const sl    = Atomics.load(SHARED.SYNC, 2);
-  const dot   = Atomics.load(SHARED.SYNC, 3);
-
   console.debug(
     `%c[NMI VECTOR LOADED → PC=$${CPUregisters.PC.toString(16).padStart(4,"0")}] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
     "color:black;background:yellow;font-weight:bold;font-size:14px;"
+
   );
 
 }
@@ -136,8 +135,8 @@ function dmaMicroStep() {
 
   // Initial alignment pad
   if (DMA.pad > 0) {
+    addCycles(1);
     DMA.pad -= 1;
-    addCycles(1);              // exactly 1 CPU cycle (PPU +3 inside)
     return 1;
   }
 
@@ -145,19 +144,19 @@ function dmaMicroStep() {
   if (DMA.index < 256) {
     if (DMA.phase === 0) {
       // READ phase (1 cycle)
+      addCycles(1);
       DMA.tmp   = cpuRead(DMA.addr);
       DMA.phase = 1;
-      addCycles(1);
       return 1;
     } else {
       // WRITE phase (1 cycle)
+      addCycles(1);
+      cpuOpenBus = DMA.tmp & 0xFF;
       cpuWrite(0x2004, DMA.tmp);
 
       DMA.addr  = (DMA.addr + 1) & 0xFFFF;
       DMA.index += 1;
       DMA.phase  = 0;
-
-      addCycles(1);
       return 1;
     }
   }

@@ -158,7 +158,7 @@ try {
     set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1) : Atomics.and(SHARED.EVENTS, 0, ~0b1); },
     configurable: true
   },
-  unused: {
+  doNotSetVblank: {
     get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b100) !== 0,
     set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b100) : Atomics.and(SHARED.EVENTS, 0, ~0b100); },
     configurable: true

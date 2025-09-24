@@ -30,7 +30,7 @@ const CLEAR_SPRITE_OVERFLOW = () => { PPUSTATUS &= ~0x20;};
 const SET_SPRITE_OVERFLOW   = () => { PPUSTATUS |=  0x20;};
 
 // ---- Geometry ----
-const DOTS_PER_SCANLINE   = 341; // 0..340
+const DOTS_PER_SCANLINE   = 340; // 0..340 = 341
 const SCANLINES_PER_FRAME = 262; // 0..261
 const NES_W = 256, NES_H = 240;
 
@@ -49,6 +49,8 @@ Object.defineProperty(globalThis, 'rendering', {
   get() { return (PPUMASK & 0x18) !== 0; }
 });
 
+let renderingActiveThisFrame = null;
+
 // ---- Clock state ----
 const PPUclock = { dot: 0, scanline: 261, frame: 0, oddFrame: false };
 
@@ -59,13 +61,8 @@ const background = {
   ntByte: 0, atByte: 0, tileLo: 0, tileHi: 0
 };
 
-// ---- Sync + logging accumulators ----
-let renderActiveThisFrame = false;
-
 // ---- Local execution budget ----
 let budgetLocal = 0; // dots available to run immediately
-
-let VBL_lastSetCPU = 0;
 
 // ---- Scanline handlers ----
 /*
@@ -77,6 +74,34 @@ NMI at Vblank End sets these NMI edges
 
 
 */
+
+let VBL_lastClearPPU = 0;
+let totalTicks = 0;
+function frameLogging() {
+  const deltaPPU = (totalTicks - VBL_lastClearPPU) | 0;
+  VBL_lastClearPPU = totalTicks;
+
+  const rendering = (PPUMASK & 0x18) !== 0;
+  const oddFrame  = PPUclock.oddFrame;
+
+  // short frame = odd frame + rendering
+  const shortPre  = (oddFrame && rendering) ? 1 : 0;
+  const expDots   = (262 * 341) - shortPre; // full frame in PPU dots
+
+  const ok = (deltaPPU === expDots);
+
+  // Frame state string
+  const frameState =
+    (oddFrame  ? "odd"  : "even") + "+" +
+    (rendering ? "render" : "no render") +
+    (oddFrame && rendering ? " (short frame, -1 tick)" : "");
+
+  console.debug(
+    `Vblank Clear: ppuTicks=${totalTicks} frame=${PPUclock.frame} Δ=${deltaPPU} ` +
+    `${ok ? 'PASS' : 'FAIL'} [exp ${expDots}] (${frameState})`
+  );
+}
+
 function preRenderScanline(dot) {
 
   // absolute hackery without being able to yet find the root cause of this dot zero/ dot 1
@@ -86,32 +111,17 @@ function preRenderScanline(dot) {
   // around that ... ughhhh
   if (dot === 0 && nmiAtVblankEnd && ppuInitDone) {
     CLEAR_VBLANK();
-    nmiSuppression = false;
   }
 
   if (dot === 1 && ppuInitDone) {
     CLEAR_VBLANK();
-    // reset vblank begin NMI suppression for next frame
-    nmiSuppression = false;
-    ppuCycles++;
+
     // find out why adding a tick makes NMI disabled at vblank pass, but fail all other -> no longer gives a pass since patching nmi @ vblank end
     // video timing tests (except vblank start hack)
     // find out why clearing vblank at dot 0 makes NMI at vblank end pass, but vblank end fail -> patched
 
-    const delta    = (cpuCycles - VBL_lastSetCPU) | 0;
-    const shortPre = (PPUclock.oddFrame && (PPUMASK & 0x18) !== 0) ? 1 : 0;
-    const expDots  = 20 * 341 - shortPre;
-    const expLo    = Math.floor(expDots / 3) - 2;
-    const expHi    = Math.ceil(expDots / 3) + 2;
-    const ok       = (delta >= expLo && delta <= expHi);
+    frameLogging();
 
-  
-    // generally 2273/2274 depending on odd or even frame
-    console.debug(
-      `Vblank Clear: ${cpuCycles} Δ ${delta} ${ok ? 'PASS' : 'FAIL'} [exp ${expLo}..${expHi}]`
-    );
-
-    renderActiveThisFrame = (PPUMASK & 0x18) !== 0;
     CLEAR_SPRITE0_HIT();
     CLEAR_SPRITE_OVERFLOW();
   }
@@ -269,39 +279,78 @@ function visibleScanline(dot) {
 }
 
 function postRenderScanline(dot) {
+  
   const nmiEdgeExists = (PPU_FRAME_FLAGS & 0b00000100) !== 0;
-
   if (nmiEdgeExists) {
     console.log(
-      `[NMI EDGE] frame=${PPUclock.frame} sl=${PPUclock.scanline} dot=${dot}`
+      `[NMI EDGE] frame=${PPUclock.frame} ` +
+      `sl=${PPUclock.scanline} dot=${dot} ` +
+      `ppuCycles=${ppuCycles} cpuCycles=${cpuCycles} totalTicks=${totalTicks}`
     );
   }
 }
 
 // Gated first frame (PPU INIT)
 function vblankStartScanline(dot) {
+  if (!ppuInitDone) return;
 
-  if (dot === 0 ){
-  // non HW flag, we can check this and see if we are in vblank scanlines 
-  // without relying on PPUSTATUS which could have the bit cleared at any $2002 read
-  PPU_FRAME_FLAGS |= 0b00000010;
+  if (dot === 0) {
+    // non HW flag, we can check this and see if we are in vblank scanlines 
+    // without relying on PPUSTATUS which could have the bit cleared at any $2002 read.
+    // #may not be required really, maybe re-utilise the bit, we can just check where the PPU
+    // is by scanline/dot SABs
+    PPU_FRAME_FLAGS |= 0b00000010;
+/*
+     WE SET AN NMI EDGE HERE AT DOT ZERO IF THE NMI BIT IS SET IN PPUCTRL AT THIS POINT, 
+     REGARDLESS OF IF VBL IS HIGH (kind of against the HW 'rules'), BUT we can cancel this 
+     after if need be (suppression). We can't && it with VBL == high, 
+     that isn't set until the next dot. This gives a pass for NMI timing tests in
+
+     05-nmi_timing.nes BUT NOT accuracy coin, find out why!
+
+     currently with odd frame+ rendering logic we also pass 
+     09-even_odd_frames.nes
+
+     also passing
+
+
+     to do
+     08-nmi_off_timing.nes -> 
+     scanline.nes -> test 3, text is out of whack
+
+*/  const nmiBitIsSet = (PPUCTRL & 0b10000000) !== 0;
+    if (nmiBitIsSet) {
+    // set NMI edge marker
+    PPU_FRAME_FLAGS |= 0b00000100; // to pass NMI timing, generate an NMI edge here if NMI bit is set
+    console.debug(
+    `PPU set NMI edge, dot 0 frame=${PPUclock.frame} cpu=${cpuCycles} vblank=${(PPUSTATUS & 0x80)?1:0}`
+   );
+  }
   }
 
-
-  if (dot !== 1 || !ppuInitDone) return;
-
-  if (!nmiSuppression) {
-    SET_VBLANK();
+  if (dot === 1 ) {
+    
+    if (!doNotSetVblank) {
+      SET_VBLANK();
+    console.debug(
+    `PPU set Vblank, dot 1 frame=${PPUclock.frame} cpu=${cpuCycles} vblank=${(PPUSTATUS & 0x80)?1:0}`
+   );
   }
-
-  console.debug("Vblank Set", cpuCycles);
-  VBL_lastSetCPU = cpuCycles;
-
-  if (!nmiSuppression && PPUCTRL & 0x80) {
-  // set NMI edge marker
-  PPU_FRAME_FLAGS |= 0b00000100;
+    
+    const nmiBitIsSet = (PPUCTRL & 0b10000000) !== 0;
+    if (nmiBitIsSet && !nmiSuppression ) {
+    // set NMI edge marker
+    PPU_FRAME_FLAGS |= 0b00000100;
+    console.debug(
+    `PPU set NMI edge, dot 1 frame=${PPUclock.frame} cpu=${cpuCycles} vblank=${(PPUSTATUS & 0x80)?1:0}`
+   );
   }
+}
 
+  if (dot === 340) {
+    nmiSuppression = false;
+    doNotSetVblank = false;
+  }
 }
 
 function vblankIdleScanline(dot) { 
@@ -311,7 +360,6 @@ function vblankIdleScanline(dot) {
   if (nmiEdgeExists && PPUclock.scanline === 260 && dot === 340) {
     nmiAtVblankEnd = true;
   }
-  
 }
 
 // ---- Scanline LUT (0-based; 0 = pre-render) ----
@@ -427,47 +475,41 @@ function ppuBusRead(addr) {
   return PALETTE_RAM[p] & 0x3F;
 }
 
-let totalTicks = 0;
 // ---- Tick ----
 function ppuTick() {
-  // Odd-frame short pre-render skip must come BEFORE scanlineLUT
-  if (
-    PPUclock.scanline === 261 &&
-    PPUclock.dot === 0 &&
-    PPUclock.oddFrame &&
-    rendering
-  ) {
-    // Skip dot 0: jump straight to dot 1
-    PPUclock.dot = 1;
-    nmiAtVblankEnd = false; // try placing this ANYWHERE else and you break this test
-
-    return false; // no tick consumed
+  // --- Latch renderingActiveThisFrame at the frame boundary ---
+  if (PPUclock.scanline === 261 && PPUclock.dot === 0) {
+    renderingActiveThisFrame = (PPUMASK & 0x18) !== 0;
   }
 
-  // Normal per-dot execution
-  STORE_CURRENT_FRAME(PPUclock.frame);
-  STORE_CURRENT_DOT(PPUclock.dot);
-  STORE_CURRENT_SCANLINE(PPUclock.scanline);
+  // --- Odd-frame cycle skip (pre-render, last dot) ---
+  if (PPUclock.oddFrame && renderingActiveThisFrame &&
+    PPUclock.scanline === 261 && PPUclock.dot === 340) {
+    PPUclock.scanline = 0;
+    PPUclock.dot = 0;
+    PPUclock.frame++;
+    PPUclock.oddFrame = !PPUclock.oddFrame;
+    nmiAtVblankEnd = false;
+  }
+
+  // --- Operate the current dot ---
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
 
-  // Advance counters
-  if (PPUclock.dot === DOTS_PER_SCANLINE - 1) {
-    PPUclock.dot = 0;
-    if (PPUclock.scanline === 261) {
-      PPUclock.scanline = 0;
-      PPUclock.frame++;
-      PPUclock.oddFrame = !PPUclock.oddFrame;
-    } else {
-      PPUclock.scanline++;
-    }
-  } else {
-    PPUclock.dot++;
+  // --- Regular scanline wrap ---
+  if (PPUclock.scanline === 261 && PPUclock.dot === 340) {
+    PPUclock.scanline = 0;
+    PPUclock.dot = -1; // next loop increment brings it to 0
+    PPUclock.frame++;
+    PPUclock.oddFrame = !PPUclock.oddFrame;
   }
-
-  return true; // tick consumed
+  // --- Normal scanline increment ---
+  else if (PPUclock.dot === 340) {
+    PPUclock.dot = -1;
+    PPUclock.scanline++;
+  }
 }
 
-
+// ---- Main PPU Loop ----
 function startPPULoop() {
   while (1) {
     while (!cpuStallFlag) {}
@@ -475,12 +517,22 @@ function startPPULoop() {
     const target = ppuCycles;
 
     while (totalTicks < target) {
-    // Operate the dot first    
-    ppuTick();
-    // Then consume the tick
-    totalTicks++;
-      
-    }
+        ppuTick();
+        
+        // store last operated frame/dot/scanline, notes below
+        STORE_CURRENT_FRAME(PPUclock.frame);
+        STORE_CURRENT_DOT(PPUclock.dot);
+        STORE_CURRENT_SCANLINE(PPUclock.scanline);
+  /*
+        ^
+        when the CPU comes in after this increment (below), our logging / use of this information (above)
+        on the CPU side will show the last completed tick, not the one coming.
+        --> This is important,  do not place under the below increments as a lot of logic relies on PRE increment 
+        storage values
+  */
+        PPUclock.dot++;
+        totalTicks++;
+      }
     cpuStallFlag = false;
   }
 }

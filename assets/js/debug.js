@@ -28,17 +28,18 @@ function checkInterrupts() {
 const frame = Atomics.load(SHARED.SYNC, 4);
 const sl    = Atomics.load(SHARED.SYNC, 2);
 const dot   = Atomics.load(SHARED.SYNC, 3);
-  const nmiEdgeExists = PPU_FRAME_FLAGS & 0b00000100;
-  if (nmiEdgeExists) {
-    if (!nmiSuppression) {
-      nmiPending = true;
 
+const nmiEnabled = (PPUCTRL & 0x80) != 0;
+  const nmiEdgeExists = (PPU_FRAME_FLAGS & 0b00000100) != 0;
+
+  if (nmiEdgeExists){
+      nmiPending = true;
       console.debug(
         `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
         "color:black;background:lime;font-weight:bold;font-size:14px;"
       );
-    }
   }
+  PPU_FRAME_FLAGS &= ~0b00000100;  // clear the NMI edge
 }
 
 // ===== NTSC constants =====
@@ -47,8 +48,6 @@ const FPS      = 60.0988;
 const FRAME_MS = 1000 / FPS;       // ~16.64 ms
 
 window.step = function () {
-
-  if (PPU_FRAME_FLAGS & 0b00000001) renderFrame();
 
   debugLogging = false;
   NoSignalAudio.setEnabled(false);
@@ -124,7 +123,7 @@ window.step = function () {
     serviceIRQ();   // adds +7 via addCycles()
   }
 
-  checkInterrupts(); 
+  checkInterrupts();
   // set the flag here, check if NMI is due NEXT step
   // this order is specifically coded to pass NMI control tests
   // i.e. do not call checkInterrupts prior to handling of interrupts
@@ -406,12 +405,12 @@ const OPCODES = [
     case "BEQ": notes = f.Z ? "(taken)" : "(not taken)"; break;
   }
 
-  // PPU status/control hints
   if (operand === "PPUSTATUS") {
-    notes = (CPUregisters.A & 0x80) ? "VBlank set" : "VBlank clear";
+    notes = (PPUSTATUS & 0x80) ? "VBlank set" : "VBlank clear";
   }
+
   if (operand === "PPUCTRL") {
-    notes = (CPUregisters.A & 0x80) ? "NMI enabled" : "NMI disabled";
+    notes = (PPUCTRL & 0x80) ? "NMI enabled" : "NMI disabled";
   }
 
   // --- final HTML row ---

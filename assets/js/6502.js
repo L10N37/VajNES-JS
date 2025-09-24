@@ -95,24 +95,59 @@ function opCodeTest(){
   );
 }
 
+
+// ---------------------------------------------------------
+// CPU ↔ PPU alignment selector
+//
+// alignment = 1 → skip 0 PPU cycles  (default)
+// alignment = 2 → skip 1 PPU cycle   (PPU lags by 1 cycle)
+// alignment = 3 → skip 2 PPU cycles  (PPU lags by 2 cycles)
+// alignment = 4 → skip 3 PPU cycles  (PPU lags by 3 cycles)
+//
+// This simulates the 4 possible power-on phase relationships
+// between CPU and PPU (derived from ÷12 and ÷4 master clocks).
+// ---------------------------------------------------------
+let alignment = 1; 
+let ppuAlignmentOffset = (alignment - 1); 
+let alignmentDone = false;
+
 function addCycles(x) {
   cpuCycles += x;
+
+  // Handle alignment offset (only once at startup/reset)
+  if (!alignmentDone) {
+    // Skip (alignment - 1) PPU cycles before starting
+    if (ppuAlignmentOffset > 0) {
+      let skip = Math.min(ppuAlignmentOffset, 3 * x);
+      ppuCycles += skip; 
+      ppuAlignmentOffset -= skip;
+
+      // If we still have PPU cycles left to skip, bail early
+      if (ppuAlignmentOffset > 0) return;
+    }
+    alignmentDone = true;
+  }
+
   ppuCycles += 3 * x;
 
   if (decayTimer > 0) {
     decayTimer--;
-    if (decayTimer == 0) {
-      ppuOpenBus = 0; // fully decayed after ~1 sec
+    if (decayTimer === 0) {
+      ppuOpenBus = 0;
     }
   } else {
     decayTimer = 1789772;
   }
 
+  
   cpuStallFlag = true;
   while (cpuStallFlag) {
   }
-}
 
+  if (PPU_FRAME_FLAGS & 0b00000001) {
+    renderFrame();
+  }
+}
 /*
   NES Mappers That Use IRQs (Interrupt Requests):
 
