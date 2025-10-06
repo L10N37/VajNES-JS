@@ -27,33 +27,38 @@ function safeBank(b, total) {
 // ----------------------------------------------------
 function updatePRGBanks() {
   const prgMode = (mmc1Control >> 2) & 0x03;
-  const totalBanks = (prgRom.length / 0x4000) | 0;
-  const lastBank = (totalBanks - 1) | 0;
+  const totalBanks = prgRom.length / 0x4000;
+  const lastBank = totalBanks - 1;
 
+  // 32 KB mode (00 or 01)
   if (prgMode === 0 || prgMode === 1) {
-    const bank = safeBank(mmc1PRG & ~1, totalBanks);
-    const next = safeBank(bank + 1, totalBanks);
+    const bank = (mmc1PRG & ~1) % totalBanks;
+    const next = (bank + 1) % totalBanks;
     for (let i = 0; i < 0x4000; i++) {
       PRG_BANK_LO[i] = prgRom[(bank * 0x4000) + i];
       PRG_BANK_HI[i] = prgRom[(next * 0x4000) + i];
     }
     if (mmc1Debugging) console.debug(`[MMC1] PRG=32KB mode, banks ${bank}/${next}`);
   }
+
+  // 16 KB mode fix first bank at $8000 (10)
+  else if (prgMode === 2) {
+    const bank = mmc1PRG % totalBanks;
+    for (let i = 0; i < 0x4000; i++) {
+      PRG_BANK_LO[i] = prgRom[i];  // first 16 KB fixed
+      PRG_BANK_HI[i] = prgRom[(bank * 0x4000) + i];
+    }
+    if (mmc1Debugging) console.debug(`[MMC1] PRG=16KB fix first=0, switch $C000=${bank}`);
+  }
+
+  // 16 KB mode fix last bank at $C000 (11)
   else if (prgMode === 3) {
-    const bank = safeBank(mmc1PRG, totalBanks);
+    const bank = mmc1PRG % totalBanks;
     for (let i = 0; i < 0x4000; i++) {
       PRG_BANK_LO[i] = prgRom[(bank * 0x4000) + i];
       PRG_BANK_HI[i] = prgRom[(lastBank * 0x4000) + i];
     }
     if (mmc1Debugging) console.debug(`[MMC1] PRG=16KB switch $8000=${bank}, fix last=${lastBank}`);
-  }
-  else if (prgMode === 2) {
-    const bank = safeBank(mmc1PRG, totalBanks);
-    for (let i = 0; i < 0x4000; i++) {
-      PRG_BANK_LO[i] = prgRom[i];
-      PRG_BANK_HI[i] = prgRom[(bank * 0x4000) + i];
-    }
-    if (mmc1Debugging) console.debug(`[MMC1] PRG=16KB fix first=0, switch $C000=${bank}`);
   }
 }
 
@@ -159,7 +164,14 @@ function mmc1WriteCHR1(addr, value) {
 function mmc1WritePRG(addr, value) {
   mmc1ShiftWrite((val) => {
     mmc1PRG = val & 0x1F;
-    if (mmc1Debugging) console.debug(`[MMC1 LATCH] PRG=$${val.toString(16)}`);
+
+    // Bit 4 of PRG register disables SRAM when set
+    prgRamEnable = ((mmc1PRG & 0x10) === 0);
+
+    if (mmc1Debugging) {
+      console.debug(`[MMC1 LATCH] PRG=$${val.toString(16)} | SRAM ${prgRamEnable ? "ENABLED" : "DISABLED"}`);
+    }
+
     updatePRGBanks();
   }, value);
 }
