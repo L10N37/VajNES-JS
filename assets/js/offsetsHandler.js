@@ -46,169 +46,149 @@ function checkReadOffset(address) {
   let value;
   bpCheckRead(addr);
 
+  // --- $0000–$1FFF: CPU internal RAM mirrors ---
   if (addr < 0x2000) {
-    value = cpuRead(addr);
-    cpuOpenBus = value & 0xFF;
-    return value & 0xFF;
+    value = cpuRead(addr) & 0xFF;
+    cpuOpenBus = value;
+    return value;
   }
 
+  // --- $2000–$3FFF: PPU registers (mirrored every 8) ---
   else if (addr < 0x4000) {
     const reg = 0x2000 + (addr & 0x7);
+
     switch (reg) {
-
-/*
-Reading $2002 within a few PPU clocks of when VBL is set results in special-case behavior. 
-
-Reading one PPU clock before reads it as clear and never sets the flag or generates NMI for that frame. -> done
-
-Reading on the same PPU clock or one later reads it as set, clears it, and suppresses the NMI for that frame. -> done
-
- Reading two or more PPU clocks before/after it's set behaves normally (reads flag's value, clears it, 
- and doesn't affect NMI operation). This suppression behavior is due to the $2002 read pulling the NMI 
- line back up too quickly after it drops (NMI is active low) for the CPU to see it. 
- (CPU inputs like NMI are sampled each clock.)
-
-On an NTSC machine, the VBL flag is cleared 6820 PPU clocks, or exactly 20 scanlines, 
-after it is set. In other words, it's cleared at the start of the pre-render scanline.
-*/
       case 0x2002: { // PPUSTATUS
-        
-        const sl = Atomics.load(SHARED.SYNC, 2);
+        const sl  = Atomics.load(SHARED.SYNC, 2);
         const dot = Atomics.load(SHARED.SYNC, 3);
-        const fr = Atomics.load(SHARED.SYNC, 4);
+        const fr  = Atomics.load(SHARED.SYNC, 4);
 
-        if (sl === 241 && dot === 0){
-            doNotSetVblank = true;
-            nmiSuppression = true;
-            console.debug(
-              `%c[NMI and VBL set cancelled] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot}`,
-              "color:black;background:cyan;font-weight:bold;font-size:14px;"
-            );
+        if (sl === 241 && dot === 0) { // one PPU clock before set
+          doNotSetVblank = true;
+          nmiSuppression = true;
+          console.debug(`%c[NMI/VBL cancelled] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot}`,
+            "color:black;background:cyan;font-weight:bold;");
         }
 
-        if (sl === 241 && (dot === 1 || dot === 2)){      
-        console.debug(
-          `%c[VBL will be cleared] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot} ` +
-          `vblank=${(PPUSTATUS & 0x80) ? 1 : 0} ` +
-          `nmiEdge=${(PPU_FRAME_FLAGS & 0b00000100) ? 1 : 0} ` +
-          `(If NMI edge exists, it will be cancelled)`,
-          "color:black;background:cyan;font-weight:bold;font-size:14px;"
-        );
-        PPU_FRAME_FLAGS &= ~0b00000100;  // clear the NMI edge
-        nmiPending = 0; // just in case the edge transitioned to our timing latch, can that too
-        nmiSuppression = true; // just to be sure
+        if (sl === 241 && (dot === 1 || dot === 2)) { // same/one later
+          console.debug(`%c[VBL clear path] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot} ` +
+                        `vblank=${(PPUSTATUS & 0x80)?1:0} nmiEdge=${(PPU_FRAME_FLAGS & 0b00000100)?1:0}`,
+                        "color:black;background:cyan;font-weight:bold;");
+          PPU_FRAME_FLAGS &= ~0b00000100;
+          nmiPending = 0;
+          nmiSuppression = true;
         }
 
         const obBefore = ppuOpenBus & 0xFF;
         const stat     = PPUSTATUS & 0xFF;
-
-        // high 3 from status, low 5 from previous PPU bus
         const ret = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
 
-        // Side effects (immediate)
         const wasVBlank = (stat & 0x80) !== 0;
+        PPUSTATUS &= ~0x80;   // clear VBL
+        writeToggle = 0;      // reset $2005/$2006 latch
 
-        // Clear VBlank immediately and reset toggle
-        PPUSTATUS &= ~0x80;
-
-        writeToggle = 0;                    // reset $2005/$2006 latch
-
-        // Open-bus update
         ppuOpenBus = ret;
         cpuOpenBus = ret;
 
-      if (wasVBlank) {
-        console.debug("2002 Vblank clear:", cpuCycles, "Frame:", fr);
-      }
-
+        if (wasVBlank) console.debug("2002 Vblank clear:", cpuCycles, "Frame:", fr);
         return ret;
       }
 
-      case 0x2004: { // OAMDATA (READ)
+      case 0x2004: { // OAMDATA (read)
         value = OAM[OAMADDR & 0xFF] & 0xFF;
-
-        // open-bus: reading a PPU register drives the bus with what you read
         ppuOpenBus = value;
-        cpuOpenBus = value; // optional mirror
-
-        if (debugLogging)
-          console.debug(`[R $2004 OAMDATA] val=$${value.toString(16)} OAMADDR=$${(OAMADDR&0xFF).toString(16)}`);
+        cpuOpenBus = value;
+        if (debugLogging) console.debug(`[R $2004 OAMDATA] val=$${value.toString(16)} OAMADDR=$${(OAMADDR&0xFF).toString(16)}`);
         break;
       }
 
-      case 0x2007: { // PPUDATA read
+      case 0x2007: { // PPUDATA (read)
         const v = VRAM_ADDR & 0x3FFF;
         const bufBefore = VRAM_DATA & 0xFF;
         let ret;
 
         if (v < 0x3F00) {
-          // Non-palette region: return buffer, then refill
+          // Buffered read for pattern/name tables
           ret = bufBefore;
-          if (v < 0x2000) VRAM_DATA = chrRead(v & 0x1FFF) & 0xFF;
-          else            VRAM_DATA = VRAM[mapNT(v)] & 0xFF;
+          if (v < 0x2000) {
+            // CHR: route through mapper if MMC1
+            const chrVal = (mapperNumber === 1)
+              ? (mmc1ChrRead(v & 0x1FFF) & 0xFF)
+              : (CHR_ROM[v & 0x1FFF] & 0xFF);
+            VRAM_DATA = chrVal;
+          } else {
+            VRAM_DATA = VRAM[mapNT(v)] & 0xFF;
+          }
         } else {
-          // Palette region: direct read, but refill buffer from mirrored $2Fxx
+          // Palette: direct read; refill buffer from mirrored $2Fxx
           const p   = paletteIndex(v);
           const pal = PALETTE_RAM[p] & 0x3F;
-          // keep high 2 bits from previous PPU bus
           ret = ((ppuOpenBus & 0xC0) | pal) & 0xFF;
 
-
           const ntMirror = v & 0x2FFF;
-          if (ntMirror < 0x2000) VRAM_DATA = chrRead(ntMirror & 0x1FFF) & 0xFF;
-          else                   VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
+          if (ntMirror < 0x2000) {
+            VRAM_DATA = (mapperNumber === 1)
+              ? (mmc1ChrRead(ntMirror & 0x1FFF) & 0xFF)
+              : (CHR_ROM[ntMirror & 0x1FFF] & 0xFF);
+          } else {
+            VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
+          }
         }
 
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
 
         const out = ret & 0xFF;
-
         if (debugLogging) {
-          console.debug(
-            `[R $2007 PPUDATA] v=$${v.toString(16)} ` +
-            `val=$${out.toString(16)} bufBefore=$${bufBefore.toString(16)} ` +
-            `bufAfter=$${(VRAM_DATA & 0xFF).toString(16)} inc=${inc}`
-          );
+          console.debug(`[R $2007 PPUDATA] v=$${v.toString(16)} val=$${out.toString(16)} bufBefore=$${bufBefore.toString(16)} ` +
+                        `bufAfter=$${(VRAM_DATA & 0xFF).toString(16)} inc=${inc}`);
         }
-
-        // PPU read drives the PPU bus; optionally mirror to CPU bus
         ppuOpenBus = out;
-        cpuOpenBus = out; // optional mirror
+        cpuOpenBus = out;
         return out;
       }
 
-      default: {
-        // write-only regs return current PPU bus value; do not modify it
+      default: { // write-only regs mirror bus
         value = ppuOpenBus & 0xFF;
         if (debugLogging) console.debug(`[R PPU-OPENBUS] $${reg.toString(16)} -> $${value.toString(16)}`);
         break;
       }
     }
+
+    cpuOpenBus = value & 0xFF;
+    return value & 0xFF;
   }
 
+  // --- $4000–$401F: APU / I/O ---
   else if (addr < 0x4020) {
     if (addr === 0x4016 || addr === 0x4017) {
       const bit = (joypadRead(addr) & 1);
-      value = (cpuOpenBus & 0xFE) | bit; // keep upper 7 from CPU open bus
+      value = (cpuOpenBus & 0xFE) | bit;
     } else {
       value = apuRead(addr) & 0xFF;
     }
-    if (debugLogging) console.debug(`[R IO] $${addr.toString(16)} -> $${(value&0xFF).toString(16)}`);
+    if (debugLogging) console.debug(`[R IO] $${addr.toString(16)} -> $${(value & 0xFF).toString(16)}`);
   }
 
+  // --- $4020–$5FFF: expansion ---
   else if (addr < 0x6000) {
     value = cpuOpenBus & 0xFF;
     if (debugLogging) console.debug(`[R EXP] $${addr.toString(16)} -> $${value.toString(16)}`);
   }
 
+  // --- $6000–$7FFF: PRG-RAM (mapper dependent) ---
   else if (addr < 0x8000) {
-    value = prgRam[addr - 0x6000] & 0xFF;
+    value = (mapperNumber === 1)
+      ? (mmc1CpuRead(addr) & 0xFF)
+      : (prgRam[addr - 0x6000] & 0xFF);
     if (debugLogging) console.debug(`[R PRG-RAM] $${addr.toString(16)} -> $${value.toString(16)}`);
   }
 
+  // --- $8000–$FFFF: PRG-ROM (mapper dependent) ---
   else {
-    value = mapperReadPRG(addr) & 0xFF;
+    value = (mapperNumber === 1)
+      ? (mmc1CpuRead(addr) & 0xFF)
+      : (mapperReadPRG(addr) & 0xFF);
     if (debugLogging) console.debug(`[R PRG-ROM] $${addr.toString(16)} -> $${value.toString(16)}`);
   }
 
@@ -224,60 +204,53 @@ function checkWriteOffset(address, value) {
   value &= 0xFF;
   bpCheckWrite(addr, value);
 
-  if (addr < 0x2000) { cpuWrite(addr, value); return; }
+  // --- $0000–$1FFF: CPU RAM mirrors ---
+  if (addr < 0x2000) { 
+    cpuWrite(addr, value);
+    return;
+  }
 
+  // --- $2000–$3FFF: PPU registers (mirrored every 8) ---
   else if (addr < 0x4000) {
     const reg = 0x2000 + (addr & 0x7);
-    const idx = reg & 0x7;
 
-    // Gate early writes only for 2000/2001/2005/2006
+    // block early writes to 2000/2001/2005/2006 until gate threshold
     const gateThis = (reg === 0x2000 || reg === 0x2001 || reg === 0x2005 || reg === 0x2006);
-    const gated = gateThis && (cpuCycles < PPU_WRITE_GATE_CYCLES);
-    if (gated) {
+    if (gateThis && (cpuCycles < PPU_WRITE_GATE_CYCLES)) {
       if (debugLogging) console.debug(`[PPU-GATE] Ignored write $${reg.toString(16)} val=$${value.toString(16)} @${cpuCycles}`);
       return;
     }
 
     switch (reg) {
-      /*
-      TEST_NMI_Disabled_VBL_Start_Expected_Results:
-						; This $FF could be a 00, or a 01, so skip it in the evaluation.
-	.byte $00, $00, $00, $FF, $01, $01, $01
-  */
       case 0x2000: { // PPUCTRL
         const wasEN = (PPUCTRL & 0x80) !== 0;
-        PPUCTRL = value & 0xFF;
+        PPUCTRL = value;
         if (debugLogging) console.debug(`[W $2000 PPUCTRL] val=$${value.toString(16)} wasEN=${wasEN?1:0}`);
         const nowEN = (value & 0x80) !== 0;
-        
-        // mid VBL NMI edges, NMI bit in PPUCTRL has transitioned from 0 -> 1 mid VBL (VBL flag is set)
-        //const ppuIsInVblank = (PPU_FRAME_FLAGS & 0b00000010) !== 0;
         if (!wasEN && nowEN && (PPUSTATUS & 0x80)) {
           const sl = Atomics.load(SHARED.SYNC, 2);
           const dot = Atomics.load(SHARED.SYNC, 3);
           const fr = Atomics.load(SHARED.SYNC, 4);
-          PPU_FRAME_FLAGS |= 0b00000100; // set NMI edge marker
-          /*if (debugLogging)*/ console.debug(`[PPUCTRL NMI EDGE] frame=${fr} sl=${sl} dot=${dot}`);
+          PPU_FRAME_FLAGS |= 0b00000100;
+          console.debug(`[PPUCTRL NMI EDGE] frame=${fr} sl=${sl} dot=${dot}`);
         }
-
         break;
       }
 
       case 0x2001: { // PPUMASK
-        PPUMASK = value & 0xFF;
+        PPUMASK = value;
         if (debugLogging) console.debug(`[W $2001 PPUMASK] val=$${value.toString(16)}`);
         break;
       }
 
       case 0x2003: { // OAMADDR
-        OAMADDR = value & 0xFF;
+        OAMADDR = value;
         if (debugLogging) console.debug(`[W $2003 OAMADDR] val=$${value.toString(16)}`);
         break;
       }
 
       case 0x2004: { // OAMDATA
         if (debugLogging) console.debug(`[W $2004 OAMDATA] val=$${value.toString(16)} @OAMADDR=$${(OAMADDR&0xFF).toString(16)}`);
-        // full write to OAM memory as before:
         OAM[OAMADDR & 0xFF] = value;
         OAMADDR = (OAMADDR + 1) & 0xFF;
         break;
@@ -313,28 +286,32 @@ function checkWriteOffset(address, value) {
         const v   = VRAM_ADDR & 0x3FFF;
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
 
-        if (debugLogging) console.debug(`[W $2007] RMW=${currentIsRMW ? "1" : "0"} v=$${v.toString(16)} val=$${(value & 0xFF).toString(16)}`);
+        if (debugLogging) console.debug(`[W $2007] RMW=${currentIsRMW ? "1" : "0"} v=$${v.toString(16)} val=$${value.toString(16)}`);
 
-        // functional write
         if (v < 0x2000) {
-          if (typeof mapperChrWrite === "function") mapperChrWrite(v & 0x1FFF, value);
-          else CHR_ROM[v & 0x1FFF] = value;
+          // CHR write: route via mapper if MMC1 (CHR-RAM only)
+          if (mapperNumber === 1) {
+            mmc1ChrWrite(v & 0x1FFF, value);
+          } else {
+            CHR_ROM[v & 0x1FFF] = value; // only meaningful if CHR is RAM
+          }
         } else if (v < 0x3F00) {
           VRAM[mapNT(v)] = value;
         } else {
           PALETTE_RAM[paletteIndex(v)] = value & 0x3F;
         }
 
-        // RMW extra (second write of pair), nametable only
+        // RMW quirk extra write for nametables
         if (currentIsRMW) {
-          if (!rmw2007Armed) { rmw2007Armed = true; rmw2007BaseAddr = v; }
-          else {
-           // addCycles(1); // does this quirk consume a tick? i mean, it should
+          if (!rmw2007Armed) {
+            rmw2007Armed = true;
+            rmw2007BaseAddr = v;
+          } else {
             if (rmw2007BaseAddr >= 0x2000 && rmw2007BaseAddr < 0x3F00) {
               const extraAddr = ((rmw2007BaseAddr & 0xFF00) | (value & 0xFF)) & 0x3FFF;
               if (extraAddr >= 0x2000 && extraAddr < 0x3F00) {
                 VRAM[mapNT(extraAddr)] = value;
-                if (debugLogging) console.debug(`[RMW $2007 extra] base=$${rmw2007BaseAddr.toString(16)} extra=$${extraAddr.toString(16)} val=$${(value & 0xFF).toString(16)}`);
+                if (debugLogging) console.debug(`[RMW $2007 extra] base=$${rmw2007BaseAddr.toString(16)} extra=$${extraAddr.toString(16)} val=$${value.toString(16)}`);
               }
             }
             rmw2007Armed = false;
@@ -348,26 +325,41 @@ function checkWriteOffset(address, value) {
       }
     }
 
-    ppuOpenBus = value & 0xFF;
-    cpuOpenBus = value & 0xFF;
-
+    ppuOpenBus = value;
+    cpuOpenBus = value;
     return;
   }
 
+  // --- $4014/$4016/$4017 and APU/IO ---
   else if (addr === 0x4014) { dmaTransfer(value); }
   else if (addr === 0x4016) { joypadWrite(addr, value); }
   else if (addr === 0x4017) { APUregister.FRAME_CNT = value; cpuOpenBus = value; }
   else if (addr < 0x4020)   { apuWrite(addr, value); }
+
+  // --- $4020–$5FFF: expansion ---
   else if (addr < 0x6000)   { cpuOpenBus = value; }
-  else if (addr < 0x8000)   { prgRam[addr - 0x6000] = value; }
+
+  // --- $6000–$7FFF: PRG-RAM (mapper dependent) ---
+  else if (addr < 0x8000) {
+    if (mapperNumber === 1) {
+      mmc1CpuWrite(addr, value); // MMC1 handles PRG-RAM enabling
+    } else {
+      prgRam[addr - 0x6000] = value & 0xFF; // NROM
+    }
+  }
+
+  // --- $8000–$FFFF: PRG area (mapper dependent) ---
   else {
-    if (addr >= 0xFFFA) return;
-    mapperWritePRG(addr, value);
+    if (addr >= 0xFFFA) return; // don't touch vectors
+    if (mapperNumber === 1) {
+      mmc1CpuWrite(addr, value);
+    } else {
+      mapperWritePRG(addr, value); // NROM: usually no-op
+    }
   }
 
   cpuOpenBus = value & 0xFF;
 }
-
 
 function cpuRead(addr) {
   addr &= 0xFFFF;

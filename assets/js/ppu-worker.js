@@ -470,10 +470,20 @@ function copyVert() {
 
 function ppuBusRead(addr) {
   addr &= 0x3FFF;
-  if (addr < 0x2000) return CHR_ROM[addr & 0x1FFF] & 0xFF;
-  if (addr < 0x3F00)  return VRAM[(addr - 0x2000) & 0x07FF] & 0xFF;
+  if (addr < 0x2000) {
+    if (mapperNumber === 1) {
+      if (addr < 0x1000)
+        return CHR_ROM[(CHR_BANK_LO << 12) + addr] & 0xFF;
+      else
+        return CHR_ROM[(CHR_BANK_HI << 12) + (addr - 0x1000)] & 0xFF;
+    }
+    return CHR_ROM[addr & 0x1FFF] & 0xFF;  // NROM fallback
+  }
+  if (addr < 0x3F00)
+    return VRAM[(addr - 0x2000) & 0x07FF] & 0xFF;
+
   let p = addr & 0x1F;
-  if ((p & 0x13) === 0x10) p &= ~0x10; // $3F10/$14/$18/$1C mirrors
+  if ((p & 0x13) === 0x10) p &= ~0x10;
   return PALETTE_RAM[p] & 0x3F;
 }
 

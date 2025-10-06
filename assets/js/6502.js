@@ -31,7 +31,7 @@ let CPUregisters = {
   Y: 0x00,
   // initialized to 0xFF on power-up or reset?
   // https://www.nesdev.org/wiki/Stack
-  S: 0xFF,
+  S: 0xFD,
   PC: 0x8000, // got sick of loading a dummy rom/ setting in console/ setting in the GUI, lets just start with this
   P: {
       C: 0,    // Carry
@@ -59,7 +59,7 @@ function resetCPU() {
   CPUregisters.A = 0x00;
   CPUregisters.X = 0x00;
   CPUregisters.Y = 0x00;
-  CPUregisters.S = 0xFF; // unsure, should be $FC at reset, shouldn't matter
+  CPUregisters.S = 0xFD; // unsure, should be $FC at reset, shouldn't matter
   // clear CPU regs
   CPUregisters.P = {
       C: 0,    // Carry

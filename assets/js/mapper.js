@@ -1,41 +1,62 @@
-// --- NES Mapper 0 (NROM) ---
-// Mirrors 16KB PRG up to 32KB, or just copies 32KB PRG as is
-// Always ends up with a flat 32KB PRG-ROM region at $8000-$FFFF
-// Sets the reset vector for the CPU. No header export, just does its job.
-
-
 chrIsRAM = false;
 
+// --- General mapper handling at ROM load, mappers folder contains stand-alone mapper implementations ---
 function mapper(nesHeader) {
-  const prgBanks = nesHeader[4]; // 1 or 2 usually
-  const chrBanks = nesHeader[5];
-  const prgSize = prgBanks * 0x4000;
-  const chrSize = chrBanks * 0x2000;
-
-  // Always use a flat 32KB buffer for PRG-ROM (code/data)
-  let flatPrg = new Uint8Array(0x8000);
+  const prgBanks = nesHeader[4]; // PRG-ROM banks (16KB each)
+  const chrBanks = nesHeader[5]; // CHR-ROM banks (8KB each)
+  const prgSize  = prgBanks * 0x4000;
+  const chrSize  = chrBanks * 0x2000;
 
   if (!prgRom || prgRom.length < prgSize)
     throw new Error("ROM file too small for header PRG count");
 
-  if (prgBanks === 1) {
-    // 16KB PRG: Mirror into both halves ($8000-$BFFF and $C000-$FFFF)
-    flatPrg.set(prgRom.slice(0, 0x4000), 0x0000); // $8000
-    flatPrg.set(prgRom.slice(0, 0x4000), 0x4000); // $C000
-    console.debug("[Mapper] Mirrored 16KB PRG into 32KB region ($8000-$FFFF)");
-  } else if (prgBanks === 2) {
-    // 32KB PRG: just copy
-    flatPrg.set(prgRom.slice(0, 0x8000), 0x0000);
-    console.debug("[Mapper] Loaded 32KB PRG as is ($8000-$FFFF)");
-  } else {
-    throw new Error(`Unexpected PRG-ROM bank count: ${prgBanks}`);
+  switch (mapperNumber) {
+    // ==========================================================
+    // Mapper 0: NROM
+    // ==========================================================
+    case 0: {
+      let flatPrg = new Uint8Array(0x8000); // always 32KB view
+
+      if (prgBanks === 1) {
+        // 16KB PRG: mirror into both halves
+        flatPrg.set(prgRom.slice(0, 0x4000), 0x0000); // $8000
+        flatPrg.set(prgRom.slice(0, 0x4000), 0x4000); // $C000
+        console.debug("[Mapper0] Mirrored 16KB PRG into 32KB region ($8000-$FFFF)");
+      } else if (prgBanks === 2) {
+        // 32KB PRG: straight copy
+        flatPrg.set(prgRom.slice(0, 0x8000), 0x0000);
+        console.debug("[Mapper0] Loaded 32KB PRG as is ($8000-$FFFF)");
+      } else {
+        throw new Error(`[Mapper0] Unexpected PRG-ROM bank count: ${prgBanks}`);
+      }
+
+      prgRom = flatPrg; // normalize to 32KB flat
+
+      // CHR-ROM untouched (CHR_ROM already loaded globally)
+      resetCPU(); // ensures consistent start state
+      break;
+    }
+
+    // ==========================================================
+    // Mapper 1: MMC1 (SxROM family)
+    // ==========================================================
+    case 1: {
+      console.debug("[Mapper1] Initializing MMC1");
+
+      // CHR type: if no CHR banks, it's CHR RAM
+      chrIsRAM = (chrSize === 0);
+
+      // Hand off to mmc1.js init
+      mmc1Init(prgRom, CHR_ROM);
+
+      resetCPU();
+      break;
+    }
+
+    // ==========================================================
+    // Unsupported mappers
+    // ==========================================================
+    default:
+      throw new Error(`Mapper ${mapperNumber} not yet implemented`);
   }
-
-  // Now prgRom global is always 32KB, always flat
-  prgRom = flatPrg;
-
-  // CHR-ROM stays untouched (already global), no further mapping for Mapper 0
-  // this needs to #reset the PPU as well, if you change games, it will be at a random scanline/dot from prior
-  resetCPU(); // burn 7 cycles here and reset cycle counter
 }
-
