@@ -32,8 +32,17 @@
   SHARED.SAB_VRAM_ADDR = new SharedArrayBuffer(Uint16Array.BYTES_PER_ELEMENT);
   SHARED.VRAM_ADDR     = new Uint16Array(SHARED.SAB_VRAM_ADDR);
 
-  SHARED.SAB_CHR     = new SharedArrayBuffer(0x2000);
-  SHARED.CHR_ROM     = new Uint8Array(SHARED.SAB_CHR);
+  // Space for all CHR banks (each iNES CHR bank = 8 KB)
+  const CHR_BANK_BYTES = 0x2000; // 8 KB per bank
+  const TOTAL_CHR_BANKS = Math.max(window.header?.chrBanks || 1, 1);
+  const CHR_TOTAL_SIZE  = CHR_BANK_BYTES * TOTAL_CHR_BANKS;
+
+  // 128 KB (0x20000) covers up to 16 banks; you can clamp or auto-scale as above
+  SHARED.SAB_CHR = new SharedArrayBuffer(CHR_TOTAL_SIZE);
+  SHARED.CHR_ROM = new Uint8Array(SHARED.SAB_CHR);
+
+  console.debug(`[main] Allocated CHR SAB = ${CHR_TOTAL_SIZE.toString(16)} bytes (${TOTAL_CHR_BANKS} banks)`);
+
 
   SHARED.SAB_VRAM    = new SharedArrayBuffer(0x800);
   SHARED.VRAM        = new Uint8Array(SHARED.SAB_VRAM);
@@ -119,6 +128,12 @@
       set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1000) : Atomics.and(SHARED.EVENTS, 0, ~0b1000); },
       configurable: true
     },
+      chr8kModeFlag: {
+    get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b00100000) !== 0,
+    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b00100000)
+                  : Atomics.and(SHARED.EVENTS, 0, ~0b00100000); },
+    configurable: true
+  }
   });
 
   console.debug("[main] Installed live scalar accessors");

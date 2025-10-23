@@ -9,7 +9,7 @@ function serviceNMI() {
   if (debugLogging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
   
 // nmiPending (NMI timing latch) now contains the frame it was generated
-// if the frame doesn't match the current frame, don't fire the NMI, it was generated on vblank boundaries
+// if the frame doesn't match the current frame, don't fire the NMI, it was generated on vblank boundaries <- this guard not required
 // i.e a test ROM created an NMI edge at 260/338, this armed at dot 0 of 261 ..but that's a new frame!
 // also exposed a frame counter bug, fixed.
 
@@ -34,7 +34,7 @@ here as a final guard
 [NMI VECTOR LOADED → PC=$e308] cpu=2767339 ppu=8302017 frame=92 sl=241 dot=9 interrupts.js:69:11
 Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no render) ppu-worker.js:99:11
 */
-  if (!nmiSuppression){
+  if (!nmiSuppression && (frame !== nmiPending + 1 )){
   const pc = CPUregisters.PC & 0xFFFF;
 
   // Push PCH

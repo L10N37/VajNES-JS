@@ -1,4 +1,4 @@
-// --- NES CHR Tile Viewer (Greyscale + Zoom) ---
+// --- NES CHR Tile Viewer (Greyscale + Zoom + Hover Info) ---
 document.addEventListener('DOMContentLoaded', () => {
   const openBtn  = document.getElementById('clickedTileView');
   const modal    = document.getElementById('tileModal');
@@ -8,27 +8,39 @@ document.addEventListener('DOMContentLoaded', () => {
   const currentSource = { bgCanvas: null, fgCanvas: null };
   const ZMIN = 1, ZMAX = 8, ZSTEP = 1;
 
+  // Tooltip for tile info
+  const tooltip = document.createElement('div');
+  Object.assign(tooltip.style, {
+    position: 'fixed',
+    background: 'rgba(0,0,0,0.85)',
+    color: '#fff',
+    font: '12px monospace',
+    padding: '4px 6px',
+    borderRadius: '4px',
+    pointerEvents: 'none',
+    display: 'none',
+    zIndex: 9999
+  });
+  document.body.appendChild(tooltip);
+
   openBtn.addEventListener('click', () => {
     modal.style.display = 'flex';
     try {
       if (!SHARED.CHR_ROM || !(SHARED.CHR_ROM instanceof Uint8Array) || SHARED.CHR_ROM.length === 0)
         throw new Error("CHR ROM is missing or empty.");
 
-      // Slice the ROM into two halves
       const bgData  = SHARED.CHR_ROM.subarray(0x0000, 0x1000); // first 4KB
       const sprData = SHARED.CHR_ROM.subarray(0x1000, 0x2000); // second 4KB
-
-      // Store sources for zoom/dblclick redraw
       currentSource.bgCanvas = bgData;
       currentSource.fgCanvas = sprData;
 
-      // Draw each pane
       drawTilesToCanvas(bgData,  "bgCanvas", zoomState.bgCanvas);
       drawTilesToCanvas(sprData, "fgCanvas", zoomState.fgCanvas);
 
-      // Bind zoom once
       attachZoomControls("bgCanvas");
       attachZoomControls("fgCanvas");
+      attachHoverInfo("bgCanvas", bgData);
+      attachHoverInfo("fgCanvas", sprData);
     } catch (err) {
       console.error("[TileViewer] ERROR:", err.message);
       console.debug(err);
@@ -75,6 +87,75 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+function attachHoverInfo(canvasId, chrData) {
+  const canvas = document.getElementById(canvasId);
+  if (canvas.dataset.hoverBound === "1") return;
+  canvas.dataset.hoverBound = "1";
+
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  const tileSize = 8;
+  const tilesPerRow = 16;
+  const totalTiles = Math.floor(chrData.length / 16);
+  const baseW = tilesPerRow * tileSize;
+  const baseH = Math.ceil(totalTiles / tilesPerRow) * tileSize;
+
+  const redraw = () => {
+    // re-render tiles at current zoom
+    drawTilesToCanvas(chrData, canvasId, zoomState[canvasId]);
+  };
+
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+
+    // Map mouse → canvas device pixels
+    const canvasScaleX = canvas.width  / rect.width;
+    const canvasScaleY = canvas.height / rect.height;
+    const cx = (e.clientX - rect.left) * canvasScaleX; // canvas px
+    const cy = (e.clientY - rect.top)  * canvasScaleY; // canvas px
+
+    // Canvas pixels → unscaled tile space (baseW x baseH)
+    const scaleX = canvas.width  / baseW;  // equals zoom
+    const scaleY = canvas.height / baseH;  // equals zoom
+    const ux = cx / scaleX; // unscaled x (0..baseW)
+    const uy = cy / scaleY; // unscaled y (0..baseH)
+
+    // Tile index
+    const tileX = Math.max(0, Math.min(Math.floor(ux / tileSize), tilesPerRow - 1));
+    const tileY = Math.max(0, Math.min(Math.floor(uy / tileSize), Math.ceil(totalTiles / tilesPerRow) - 1));
+    const tileIndex = tileY * tilesPerRow + tileX;
+    const offset = tileIndex * 16;
+
+    // Redraw and highlight
+    redraw();
+    ctx.save();
+    ctx.strokeStyle = "#00ff00";
+    ctx.lineWidth = Math.max(1, Math.floor(scaleX)); // keeps border visible at higher zoom
+    // Convert tile coords back to *canvas* pixels
+    const rx = tileX * tileSize * scaleX;
+    const ry = tileY * tileSize * scaleY;
+    const rw = tileSize * scaleX;
+    const rh = tileSize * scaleY;
+    ctx.strokeRect(rx, ry, rw, rh);
+    ctx.restore();
+
+    // Tooltip
+    tooltip.style.display = 'block';
+    tooltip.style.left = `${e.clientX + 12}px`;
+    tooltip.style.top  = `${e.clientY + 12}px`;
+    const val0 = chrData[offset] ?? 0;
+    tooltip.textContent =
+      `Tile $${tileIndex.toString(16).padStart(2,"0")} | ` +
+      `Offset $${offset.toString(16).padStart(4,"0")} | ` +
+      `Byte0=$${val0.toString(16).padStart(2,"0")}`;
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+    redraw(); // clear the box
+  });
+}
+
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 });
 
@@ -83,7 +164,6 @@ const NES_GREYS = ["#181818", "#888888", "#c0c0c0", "#fcfcfc"];
 function drawTilesToCanvas(chrData, canvasId, zoom = 1) {
   const canvas = document.getElementById(canvasId);
   const ctx = canvas.getContext('2d', { alpha: false });
-
   const tilesPerRow = 16;
   const tileSize = 8;
   const totalTiles = Math.floor(chrData.length / 16);
@@ -92,7 +172,6 @@ function drawTilesToCanvas(chrData, canvasId, zoom = 1) {
   const baseH = Math.ceil(totalTiles / tilesPerRow) * tileSize;
 
   const off = drawTilesImageData(chrData, baseW, baseH, tilesPerRow, tileSize);
-
   canvas.width = baseW * zoom;
   canvas.height = baseH * zoom;
   ctx.imageSmoothingEnabled = false;
@@ -116,7 +195,7 @@ function drawTilesImageData(chrData, baseW, baseH, tilesPerRow, tileSize) {
 
     for (let j = 0; j < 64; j++) {
       const x = tileX + (j % 8);
-      const y = tileY + (j / 8) | 0;
+      const y = tileY + ((j / 8) | 0);
       const pixelVal = pixels[j] & 0x03;
       const { r, g, b } = HEX_TO_RGB[NES_GREYS[pixelVal]];
       const idx = (y * baseW + x) * 4;

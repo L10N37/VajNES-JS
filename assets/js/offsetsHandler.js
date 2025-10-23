@@ -105,46 +105,109 @@ function checkReadOffset(address) {
       case 0x2007: { // PPUDATA (read)
         const v = VRAM_ADDR & 0x3FFF;
         const bufBefore = VRAM_DATA & 0xFF;
-        let ret;
+        let ret = 0x00;
 
+        // -----------------------------------
+        // Pattern / nametable region (< $3F00)
+        // -----------------------------------
         if (v < 0x3F00) {
-          // Buffered read for pattern/name tables
-          ret = bufBefore;
-          if (v < 0x2000) {
-            // CHR: route through mapper if MMC1
-            const chrVal = (mapperNumber === 1)
-              ? (mmc1ChrRead(v & 0x1FFF) & 0xFF)
-              : (CHR_ROM[v & 0x1FFF] & 0xFF);
-            VRAM_DATA = chrVal;
-          } else {
-            VRAM_DATA = VRAM[mapNT(v)] & 0xFF;
-          }
-        } else {
-          // Palette: direct read; refill buffer from mirrored $2Fxx
-          const p   = paletteIndex(v);
-          const pal = PALETTE_RAM[p] & 0x3F;
-          ret = ((ppuOpenBus & 0xC0) | pal) & 0xFF;
+          ret = bufBefore; // buffered read
 
-          const ntMirror = v & 0x2FFF;
-          if (ntMirror < 0x2000) {
-            VRAM_DATA = (mapperNumber === 1)
-              ? (mmc1ChrRead(ntMirror & 0x1FFF) & 0xFF)
-              : (CHR_ROM[ntMirror & 0x1FFF] & 0xFF);
+          let newVal;
+
+          if (v < 0x2000) {
+            // -------------------------------
+            // CHR region ($0000–$1FFF)
+            // -------------------------------
+            let chrAddr;
+
+            if (mapperNumber === 1) {
+              if (chrIsRAM) {
+                // CHR-RAM: ignore MMC1 banks, just wrap around
+                chrAddr = v & (CHR_ROM.length - 1);
+              } else {
+                // CHR-ROM: apply MMC1 4 KB bank logic
+                const bankOffset =
+                  (v < 0x1000 ? CHR_BANK_LO : CHR_BANK_HI) << 12;
+                chrAddr = (bankOffset + (v & 0x0FFF)) & (CHR_ROM.length - 1);
+              }
+            } else {
+              // NROM or other simple mappers
+              chrAddr = v & (CHR_ROM.length - 1);
+            }
+
+            newVal = CHR_ROM[chrAddr] & 0xFF;
+            VRAM_DATA = newVal;
+
+            if (newVal === 0xFF && chrAddr >= 0x0FF0) {
+              console.warn(
+                `[CHR $FF READ] v=$${v.toString(16)} chrAddr=$${chrAddr.toString(
+                  16
+                )} len=${CHR_ROM.length} chrIsRAM=${chrIsRAM}`
+              );
+            }
           } else {
-            VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
+            // -------------------------------
+            // Nametable region ($2000–$2FFF)
+            // -------------------------------
+            const ntAddr = mapNT(v) & 0x07FF;
+            newVal = VRAM[ntAddr] & 0xFF;
+            VRAM_DATA = newVal;
           }
         }
 
+        // -----------------------------------
+        // Palette region ($3F00–$3FFF)
+        // -----------------------------------
+        else {
+          const p = paletteIndex(v);
+          const palVal = PALETTE_RAM[p] & 0x3F;
+          ret = (ppuOpenBus & 0xC0) | palVal;
+
+          // fill buffer from mirrored nametable region
+          const ntMirror = v & 0x2FFF;
+          if (ntMirror < 0x2000) {
+            let chrAddr;
+            if (mapperNumber === 1) {
+              if (chrIsRAM) {
+                chrAddr = ntMirror & (CHR_ROM.length - 1);
+              } else {
+                const bankOffset =
+                  (ntMirror < 0x1000 ? CHR_BANK_LO : CHR_BANK_HI) << 12;
+                chrAddr = (bankOffset + (ntMirror & 0x0FFF)) & (CHR_ROM.length - 1);
+              }
+            } else {
+              chrAddr = ntMirror & (CHR_ROM.length - 1);
+            }
+            VRAM_DATA = CHR_ROM[chrAddr] & 0xFF;
+          } else {
+            const ntAddr = mapNT(ntMirror) & 0x07FF;
+            VRAM_DATA = VRAM[ntAddr] & 0xFF;
+          }
+        }
+
+        // -----------------------------------
+        // Increment VRAM address
+        // -----------------------------------
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
 
         const out = ret & 0xFF;
-        if (debugLogging) {
-          console.debug(`[R $2007 PPUDATA] v=$${v.toString(16)} val=$${out.toString(16)} bufBefore=$${bufBefore.toString(16)} ` +
-                        `bufAfter=$${(VRAM_DATA & 0xFF).toString(16)} inc=${inc}`);
-        }
         ppuOpenBus = out;
         cpuOpenBus = out;
+
+        if (debugLogging) {
+          console.debug(
+            `[R $2007] v=$${v.toString(16).padStart(4, "0")} out=$${out
+              .toString(16)
+              .padStart(2, "0")} bufBefore=$${bufBefore
+              .toString(16)
+              .padStart(2, "0")} bufAfter=$${(VRAM_DATA & 0xff)
+              .toString(16)
+              .padStart(2, "0")} inc=${inc} chrIsRAM=${chrIsRAM}`
+          );
+        }
+
         return out;
       }
 
@@ -282,48 +345,78 @@ function checkWriteOffset(address, value) {
         break;
       }
 
-      case 0x2007: { // PPUDATA
-        const v   = VRAM_ADDR & 0x3FFF;
-        const inc = (PPUCTRL & 0x04) ? 32 : 1;
+      case 0x2007: { // PPUDATA (write)
+        const v = VRAM_ADDR & 0x3FFF;
 
-        if (debugLogging) console.debug(`[W $2007] RMW=${currentIsRMW ? "1" : "0"} v=$${v.toString(16)} val=$${value.toString(16)}`);
-
+        // ------------------------------
+        // Pattern table / CHR region
+        // ------------------------------
         if (v < 0x2000) {
-          // CHR write: route via mapper if MMC1 (CHR-RAM only)
           if (mapperNumber === 1) {
-            mmc1ChrWrite(v & 0x1FFF, value);
-          } else {
-            CHR_ROM[v & 0x1FFF] = value; // only meaningful if CHR is RAM
-          }
-        } else if (v < 0x3F00) {
-          VRAM[mapNT(v)] = value;
-        } else {
-          PALETTE_RAM[paletteIndex(v)] = value & 0x3F;
-        }
-
-        // RMW quirk extra write for nametables
-        if (currentIsRMW) {
-          if (!rmw2007Armed) {
-            rmw2007Armed = true;
-            rmw2007BaseAddr = v;
-          } else {
-            if (rmw2007BaseAddr >= 0x2000 && rmw2007BaseAddr < 0x3F00) {
-              const extraAddr = ((rmw2007BaseAddr & 0xFF00) | (value & 0xFF)) & 0x3FFF;
-              if (extraAddr >= 0x2000 && extraAddr < 0x3F00) {
-                VRAM[mapNT(extraAddr)] = value;
-                if (debugLogging) console.debug(`[RMW $2007 extra] base=$${rmw2007BaseAddr.toString(16)} extra=$${extraAddr.toString(16)} val=$${value.toString(16)}`);
-              }
+            // Mapper 1: CHR may be RAM or ROM
+            if (chrIsRAM) {
+              CHR_ROM[v & 0x1FFF] = value;
+            } else {
+              mmc1ChrWrite(v & 0x1FFF, value);
             }
-            rmw2007Armed = false;
+          } else if (chrIsRAM) {
+            // Simple mappers: CHR-RAM only
+            CHR_ROM[v & 0x1FFF] = value;
           }
-        } else {
-          rmw2007Armed = false;
+
+          if (debugLogging) {
+            console.debug(
+              `[W $2007 CHR] v=$${v.toString(16).padStart(4, "0")} val=$${value
+                .toString(16)
+                .padStart(2, "0")} chrIsRAM=${chrIsRAM}`
+            );
+          }
         }
 
+        // ------------------------------
+        // Nametable region
+        // ------------------------------
+        else if (v < 0x3F00) {
+          const ntAddr = mapNT(v) & 0x07FF;
+          VRAM[ntAddr] = value;
+
+          if (debugLogging) {
+            console.debug(
+              `[W $2007 NT] v=$${v.toString(16).padStart(4, "0")} mapped=$${ntAddr
+                .toString(16)
+                .padStart(4, "0")} val=$${value
+                .toString(16)
+                .padStart(2, "0")} mirr=${MIRRORING}`
+            );
+          }
+        }
+
+        // ------------------------------
+        // Palette region
+        // ------------------------------
+        else {
+          let p = v & 0x1F;
+          if ((p & 0x13) === 0x10) p &= ~0x10;
+          PALETTE_RAM[p] = value & 0x3F;
+
+          if (debugLogging) {
+            console.debug(
+              `[W $2007 PAL] v=$${v.toString(16).padStart(4, "0")} pIdx=${p
+                .toString(16)
+                .padStart(2, "0")} val=$${value.toString(16).padStart(2, "0")}`
+            );
+          }
+        }
+
+        // ------------------------------
+        // Increment VRAM address
+        // ------------------------------
+        const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
         break;
       }
-    }
+
+  }
 
     ppuOpenBus = value;
     cpuOpenBus = value;

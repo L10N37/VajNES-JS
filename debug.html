@@ -319,6 +319,14 @@
 <!-- purely for disassembler, absolutely nailed the desired outcome/ aesthetics for the window, but can't drag out of DOM -->
 <script src="/disasm/winbox.bundle.min.js"></script>
 
+<!-- actual JS code, LAST to run after JS includes - loads last loaded ROM on page refresh/ site re-launch -->
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('lastRomData');
+  if (saved) setTimeout(() => readFile(null, true), 250);
+});
+</script>
+
 </body>
 <footer>
 </footer>

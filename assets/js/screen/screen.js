@@ -102,6 +102,7 @@ function applyScale() {
 // Initial size
 applyScale();
 
+/* default -> screen off, click to open/ render
 const screenButton = document.getElementById('clickedScreen');
 if (screenButton) {
   screenButton.addEventListener('click', () => {
@@ -110,6 +111,28 @@ if (screenButton) {
     if (blackScreen)    blackScreen.style.display = 'block';
     if (scanlineScreen) scanlineScreen.style.display = 'block';
     NoSignalAudio.setEnabled(true);
+  });
+}
+*/
+// default, screen on, click screen to close/ hide
+const screenButton = document.getElementById('clickedScreen');
+if (screenButton) {
+  let screenVisible = true;
+
+  if (systemScreen)   systemScreen.style.display = 'block';
+  if (grilleScreen)   grilleScreen.style.display = 'block';
+  if (blackScreen)    blackScreen.style.display = 'block';
+  if (scanlineScreen) scanlineScreen.style.display = 'block';
+  NoSignalAudio.setEnabled(true);
+
+  screenButton.addEventListener('click', () => {
+    screenVisible = !screenVisible;
+
+    if (systemScreen)   systemScreen.style.display = screenVisible ? 'block' : 'none';
+    if (grilleScreen)   grilleScreen.style.display = screenVisible ? 'block' : 'none';
+    if (blackScreen)    blackScreen.style.display = screenVisible ? 'block' : 'none';
+    if (scanlineScreen) scanlineScreen.style.display = screenVisible ? 'block' : 'none';
+    NoSignalAudio.setEnabled(screenVisible);
   });
 }
 
@@ -283,6 +306,13 @@ document.addEventListener('keydown', (ev) => {
   })(scaleFactor);
   applyScale();
 });
+
+// run / pause shortcut key on r
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'r' && ev.key !== 'R') return;
+  if (!cpuRunning) run();
+  else pause();
+  });
 
 // --- RF fuzz while nothing is rendered --------------------------------------
 let requestId = 0;

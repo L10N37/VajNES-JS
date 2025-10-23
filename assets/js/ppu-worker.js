@@ -1,7 +1,4 @@
-// ppu-worker.js
-// Notes:
-// - 341 dots/scanline (0..340), 262 scanlines/frame (0..261)
-// - Odd-frame short pre-render: consume 1 dot (skip work at pre-render dot 0)
+
 importScripts('/assets/js/ppu-worker-setup.js');
 console.debug('[PPU Worker init]');
 
@@ -63,6 +60,8 @@ const background = {
 
 // ---- Local execution budget ----
 let budgetLocal = 0; // dots available to run immediately
+
+let ppuChrDebug = true;
 
 // ---- Scanline handlers ----
 /*
@@ -152,6 +151,31 @@ function preRenderScanline(dot) {
       case 1: {
         background.ntByte = ppuBusRead(0x2000 | (v & 0x0FFF));
         BG_ntByte = background.ntByte;
+/*
+if (ppuChrDebug && PPUclock.scanline >= 0 && dot >= 0 && (dot % 8 === 1)) {
+  // only log first few per frame
+  if (!window._ntFetchCount || frame !== window._ntFetchFrame) {
+    window._ntFetchFrame = frame;
+    window._ntFetchCount = 0;
+  }
+
+  if (window._ntFetchCount < 40) {
+    console.debug(
+      `[NT FETCH] scn=${PPUclock.scanline
+        .toString()
+        .padStart(3)} dot=${dot
+        .toString()
+        .padStart(3)} VRAM=$${VRAM_ADDR.toString(16).padStart(4,"0")} ` +
+        `NT_BYTE=$${background.ntByte.toString(16).padStart(2,"0")} ` +
+        `base=$${(0x2000 | (VRAM_ADDR & 0x0FFF)).toString(16)}`
+    );
+    window._ntFetchCount++;
+  } else if (window._ntFetchCount === 40) {
+    console.debug(`[NT FETCH] ...output truncated...`);
+    window._ntFetchCount++;
+  }
+}
+*/
         break;
       }
       case 3: {
@@ -200,6 +224,7 @@ function preRenderScanline(dot) {
 }
 
 function visibleScanline(dot) {
+
   const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
 
@@ -235,12 +260,43 @@ function visibleScanline(dot) {
     }
   }
 
+  if (dot === 5 && PPUclock.scanline === 0) {
+  console.log(`[PPU] PPUCTRL=$${PPUCTRL.toString(16).padStart(2,"0")} BGtable=${(PPUCTRL & 0x10)?'$1000':'$0000'} SPRtable=${(PPUCTRL & 0x08)?'$1000':'$0000'}`);
+}
+
   if ((PPUMASK & MASK_BG_ENABLE) && inFetch) {
     const v = VRAM_ADDR;
     switch (phase) {
       case 1: {
         background.ntByte = ppuBusRead(0x2000 | (v & 0x0FFF));
         BG_ntByte = background.ntByte;
+/*
+    if (ppuChrDebug && PPUclock.scanline >= 0 && dot >= 0 && (dot % 8 === 1)) {
+      // only log first few per frame
+      if (!window._ntFetchCount || frame !== window._ntFetchFrame) {
+        window._ntFetchFrame = frame;
+        window._ntFetchCount = 0;
+      }
+
+      if (window._ntFetchCount < 40) {
+        console.debug(
+          `[NT FETCH] scn=${PPUclock.scanline
+            .toString()
+            .padStart(3)} dot=${dot
+            .toString()
+            .padStart(3)} VRAM=$${VRAM_ADDR.toString(16).padStart(4,"0")} ` +
+            `NT_BYTE=$${background.ntByte.toString(16).padStart(2,"0")} ` +
+            `base=$${(0x2000 | (VRAM_ADDR & 0x0FFF)).toString(16)}`
+        );
+        window._ntFetchCount++;
+      } else if (window._ntFetchCount === 40) {
+        console.debug(`[NT FETCH] ...output truncated...`);
+        window._ntFetchCount++;
+      }
+    }
+      */
+
+
         break;
       }
       case 3: {
@@ -282,6 +338,7 @@ function visibleScanline(dot) {
 
   if (rendering && dot === 256) incY();
   if (rendering && dot === 257) copyHoriz();
+  
 }
 
 function postRenderScanline(dot) {
@@ -468,37 +525,131 @@ function copyVert() {
   VRAM_ADDR = (VRAM_ADDR & ~0x7BE0) | (t & 0x7BE0);
 }
 
-function ppuBusRead(addr) {
+function ppuBusRead(addr, frame = -1, scanline = -1, dot = -1) {
   addr &= 0x3FFF;
-  if (addr < 0x2000) {
-    if (mapperNumber === 1) {
-      if (addr < 0x1000)
-        return CHR_ROM[(CHR_BANK_LO << 12) + addr] & 0xFF;
-      else
-        return CHR_ROM[(CHR_BANK_HI << 12) + (addr - 0x1000)] & 0xFF;
-    }
-    return CHR_ROM[addr & 0x1FFF] & 0xFF;  // NROM fallback
-  }
-  if (addr < 0x3F00)
-    return VRAM[(addr - 0x2000) & 0x07FF] & 0xFF;
+  let value = 0xFF;
+  let index = 0;
 
-  let p = addr & 0x1F;
-  if ((p & 0x13) === 0x10) p &= ~0x10;
-  return PALETTE_RAM[p] & 0x3F;
+  const chrIsRAM = !!(PPU_FRAME_FLAGS & 0x80); // bit 7 = CHR-RAM
+
+  // ===============================
+  // $0000–$1FFF → Pattern tables (CHR)
+  // ===============================
+  if (addr < 0x2000) {
+    addr &= 0x1FFF;
+
+    if (mapperNumber === 1) {
+      if (chr8kModeFlag) {
+        // ---- unified 8 KB CHR ----
+        index = addr & 0x1FFF;
+        if (index < CHR_ROM.length) value = CHR_ROM[index] & 0xFF;
+
+        if (ppuChrDebug && (index & 0x3F) === 0) {
+          console.debug(
+            `[PPU CHR8K${chrIsRAM ? " (RAM)" : ""}] v=$${addr.toString(16).padStart(4,"0")} ` +
+            `index=$${index.toString(16).padStart(4,"0")} ` +
+            `val=$${value.toString(16).padStart(2,"0")} ` +
+            `(CHR size=${CHR_ROM.length})`
+          );
+        }
+      } else {
+        // ---- 4 KB split CHR ----
+        if (addr < 0x1000) {
+          index = (CHR_BANK_LO << 12) + addr;
+          if (index < CHR_ROM.length) value = CHR_ROM[index] & 0xFF;
+
+          if (ppuChrDebug && (index & 0x3F) === 0) {
+            console.debug(
+              `[PPU CHR4K-LO${chrIsRAM ? " (RAM)" : ""}] v=$${addr.toString(16).padStart(4,"0")} ` +
+              `bankLo=${CHR_BANK_LO} idx=$${index.toString(16)} ` +
+              `val=$${value.toString(16).padStart(2,"0")}`
+            );
+          }
+        } else {
+          index = (CHR_BANK_HI << 12) + (addr - 0x1000);
+          if (index < CHR_ROM.length) value = CHR_ROM[index] & 0xFF;
+
+          if (ppuChrDebug && (index & 0x3F) === 0) {
+            console.debug(
+              `[PPU CHR4K-HI${chrIsRAM ? " (RAM)" : ""}] v=$${addr.toString(16).padStart(4,"0")} ` +
+              `bankHi=${CHR_BANK_HI} idx=$${index.toString(16)} ` +
+              `val=$${value.toString(16).padStart(2,"0")}`
+            );
+          }
+        }
+      }
+    } else {
+      // ---- Simple mapper / NROM ----
+      index = addr & 0x1FFF;
+      value = CHR_ROM[index] & 0xFF;
+
+      if (ppuChrDebug && (index & 0x3F) === 0) {
+        console.debug(
+          `[PPU NROM${chrIsRAM ? " (RAM)" : ""}] v=$${addr.toString(16).padStart(4,"0")} ` +
+          `val=$${value.toString(16).padStart(2,"0")}`
+        );
+      }
+    }
+
+    return value;
+  }
+
+  // ===============================
+  // $2000–$2FFF → Nametables (VRAM)
+  // ===============================
+  if (addr < 0x3F00) {
+    const base = addr & 0x07FF;
+    return VRAM[base] & 0xFF;
+  }
+
+  // ===============================
+  // $3F00–$3FFF → Palette
+  // ===============================
+  if (addr >= 0x3F00 && addr < 0x4000) {
+    let p = addr & 0x1F;
+    if ((addr & 0x13) === 0x10) p &= ~0x10;
+    return PALETTE_RAM[p] & 0x3F;
+  }
+
+  return 0xFF;
 }
 
 // ---- Tick ----
 function ppuTick() {
+  
   // --- Latch renderingActiveThisFrame at the frame boundary ---
   if (PPUclock.scanline === 261 && PPUclock.dot === 0) {
     renderingActiveThisFrame = (PPUMASK & 0x18) !== 0;
   }
 
+  // [scanlineWithDotToSkip, dotToSkip, scanLineJumpTo, dotJumpTo]
+  const oddFrameSkipCombos = [
+    [261, 338, 261, 339], // skip 261,338 → jump to 261,339
+    [261, 339, 0, 0],     // canonical short frame (skip 261,340)
+    [261, 340, 0, 1],     // skip 0,0 next frame
+    [260, 340, 261, 1],   // skip 261,0
+    [261, 0, 261, 2],     // skip 261,1
+    [261, 1, 261, 3],     // skip 261,2
+    [261, 337, 261, 338], // skip 261,337
+    [261, 338, 261, 340], // skip 261,339
+    [261, 340, 0, 0],     // skip 261,340 → jump to 0,0 (same as canonical but redundant for testing)
+    [0, 0, 0, 1],         // skip 0,0 inline
+    [0, 1, 0, 2],         // skip 0,1 inline
+  ];
+
+  let comboIndex = 8; // select which trial you want
+
+  const scanlineWithDotToSkip = oddFrameSkipCombos[comboIndex][0];
+  const dotToSkip             = oddFrameSkipCombos[comboIndex][1];
+  const scanLineJumpTo        = oddFrameSkipCombos[comboIndex][2];
+  const dotJumpTo             = oddFrameSkipCombos[comboIndex][3];
+
+
   // --- Odd-frame cycle skip (pre-render, last dot) ---
   if (PPUclock.oddFrame && renderingActiveThisFrame &&
-    PPUclock.scanline === 261 && PPUclock.dot === 340) {
-    PPUclock.scanline = 0;
-    PPUclock.dot = 0;
+    PPUclock.scanline === scanlineWithDotToSkip && PPUclock.dot === dotToSkip) {
+    PPUclock.scanline = scanLineJumpTo;
+    PPUclock.dot = dotJumpTo;
     PPUclock.oddFrame = !PPUclock.oddFrame;
     nmiAtVblankEnd = false;
   }

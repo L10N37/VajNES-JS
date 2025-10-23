@@ -74,6 +74,14 @@ function updateCHRBanks() {
     CHR_BANK_LO = 0;
     CHR_BANK_HI = 0;
     if (mmc1Debugging) console.debug(`[MMC1] CHR: no banks`);
+
+  if (mmc1Debugging) {
+    console.debug(
+      `[MMC1 CHR-BANKS] mode=${chrMode ? "4KB" : "8KB"} ` +
+      `CHR0=${mmc1CHR0} CHR1=${mmc1CHR1} ` +
+      `LO=${CHR_BANK_LO} HI=${CHR_BANK_HI} totalBanks=${totalBanks}`
+    );
+  }
     return;
   }
 
@@ -95,17 +103,82 @@ function updateCHRBanks() {
   }
 }
 
-// ----------------------------------------------------
-// Control + shift register behavior
-// ----------------------------------------------------
 function mmc1ApplyControl() {
+  // Decode mirroring mode
   switch (mmc1Control & 0x03) {
     case 0: MIRRORING = "single0";    break;
     case 1: MIRRORING = "single1";    break;
     case 2: MIRRORING = "vertical";   break;
     case 3: MIRRORING = "horizontal"; break;
   }
-  if (mmc1Debugging) console.debug(`[MMC1] MIRRORING=${MIRRORING}`);
+  
+  chr8kModeFlag = ((mmc1Control >> 4) & 1) === 0; // true if 8KB mode
+
+
+  // --- Apply physical VRAM layout directly into SAB (no .set/.slice/.subarray) ---
+  if (typeof VRAM !== "undefined" && VRAM instanceof Uint8Array) {
+    const tmp0 = new Uint8Array(0x400);
+    const tmp1 = new Uint8Array(0x400);
+
+    // Snapshot current logical NT0/NT1
+    for (let i = 0; i < 0x400; i++) {
+      tmp0[i] = VRAM[i + 0x000]; // NT0
+      tmp1[i] = VRAM[i + 0x400]; // NT1
+    }
+
+    switch (MIRRORING) {
+      case "vertical":
+        for (let i = 0; i < 0x400; i++) {
+          VRAM[i + 0x000] = tmp0[i]; // NT0
+          VRAM[i + 0x400] = tmp1[i]; // NT1
+        }
+        break;
+
+      case "horizontal":
+        for (let i = 0; i < 0x400; i++) {
+          const v = tmp0[i];
+          VRAM[i + 0x000] = v; // NT0
+          VRAM[i + 0x400] = v; // NT1 mirrors NT0
+        }
+        break;
+
+      case "single0":
+        for (let i = 0; i < 0x400; i++) {
+          const v = tmp0[i];
+          VRAM[i + 0x000] = v;
+          VRAM[i + 0x400] = v;
+        }
+        break;
+
+      case "single1":
+        for (let i = 0; i < 0x400; i++) {
+          const v = tmp1[i];
+          VRAM[i + 0x000] = v;
+          VRAM[i + 0x400] = v;
+        }
+        break;
+
+      default: // four-screen
+        for (let i = 0; i < 0x800; i++) VRAM[i] = VRAM[i];
+        break;
+    }
+
+    if (mmc1Debugging) {
+      console.debug(`[MMC1] MIRRORING=${MIRRORING} (SAB-safe rewrite)`);
+
+      // Inline loop for first 16 bytes
+      let str0 = "";
+      for (let i = 0; i < 16; i++)
+        str0 += VRAM[i].toString(16).padStart(2, "0") + " ";
+      console.debug(`VRAM[0x000–0x00F]=${str0.trim()}`);
+
+      let str1 = "";
+      for (let i = 0; i < 16; i++)
+        str1 += VRAM[0x400 + i].toString(16).padStart(2, "0") + " ";
+      console.debug(`VRAM[0x400–0x40F]=${str1.trim()}`);
+    }
+  }
+
   updatePRGBanks();
   updateCHRBanks();
 }
@@ -128,6 +201,11 @@ function mmc1ShiftWrite(callback, value) {
   shiftCount++;
 
   if (shiftCount === 5) {
+    
+    if (mmc1Debugging && shiftCount === 5) {
+    console.debug(`[MMC1 LATCHED] reg=${callback.name} val=$${(shiftRegister & SHIFT_MASK).toString(16).padStart(2,"0")}`);
+  }
+
     callback(shiftRegister & SHIFT_MASK);
     shiftRegister = 0;
     shiftCount = 0;
@@ -180,17 +258,42 @@ function mmc1WritePRG(addr, value) {
 // CPU interface
 // ----------------------------------------------------
 function mmc1CpuWrite(addr, value) {
+  value &= 0xFF;
+
+  // --- PRG-RAM region ($6000–$7FFF) ---
   if (addr < 0x8000) {
     if (addr >= 0x6000 && prgRamEnable) {
-      prgRam[addr - 0x6000] = value & 0xFF;
-      if (mmc1Debugging) console.debug(`[MMC1] PRG-RAM write $${addr.toString(16)} <= $${value.toString(16)}`);
+      prgRam[addr - 0x6000] = value;
+      if (mmc1Debugging) {
+        console.debug(`[MMC1 PRG-RAM] $${addr.toString(16)} <= $${value.toString(16).padStart(2,"0")}`);
+      }
     }
     return;
   }
-  if (addr < 0xA000) mmc1WriteControl(addr, value);
-  else if (addr < 0xC000) mmc1WriteCHR0(addr, value);
-  else if (addr < 0xE000) mmc1WriteCHR1(addr, value);
-  else mmc1WritePRG(addr, value);
+
+  // --- Mapper register ranges ($8000–$FFFF) ---
+  if (mmc1Debugging) {
+    let region = "";
+    if (addr < 0xA000) region = "CTRL";
+    else if (addr < 0xC000) region = "CHR0";
+    else if (addr < 0xE000) region = "CHR1";
+    else region = "PRG";
+
+    console.debug(
+      `[MMC1 SHIFTWRITE] $${addr.toString(16).padStart(4,"0")} = $${value.toString(16).padStart(2,"0")} → ${region}`
+    );
+  }
+
+  // --- Dispatch to appropriate MMC1 register ---
+  if (addr < 0xA000) {
+    mmc1WriteControl(addr, value);
+  } else if (addr < 0xC000) {
+    mmc1WriteCHR0(addr, value);
+  } else if (addr < 0xE000) {
+    mmc1WriteCHR1(addr, value);
+  } else {
+    mmc1WritePRG(addr, value);
+  }
 }
 
 function mmc1CpuRead(addr) {
@@ -222,15 +325,23 @@ function mmc1ChrRead(addr14) {
 }
 
 function mmc1ChrWrite(addr14, value) {
-  if (!chrIsRAM) return;
+  // If the cartridge uses CHR-RAM (no CHR ROM file, or RAM type), we must allow writes.
+  // Some iNES files provide CHR_RAM but still allocate CHR_ROM buffer.
+  const isChrRam = chrIsRAM || (CHR_ROM.length === 0 || CHR_ROM.length === 0x2000);
+
+  if (!isChrRam) return; // Block writes only for true CHR ROMs.
 
   const bankLo = CHR_BANK_LO | 0;
   const bankHi = CHR_BANK_HI | 0;
 
-  if (addr14 < 0x1000)
-    CHR_ROM[(bankLo << 12) + addr14] = value & 0xFF;
-  else
-    CHR_ROM[(bankHi << 12) + (addr14 - 0x1000)] = value & 0xFF;
+  // Compute safe target index inside 8 KB region
+  if (addr14 < 0x1000) {
+    const idx = (bankLo << 12) + addr14;
+    if (idx < CHR_ROM.length) CHR_ROM[idx] = value & 0xFF;
+  } else {
+    const idx = (bankHi << 12) + (addr14 - 0x1000);
+    if (idx < CHR_ROM.length) CHR_ROM[idx] = value & 0xFF;
+  }
 }
 
 // ----------------------------------------------------
@@ -241,6 +352,16 @@ function mmc1Init(prg, chr) {
   CHR_ROM = chr;
 
   if (!prgRam) prgRam = new Uint8Array(0x2000); // 8KB fallback
+
+  if (CHR_ROM.length === 0) {
+    chrIsRAM = true;
+    // reflect CHR-RAM status in bit 7 of shared frame flags
+  
+    if (chrIsRAM) PPU_FRAME_FLAGS |= 0x80;
+    else           PPU_FRAME_FLAGS &= 0x7F;
+
+    console.debug("[MMC1] Detected CHR-RAM cartridge, allocated 8KB RAM");
+  }
 
   shiftRegister = 0;
   shiftCount    = 0;
@@ -259,3 +380,4 @@ function mmc1Init(prg, chr) {
 
   if (mmc1Debugging) console.debug("[MMC1] Initialized");
 }
+

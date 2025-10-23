@@ -53,6 +53,12 @@ function installLiveScalars() {
       set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1000) : Atomics.and(SHARED.EVENTS, 0, ~0b1000); },
       configurable: true
     },
+    chr8kModeFlag: {
+    get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b00100000) !== 0,
+    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b00100000)
+                  : Atomics.and(SHARED.EVENTS, 0, ~0b00100000); },
+    configurable: true
+  }
   });
 
   console.debug("[worker] Installed live scalar accessors");
@@ -106,6 +112,7 @@ self.addEventListener("message", (e) => {
     console.debug("  CLOCKS len =", SHARED.CLOCKS.length, "EVENTS len =", SHARED.EVENTS.length);
     console.debug("  PPU_REGS len =", SHARED.PPU_REGS.length, "VRAM_ADDR len =", SHARED.VRAM_ADDR.length);
     console.debug("  CHR len =", CHR_ROM.length, "VRAM len =", VRAM.length, "PALETTE len =", PALETTE_RAM.length, "OAM len =", OAM.length);
+    console.debug("[worker] CHR_ROM byteLength =", SHARED.CHR_ROM.byteLength);
 
     const pixLen = paletteIndexFrame.length;
     const mid = (pixLen >>> 1) | 0;
