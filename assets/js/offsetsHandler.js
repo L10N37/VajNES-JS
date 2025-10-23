@@ -320,31 +320,36 @@ function checkWriteOffset(address, value) {
       }
 
       case 0x2005: { // PPUSCROLL
-        let t = ((t_hi << 8) | t_lo) & 0x3FFF;
+        let t = ((t_hi << 8) | t_lo) & 0x7FFF;        // keep 15-bit v/t space
         if (writeToggle === 0) {
           SCROLL_X = value;
-          fineX = value & 0x07;
-          t = (t & ~0x001F) | ((value >>> 3) & 0x1F);
+          fineX = value & 0x07;                       // x (fine)
+          t = (t & ~0x001F) | ((value >>> 3) & 0x1F); // coarse X
           writeToggle = 1;
         } else {
           SCROLL_Y = value;
-          t = (t & ~(0x7000 | 0x03E0))
-            | ((value & 0x07) << 12)
-            | (((value >>> 3) & 0x1F) << 5);
+          t = (t & ~(0x7000 | 0x03E0))                // clear fineY/coarseY
+            | ((value & 0x07) << 12)                  // fine Y
+            | (((value >>> 3) & 0x1F) << 5);          // coarse Y
           writeToggle = 0;
         }
         t_hi = (t >>> 8) & 0xFF;
         t_lo = t & 0xFF;
-        if (debugLogging) console.debug(`[W $2005 PPUSCROLL] ${writeToggle? "hi":"lo"} last=$${value.toString(16)} t=$${t.toString(16)} toggle=${writeToggle}`);
         break;
       }
 
       case 0x2006: { // PPUADDR
-        if (writeToggle === 0) { t_hi = value & 0x3F; writeToggle = 1; }
-        else { t_lo = value; VRAM_ADDR = ((t_hi << 8) | t_lo) & 0x3FFF; writeToggle = 0; }
+        if (writeToggle === 0) {
+          t_hi = value & 0x3F;                        // t[8..13]
+          writeToggle = 1;
+        } else {
+          t_lo = value & 0xFF;                        // t[0..7]
+          VRAM_ADDR = ((t_hi << 8) | t_lo);           // v=t immediately (keep bit14)
+          writeToggle = 0;
+        }
         break;
       }
-
+      
       case 0x2007: { // PPUDATA (write)
         const v = VRAM_ADDR & 0x3FFF;
 
