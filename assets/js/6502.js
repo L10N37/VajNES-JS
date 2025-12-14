@@ -64,7 +64,7 @@ function resetCPU() {
   CPUregisters.P = {
       C: 0,    // Carry
       Z: 0,    // Zero
-      I: 0,    // Interrupt Disable
+      I: 1,    // Interrupt Disable, set this to disable straight away or IRQ's fire at ROM boot
       D: 0,    // Decimal Mode
       V: 0,    // Overflow
       N: 0     // Negative

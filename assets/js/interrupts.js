@@ -85,45 +85,67 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
 }
 
 function serviceIRQ() {
-  const pc = CPUregisters.PC & 0xFFFF;
 
-  // Push PCH
-  checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), (pc >> 8) & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  addCycles(1);
+    const pc = CPUregisters.PC & 0xFFFF;
 
-  // Push PCL
-  checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), pc & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  addCycles(1);
+    // -------------------------
+    // IRQ Debugging output
+    // -------------------------
+    console.log("[IRQ] --- IRQ SERVICED ---");
+    console.log(`[IRQ] Current PC: 0x${pc.toString(16).padStart(4,'0')}`);
+    console.log(`[IRQ] Stack pointer before push: 0x${CPUregisters.S.toString(16).padStart(2,'0')}`);
+    console.log(`[IRQ] Flags before push: N=${CPUregisters.P.N} V=${CPUregisters.P.V} D=${CPUregisters.P.D} I=${CPUregisters.P.I} Z=${CPUregisters.P.Z} C=${CPUregisters.P.C}`);
 
-  // U=1, B=0
-  let p = 0b00100000;
-  p |= (CPUregisters.P.N & 1) << 7;
-  p |= (CPUregisters.P.V & 1) << 6;
-  p |= (CPUregisters.P.D & 1) << 3;
-  p |= (CPUregisters.P.I & 1) << 2;
-  p |= (CPUregisters.P.Z & 1) << 1;
-  p |= (CPUregisters.P.C & 1);
+    // Push PCH
+    checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), (pc >> 8) & 0xFF);
+    CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+    addCycles(1);
 
-  // Push P
-  checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), p & 0xFF);
-  CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  addCycles(1);
+    // Push PCL
+    checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), pc & 0xFF);
+    CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+    addCycles(1);
 
-  // Set I
-  CPUregisters.P.I = 1;
-  addCycles(1);
+    // Build status byte (U=1, B=0)
+    let p = 0b00100000;
+    p |= (CPUregisters.P.N & 1) << 7;
+    p |= (CPUregisters.P.V & 1) << 6;
+    p |= (CPUregisters.P.D & 1) << 3;
+    p |= (CPUregisters.P.I & 1) << 2;
+    p |= (CPUregisters.P.Z & 1) << 1;
+    p |= (CPUregisters.P.C & 1);
 
-  // Vector fetch
-  const lo = checkReadOffset(0xFFFE);
-  addCycles(1);
-  const hi = checkReadOffset(0xFFFF);
-  addCycles(1);
+    // Push P
+    checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), p & 0xFF);
+    CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
+    addCycles(1);
 
-  // Set PC
-  CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
-  addCycles(1);
+    // Set Interrupt Disable
+    CPUregisters.P.I = 1;
+    addCycles(1);
+
+    // -------------------------
+    // Fetch IRQ vector (PRG ROM mapping)
+    // -------------------------
+    let lo, hi;
+
+        lo = checkReadOffset(0xFFFE);
+        addCycles(1); // vector fetch
+        hi = checkReadOffset(0xFFFF);
+        addCycles(1); // vector fetch
+
+    // Set PC to IRQ vector
+    CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
+
+    addCycles(1);
+
+    // -------------------------
+    // IRQ Debugging output end
+    // -------------------------
+    console.log(`[IRQ] Vector memory: 0xFFFE=0x${lo.toString(16).padStart(2,'0')}, 0xFFFF=0x${hi.toString(16).padStart(2,'0')}`);
+    console.log(`[IRQ] Target PC after vector fetch: 0x${CPUregisters.PC.toString(16).padStart(4,'0')}`);
+    console.log(`[IRQ] Stack pointer after push: 0x${CPUregisters.S.toString(16).padStart(2,'0')}`);
+    console.log("[IRQ] -------------------------\n");
 }
 
 // not an interrupt, get it TF out of the way for now #relocate
