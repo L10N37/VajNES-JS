@@ -344,7 +344,7 @@ function emitPixelHardwarePalette() {
 
     if (spr.isSprite0 && bgOpaque &&
         PPUclock.scanline >= 0 && PPUclock.scanline < 240 &&
-        PPUclock.dot >= 1 && PPUclock.dot <= 256) {
+        PPUclock.dot >= 1 && PPUclock.dot <= 255) {
       SET_SPRITE0_HIT();
     }
 

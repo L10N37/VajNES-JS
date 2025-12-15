@@ -317,6 +317,7 @@ function checkWriteOffset(address, value) {
         OAM[OAMADDR & 0xFF] = value;
         OAMADDR = (OAMADDR + 1) & 0xFF;
         break;
+
       }
 
       case 0x2005: { // PPUSCROLL
