@@ -60,9 +60,7 @@ window.step = function () {
     return used | 0;
   }
 
-  const code = checkReadOffset(CPUregisters.PC);
-  // check if the opcode is a RMW instruction
-  currentIsRMW = rmwTable[code]; 
+  const code = checkReadOffset(CPUregisters.PC); 
 
   const op = OPCODES[code];
 
@@ -301,32 +299,6 @@ const OPCODES = [
   { pc:1, func: SED_IMP },   { pc:3, func: SBC_ABSY }, { pc:1, func: NOP },      { pc:3, func: ISC_ABSY },
   { pc:3, func: NOP_ABSX },  { pc:3, func: SBC_ABSX }, { pc:3, func: INC_ABSX }, { pc:3, func: ISC_ABSX },
 ];
-  /*
-  because im too lazy to modify every RMW handler to pass a parameter RMW = true to checkWriteOffset
-  so we are using this LUT + a global
-  in fact, the opcodes themselves were plucked straight from the test rom Source code
-  future update, may consider the extra parameter in checkWriteOffset and modifying handlers for listed opcodes
-  ; OK; Verifying opcodes...
-  ; 0E2E4E6ECEEE 1E3E5E7EDEFE 
-  ; 0F2F4F6FCFEF 1F3F5F7FDFFF 
-  ; 03234363C3E3 13335373D3F3 
-  ; 1B3B5B7BDBFB
-
-  above test ROM solved, all nothing to do with this, all this logic to pass accuracy coin "extra 2007 write" ughhhhh, something wrong here
-  shouldn't have to modify the $2007 handler with a hack to pass a rom test, the opcode handler already does dummy write, then actual
-  modified value write.
-  */    
-  const rmwTable = new Array(256).fill(false);
-  [
-    0x0E,0x2E,0x4E,0x6E,0xCE,0xEE,
-    0x1E,0x3E,0x5E,0x7E,0xDE,0xFE,
-    0x0F,0x2F,0x4F,0x6F,0xCF,0xEF,
-    0x1F,0x3F,0x5F,0x7F,0xDF,0xFF,
-    0x03,0x23,0x43,0x63,0xC3,0xE3,
-    0x13,0x33,0x53,0x73,0xD3,0xF3,
-    0x1B,0x3B,0x5B,0x7B,0xDB,0xFB
-  ].forEach(op => rmwTable[op] = true);
-
 
   function buildDisasmRow(opc, op1, op2, pc, len) {
   // --- ensure correct len for control flow opcodes ---

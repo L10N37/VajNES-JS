@@ -187,26 +187,30 @@ function dmaTransfer(value) {
 function dmaMicroStep() {
   if (!DMA.active) return 0;
 
-  // Initial alignment pad
   if (DMA.pad > 0) {
     addCycles(1);
     DMA.pad -= 1;
     return 1;
   }
 
-  // Transfer: one byte = 2 microsteps (read then write), each 1 CPU cycle
   if (DMA.index < 256) {
     if (DMA.phase === 0) {
-      // READ phase (1 cycle)
+      // READ phase (1 cycle) - MUST be full bus read
       addCycles(1);
-      DMA.tmp   = cpuRead(DMA.addr);
+      DMA.tmp   = checkReadOffset(DMA.addr) & 0xFF;
       DMA.phase = 1;
       return 1;
     } else {
-      // WRITE phase (1 cycle)
+      // WRITE phase (1 cycle) - MUST hit $2004 handler / OAM
       addCycles(1);
       cpuOpenBus = DMA.tmp & 0xFF;
-      cpuWrite(0x2004, DMA.tmp);
+
+      // Option A (preferred): go through PPU register write path
+      //checkWriteOffset(0x2004, DMA.tmp);
+
+      // Option B (ultra-minimal + bypass openbus side effects):
+       OAM[OAMADDR & 0xFF] = DMA.tmp & 0xFF;
+       OAMADDR = (OAMADDR + 1) & 0xFF;
 
       DMA.addr  = (DMA.addr + 1) & 0xFFFF;
       DMA.index += 1;
@@ -215,7 +219,7 @@ function dmaMicroStep() {
     }
   }
 
-  // Done
   DMA.active = false;
   return 0;
 }
+
