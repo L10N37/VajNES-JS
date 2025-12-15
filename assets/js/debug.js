@@ -8,7 +8,7 @@ let disasmRunning = false;
 let perFrameStep = false;
 
 let nmiPending = null;
-let irqPending = null;
+let irqPending = 0;
 
 // NTSC Resolution
 const NES_W = 256;
@@ -116,13 +116,13 @@ window.step = function () {
     nmiPending = 0;
   }
 
-  if (irqPending) {
+  if (irqPending === 1) {
     serviceIRQ();
-    irqPending = false;
+    irqPending = 0;
   }
   // just latch, service after next inst.
   if (!CPUregisters.P.I) {
-    irqPending = true;
+    irqPending++;
   }
 
   checkInterrupts();

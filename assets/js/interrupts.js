@@ -205,12 +205,7 @@ function dmaMicroStep() {
       addCycles(1);
       cpuOpenBus = DMA.tmp & 0xFF;
 
-      // Option A (preferred): go through PPU register write path
-      //checkWriteOffset(0x2004, DMA.tmp);
-
-      // Option B (ultra-minimal + bypass openbus side effects):
-       OAM[OAMADDR & 0xFF] = DMA.tmp & 0xFF;
-       OAMADDR = (OAMADDR + 1) & 0xFF;
+      checkWriteOffset(0x2004, DMA.tmp);
 
       DMA.addr  = (DMA.addr + 1) & 0xFFFF;
       DMA.index += 1;
