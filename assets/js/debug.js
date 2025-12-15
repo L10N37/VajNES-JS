@@ -1,7 +1,5 @@
 let cpuRunning = false;
 
-let postInit = false; // don't run an IRQ straight away, first inst should be setting i = 1, then check for i == 0
-
 // notes on LUT below
 let currentIsRMW = false;
 
@@ -10,6 +8,7 @@ let disasmRunning = false;
 let perFrameStep = false;
 
 let nmiPending = null;
+let irqPending = null;
 
 // NTSC Resolution
 const NES_W = 256;
@@ -119,15 +118,20 @@ window.step = function () {
     nmiPending = 0;
   }
 
+  if (irqPending) {
+    serviceIRQ();
+    irqPending = false;
+  }
+  // just latch, service after next inst.
+  if (!CPUregisters.P.I) {
+    irqPending = true;
+  }
+
   checkInterrupts();
   // set the flag here, check if NMI is due NEXT step
   // this order is specifically coded to pass NMI control tests
   // i.e. do not call checkInterrupts prior to handling of interrupts
   //=================================================
-  // IRQ
-  if (!CPUregisters.P.I) {
-    serviceIRQ();   // adds +7 via addCycles()
-  }
 
   // Return actual CPU cycles the opcode consumed
   return used;
