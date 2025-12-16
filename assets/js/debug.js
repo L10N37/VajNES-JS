@@ -1,8 +1,5 @@
 let cpuRunning = false;
 
-// notes on LUT below
-let currentIsRMW = false;
-
 // internal only, don't build disasm rows unless the window is open
 let disasmRunning = false;
 let perFrameStep = false;
@@ -14,16 +11,31 @@ let irqPending = 0;
 const NES_W = 256;
 const NES_H = 240;
 
-function renderFrame(){
-    // proper scanline accurate rendering (scrolling etc.)
-    blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
-    //quickRenderNametable0(); // hack
-    registerFrameUpdate();
-    const bgColor = PALETTE_RAM[0x00]; // always fill 'blank' screen with universal BG colour
-    paletteIndexFrame.fill(bgColor);
-    if (perFrameStep) pause();
-    PPU_FRAME_FLAGS &= 0b11111110;
+// Keep these outside renderFrame so they persist and don't GC every frame
+let _rgbaHeap = null;
+
+function renderFrame() {
+  // ---- Copy SAB -> heap (ImageData cannot take SAB-backed views) ----
+  const needed = (NES_W * NES_H * 4) | 0;
+
+  if (!_rgbaHeap || _rgbaHeap.length !== needed) {
+    _rgbaHeap = new Uint8ClampedArray(needed);
+  }
+
+  // rgbaFrame is SAB-backed Uint8ClampedArray (or Uint8Array). Either way, set() works.
+  _rgbaHeap.set(rgbaFrame);
+
+  // ---- Render from heap ----
+  blitNESFrameRGBA(_rgbaHeap, NES_W, NES_H);
+  //registerFrameUpdate(); // called at the end of the blit function/s
+
+  //const bgColor = PALETTE_RAM[0x00] & 0x3F;
+  //paletteIndexFrame.fill(bgColor);
+
+  if (perFrameStep) pause();
+  PPU_FRAME_FLAGS &= 0b11111110;
 }
+
 
 function checkInterrupts() {
 const frame = Atomics.load(SHARED.SYNC, 4);
@@ -35,10 +47,14 @@ const nmiEnabled = (PPUCTRL & 0x80) != 0;
 
   if (nmiEdgeExists){
       nmiPending = frame;
+
+      if (debugVideoTiming){
       console.debug(
         `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
         "color:black;background:lime;font-weight:bold;font-size:14px;"
       );
+    }
+
   }
   PPU_FRAME_FLAGS &= ~0b00000100;  // clear the NMI edge
 }
@@ -107,11 +123,12 @@ window.step = function () {
     const sl    = Atomics.load(SHARED.SYNC, 2);
     const dot   = Atomics.load(SHARED.SYNC, 3);
 
+    if (debugVideoTiming){
     console.debug(
       `%c[NMI handler entered, final checks may cancel] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
       "color:white;background:red;font-weight:bold;font-size:14px;"
     );
-
+  }
     serviceNMI();   // consumes 7 cycles, pushes PC/flags, loads $FFFA/$FFFB
     nmiPending = 0;
   }

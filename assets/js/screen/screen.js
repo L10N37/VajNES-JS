@@ -43,21 +43,17 @@ function setPixelAspectMode(modeKey) {
   applyScale();
 }
 
-
 function applyScale() {
   const W = Math.round(BASE_W * scaleFactor);
   const H = Math.round(BASE_H * scaleFactor);
 
-  
   canvas.width = W;
   canvas.height = H;
   if (grilleCanvas)   { grilleCanvas.width = W;   grilleCanvas.height = H; }
   if (scanlineCanvas) { scanlineCanvas.width = W; scanlineCanvas.height = H; }
 
-  
   const displayW = Math.round(W * pixelAspectX);
 
-  
   if (systemScreen) {
     systemScreen.style.width = `${displayW}px`;
     systemScreen.style.height = `${H}px`;
@@ -71,7 +67,6 @@ function applyScale() {
     scanlineScreen.style.height = `${H}px`;
   }
 
-  
   canvas.style.width = `${displayW}px`;
   canvas.style.height = `${H}px`;
   if (grilleCanvas) {
@@ -83,37 +78,21 @@ function applyScale() {
     scanlineCanvas.style.height = `${H}px`;
   }
 
-  
   ctx.imageSmoothingEnabled = false;
-  if (grille_ctx)         grille_ctx.imageSmoothingEnabled = false;
+  if (grille_ctx)          grille_ctx.imageSmoothingEnabled = false;
   if (scanlineCanvas_ctx)  scanlineCanvas_ctx.imageSmoothingEnabled = false;
 
-  // If overlays depend on size, let them redraw without coupling files
   if (typeof _resyncScanlineOverlayAfterScale === 'function') _resyncScanlineOverlayAfterScale();
   if (typeof _resyncGrilleAfterScale === 'function') _resyncGrilleAfterScale();
 
-  // If a test image is up, refit it
   if (TEST_IMAGE_STATE.enabled) drawTestImageFitted();
 
-  // Persist scale factor for convenience
   localStorage.setItem('scaleFactor', String(scaleFactor));
 }
 
 // Initial size
 applyScale();
 
-/* default -> screen off, click to open/ render
-const screenButton = document.getElementById('clickedScreen');
-if (screenButton) {
-  screenButton.addEventListener('click', () => {
-    if (systemScreen)   systemScreen.style.display = 'block';
-    if (grilleScreen)   grilleScreen.style.display = 'block';
-    if (blackScreen)    blackScreen.style.display = 'block';
-    if (scanlineScreen) scanlineScreen.style.display = 'block';
-    NoSignalAudio.setEnabled(true);
-  });
-}
-*/
 // default, screen on, click screen to close/ hide
 const screenButton = document.getElementById('clickedScreen');
 if (screenButton) {
@@ -143,11 +122,9 @@ if (paletteOption) {
 }
 
 function openPaletteModal() {
-  // Destroy any existing instance
   const existing = document.getElementById('palette-modal');
   if (existing) existing.remove();
 
-  // Modal shell
   const modal = document.createElement('div');
   modal.id = 'palette-modal';
   modal.className = 'palette-modal';
@@ -189,7 +166,6 @@ function openPaletteModal() {
 
   function close() { modal.remove(); }
 
-  // Apply: set palette + rebuild screen LUT
   applyBtn.addEventListener('click', () => {
     const sel = modal.querySelector('input[name="palette"]:checked');
     if (sel && typeof window.setCurrentPalette === 'function') {
@@ -201,7 +177,6 @@ function openPaletteModal() {
     close();
   });
 
-  // Cancel/close behaviors
   cancelBtn.addEventListener('click', close);
   closeBtn.addEventListener('click', close);
   backdrop.addEventListener('click', close);
@@ -218,7 +193,6 @@ if (pixelOption) {
 }
 
 function openPixelModal() {
-  // Destroy existing instance
   const existing = document.getElementById('pixel-modal');
   if (existing) existing.remove();
 
@@ -312,7 +286,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'r' && ev.key !== 'R') return;
   if (!cpuRunning) run();
   else pause();
-  });
+});
 
 // --- RF fuzz while nothing is rendered --------------------------------------
 let requestId = 0;
@@ -349,7 +323,6 @@ function drawTestImageFitted() {
   if (!TEST_IMAGE_STATE.enabled || !TEST_IMAGE_STATE.img) return;
   const img = TEST_IMAGE_STATE.img;
 
-  // Keep aspect; letterbox as needed (into integer backing buffer)
   const sw = img.width, sh = img.height;
   const dw = canvas.width, dh = canvas.height;
   const sA = sw / sh, dA = dw / dh;
@@ -423,42 +396,65 @@ function _rebuildPaletteLUT() {
 
 // Build once now…
 _rebuildPaletteLUT();
-// …and watch for palette radio changes (palettes.js may also bind its own listeners)
-document.querySelectorAll('input[name="palette"]').forEach(r => {
-  r.addEventListener('change', _rebuildPaletteLUT);
-});
 
-// Offscreen scratch so we can scale with drawImage (no ctx.scale headaches)
+// IMPORTANT: your palette modal calls window._rebuildPaletteLUT()
+window._rebuildPaletteLUT = _rebuildPaletteLUT;
+
+// --- Offscreen scratch: ALWAYS render base 256x240 here, THEN scale ---------
 function _ensureOffscreen(offObj, w, h) {
   if (!offObj.canvas) {
     offObj.canvas = document.createElement('canvas');
     offObj.ctx    = offObj.canvas.getContext('2d', { alpha: false });
     offObj.img    = null;
-    offObj._out32 = null; // cached Uint32 view over img.data.buffer
+    offObj._out32 = null;
   }
   if (offObj.canvas.width !== w || offObj.canvas.height !== h) {
     offObj.canvas.width  = w;
     offObj.canvas.height = h;
     offObj.img           = offObj.ctx.createImageData(w, h);
-    offObj._out32        = null; // buffer changed; refresh next blit
+    offObj._out32        = null;
   }
 }
 
-const _offRGBA = {};   // for blitNESFrameRGBA
+const _offRGBA  = {};  // for blitNESFrameRGBA (base-size)
 const _offIndex = {};  // for blitNESFramePaletteIndex
 
-function blitNESFrameRGBA(rgbaUint8ClampedArray, width = BASE_W, height = BASE_H) {
-  if (!rgbaUint8ClampedArray || rgbaUint8ClampedArray.length !== width * height * 4) return;
+let _rgbaImgData = null;
+let _rgbaStaging = null;
+
+// FIXED: RGBA path now matches paletteIndex path (offscreen + drawImage scaling)
+function blitNESFrameRGBA(srcRGBA, w = BASE_W, h = BASE_H) {
+  if (!srcRGBA) return;
+
+  const bytes = (w * h * 4) | 0;
+
+  if (!_rgbaStaging || _rgbaStaging.length !== bytes) {
+    _rgbaStaging = new Uint8ClampedArray(bytes); // NOT shared
+  }
+
+  // SAB -> heap
+  _rgbaStaging.set(srcRGBA);
+
+  // Offscreen target at base res
+  _ensureOffscreen(_offRGBA, w, h);
+
+  // Reuse an ImageData for offscreen writes
+  if (!_rgbaImgData || _rgbaImgData.width !== w || _rgbaImgData.height !== h) {
+    _rgbaImgData = _offRGBA.ctx.createImageData(w, h);
+  }
+
+  _rgbaImgData.data.set(_rgbaStaging);
+  _offRGBA.ctx.putImageData(_rgbaImgData, 0, 0);
+
+  // STOP fuzz on first real frame
   if (!_firstRealFrameSeen) { stopAnimation(); _firstRealFrameSeen = true; }
 
-  _ensureOffscreen(_offRGBA, width, height);
+  // Present scaled to your main canvas (this is what paletteIndex did)
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(_offRGBA.canvas, 0, 0, w, h, 0, 0, canvas.width, canvas.height);
 
-  const imgData = new ImageData(rgbaUint8ClampedArray, width, height);
-  _offRGBA.ctx.putImageData(imgData, 0, 0);
-
-  ctx.drawImage(_offRGBA.canvas, 0, 0, width, height, 0, 0, canvas.width, canvas.height);
-
-  if (typeof registerFrameUpdate === 'function') registerFrameUpdate();
+  registerFrameUpdate(); // FPS
 }
 
 // Path 2 (FAST): NES indices (0..63) → RGBA via packed Uint32 LUT.
@@ -483,6 +479,8 @@ function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE
 
   _offIndex.ctx.putImageData(_offIndex.img, 0, 0);
 
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(_offIndex.canvas, 0, 0, width, height, 0, 0, canvas.width, canvas.height);
 
   window._lastIndexFrame = indexUint8Array;
@@ -490,6 +488,10 @@ function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE
 
   if (typeof registerFrameUpdate === 'function') registerFrameUpdate();
 }
+
+// Expose for callers that expect these names global
+window.blitNESFrameRGBA = blitNESFrameRGBA;
+window.blitNESFramePaletteIndex = blitNESFramePaletteIndex;
 
 // Blur slider remains
 const slider = document.getElementById('composite-blur-slider');
@@ -503,7 +505,7 @@ if (slider) {
 function redrawWithCurrentPalette() {
   if (!window._lastIndexFrame || !window._lastIndexSize) return;
   if (typeof window._rebuildPaletteLUT === 'function') {
-    window._rebuildPaletteLUT(); // Refresh internal colour table from palettes.js
+    window._rebuildPaletteLUT();
   }
   const { w, h } = window._lastIndexSize;
   blitNESFramePaletteIndex(window._lastIndexFrame, w, h);
@@ -522,7 +524,7 @@ fpsOverlay.style.fontSize = "14px";
 fpsOverlay.style.background = "rgba(0,0,0,0.5)";
 fpsOverlay.style.padding = "2px 6px";
 fpsOverlay.style.borderRadius = "4px";
-fpsOverlay.style.display = "none"; // hidden by default
+fpsOverlay.style.display = "none";
 fpsOverlay.textContent = "FPS: 0";
 systemScreen.appendChild(fpsOverlay);
 
@@ -542,7 +544,6 @@ function registerFrameUpdate() {
   frameCount++;
 }
 window.registerFrameUpdate = registerFrameUpdate;
-
 
 const fpsOption = systemScreen?.querySelector(".optionsBar li:nth-child(5)");
 if (fpsOption) {

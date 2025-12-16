@@ -13,7 +13,7 @@ let mmc1CHR1      = 0;
 let mmc1PRG       = 0;
 let prgRamEnable  = true;
 
-let mmc1Debugging = true;
+let mmc1Debugging = false; // this mapper needs some tuning
 
 // ----------------------------------------------------
 // Safe helper for index clamping

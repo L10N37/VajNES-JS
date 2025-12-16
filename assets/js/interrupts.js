@@ -34,7 +34,7 @@ here as a final guard
 [NMI VECTOR LOADED → PC=$e308] cpu=2767339 ppu=8302017 frame=92 sl=241 dot=9 interrupts.js:69:11
 Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no render) ppu-worker.js:99:11
 */
-  if (!nmiSuppression && (frame !== nmiPending + 1 )){
+  if (!nmiSuppression && (frame !== nmiPending + 1)){
   const pc = CPUregisters.PC & 0xFFFF;
 
   // Push PCH
@@ -75,11 +75,12 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
   addCycles(1);
 
+  if (debugVideoTiming){
   console.debug(
     `%c[NMI VECTOR LOADED → PC=$${CPUregisters.PC.toString(16).padStart(4,"0")}] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
     "color:black;background:yellow;font-weight:bold;font-size:14px;"
-
   );
+ }
 }
 
 }

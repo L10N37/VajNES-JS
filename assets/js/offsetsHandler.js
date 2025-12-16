@@ -1,16 +1,12 @@
 // now internally toggled with breakpoints
 let debugLogging = false;
-
+let debugVideoTiming = false;
 let ppuOpenBus = 0x00;
 let decayTimer = 0;
 breakPending = false;
 
 // writeToggle is an internal PPU latch but implemented here on CPU core, globalThis for logdump
 globalThis.writeToggle = 0;
-
-// Tracks the two writes of a single RMW $2007
-let rmw2007Armed = false;     // false → first write will arm, second will fire
-let rmw2007BaseAddr = 0;      // latch original v (before any $2007 increments)
 
 // Pattern table read (CHR ROM/RAM). For CHR-RAM writes, add mapperChrWrite handler.
 function chrRead(addr14) {
@@ -66,14 +62,22 @@ function checkReadOffset(address) {
         if (sl === 241 && dot === 0) { // one PPU clock before set
           doNotSetVblank = true;
           nmiSuppression = true;
+
+          if (debugVideoTiming){
           console.debug(`%c[NMI/VBL cancelled] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot}`,
             "color:black;background:cyan;font-weight:bold;");
+          }
+
         }
 
         if (sl === 241 && (dot === 1 || dot === 2)) { // same/one later
+
+          if (debugVideoTiming){
           console.debug(`%c[VBL clear path] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot} ` +
                         `vblank=${(PPUSTATUS & 0x80)?1:0} nmiEdge=${(PPU_FRAME_FLAGS & 0b00000100)?1:0}`,
                         "color:black;background:cyan;font-weight:bold;");
+          }
+
           PPU_FRAME_FLAGS &= ~0b00000100;
           nmiPending = 0;
           nmiSuppression = true;
@@ -90,7 +94,10 @@ function checkReadOffset(address) {
         ppuOpenBus = ret;
         cpuOpenBus = ret;
 
-        if (wasVBlank) console.debug("2002 Vblank clear:", cpuCycles, "Frame:", fr);
+        if (wasVBlank && debugVideoTiming){
+          console.debug("2002 Vblank clear:", cpuCycles, "Frame:", fr);
+        }
+        
         return ret;
       }
 

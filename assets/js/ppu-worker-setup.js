@@ -2,7 +2,8 @@ console.debug("[worker] ppu-worker-setup.js loaded");
 
 let SHARED = Object.create(null);
 
-var CHR_ROM, VRAM, PALETTE_RAM, OAM, paletteIndexFrame;
+// ---- Views exposed to ppu-worker.js ----
+var CHR_ROM, VRAM, PALETTE_RAM, OAM, paletteIndexFrame, rgbaFrame;
 
 function installLiveScalars() {
   const make8  = v => v & 0xFF;
@@ -54,17 +55,18 @@ function installLiveScalars() {
       configurable: true
     },
     chr8kModeFlag: {
-    get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b00100000) !== 0,
-    set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b00100000)
-                  : Atomics.and(SHARED.EVENTS, 0, ~0b00100000); },
-    configurable: true
-  }
+      get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b00100000) !== 0,
+      set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b00100000)
+                    : Atomics.and(SHARED.EVENTS, 0, ~0b00100000); },
+      configurable: true
+    }
   });
 
   console.debug("[worker] Installed live scalar accessors");
 }
 
 let _initDone = false;
+
 self.addEventListener("message", (e) => {
   const d = e.data;
   if (!d) return;
@@ -79,7 +81,11 @@ self.addEventListener("message", (e) => {
     SHARED.SAB_CPU_OPENBUS         = d.SAB_CPU_OPENBUS;
     SHARED.SAB_PPU_REGS            = d.SAB_PPU_REGS;
     SHARED.SAB_VRAM_ADDR           = d.SAB_VRAM_ADDR;
+
     SHARED.SAB_PALETTE_INDEX_FRAME = d.SAB_PALETTE_INDEX_FRAME;
+
+    // ---- NEW: RGBA frame SAB ----
+    SHARED.SAB_RGBA_FRAME          = d.SAB_RGBA_FRAME;
 
     const A = d.SAB_ASSETS || {};
     SHARED.SAB_CHR     = A.CHR_ROM;
@@ -94,17 +100,24 @@ self.addEventListener("message", (e) => {
     SHARED.CPU_OPENBUS         = new Uint8Array(SHARED.SAB_CPU_OPENBUS);
     SHARED.PPU_REGS            = new Uint8Array(SHARED.SAB_PPU_REGS);
     SHARED.VRAM_ADDR           = new Uint16Array(SHARED.SAB_VRAM_ADDR);
+
     SHARED.CHR_ROM             = new Uint8Array(SHARED.SAB_CHR);
     SHARED.VRAM                = new Uint8Array(SHARED.SAB_VRAM);
     SHARED.PALETTE_RAM         = new Uint8Array(SHARED.SAB_PALETTE);
     SHARED.OAM                 = new Uint8Array(SHARED.SAB_OAM);
+
     SHARED.PALETTE_INDEX_FRAME = new Uint8Array(SHARED.SAB_PALETTE_INDEX_FRAME);
 
+    // ---- NEW: ready-to-blit RGBA view ----
+    SHARED.RGBA_FRAME          = new Uint8ClampedArray(SHARED.SAB_RGBA_FRAME);
+
+    // ---- Aliases used by ppu-worker.js ----
     CHR_ROM           = SHARED.CHR_ROM;
     VRAM              = SHARED.VRAM;
     PALETTE_RAM       = SHARED.PALETTE_RAM;
     OAM               = SHARED.OAM;
     paletteIndexFrame = SHARED.PALETTE_INDEX_FRAME;
+    rgbaFrame         = SHARED.RGBA_FRAME;
 
     installLiveScalars();
 
@@ -122,8 +135,12 @@ self.addEventListener("message", (e) => {
                                    "[mid]=", paletteIndexFrame[mid].toString(16),
                                    "[last]=", paletteIndexFrame[last].toString(16));
 
+    const rgbaLen = rgbaFrame.length;
+    console.debug("[worker] rgbaFrame len =", rgbaLen, "(expected", (pixLen * 4), ")");
+
     _initDone = true;
 
+    // not used this for timing, but it's useful to know init succeeded
     postMessage({ type: "ready" });
 
     startPPULoop();

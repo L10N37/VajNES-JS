@@ -23,6 +23,8 @@ const SET_SPRITE_OVERFLOW   = () => { PPUSTATUS |=  0x20; };
 const DOTS_PER_SCANLINE   = 340; // 0..340 = 341
 const SCANLINES_PER_FRAME = 262; // 0..261
 const NES_W = 256, NES_H = 240;
+const PIXELS = NES_W * NES_H;
+const RGBA_BYTES = PIXELS * 4;
 
 // ---- PPUMASK bits ----
 const MASK_GREYSCALE      = 0x01;
@@ -34,7 +36,7 @@ const MASK_SPR_ENABLE     = 0x10;
 let ppuInitDone = false;
 let nmiAtVblankEnd = false;
 
-// "rendering" = either BG or SPR enabled (hardware: pipelines run if either is on)
+// "rendering" = either BG or SPR enabled
 const renderingNow  = () => ((PPUMASK & 0x18) !== 0);
 const bgEnabledNow  = () => ((PPUMASK & MASK_BG_ENABLE) !== 0);
 const sprEnabledNow = () => ((PPUMASK & MASK_SPR_ENABLE) !== 0);
@@ -57,21 +59,27 @@ const nextLine = {
 
 // ---- Sprite pipeline ----
 const SPR_MAX = 8;
-const sprites = {
-  count: 0,
-  attr: new Uint8Array(SPR_MAX),
-  xcnt: new Uint8Array(SPR_MAX),
-  lo:   new Uint8Array(SPR_MAX),
-  hi:   new Uint8Array(SPR_MAX),
-  idx:  new Uint8Array(SPR_MAX),
-};
 
-const OAM_FRAME = new Uint8Array(256);
-const oamFRead = (i) => (OAM_FRAME[i & 0xFF] & 0xFF);
+function makeSpriteBuf() {
+  return {
+    count: 0,
+    attr: new Uint8Array(SPR_MAX),
+    xcnt: new Uint8Array(SPR_MAX),
+    lo:   new Uint8Array(SPR_MAX),
+    hi:   new Uint8Array(SPR_MAX),
+    idx:  new Uint8Array(SPR_MAX),
+    sprite0ListIndex: 0xFF,
+  };
+}
+
+const spritesA = makeSpriteBuf();
+const spritesB = makeSpriteBuf();
+let spritesCur  = spritesA;
+let spritesNext = spritesB;
 
 const SPRITE_SIZE_16 = 0x20; // PPUCTRL bit 5
 const SPR_PATTERN_T  = 0x08; // PPUCTRL bit 3 (8x8 sprites)
-const SPR_Y_OFFSET   = 1;    // HW: sprite Y is top-1
+const SPR_Y_OFFSET   = 1;
 
 // ---- Execution counters ----
 let totalTicks = 0;
@@ -80,15 +88,44 @@ let totalTicks = 0;
 let renderingPrev = false;
 let spriteOnlyPrimePending = false;
 
-// ---- OAM corruption (FAIL #2 fix) ----
+// ---- OAM corruption ----
 let oamCorruptPending = false;
-let oamCorruptSeedRow = 0; // 0..31 (row = seedRow, dest = seedRow*8)
-let secOAMAddr = 0;        // 0..31 simple model
+let oamCorruptSeedRow = 0;
+let secOAMAddr = 0;
 let ppumaskPrev = 0;
 
 // ---- Debug offsets ----
 let BG_DEBUG_X_OFFSET = 0;
 let BG_DEBUG_Y_OFFSET = 0;
+
+// ============================================================================
+// RGBA OUTPUT (SAB)
+// - Writes RGBA per pixel into rgbaFrame (SAB view).
+// - paletteIndexFrame remains indices forever.
+// - Palette mapping: guaranteed grayscale fallback (always shows something).
+// ============================================================================
+
+function mapIndex6ToRGBA(index6) {
+  // index6: 0..63 -> 0..252 grayscale
+  const v = (index6 & 0x3F) << 2;
+  return v & 0xFF;
+}
+
+function writePixelRGBA(x, y, index6) {
+  // rgbaFrame should be provided by setup (SAB view).
+  // If not present, we still keep paletteIndexFrame working.
+  if (!rgbaFrame || rgbaFrame.length !== RGBA_BYTES) return;
+
+  const p = (y * NES_W + x) | 0;
+  const o = (p << 2) | 0;
+
+  const v = mapIndex6ToRGBA(index6);
+
+  rgbaFrame[o    ] = v;
+  rgbaFrame[o + 1] = v;
+  rgbaFrame[o + 2] = v;
+  rgbaFrame[o + 3] = 255;
+}
 
 // ---- Utils ----
 function reverseByte(b) {
@@ -107,18 +144,16 @@ function oamCorruptDoCopyRow(seedRow) {
   }
 }
 
-// Minimal secondary OAM address model (enough for test’s early-dot case)
+// Minimal secondary OAM address model
 function updateSecondaryOAMAddrForDot(scanline, dot) {
   if (!renderingNow()) return;
   if (!(scanline === 261 || (scanline >= 0 && scanline <= 239))) return;
 
   if (dot >= 1 && dot <= 64) {
-    // cycles 1-2 => 0, 3-4 => 1, ... 63-64 => 31
     secOAMAddr = ((dot - 1) >> 1) & 0x1F;
     return;
   }
 
-  // light stub for 257..320 to avoid nonsense
   if (dot >= 257 && dot <= 320) {
     const t = dot - 257;
     const sub = t & 7;
@@ -162,9 +197,10 @@ function fetchSpritePatternBytes(tileIndex, attr, rowInSprite) {
   return { lo, hi };
 }
 
-// sprite evaluation runs when *either* BG or SPR rendering is enabled
-function evalSpritesForScanline(scanline) {
-  sprites.count = 0;
+function evalSpritesForScanline(target, scanline) {
+  target.count = 0;
+  target.sprite0ListIndex = 0xFF;
+
   if (!renderingNow()) return;
 
   const is8x16 = (PPUCTRL & SPRITE_SIZE_16) !== 0;
@@ -172,15 +208,13 @@ function evalSpritesForScanline(scanline) {
 
   let overflow = false;
 
-  for (let n = 0; n < 64; n++) {
-    const base = n << 2;
+  const startAddr = (OAMADDR & 0xFF);
 
-    const y    = oamFRead(base + 0);
+  for (let m = 0; m < 64; m++) {
+    const baseAddr = (startAddr + (m << 2)) & 0xFF;
+
+    const y = (OAM[baseAddr] & 0xFF);
     if (y === 0xFF) continue;
-
-    const tile = oamFRead(base + 1);
-    const attr = oamFRead(base + 2);
-    const x    = oamFRead(base + 3);
 
     const top = (y + SPR_Y_OFFSET) | 0;
     if (scanline < top) continue;
@@ -188,15 +222,21 @@ function evalSpritesForScanline(scanline) {
     const row = (scanline - top) | 0;
     if (row < 0 || row >= sprH) continue;
 
-    if (sprites.count < SPR_MAX) {
-      const i = sprites.count++;
+    const tile = OAM[(baseAddr + 1) & 0xFF] & 0xFF;
+    const attr = OAM[(baseAddr + 2) & 0xFF] & 0xFF;
+    const x    = OAM[(baseAddr + 3) & 0xFF] & 0xFF;
+
+    if (target.count < SPR_MAX) {
+      const i = target.count++;
       const pat = fetchSpritePatternBytes(tile, attr, row);
 
-      sprites.attr[i] = attr & 0xFF;
-      sprites.xcnt[i] = x & 0xFF;
-      sprites.lo[i]   = pat.lo & 0xFF;
-      sprites.hi[i]   = pat.hi & 0xFF;
-      sprites.idx[i]  = n & 0xFF;
+      target.attr[i] = attr;
+      target.xcnt[i] = x;
+      target.lo[i]   = pat.lo & 0xFF;
+      target.hi[i]   = pat.hi & 0xFF;
+      target.idx[i]  = baseAddr & 0xFF;
+
+      if (m === 0) target.sprite0ListIndex = i & 0xFF;
     } else {
       overflow = true;
       break;
@@ -207,12 +247,12 @@ function evalSpritesForScanline(scanline) {
 }
 
 function spriteShiftersTick() {
-  for (let i = 0; i < sprites.count; i++) {
-    if (sprites.xcnt[i] > 0) {
-      sprites.xcnt[i] = (sprites.xcnt[i] - 1) & 0xFF;
+  for (let i = 0; i < spritesCur.count; i++) {
+    if (spritesCur.xcnt[i] > 0) {
+      spritesCur.xcnt[i] = (spritesCur.xcnt[i] - 1) & 0xFF;
     } else {
-      sprites.lo[i] = ((sprites.lo[i] << 1) & 0xFF);
-      sprites.hi[i] = ((sprites.hi[i] << 1) & 0xFF);
+      spritesCur.lo[i] = ((spritesCur.lo[i] << 1) & 0xFF);
+      spritesCur.hi[i] = ((spritesCur.hi[i] << 1) & 0xFF);
     }
   }
 }
@@ -221,15 +261,15 @@ function sampleSpritePixel(x) {
   if (!sprEnabledNow()) return null;
   if (x < 8 && (PPUMASK & MASK_SPR_SHOW_LEFT8) === 0) return null;
 
-  for (let i = 0; i < sprites.count; i++) {
-    if (sprites.xcnt[i] !== 0) continue;
+  for (let i = 0; i < spritesCur.count; i++) {
+    if (spritesCur.xcnt[i] !== 0) continue;
 
-    const p0 = (sprites.lo[i] >> 7) & 1;
-    const p1 = (sprites.hi[i] >> 7) & 1;
+    const p0 = (spritesCur.lo[i] >> 7) & 1;
+    const p1 = (spritesCur.hi[i] >> 7) & 1;
     const color2 = (p1 << 1) | p0;
     if (color2 === 0) continue;
 
-    const attr = sprites.attr[i] & 0xFF;
+    const attr = spritesCur.attr[i] & 0xFF;
     const pal  = (attr & 0x03) & 3;
     const priBehindBG = (attr & 0x20) !== 0;
 
@@ -241,7 +281,7 @@ function sampleSpritePixel(x) {
     return {
       palIndex6,
       priBehindBG,
-      isSprite0: (sprites.idx[i] === 0),
+      isSprite0: (i === spritesCur.sprite0ListIndex),
     };
   }
 
@@ -269,7 +309,6 @@ function reloadBGShifters(startOfScanline = false) {
   }
 }
 
-// Sprite-only rendering needs BG shifters clocking; prime them when we transition into sprite-only.
 function primeBGForSpriteOnly() {
   const v = VRAM_ADDR & 0x7FFF;
 
@@ -353,14 +392,17 @@ function emitPixelHardwarePalette() {
     }
   }
 
+  // Indices (for debug/compat)
   paletteIndexFrame[y * NES_W + x] = finalIndex6;
+
+  // RGBA (ready to blit)
+  writePixelRGBA(x, y, finalIndex6);
 }
 
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
   const ren = renderingNow();
 
-  // OAM corruption triggers: first eligible dot after rendering is re-enabled
   if (dot === 1 && oamCorruptPending && ren) {
     oamCorruptDoCopyRow(oamCorruptSeedRow);
     oamCorruptPending = false;
@@ -377,8 +419,10 @@ function preRenderScanline(dot) {
 
     CLEAR_SPRITE0_HIT();
     CLEAR_SPRITE_OVERFLOW();
+  }
 
-    OAM_FRAME.set(OAM);
+  if (dot === 65) {
+    evalSpritesForScanline(spritesNext, 0);
   }
 
   if (ren && dot === 256) incY();
@@ -388,7 +432,6 @@ function preRenderScanline(dot) {
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
   const phase   = (dot - 1) & 7;
 
-  // keep pre-render cadence matching visible for shifter reload
   if (ren && phase === 0 && dot >= 9 && dot <= 257) {
     reloadBGShifters(false);
   }
@@ -446,6 +489,7 @@ function preRenderScanline(dot) {
   }
 
   if (dot === 340) {
+    // YOUR ONLY "frame ready" signal (no messages)
     PPU_FRAME_FLAGS |= 0b00000001;
     if (!ppuInitDone) ppuInitDone = true;
   }
@@ -456,17 +500,20 @@ function visibleScanline(dot) {
   const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
 
-  // OAM corruption triggers: first eligible dot after rendering is re-enabled
   if (dot === 1 && oamCorruptPending && ren) {
     oamCorruptDoCopyRow(oamCorruptSeedRow);
     oamCorruptPending = false;
   }
 
-  if (ren && dot === 1) {
+  if (dot === 1) {
     if (spriteOnlyPrimePending && sprEnabledNow() && !bgEnabledNow()) {
       primeBGForSpriteOnly();
       spriteOnlyPrimePending = false;
     }
+
+    const tmp = spritesCur;
+    spritesCur = spritesNext;
+    spritesNext = tmp;
 
     background.bgShiftLo = (nextLine.t0.lo & 0xFF) << 8;
     background.bgShiftHi = (nextLine.t0.hi & 0xFF) << 8;
@@ -485,8 +532,8 @@ function visibleScanline(dot) {
     background.atShiftHi |= atHi1;
   }
 
-  if (dot === 1) {
-    evalSpritesForScanline(PPUclock.scanline);
+  if (dot === 65) {
+    evalSpritesForScanline(spritesNext, (PPUclock.scanline + 1) | 0);
   }
 
   if (ren && phase === 0 && dot >= 9 && dot <= 257) {
@@ -496,7 +543,6 @@ function visibleScanline(dot) {
   if (dot >= 1 && dot <= 256) {
     emitPixelHardwarePalette();
 
-    // BG shifters clock when either pipeline is active (ren)
     if (ren && dot >= 2 && dot <= 256) {
       background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
       background.bgShiftHi = (background.bgShiftHi << 1) & 0xFFFF;
@@ -504,7 +550,6 @@ function visibleScanline(dot) {
       background.atShiftHi = (background.atShiftHi << 1) & 0xFFFF;
     }
 
-    // sprite shifters tick when rendering is active
     if (ren && dot >= 1 && dot <= 256) {
       spriteShiftersTick();
     }
@@ -573,8 +618,8 @@ function vblankStartScanline(dot) {
   if (dot === 1) {
     if (!doNotSetVblank) SET_VBLANK();
 
-    vblankBitIsSet = (PPUSTATUS & 0b1000000) !== 0;
-    const nmiBitIsSet = (PPUCTRL & 0x80) !== 0;
+    const vblankBitIsSet = (!PPUSTATUS & 0b10000000);
+    const nmiBitIsSet = (!PPUCTRL & 0x80);
     if (nmiBitIsSet && !nmiSuppression && vblankBitIsSet) {
       PPU_FRAME_FLAGS |= 0b00000100;
     }
@@ -639,8 +684,6 @@ function ppuBusRead(addr) {
   let value = 0xFF;
   let index = 0;
 
-  const chrIsRAM = !!(PPU_FRAME_FLAGS & 0x80);
-
   if (addr < 0x2000) {
     addr &= 0x1FFF;
 
@@ -681,15 +724,12 @@ function ppuBusRead(addr) {
 
 // ---- Tick ----
 function ppuTick() {
-  // ---- OAM Corruption FAIL #2 fix: seed on render disable, trigger after re-enable ----
   const maskNow = PPUMASK & 0xFF;
   const renNow  = (maskNow & 0x18) !== 0;
   const renPrev = ((ppumaskPrev & 0x18) !== 0);
 
-  // secondary OAM address model (for early-dot seeding)
   updateSecondaryOAMAddrForDot(PPUclock.scanline, PPUclock.dot);
 
-  // Seed when rendering is DISABLED during pre-render..239
   if (renPrev && !renNow) {
     if (PPUclock.scanline === 261 || (PPUclock.scanline >= 0 && PPUclock.scanline <= 239)) {
       oamCorruptSeedRow = secOAMAddr & 0x1F;
@@ -699,14 +739,12 @@ function ppuTick() {
 
   ppumaskPrev = maskNow;
 
-  // sprite-only BG priming edge tracking
   const renNow2 = renderingNow();
   if (!renderingPrev && renNow2) {
     if (sprEnabledNow() && !bgEnabledNow()) spriteOnlyPrimePending = true;
   }
   renderingPrev = renNow2;
 
-  // odd-frame short tick: skip pre-render dot 339 when rendering enabled
   if (PPUclock.oddFrame && renNow2 &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
     PPUclock.scanline = 0;
@@ -734,6 +772,12 @@ function ppuTick() {
 
 // ---- Main PPU Loop ----
 function startPPULoop() {
+  // Make sure rgbaFrame exists early (so you can see something ASAP)
+  if (rgbaFrame && rgbaFrame.length === RGBA_BYTES) {
+    // fill alpha channel once (optional; harmless)
+    for (let i = 3; i < RGBA_BYTES; i += 4) rgbaFrame[i] = 255;
+  }
+
   while (1) {
     while (!cpuStallFlag) {}
 
