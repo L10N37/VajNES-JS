@@ -15,7 +15,6 @@ const NES_H = 240;
 let _rgbaHeap = null;
 
 function renderFrame() {
-  if (typeof window._fpsMarkIfNewFrame === 'function') window._fpsMarkIfNewFrame();
 
   blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
   //registerFrameUpdate(); // called at the end of the blit function/s
@@ -28,27 +27,22 @@ function renderFrame() {
 }
 
 function checkInterrupts() {
+  const nmiEdgeExists = (PPU_FRAME_FLAGS & 0b00000100) !== 0;
+  if (!nmiEdgeExists) return;
 
-const sl    = SHARED.SYNC[2] | 0;
-const dot   = SHARED.SYNC[3] | 0;
-const frame = SHARED.SYNC[4] | 0;
+  const s = SHARED.SYNC;
+  nmiPending = (s[4] | 0);         // only need frame id
+  PPU_FRAME_FLAGS &= ~0b00000100;  // clear edge
 
-
-const nmiEnabled = (PPUCTRL & 0x80) != 0;
-  const nmiEdgeExists = (PPU_FRAME_FLAGS & 0b00000100) != 0;
-
-  if (nmiEdgeExists){
-      nmiPending = frame;
-
-      if (debugVideoTiming){
-      console.debug(
-        `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
-        "color:black;background:lime;font-weight:bold;font-size:14px;"
-      );
-    }
-
+  if (debugVideoTiming) {
+    const sl  = s[2] | 0;
+    const dot = s[3] | 0;
+    const frame = nmiPending | 0;
+    console.debug(
+      `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
+      "color:black;background:lime;font-weight:bold;font-size:14px;"
+    );
   }
-  PPU_FRAME_FLAGS &= ~0b00000100;  // clear the NMI edge
 }
 
 // ===== NTSC constants =====
@@ -80,9 +74,11 @@ window.step = function () {
     return 0;
   }
 
-  const _op  = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF);
-  const __op = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF);
-  const disasmPc = CPUregisters.PC;
+  if (disasmRunning){
+  var _op  = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF);
+  var __op = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF);
+  var disasmPc = CPUregisters.PC;
+  }
 
   if (bpStepOnce) {
     bpStepOnce = false;
@@ -111,17 +107,14 @@ window.step = function () {
   // ---- handle interrupts ----
   // Only take NMI if it's pending *and not suppressed this vblank*
   if (nmiPending) {
-    const sl    = SHARED.SYNC[2] | 0;
-    const dot   = SHARED.SYNC[3] | 0;
-    const frame = SHARED.SYNC[4] | 0;
-
-    if (debugVideoTiming){
-    console.debug(
-      `%c[NMI handler entered, final checks may cancel] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
-      "color:white;background:red;font-weight:bold;font-size:14px;"
-    );
-  }
-    serviceNMI();   // consumes 7 cycles, pushes PC/flags, loads $FFFA/$FFFB
+    if (debugVideoTiming) {
+      const s = SHARED.SYNC;
+      console.debug(
+        `%c[NMI handler entered] cpu=${cpuCycles} ppu=${ppuCycles} frame=${(s[4]|0)} sl=${(s[2]|0)} dot=${(s[3]|0)}`,
+        "color:white;background:red;font-weight:bold;font-size:14px;"
+      );
+    }
+    serviceNMI();
     nmiPending = 0;
   }
 

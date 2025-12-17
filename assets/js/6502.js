@@ -112,6 +112,9 @@ let ppuAlignmentOffset = (alignment - 1);
 let alignmentDone = false;
 
 function addCycles(x) {
+
+  if (PPU_FRAME_FLAGS & 0b00000001) renderFrame();
+
   cpuCycles += x;
 
   // Handle alignment offset (only once at startup/reset)
@@ -142,10 +145,6 @@ function addCycles(x) {
   
   cpuStallFlag = true;
   while (cpuStallFlag) {
-  }
-
-  if (PPU_FRAME_FLAGS & 0b00000001) {
-    renderFrame();
   }
 }
 /*
