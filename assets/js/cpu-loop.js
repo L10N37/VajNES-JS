@@ -27,7 +27,6 @@ function renderFrame() {
   PPU_FRAME_FLAGS &= 0b11111110;
 }
 
-
 function checkInterrupts() {
 
 const sl    = SHARED.SYNC[2] | 0;

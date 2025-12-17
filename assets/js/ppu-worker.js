@@ -365,7 +365,12 @@ function emitPixelHardwarePalette() {
   }
 
   // 256-wide => y<<8 is y*256
-  paletteIndexFrame[(y << 8) + x] = finalIndex6 & 0x3F;
+  const idx  = (y << 8) + x;
+  const newv = finalIndex6 & 0x3F;
+
+  // Only write when changed (reduces SAB churn a lot on static frames)
+  if (paletteIndexFrame[idx] !== newv) paletteIndexFrame[idx] = newv;
+
 }
 
 // ---- Scanline handlers ----

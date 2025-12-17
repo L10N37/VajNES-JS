@@ -6,12 +6,11 @@ const grilleScreen   = document.getElementById('grille-screen-modal');
 const scanlineScreen = document.getElementById('scanline-simulation-modal');
 const blackScreen    = document.getElementById('black-screen-modal');
 
-const canvas         = document.getElementById('screen-canvas');     // main picture
+const canvas         = document.getElementById('screen-canvas');     // main picture (WEBGL now)
 const grilleCanvas   = document.getElementById('grille-canvas');     // grille / masks
 const scanlineCanvas = document.getElementById('scanline-canvas');   // scanline overlay
 
-// Use desynchronized contexts for lower latency where supported.
-const ctx                = canvas.getContext('2d', { alpha: false, desynchronized: true });
+// 2D contexts remain for overlays only (grille + scanlines)
 const grille_ctx         = grilleCanvas ? grilleCanvas.getContext('2d', { desynchronized: true }) : null;
 const scanlineCanvas_ctx = scanlineCanvas ? scanlineCanvas.getContext('2d', { desynchronized: true }) : null;
 
@@ -25,13 +24,12 @@ let scaleFactor = Number(localStorage.getItem('scaleFactor') || 2);
 
 // --- Pixel Aspect options ----------------------------------------------------
 const ASPECT = {
-  SQUARE_1_1: 1.0,                         // Square pixels
-  NTSC_8_7: 8 / 7,                         // Pixel-accurate NTSC
-  PAL_16_15: 16 / 15,                      // Pixel-accurate PAL
-  CRT_4_3: (4 / 3) / (BASE_W / BASE_H),    // Display 4:3 => 1.333... / (256/240) = 1.25
+  SQUARE_1_1: 1.0,
+  NTSC_8_7: 8 / 7,
+  PAL_16_15: 16 / 15,
+  CRT_4_3: (4 / 3) / (BASE_W / BASE_H),
 };
 
-// Persisted mode (default to NTSC 8:7 unless saved)
 let pixelAspectMode = localStorage.getItem('pixelAspectMode') || 'NTSC_8_7';
 let pixelAspectX = ASPECT[pixelAspectMode] || ASPECT.NTSC_8_7;
 
@@ -43,6 +41,215 @@ function setPixelAspectMode(modeKey) {
   applyScale();
 }
 
+// ---------------------------------------------------------------------------
+// WebGL presenter: uploads RGBA and draws a full-screen quad (nearest)
+// ---------------------------------------------------------------------------
+
+let GL = null;                // WebGLRenderingContext
+let _glReady = false;
+
+let _prog = null;
+let _vb = null;
+
+let _aPos = -1;
+let _aUV  = -1;
+let _uTex = null;
+let _uMode = null;
+let _uTime = null;
+let _uSrcSize = null;
+
+let _texFrame = null;
+
+let _srcW = BASE_W;
+let _srcH = BASE_H;
+
+// staging RGBA (heap, not shared)
+let _stageBytes = null;
+let _stageU32   = null;
+let _stagePixels = 0;
+
+function _glCompile(type, src) {
+  const s = GL.createShader(type);
+  GL.shaderSource(s, src);
+  GL.compileShader(s);
+  if (!GL.getShaderParameter(s, GL.COMPILE_STATUS)) {
+    console.error("[webgl] shader error:", GL.getShaderInfoLog(s));
+    GL.deleteShader(s);
+    return null;
+  }
+  return s;
+}
+
+function _glLink(vsSrc, fsSrc) {
+  const vs = _glCompile(GL.VERTEX_SHADER, vsSrc);
+  const fs = _glCompile(GL.FRAGMENT_SHADER, fsSrc);
+  if (!vs || !fs) return null;
+
+  const p = GL.createProgram();
+  GL.attachShader(p, vs);
+  GL.attachShader(p, fs);
+  GL.linkProgram(p);
+
+  GL.deleteShader(vs);
+  GL.deleteShader(fs);
+
+  if (!GL.getProgramParameter(p, GL.LINK_STATUS)) {
+    console.error("[webgl] link error:", GL.getProgramInfoLog(p));
+    GL.deleteProgram(p);
+    return null;
+  }
+  return p;
+}
+
+function initWebGL() {
+  if (!canvas) return false;
+
+  GL = canvas.getContext('webgl', {
+    alpha: false,
+    antialias: false,
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: false
+  }) || canvas.getContext('experimental-webgl', {
+    alpha: false,
+    antialias: false,
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: false
+  });
+
+  if (!GL) {
+    console.warn("[webgl] WebGL unavailable (falling back to 2D fuzz only)");
+    _glReady = false;
+    return false;
+  }
+
+  const vsSrc = `
+    attribute vec2 a_pos;
+    attribute vec2 a_uv;
+    varying vec2 v_uv;
+    void main() {
+      v_uv = a_uv;
+      gl_Position = vec4(a_pos, 0.0, 1.0);
+    }
+  `;
+
+  // u_mode: 0 = fuzz, 1 = show texture
+  // "clean RF": frame-stepped noise, not continuous sparkling
+  const fsSrc = `
+    precision mediump float;
+    varying vec2 v_uv;
+
+    uniform sampler2D u_tex;
+    uniform float u_mode;
+    uniform float u_time;
+    uniform vec2 u_srcSize;
+
+    float hash(vec2 p) {
+      p = fract(p * vec2(123.34, 456.21));
+      p += dot(p, p + 45.32);
+      return fract(p.x * p.y);
+    }
+
+    void main() {
+      if (u_mode < 0.5) {
+        // stable per-frame noise
+        float frame = floor(u_time * 60.0); // 60Hz-ish
+        vec2 p = v_uv * u_srcSize;
+        float n = hash(p + vec2(frame, frame * 0.37));
+        // slight contrast curve to look more "RF"
+        n = n * n * (3.0 - 2.0 * n);
+        gl_FragColor = vec4(n, n, n, 1.0);
+      } else {
+        gl_FragColor = texture2D(u_tex, v_uv);
+      }
+    }
+  `;
+
+  _prog = _glLink(vsSrc, fsSrc);
+  if (!_prog) {
+    _glReady = false;
+    return false;
+  }
+
+  const quad = new Float32Array([
+    // x, y,   u, v
+    -1, -1,   0, 1,
+     1, -1,   1, 1,
+    -1,  1,   0, 0,
+
+    -1,  1,   0, 0,
+     1, -1,   1, 1,
+     1,  1,   1, 0,
+  ]);
+
+  _vb = GL.createBuffer();
+  GL.bindBuffer(GL.ARRAY_BUFFER, _vb);
+  GL.bufferData(GL.ARRAY_BUFFER, quad, GL.STATIC_DRAW);
+
+  GL.useProgram(_prog);
+
+  _aPos = GL.getAttribLocation(_prog, "a_pos");
+  _aUV  = GL.getAttribLocation(_prog, "a_uv");
+  _uTex = GL.getUniformLocation(_prog, "u_tex");
+  _uMode = GL.getUniformLocation(_prog, "u_mode");
+  _uTime = GL.getUniformLocation(_prog, "u_time");
+  _uSrcSize = GL.getUniformLocation(_prog, "u_srcSize");
+
+  _texFrame = GL.createTexture();
+  GL.activeTexture(GL.TEXTURE0);
+  GL.bindTexture(GL.TEXTURE_2D, _texFrame);
+  GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
+  GL.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, 0);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
+
+  // allocate initial texture to avoid "lazy init" stalls
+  const zero = new Uint8Array(BASE_W * BASE_H * 4);
+  GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, BASE_W, BASE_H, 0, GL.RGBA, GL.UNSIGNED_BYTE, zero);
+
+  GL.disable(GL.DEPTH_TEST);
+  GL.disable(GL.CULL_FACE);
+  GL.disable(GL.BLEND);
+
+  GL.clearColor(0, 0, 0, 1);
+
+  _srcW = BASE_W;
+  _srcH = BASE_H;
+
+  _glReady = true;
+  console.debug("[webgl] ready");
+  return true;
+}
+
+function _glDraw(mode /*0 fuzz, 1 frame*/, timeSec) {
+  if (!_glReady) return;
+
+  GL.useProgram(_prog);
+  GL.bindBuffer(GL.ARRAY_BUFFER, _vb);
+
+  GL.enableVertexAttribArray(_aPos);
+  GL.enableVertexAttribArray(_aUV);
+  GL.vertexAttribPointer(_aPos, 2, GL.FLOAT, false, 16, 0);
+  GL.vertexAttribPointer(_aUV,  2, GL.FLOAT, false, 16, 8);
+
+  GL.activeTexture(GL.TEXTURE0);
+  GL.bindTexture(GL.TEXTURE_2D, _texFrame);
+
+  GL.uniform1i(_uTex, 0);
+  GL.uniform1f(_uMode, mode ? 1.0 : 0.0);
+  GL.uniform1f(_uTime, timeSec || 0.0);
+  GL.uniform2f(_uSrcSize, _srcW, _srcH);
+
+  GL.viewport(0, 0, canvas.width, canvas.height);
+
+  // important: clear so we never show stale garbage / uninitialized buffer
+  GL.clear(GL.COLOR_BUFFER_BIT);
+
+  GL.drawArrays(GL.TRIANGLES, 0, 6);
+}
+
+// --- Scaling / sizing --------------------------------------------------------
 function applyScale() {
   const W = Math.round(BASE_W * scaleFactor);
   const H = Math.round(BASE_H * scaleFactor);
@@ -78,7 +285,6 @@ function applyScale() {
     scanlineCanvas.style.height = `${H}px`;
   }
 
-  ctx.imageSmoothingEnabled = false;
   if (grille_ctx)          grille_ctx.imageSmoothingEnabled = false;
   if (scanlineCanvas_ctx)  scanlineCanvas_ctx.imageSmoothingEnabled = false;
 
@@ -90,10 +296,11 @@ function applyScale() {
   localStorage.setItem('scaleFactor', String(scaleFactor));
 }
 
-// Initial size
+// Init GL first, then scale (prevents any "before init" references)
+initWebGL();
 applyScale();
 
-// default, screen on, click screen to close/ hide
+// --- default, screen on, click screen to close/ hide -------------------------
 const screenButton = document.getElementById('clickedScreen');
 if (screenButton) {
   let screenVisible = true;
@@ -115,7 +322,192 @@ if (screenButton) {
   });
 }
 
-const paletteOption = systemScreen?.querySelector('.optionsBar li:nth-child(3)');
+// --- Palette-aware blit (0..63 indices → RGBA via currentPalette) -----------
+
+let _firstRealFrameSeen = false;
+
+// IMPORTANT: if currentPalette isn't ready yet, DON'T build an all-black LUT.
+// We'll keep a non-black fallback so frames are never black unless data really is.
+const _LITTLE_ENDIAN = (() => {
+  const b = new ArrayBuffer(4);
+  new DataView(b).setUint32(0, 0x0a0b0c0d, true);
+  return new Uint8Array(b)[0] === 0x0d;
+})();
+
+let _PAL_BYTES = new Uint8ClampedArray(64 * 4);
+let _PAL_U32   = new Uint32Array(64);
+let _palEverNonFallback = false;
+
+function _hexToRgb(hex) {
+  if (!hex || hex[0] !== '#' || hex.length < 7) return { r: 0, g: 0, b: 0 };
+  return {
+    r: parseInt(hex.slice(1, 3), 16) | 0,
+    g: parseInt(hex.slice(3, 5), 16) | 0,
+    b: parseInt(hex.slice(5, 7), 16) | 0
+  };
+}
+
+function _buildFallbackPalette() {
+  // simple grayscale ramp (NOT black) so you always see picture data
+  for (let i = 0; i < 64; i++) {
+    const v = ((i / 63) * 255) | 0;
+    const p = i * 4;
+    _PAL_BYTES[p    ] = v;
+    _PAL_BYTES[p + 1] = v;
+    _PAL_BYTES[p + 2] = v;
+    _PAL_BYTES[p + 3] = 255;
+
+    const r = v, g = v, b = v;
+    _PAL_U32[i] = _LITTLE_ENDIAN
+      ? ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0
+      : ((r << 24) | (g << 16) | (b << 8) | 255) >>> 0;
+  }
+}
+
+function _rebuildPaletteLUT() {
+  const pal = (typeof window !== 'undefined' && window.currentPalette) ? window.currentPalette : null;
+
+  if (!pal) {
+    // If we never got a real palette yet, keep fallback (visible).
+    if (!_palEverNonFallback) _buildFallbackPalette();
+    return;
+  }
+
+  for (let i = 0; i < 64; i++) {
+    const hex = pal[i] ? pal[i] : '#000000';
+    const rgb = _hexToRgb(hex);
+    const r = rgb.r | 0, g = rgb.g | 0, b = rgb.b | 0;
+
+    const p = i * 4;
+    _PAL_BYTES[p    ] = r;
+    _PAL_BYTES[p + 1] = g;
+    _PAL_BYTES[p + 2] = b;
+    _PAL_BYTES[p + 3] = 255;
+
+    _PAL_U32[i] = _LITTLE_ENDIAN
+      ? ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0
+      : ((r << 24) | (g << 16) | (b << 8) | 255) >>> 0;
+  }
+
+  _palEverNonFallback = true;
+}
+
+// build once now (fallback if palette not ready yet)
+_rebuildPaletteLUT();
+window._rebuildPaletteLUT = _rebuildPaletteLUT;
+
+// FPS mark (no Atomics here)
+let _fpsLastFrame = -1;
+function _fpsMarkIfNewFrame() {
+  if (typeof SHARED === 'undefined' || !SHARED || !SHARED.SYNC) return;
+  const f = (SHARED.SYNC[4] | 0);
+  if (f !== _fpsLastFrame) {
+    _fpsLastFrame = f;
+    registerFrameUpdate();
+  }
+}
+window._fpsMarkIfNewFrame = _fpsMarkIfNewFrame;
+
+// ---------------------------------------------------------------------------
+// RF fuzz while nothing is rendered
+// ---------------------------------------------------------------------------
+let requestId = 0;
+
+function animateFuzz(t) {
+  if (_glReady && !_firstRealFrameSeen) {
+    _glDraw(0, (t || 0) * 0.001);
+  }
+  requestId = requestAnimationFrame(animateFuzz);
+}
+
+function stopAnimation() {
+  if (requestId) cancelAnimationFrame(requestId);
+  requestId = 0;
+}
+
+// Start with fuzz; first real frame turns it off.
+requestId = requestAnimationFrame(animateFuzz);
+
+// ---------------------------------------------------------------------------
+// Blitters
+// ---------------------------------------------------------------------------
+
+function blitNESFrameRGBA(srcRGBA, w = BASE_W, h = BASE_H) {
+  // optional future path
+}
+
+function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE_H) {
+  if (!indexUint8Array || indexUint8Array.length !== width * height) return;
+
+  _fpsMarkIfNewFrame();
+
+  if (!_firstRealFrameSeen) { stopAnimation(); _firstRealFrameSeen = true; }
+
+  if (!_glReady) return;
+
+  // if palette becomes available later, use it (prevents "all-black LUT built too early")
+  if (!_palEverNonFallback && typeof window !== 'undefined' && window.currentPalette) {
+    _rebuildPaletteLUT();
+  }
+
+  const nPix = (width * height) | 0;
+
+  if (!_stageBytes || _stagePixels !== nPix) {
+    _stagePixels = nPix;
+    _stageBytes = new Uint8Array(nPix * 4);
+    _stageU32   = new Uint32Array(_stageBytes.buffer);
+  }
+
+  const out32 = _stageU32;
+  const pal32 = _PAL_U32;
+
+  for (let i = 0; i < nPix; i++) {
+    out32[i] = pal32[indexUint8Array[i] & 0x3F];
+  }
+
+  GL.activeTexture(GL.TEXTURE0);
+  GL.bindTexture(GL.TEXTURE_2D, _texFrame);
+  GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
+  GL.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, 0);
+
+  if (_srcW !== (width|0) || _srcH !== (height|0)) {
+    _srcW = width|0;
+    _srcH = height|0;
+    GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, _srcW, _srcH, 0, GL.RGBA, GL.UNSIGNED_BYTE, _stageBytes);
+  } else {
+    GL.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, _srcW, _srcH, GL.RGBA, GL.UNSIGNED_BYTE, _stageBytes);
+  }
+
+  _glDraw(1, performance.now() * 0.001);
+
+  window._lastIndexFrame = indexUint8Array;
+  window._lastIndexSize  = { w: width, h: height };
+
+  if (typeof registerFrameUpdate === 'function') registerFrameUpdate();
+}
+
+window.blitNESFrameRGBA = blitNESFrameRGBA;
+window.blitNESFramePaletteIndex = blitNESFramePaletteIndex;
+
+// Blur slider remains
+const slider = document.getElementById('composite-blur-slider');
+if (slider) {
+  slider.addEventListener('input', (event) => {
+    const v = Math.min(Math.max(+event.target.value || 0, 0), 5);
+    document.getElementById('screen-canvas').style.filter = `blur(${v.toFixed(1)}px)`;
+  });
+}
+
+function redrawWithCurrentPalette() {
+  if (!window._lastIndexFrame || !window._lastIndexSize) return;
+  if (typeof window._rebuildPaletteLUT === 'function') window._rebuildPaletteLUT();
+  const s = window._lastIndexSize;
+  blitNESFramePaletteIndex(window._lastIndexFrame, s.w, s.h);
+}
+window.redrawWithCurrentPalette = redrawWithCurrentPalette;
+
+// --- Palette Modal -----------------------------------------------------------
+const paletteOption = systemScreen && systemScreen.querySelector('.optionsBar li:nth-child(3)');
 if (paletteOption) {
   paletteOption.style.cursor = 'pointer';
   paletteOption.addEventListener('click', openPaletteModal);
@@ -128,9 +520,9 @@ function openPaletteModal() {
   const modal = document.createElement('div');
   modal.id = 'palette-modal';
   modal.className = 'palette-modal';
-  modal.innerHTML = `
-    <div class="palette-modal-backdrop"></div>
-    <div class="palette-modal-box" role="dialog" aria-labelledby="paletteModalTitle">
+  modal.innerHTML =
+    `<div class="palette-modal-backdrop"></div>
+     <div class="palette-modal-box" role="dialog" aria-labelledby="paletteModalTitle">
       <div class="palette-modal-header">
         <h3 id="paletteModalTitle">Select Palette</h3>
         <button class="palette-close" aria-label="Close">&times;</button>
@@ -155,8 +547,8 @@ function openPaletteModal() {
         <button class="palette-apply">Apply</button>
         <button class="palette-cancel">Cancel</button>
       </div>
-    </div>
-  `;
+     </div>`;
+
   document.body.appendChild(modal);
 
   const backdrop = modal.querySelector('.palette-modal-backdrop');
@@ -168,12 +560,8 @@ function openPaletteModal() {
 
   applyBtn.addEventListener('click', () => {
     const sel = modal.querySelector('input[name="palette"]:checked');
-    if (sel && typeof window.setCurrentPalette === 'function') {
-      window.setCurrentPalette(sel.value);
-    }
-    if (typeof window._rebuildPaletteLUT === 'function') {
-      window._rebuildPaletteLUT();
-    }
+    if (sel && typeof window.setCurrentPalette === 'function') window.setCurrentPalette(sel.value);
+    if (typeof window._rebuildPaletteLUT === 'function') window._rebuildPaletteLUT();
     close();
   });
 
@@ -186,7 +574,7 @@ function openPaletteModal() {
 }
 
 // --- Pixel Aspect Modal ------------------------------------------------------
-const pixelOption = systemScreen?.querySelector('.optionsBar li:nth-child(4)');
+const pixelOption = systemScreen && systemScreen.querySelector('.optionsBar li:nth-child(4)');
 if (pixelOption) {
   pixelOption.style.cursor = 'pointer';
   pixelOption.addEventListener('click', openPixelModal);
@@ -201,9 +589,9 @@ function openPixelModal() {
   const modal = document.createElement('div');
   modal.id = 'pixel-modal';
   modal.className = 'pixel-modal';
-  modal.innerHTML = `
-    <div class="pixel-modal-backdrop"></div>
-    <div class="pixel-modal-box" role="dialog" aria-labelledby="pixelModalTitle">
+  modal.innerHTML =
+    `<div class="pixel-modal-backdrop"></div>
+     <div class="pixel-modal-box" role="dialog" aria-labelledby="pixelModalTitle">
       <div class="pixel-modal-header">
         <h3 id="pixelModalTitle">Pixel Aspect</h3>
         <button class="pixel-close" aria-label="Close">&times;</button>
@@ -218,8 +606,8 @@ function openPixelModal() {
         <button class="pixel-apply">Apply</button>
         <button class="pixel-cancel">Cancel</button>
       </div>
-    </div>
-  `;
+     </div>`;
+
   document.body.appendChild(modal);
 
   const backdrop = modal.querySelector('.pixel-modal-backdrop');
@@ -243,7 +631,8 @@ function openPixelModal() {
   }, { once: true });
 }
 
-const exitOption = systemScreen?.querySelector('.optionsBar li:nth-child(6)');
+// exit
+const exitOption = systemScreen && systemScreen.querySelector('.optionsBar li:nth-child(6)');
 if (exitOption) {
   exitOption.addEventListener('click', () => {
     if (systemScreen)   systemScreen.style.display   = 'none';
@@ -268,7 +657,7 @@ document.addEventListener('keydown', (ev) => {
   }
 });
 
-// --- F2: quick cycle scales (2 → 3 → 4 → 5 → 5.4 → 2) -----------------------
+// --- F2: quick cycle scales --------------------------------------------------
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'F2') return;
   scaleFactor = (function next(f) {
@@ -288,245 +677,6 @@ document.addEventListener('keydown', (ev) => {
   else pause();
 });
 
-// --- RF fuzz while nothing is rendered --------------------------------------
-let requestId = 0;
-
-function generateNoiseImageData(w, h) {
-  const id = ctx.createImageData(w, h);
-  const d = id.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const v = (Math.random() * 255) | 0;
-    d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
-  }
-  return id;
-}
-
-function animate() {
-  const id = generateNoiseImageData(canvas.width, canvas.height);
-  ctx.globalCompositeOperation = 'difference';
-  ctx.drawImage(canvas, 0, 0);
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.putImageData(id, 0, 0);
-  requestId = requestAnimationFrame(animate);
-}
-
-function stopAnimation() {
-  if (requestId) cancelAnimationFrame(requestId);
-  requestId = 0;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-}
-
-// Start with fuzz; first real frame turns it off.
-animate();
-
-function drawTestImageFitted() {
-  if (!TEST_IMAGE_STATE.enabled || !TEST_IMAGE_STATE.img) return;
-  const img = TEST_IMAGE_STATE.img;
-
-  const sw = img.width, sh = img.height;
-  const dw = canvas.width, dh = canvas.height;
-  const sA = sw / sh, dA = dw / dh;
-
-  let rw = dw, rh = Math.round(dw / sA);
-  if (rh > dh) { rh = dh; rw = Math.round(dh * sA); }
-
-  const dx = (dw - rw) >> 1;
-  const dy = (dh - rh) >> 1;
-
-  ctx.clearRect(0, 0, dw, dh);
-  ctx.drawImage(img, 0, 0, sw, sh, dx, dy, rw, rh);
-}
-
-function enableTestImage(src) {
-  stopAnimation();
-  const img = new Image();
-  img.onload = () => {
-    TEST_IMAGE_STATE.enabled = true;
-    TEST_IMAGE_STATE.img = img;
-    drawTestImageFitted();
-  };
-  img.src = src;
-}
-function disableTestImage() {
-  TEST_IMAGE_STATE.enabled = false;
-  TEST_IMAGE_STATE.img = null;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  animate();
-}
-
-// --- Palette-aware blit (0..63 indices → RGBA via currentPalette) -----------
-
-let _firstRealFrameSeen = false;
-
-// --- Palette LUTs (byte + packed 32b) --------------------------------------
-const _LITTLE_ENDIAN = (() => {
-  const b = new ArrayBuffer(4);
-  new DataView(b).setUint32(0, 0x0a0b0c0d, true);
-  return new Uint8Array(b)[0] === 0x0d;
-})();
-
-let _PAL_BYTES = new Uint8ClampedArray(64 * 4);
-let _PAL_U32   = new Uint32Array(64);
-
-function _hexToRgb(hex) {
-  if (!hex || hex[0] !== '#' || hex.length < 7) return { r: 0, g: 0, b: 0 };
-  return {
-    r: parseInt(hex.slice(1, 3), 16) | 0,
-    g: parseInt(hex.slice(3, 5), 16) | 0,
-    b: parseInt(hex.slice(5, 7), 16) | 0
-  };
-}
-
-function _rebuildPaletteLUT() {
-  const pal = (typeof currentPalette !== 'undefined') ? currentPalette : null;
-  for (let i = 0; i < 64; i++) {
-    const hex = pal && pal[i] ? pal[i] : '#000000';
-    const { r, g, b } = _hexToRgb(hex);
-    const p = i * 4;
-    _PAL_BYTES[p    ] = r;
-    _PAL_BYTES[p + 1] = g;
-    _PAL_BYTES[p + 2] = b;
-    _PAL_BYTES[p + 3] = 255;
-
-    _PAL_U32[i] = _LITTLE_ENDIAN
-      ? ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0
-      : ((r << 24) | (g << 16) | (b << 8) | 255) >>> 0;
-  }
-}
-
-// Build once now…
-_rebuildPaletteLUT();
-
-// IMPORTANT: your palette modal calls window._rebuildPaletteLUT()
-window._rebuildPaletteLUT = _rebuildPaletteLUT;
-
-// --- Offscreen scratch: ALWAYS render base 256x240 here, THEN scale ---------
-function _ensureOffscreen(offObj, w, h) {
-  if (!offObj.canvas) {
-    offObj.canvas = document.createElement('canvas');
-    offObj.ctx    = offObj.canvas.getContext('2d', { alpha: false });
-    offObj.img    = null;
-    offObj._out32 = null;
-  }
-  if (offObj.canvas.width !== w || offObj.canvas.height !== h) {
-    offObj.canvas.width  = w;
-    offObj.canvas.height = h;
-    offObj.img           = offObj.ctx.createImageData(w, h);
-    offObj._out32        = null;
-  }
-}
-
-const _offRGBA  = {};  // for blitNESFrameRGBA (base-size)
-const _offIndex = {};  // for blitNESFramePaletteIndex
-
-let _rgbaImgData = null;
-let _rgbaStaging = null;
-
-// --- FPS: count when PPU frame number advances ------------------------------
-let _fpsLastFrame = -1;
-
-function _fpsMarkIfNewFrame() {
-  if (typeof SHARED === 'undefined' || !SHARED || !SHARED.SYNC) return;
-  const f = Atomics.load(SHARED.SYNC, 4) | 0;
-  if (f !== _fpsLastFrame) {
-    _fpsLastFrame = f;
-    registerFrameUpdate();
-  }
-}
-
-window._fpsMarkIfNewFrame = _fpsMarkIfNewFrame;
-
-// FIXED: RGBA path now matches paletteIndex path (offscreen + drawImage scaling)
-function blitNESFrameRGBA(srcRGBA, w = BASE_W, h = BASE_H) {
-  if (!srcRGBA) return;
-
-  _fpsMarkIfNewFrame();
-
-  const bytes = (w * h * 4) | 0;
-
-  if (!_rgbaStaging || _rgbaStaging.length !== bytes) {
-    _rgbaStaging = new Uint8ClampedArray(bytes); // NOT shared
-  }
-
-  // SAB -> heap
-  _rgbaStaging.set(srcRGBA);
-
-  // Offscreen target at base res
-  _ensureOffscreen(_offRGBA, w, h);
-
-  // Reuse an ImageData for offscreen writes
-  if (!_rgbaImgData || _rgbaImgData.width !== w || _rgbaImgData.height !== h) {
-    _rgbaImgData = _offRGBA.ctx.createImageData(w, h);
-  }
-
-  _rgbaImgData.data.set(_rgbaStaging);
-  _offRGBA.ctx.putImageData(_rgbaImgData, 0, 0);
-
-  // STOP fuzz on first real frame
-  if (!_firstRealFrameSeen) { stopAnimation(); _firstRealFrameSeen = true; }
-
-  // Present scaled to your main canvas
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(_offRGBA.canvas, 0, 0, w, h, 0, 0, canvas.width, canvas.height);
-}
-
-// Path 2 (FAST): NES indices (0..63) → RGBA via packed Uint32 LUT.
-function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE_H) {
-  if (!indexUint8Array || indexUint8Array.length !== width * height) return;
-
-  _fpsMarkIfNewFrame();
-
-  if (!_firstRealFrameSeen) { stopAnimation(); _firstRealFrameSeen = true; }
-
-  _ensureOffscreen(_offIndex, width, height);
-
-  let out32 = _offIndex._out32;
-  if (!out32 || out32.length !== indexUint8Array.length) {
-    out32 = _offIndex._out32 = new Uint32Array(_offIndex.img.data.buffer);
-  }
-
-  const src = indexUint8Array;
-  const pal = _PAL_U32;
-  const n   = src.length;
-
-  for (let i = 0; i < n; i++) {
-    out32[i] = pal[src[i] & 0x3F];
-  }
-
-  _offIndex.ctx.putImageData(_offIndex.img, 0, 0);
-
-  ctx.imageSmoothingEnabled = false;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(_offIndex.canvas, 0, 0, width, height, 0, 0, canvas.width, canvas.height);
-
-  window._lastIndexFrame = indexUint8Array;
-  window._lastIndexSize  = { w: width, h: height };
-}
-
-// Expose for callers that expect these names global
-window.blitNESFrameRGBA = blitNESFrameRGBA;
-window.blitNESFramePaletteIndex = blitNESFramePaletteIndex;
-
-// Blur slider remains
-const slider = document.getElementById('composite-blur-slider');
-if (slider) {
-  slider.addEventListener('input', (event) => {
-    const v = Math.min(Math.max(+event.target.value || 0, 0), 5);
-    document.getElementById('screen-canvas').style.filter = `blur(${v.toFixed(1)}px)`;
-  });
-}
-
-function redrawWithCurrentPalette() {
-  if (!window._lastIndexFrame || !window._lastIndexSize) return;
-  if (typeof window._rebuildPaletteLUT === 'function') {
-    window._rebuildPaletteLUT();
-  }
-  const { w, h } = window._lastIndexSize;
-  blitNESFramePaletteIndex(window._lastIndexFrame, w, h);
-}
-window.redrawWithCurrentPalette = redrawWithCurrentPalette;
-
 // --- FPS overlay -------------------------------------------------------------
 const fpsOverlay = document.createElement("div");
 fpsOverlay.id = "fps-overlay";
@@ -541,7 +691,7 @@ fpsOverlay.style.padding = "2px 6px";
 fpsOverlay.style.borderRadius = "4px";
 fpsOverlay.style.display = "none";
 fpsOverlay.textContent = "FPS: 0";
-systemScreen.appendChild(fpsOverlay);
+if (systemScreen) systemScreen.appendChild(fpsOverlay);
 
 let frameCount = 0;
 let fps = 0;
@@ -549,17 +699,13 @@ let fps = 0;
 setInterval(() => {
   fps = frameCount;
   frameCount = 0;
-  if (fpsOverlay.style.display !== "none") {
-    fpsOverlay.textContent = `FPS: ${fps}`;
-  }
+  if (fpsOverlay.style.display !== "none") fpsOverlay.textContent = `FPS: ${fps}`;
 }, 1000);
 
-function registerFrameUpdate() {
-  frameCount++;
-}
+function registerFrameUpdate() { frameCount++; }
 window.registerFrameUpdate = registerFrameUpdate;
 
-const fpsOption = systemScreen?.querySelector(".optionsBar li:nth-child(5)");
+const fpsOption = systemScreen && systemScreen.querySelector(".optionsBar li:nth-child(5)");
 if (fpsOption) {
   fpsOption.addEventListener("click", () => {
     if (fpsOverlay.style.display === "none") {
@@ -569,4 +715,24 @@ if (fpsOption) {
       fpsOverlay.style.display = "none";
     }
   });
+}
+
+// --- Test image drawing (optional, kept compatible) --------------------------
+function drawTestImageFitted() { /* left intentionally minimal */ }
+
+function enableTestImage(src) {
+  stopAnimation();
+  const img = new Image();
+  img.onload = () => {
+    TEST_IMAGE_STATE.enabled = true;
+    TEST_IMAGE_STATE.img = img;
+    drawTestImageFitted();
+  };
+  img.src = src;
+}
+
+function disableTestImage() {
+  TEST_IMAGE_STATE.enabled = false;
+  TEST_IMAGE_STATE.img = null;
+  if (!_firstRealFrameSeen) requestId = requestAnimationFrame(animateFuzz);
 }
