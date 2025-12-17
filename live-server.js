@@ -57,7 +57,7 @@ http
     }
   })
   .listen(PORT, () => {
-    const url = `http://127.0.0.1:${PORT}/debug.html`;
+    const url = `http://127.0.0.1:${PORT}/VajNES-JS.html`;
     console.debug(`Server running at ${url}`);
 
     // Auto-open default browser
