@@ -1,14 +1,18 @@
 (() => {
-  console.debug("[main] shared-assets.js loaded");
+  console.debug("[main] shared-assets.js loaded (NO ATOMICS)");
 
   window.SHARED = Object.create(null);
 
   console.debug("[main] Allocating SABs…");
 
+  // NOTE:
+  // We keep SharedArrayBuffer so worker + main see the same memory (zero-copy),
+  // but we do NOT use Atomics.* anywhere in this file.
+
   SHARED.SAB_CLOCKS = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
   SHARED.CLOCKS     = new Int32Array(SHARED.SAB_CLOCKS);
-  SHARED.CLOCKS[0]  = 0;
-  SHARED.CLOCKS[1]  = 0;
+  SHARED.CLOCKS[0]  = 0; // cpuCycles
+  SHARED.CLOCKS[1]  = 0; // ppuCycles
 
   SHARED.SAB_SYNC = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 8);
   SHARED.SYNC     = new Int32Array(SHARED.SAB_SYNC);
@@ -59,7 +63,7 @@
   SHARED.SAB_PALETTE_INDEX_FRAME = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT * PIXEL_COUNT);
   SHARED.PALETTE_INDEX_FRAME     = new Uint8Array(SHARED.SAB_PALETTE_INDEX_FRAME);
 
-  // RGBA frame (ready-to-blit; 4 bytes per pixel)
+  // RGBA frame (4 bytes per pixel)
   SHARED.SAB_RGBA_FRAME = new SharedArrayBuffer(Uint8ClampedArray.BYTES_PER_ELEMENT * PIXEL_COUNT * 4);
   SHARED.RGBA_FRAME     = new Uint8ClampedArray(SHARED.SAB_RGBA_FRAME);
 
@@ -77,74 +81,79 @@
   console.debug("[main] paletteIndexFrame len =", paletteIndexFrame.length, " (expected", PIXEL_COUNT, ")");
   console.debug("[main] rgbaFrame len =", rgbaFrame.length, " (expected", (PIXEL_COUNT * 4), ")");
 
-  // ---- Live scalar accessors ----
-  const make8  = v => v & 0xFF;
-  const make16 = v => v & 0xFFFF;
+  // ---- Live scalar accessors (NO ATOMICS) ----
+  const make8  = v => (v & 0xFF);
+  const make16 = v => (v & 0xFFFF);
+
+  // Event bit masks (same as your old packing)
+  const EVT_NMI_SUPPRESS   = 0b00000001;
+  const EVT_DONT_SET_VBL   = 0b00000100;
+  const EVT_CPU_STALL      = 0b00001000;
+  const EVT_CHR_8K_MODE    = 0b00100000;
+
+  function evtGet(mask) {
+    return (SHARED.EVENTS[0] & mask) !== 0;
+  }
+  function evtSet(mask, on) {
+    let v = SHARED.EVENTS[0] | 0;
+    if (on) v |= mask;
+    else    v &= ~mask;
+    SHARED.EVENTS[0] = v | 0;
+  }
 
   Object.defineProperties(globalThis, {
-    PPUCTRL:   { get: () => Atomics.load(SHARED.PPU_REGS, 0),  set: v => Atomics.store(SHARED.PPU_REGS, 0, make8(v)),  configurable: true },
-    PPUMASK:   { get: () => Atomics.load(SHARED.PPU_REGS, 1),  set: v => Atomics.store(SHARED.PPU_REGS, 1, make8(v)),  configurable: true },
-    PPUSTATUS: { get: () => Atomics.load(SHARED.PPU_REGS, 2),  set: v => Atomics.store(SHARED.PPU_REGS, 2, make8(v)),  configurable: true },
-    OAMADDR:   { get: () => Atomics.load(SHARED.PPU_REGS, 3),  set: v => Atomics.store(SHARED.PPU_REGS, 3, make8(v)),  configurable: true },
-    OAMDATA:   { get: () => Atomics.load(SHARED.PPU_REGS, 4),  set: v => Atomics.store(SHARED.PPU_REGS, 4, make8(v)),  configurable: true },
-    SCROLL_X:  { get: () => Atomics.load(SHARED.PPU_REGS, 5),  set: v => Atomics.store(SHARED.PPU_REGS, 5, make8(v)),  configurable: true },
-    SCROLL_Y:  { get: () => Atomics.load(SHARED.PPU_REGS, 6),  set: v => Atomics.store(SHARED.PPU_REGS, 6, make8(v)),  configurable: true },
-    ADDR_HIGH: { get: () => Atomics.load(SHARED.PPU_REGS, 7),  set: v => Atomics.store(SHARED.PPU_REGS, 7, make8(v)),  configurable: true },
-    ADDR_LOW:  { get: () => Atomics.load(SHARED.PPU_REGS, 8),  set: v => Atomics.store(SHARED.PPU_REGS, 8, make8(v)),  configurable: true },
-    t_lo:      { get: () => Atomics.load(SHARED.PPU_REGS, 9),  set: v => Atomics.store(SHARED.PPU_REGS, 9, make8(v)),  configurable: true },
-    t_hi:      { get: () => Atomics.load(SHARED.PPU_REGS, 10), set: v => Atomics.store(SHARED.PPU_REGS, 10, make8(v)), configurable: true },
-    fineX:     { get: () => Atomics.load(SHARED.PPU_REGS, 11), set: v => Atomics.store(SHARED.PPU_REGS, 11, make8(v)), configurable: true },
+    // PPU regs (byte array)
+    PPUCTRL:   { get: () => SHARED.PPU_REGS[0]  | 0, set: v => { SHARED.PPU_REGS[0]  = make8(v); },  configurable: true },
+    PPUMASK:   { get: () => SHARED.PPU_REGS[1]  | 0, set: v => { SHARED.PPU_REGS[1]  = make8(v); },  configurable: true },
+    PPUSTATUS: { get: () => SHARED.PPU_REGS[2]  | 0, set: v => { SHARED.PPU_REGS[2]  = make8(v); },  configurable: true },
+    OAMADDR:   { get: () => SHARED.PPU_REGS[3]  | 0, set: v => { SHARED.PPU_REGS[3]  = make8(v); },  configurable: true },
+    OAMDATA:   { get: () => SHARED.PPU_REGS[4]  | 0, set: v => { SHARED.PPU_REGS[4]  = make8(v); },  configurable: true },
+    SCROLL_X:  { get: () => SHARED.PPU_REGS[5]  | 0, set: v => { SHARED.PPU_REGS[5]  = make8(v); },  configurable: true },
+    SCROLL_Y:  { get: () => SHARED.PPU_REGS[6]  | 0, set: v => { SHARED.PPU_REGS[6]  = make8(v); },  configurable: true },
+    ADDR_HIGH: { get: () => SHARED.PPU_REGS[7]  | 0, set: v => { SHARED.PPU_REGS[7]  = make8(v); },  configurable: true },
+    ADDR_LOW:  { get: () => SHARED.PPU_REGS[8]  | 0, set: v => { SHARED.PPU_REGS[8]  = make8(v); },  configurable: true },
+    t_lo:      { get: () => SHARED.PPU_REGS[9]  | 0, set: v => { SHARED.PPU_REGS[9]  = make8(v); },  configurable: true },
+    t_hi:      { get: () => SHARED.PPU_REGS[10] | 0, set: v => { SHARED.PPU_REGS[10] = make8(v); },  configurable: true },
+    fineX:     { get: () => SHARED.PPU_REGS[11] | 0, set: v => { SHARED.PPU_REGS[11] = make8(v); },  configurable: true },
 
-    VRAM_DATA: { get: () => Atomics.load(SHARED.PPU_REGS, 13), set: v => Atomics.store(SHARED.PPU_REGS, 13, make8(v)), configurable: true },
+    // (12 unused in your mapping)
+    VRAM_DATA: { get: () => SHARED.PPU_REGS[13] | 0, set: v => { SHARED.PPU_REGS[13] = make8(v); },  configurable: true },
 
-    BG_ntByte: { get: () => Atomics.load(SHARED.PPU_REGS, 14), set: v => Atomics.store(SHARED.PPU_REGS, 14, make8(v)), configurable: true },
-    BG_atByte: { get: () => Atomics.load(SHARED.PPU_REGS, 15), set: v => Atomics.store(SHARED.PPU_REGS, 15, make8(v)), configurable: true },
-    BG_tileLo: { get: () => Atomics.load(SHARED.PPU_REGS, 16), set: v => Atomics.store(SHARED.PPU_REGS, 16, make8(v)), configurable: true },
-    BG_tileHi: { get: () => Atomics.load(SHARED.PPU_REGS, 17), set: v => Atomics.store(SHARED.PPU_REGS, 17, make8(v)), configurable: true },
+    BG_ntByte: { get: () => SHARED.PPU_REGS[14] | 0, set: v => { SHARED.PPU_REGS[14] = make8(v); },  configurable: true },
+    BG_atByte: { get: () => SHARED.PPU_REGS[15] | 0, set: v => { SHARED.PPU_REGS[15] = make8(v); },  configurable: true },
+    BG_tileLo: { get: () => SHARED.PPU_REGS[16] | 0, set: v => { SHARED.PPU_REGS[16] = make8(v); },  configurable: true },
+    BG_tileHi: { get: () => SHARED.PPU_REGS[17] | 0, set: v => { SHARED.PPU_REGS[17] = make8(v); },  configurable: true },
 
-    PPU_FRAME_FLAGS: { get: () => Atomics.load(SHARED.PPU_REGS, 18), set: v => Atomics.store(SHARED.PPU_REGS, 18, make8(v)), configurable: true },
+    PPU_FRAME_FLAGS: { get: () => SHARED.PPU_REGS[18] | 0, set: v => { SHARED.PPU_REGS[18] = make8(v); }, configurable: true },
 
-    mapperNumber: { get: () => Atomics.load(SHARED.PPU_REGS, 19), set: v => Atomics.store(SHARED.PPU_REGS, 19, make8(v)), configurable: true },
-    CHR_BANK_LO:  { get: () => Atomics.load(SHARED.PPU_REGS, 20), set: v => Atomics.store(SHARED.PPU_REGS, 20, make8(v)), configurable: true },
-    CHR_BANK_HI:  { get: () => Atomics.load(SHARED.PPU_REGS, 21), set: v => Atomics.store(SHARED.PPU_REGS, 21, make8(v)), configurable: true },
+    mapperNumber: { get: () => SHARED.PPU_REGS[19] | 0, set: v => { SHARED.PPU_REGS[19] = make8(v); }, configurable: true },
+    CHR_BANK_LO:  { get: () => SHARED.PPU_REGS[20] | 0, set: v => { SHARED.PPU_REGS[20] = make8(v); }, configurable: true },
+    CHR_BANK_HI:  { get: () => SHARED.PPU_REGS[21] | 0, set: v => { SHARED.PPU_REGS[21] = make8(v); }, configurable: true },
 
-    VRAM_ADDR: { get: () => Atomics.load(SHARED.VRAM_ADDR, 0), set: v => Atomics.store(SHARED.VRAM_ADDR, 0, make16(v)), configurable: true },
+    // VRAM address (Uint16)
+    VRAM_ADDR: { get: () => SHARED.VRAM_ADDR[0] | 0, set: v => { SHARED.VRAM_ADDR[0] = make16(v); }, configurable: true },
 
-    cpuCycles: { get: () => Atomics.load(SHARED.CLOCKS, 0), set: v => Atomics.store(SHARED.CLOCKS, 0, v|0), configurable: true },
-    ppuCycles: { get: () => Atomics.load(SHARED.CLOCKS, 1), set: v => Atomics.store(SHARED.CLOCKS, 1, v|0), configurable: true },
+    // clocks (Int32)
+    cpuCycles: { get: () => SHARED.CLOCKS[0] | 0, set: v => { SHARED.CLOCKS[0] = (v|0); }, configurable: true },
+    ppuCycles: { get: () => SHARED.CLOCKS[1] | 0, set: v => { SHARED.CLOCKS[1] = (v|0); }, configurable: true },
 
-    cpuOpenBus: { get: () => Atomics.load(SHARED.CPU_OPENBUS, 0), set: v => Atomics.store(SHARED.CPU_OPENBUS, 0, make8(v)), configurable: true },
+    // open bus (Uint8)
+    cpuOpenBus: { get: () => SHARED.CPU_OPENBUS[0] | 0, set: v => { SHARED.CPU_OPENBUS[0] = make8(v); }, configurable: true },
 
-    nmiSuppression: {
-      get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1) !== 0,
-      set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1) : Atomics.and(SHARED.EVENTS, 0, ~0b1); },
-      configurable: true
-    },
-    doNotSetVblank: {
-      get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b100) !== 0,
-      set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b100) : Atomics.and(SHARED.EVENTS, 0, ~0b100); },
-      configurable: true
-    },
-    cpuStallFlag: {
-      get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b1000) !== 0,
-      set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b1000) : Atomics.and(SHARED.EVENTS, 0, ~0b1000); },
-      configurable: true
-    },
-    chr8kModeFlag: {
-      get: () => (Atomics.load(SHARED.EVENTS, 0) & 0b00100000) !== 0,
-      set: v => { v ? Atomics.or(SHARED.EVENTS, 0, 0b00100000)
-                    : Atomics.and(SHARED.EVENTS, 0, ~0b00100000); },
-      configurable: true
-    }
+    // packed event flags (Int32)
+    nmiSuppression: { get: () => evtGet(EVT_NMI_SUPPRESS), set: v => evtSet(EVT_NMI_SUPPRESS, !!v), configurable: true },
+    doNotSetVblank: { get: () => evtGet(EVT_DONT_SET_VBL), set: v => evtSet(EVT_DONT_SET_VBL, !!v), configurable: true },
+    cpuStallFlag:   { get: () => evtGet(EVT_CPU_STALL),    set: v => evtSet(EVT_CPU_STALL, !!v),    configurable: true },
+    chr8kModeFlag:  { get: () => evtGet(EVT_CHR_8K_MODE),  set: v => evtSet(EVT_CHR_8K_MODE, !!v),  configurable: true },
   });
 
-  console.debug("[main] Installed live scalar accessors");
+  console.debug("[main] Installed live scalar accessors (NO ATOMICS)");
 
   // ---- Create worker ----
   globalThis.ppuWorker = new Worker('assets/js/ppu-worker.js');
   console.debug("[main] ppuWorker created");
 
-  // You said you don't use messages for render timing; keep this harmless
+  // Harmless message hooks (keep)
   ppuWorker.addEventListener('message', (e) => {
     const d = e.data || {};
     if (d.type === 'ready') console.debug("[main] worker says ready");
@@ -166,12 +175,14 @@
     SAB_PPU_REGS: SHARED.SAB_PPU_REGS,
     SAB_VRAM_ADDR: SHARED.SAB_VRAM_ADDR,
     SAB_SYNC: SHARED.SAB_SYNC,
+
     SAB_ASSETS: {
       CHR_ROM:     SHARED.SAB_CHR,
       VRAM:        SHARED.SAB_VRAM,
       PALETTE_RAM: SHARED.SAB_PALETTE,
       OAM:         SHARED.SAB_OAM,
     },
+
     SAB_PALETTE_INDEX_FRAME: SHARED.SAB_PALETTE_INDEX_FRAME,
     SAB_RGBA_FRAME:          SHARED.SAB_RGBA_FRAME
   });

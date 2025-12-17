@@ -6,10 +6,11 @@ const SYNC_SCANLINE = 2;
 const SYNC_DOT      = 3;
 const SYNC_FRAME    = 4;
 
-// ---- Shared setters ----
-const STORE_CURRENT_SCANLINE = v => Atomics.store(SHARED.SYNC, SYNC_SCANLINE, v|0);
-const STORE_CURRENT_DOT      = v => Atomics.store(SHARED.SYNC, SYNC_DOT,      v|0);
-const STORE_CURRENT_FRAME    = v => Atomics.store(SHARED.SYNC, SYNC_FRAME,    v|0);
+// ---- Shared setters (NO ATOMICS) ----
+// Your CPU side must also read without Atomics.load().
+const STORE_CURRENT_SCANLINE = v => { SHARED.SYNC[SYNC_SCANLINE] = v | 0; };
+const STORE_CURRENT_DOT      = v => { SHARED.SYNC[SYNC_DOT]      = v | 0; };
+const STORE_CURRENT_FRAME    = v => { SHARED.SYNC[SYNC_FRAME]    = v | 0; };
 
 // ---- Status bit helpers ----
 const CLEAR_VBLANK          = () => { PPUSTATUS &= ~0x80; };
@@ -24,7 +25,6 @@ const DOTS_PER_SCANLINE   = 340; // 0..340 = 341
 const SCANLINES_PER_FRAME = 262; // 0..261
 const NES_W = 256, NES_H = 240;
 const PIXELS = NES_W * NES_H;
-const RGBA_BYTES = PIXELS * 4;
 
 // ---- PPUMASK bits ----
 const MASK_GREYSCALE      = 0x01;
@@ -97,35 +97,6 @@ let ppumaskPrev = 0;
 // ---- Debug offsets ----
 let BG_DEBUG_X_OFFSET = 0;
 let BG_DEBUG_Y_OFFSET = 0;
-
-// ============================================================================
-// RGBA OUTPUT (SAB)
-// - Writes RGBA per pixel into rgbaFrame (SAB view).
-// - paletteIndexFrame remains indices forever.
-// - Palette mapping: guaranteed grayscale fallback (always shows something).
-// ============================================================================
-
-function mapIndex6ToRGBA(index6) {
-  // index6: 0..63 -> 0..252 grayscale
-  const v = (index6 & 0x3F) << 2;
-  return v & 0xFF;
-}
-
-function writePixelRGBA(x, y, index6) {
-  // rgbaFrame should be provided by setup (SAB view).
-  // If not present, we still keep paletteIndexFrame working.
-  if (!rgbaFrame || rgbaFrame.length !== RGBA_BYTES) return;
-
-  const p = (y * NES_W + x) | 0;
-  const o = (p << 2) | 0;
-
-  const v = mapIndex6ToRGBA(index6);
-
-  rgbaFrame[o    ] = v;
-  rgbaFrame[o + 1] = v;
-  rgbaFrame[o + 2] = v;
-  rgbaFrame[o + 3] = 255;
-}
 
 // ---- Utils ----
 function reverseByte(b) {
@@ -337,6 +308,7 @@ function primeBGForSpriteOnly() {
 }
 
 // ---- Pixel output ----
+// Worker writes ONLY paletteIndexFrame; main thread blits it.
 function emitPixelHardwarePalette() {
   const bgOn = bgEnabledNow();
 
@@ -392,11 +364,8 @@ function emitPixelHardwarePalette() {
     }
   }
 
-  // Indices (for debug/compat)
-  paletteIndexFrame[y * NES_W + x] = finalIndex6;
-
-  // RGBA (ready to blit)
-  writePixelRGBA(x, y, finalIndex6);
+  // 256-wide => y<<8 is y*256
+  paletteIndexFrame[(y << 8) + x] = finalIndex6 & 0x3F;
 }
 
 // ---- Scanline handlers ----
@@ -618,6 +587,7 @@ function vblankStartScanline(dot) {
   if (dot === 1) {
     if (!doNotSetVblank) SET_VBLANK();
 
+    // keep your original logic as-is
     const vblankBitIsSet = (!PPUSTATUS & 0b10000000);
     const nmiBitIsSet = (!PPUCTRL & 0x80);
     if (nmiBitIsSet && !nmiSuppression && vblankBitIsSet) {
@@ -745,6 +715,7 @@ function ppuTick() {
   }
   renderingPrev = renNow2;
 
+  // Odd frame skip
   if (PPUclock.oddFrame && renNow2 &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
     PPUclock.scanline = 0;
@@ -772,23 +743,20 @@ function ppuTick() {
 
 // ---- Main PPU Loop ----
 function startPPULoop() {
-  // Make sure rgbaFrame exists early (so you can see something ASAP)
-  if (rgbaFrame && rgbaFrame.length === RGBA_BYTES) {
-    // fill alpha channel once (optional; harmless)
-    for (let i = 3; i < RGBA_BYTES; i += 4) rgbaFrame[i] = 255;
-  }
-
   while (1) {
+    // Turn-taking: spin until CPU gives us work.
     while (!cpuStallFlag) {}
 
     const target = ppuCycles;
 
     while (totalTicks < target) {
-      ppuTick();
-
+      // Publish timing BEFORE ticking so CPU-side "current dot" matches this tick’s state
+      // (this is the safest for $2002 suppression windows)
       STORE_CURRENT_FRAME(PPUclock.frame);
-      STORE_CURRENT_DOT(PPUclock.dot);
       STORE_CURRENT_SCANLINE(PPUclock.scanline);
+      STORE_CURRENT_DOT(PPUclock.dot);
+
+      ppuTick();
 
       PPUclock.dot++;
       totalTicks++;

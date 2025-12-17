@@ -2,9 +2,9 @@
 // https://www.nesdev.org/wiki/CPU_interrupts
 function serviceNMI() {
 
-  const sl    = Atomics.load(SHARED.SYNC, 2);
-  const dot   = Atomics.load(SHARED.SYNC, 3);
-  const frame = Atomics.load(SHARED.SYNC, 4);
+const sl    = SHARED.SYNC[2] | 0;
+const dot   = SHARED.SYNC[3] | 0;
+const frame = SHARED.SYNC[4] | 0;
 
   if (debugLogging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
   
@@ -171,7 +171,7 @@ const DMA = {
 };
 
 function dmaTransfer(value) {
-  const cur = Atomics.load(SHARED.CLOCKS, 0) | 0;
+  const cur = SHARED.CLOCKS[0] ?? 0;
 
   DMA.active = true;
   DMA.page   = value & 0xFF;

@@ -422,9 +422,25 @@ const _offIndex = {};  // for blitNESFramePaletteIndex
 let _rgbaImgData = null;
 let _rgbaStaging = null;
 
+// --- FPS: count when PPU frame number advances ------------------------------
+let _fpsLastFrame = -1;
+
+function _fpsMarkIfNewFrame() {
+  if (typeof SHARED === 'undefined' || !SHARED || !SHARED.SYNC) return;
+  const f = Atomics.load(SHARED.SYNC, 4) | 0;
+  if (f !== _fpsLastFrame) {
+    _fpsLastFrame = f;
+    registerFrameUpdate();
+  }
+}
+
+window._fpsMarkIfNewFrame = _fpsMarkIfNewFrame;
+
 // FIXED: RGBA path now matches paletteIndex path (offscreen + drawImage scaling)
 function blitNESFrameRGBA(srcRGBA, w = BASE_W, h = BASE_H) {
   if (!srcRGBA) return;
+
+  _fpsMarkIfNewFrame();
 
   const bytes = (w * h * 4) | 0;
 
@@ -449,17 +465,18 @@ function blitNESFrameRGBA(srcRGBA, w = BASE_W, h = BASE_H) {
   // STOP fuzz on first real frame
   if (!_firstRealFrameSeen) { stopAnimation(); _firstRealFrameSeen = true; }
 
-  // Present scaled to your main canvas (this is what paletteIndex did)
+  // Present scaled to your main canvas
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(_offRGBA.canvas, 0, 0, w, h, 0, 0, canvas.width, canvas.height);
-
-  registerFrameUpdate(); // FPS
 }
 
 // Path 2 (FAST): NES indices (0..63) → RGBA via packed Uint32 LUT.
 function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE_H) {
   if (!indexUint8Array || indexUint8Array.length !== width * height) return;
+
+  _fpsMarkIfNewFrame();
+
   if (!_firstRealFrameSeen) { stopAnimation(); _firstRealFrameSeen = true; }
 
   _ensureOffscreen(_offIndex, width, height);
@@ -485,8 +502,6 @@ function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE
 
   window._lastIndexFrame = indexUint8Array;
   window._lastIndexSize  = { w: width, h: height };
-
-  if (typeof registerFrameUpdate === 'function') registerFrameUpdate();
 }
 
 // Expose for callers that expect these names global
@@ -528,7 +543,6 @@ fpsOverlay.style.display = "none";
 fpsOverlay.textContent = "FPS: 0";
 systemScreen.appendChild(fpsOverlay);
 
-// FPS tracking
 let frameCount = 0;
 let fps = 0;
 

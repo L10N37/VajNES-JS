@@ -15,18 +15,9 @@ const NES_H = 240;
 let _rgbaHeap = null;
 
 function renderFrame() {
-  // ---- Copy SAB -> heap (ImageData cannot take SAB-backed views) ----
-  const needed = (NES_W * NES_H * 4) | 0;
+  if (typeof window._fpsMarkIfNewFrame === 'function') window._fpsMarkIfNewFrame();
 
-  if (!_rgbaHeap || _rgbaHeap.length !== needed) {
-    _rgbaHeap = new Uint8ClampedArray(needed);
-  }
-
-  // rgbaFrame is SAB-backed Uint8ClampedArray (or Uint8Array). Either way, set() works.
-  _rgbaHeap.set(rgbaFrame);
-
-  // ---- Render from heap ----
-  blitNESFrameRGBA(_rgbaHeap, NES_W, NES_H);
+  blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
   //registerFrameUpdate(); // called at the end of the blit function/s
 
   //const bgColor = PALETTE_RAM[0x00] & 0x3F;
@@ -38,9 +29,11 @@ function renderFrame() {
 
 
 function checkInterrupts() {
-const frame = Atomics.load(SHARED.SYNC, 4);
-const sl    = Atomics.load(SHARED.SYNC, 2);
-const dot   = Atomics.load(SHARED.SYNC, 3);
+
+const sl    = SHARED.SYNC[2] | 0;
+const dot   = SHARED.SYNC[3] | 0;
+const frame = SHARED.SYNC[4] | 0;
+
 
 const nmiEnabled = (PPUCTRL & 0x80) != 0;
   const nmiEdgeExists = (PPU_FRAME_FLAGS & 0b00000100) != 0;
@@ -119,9 +112,9 @@ window.step = function () {
   // ---- handle interrupts ----
   // Only take NMI if it's pending *and not suppressed this vblank*
   if (nmiPending) {
-    const frame = Atomics.load(SHARED.SYNC, 4);
-    const sl    = Atomics.load(SHARED.SYNC, 2);
-    const dot   = Atomics.load(SHARED.SYNC, 3);
+    const sl    = SHARED.SYNC[2] | 0;
+    const dot   = SHARED.SYNC[3] | 0;
+    const frame = SHARED.SYNC[4] | 0;
 
     if (debugVideoTiming){
     console.debug(

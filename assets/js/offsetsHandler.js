@@ -55,9 +55,9 @@ function checkReadOffset(address) {
 
     switch (reg) {
       case 0x2002: { // PPUSTATUS
-        const sl  = Atomics.load(SHARED.SYNC, 2);
-        const dot = Atomics.load(SHARED.SYNC, 3);
-        const fr  = Atomics.load(SHARED.SYNC, 4);
+        const sl    = SHARED.SYNC[2] | 0;
+        const dot   = SHARED.SYNC[3] | 0;
+        const frame = SHARED.SYNC[4] | 0;
 
         if (sl === 241 && dot === 0) { // one PPU clock before set
           doNotSetVblank = true;
@@ -298,11 +298,11 @@ function checkWriteOffset(address, value) {
         if (debugLogging) console.debug(`[W $2000 PPUCTRL] val=$${value.toString(16)} wasEN=${wasEN?1:0}`);
         const nowEN = (value & 0x80) !== 0;
         if (!wasEN && nowEN && (PPUSTATUS & 0x80)) {
-          const sl = Atomics.load(SHARED.SYNC, 2);
-          const dot = Atomics.load(SHARED.SYNC, 3);
-          const fr = Atomics.load(SHARED.SYNC, 4);
+        const sl    = SHARED.SYNC[2] | 0;
+        const dot   = SHARED.SYNC[3] | 0;
+        const frame = SHARED.SYNC[4] | 0;
           PPU_FRAME_FLAGS |= 0b00000100;
-          console.debug(`[PPUCTRL NMI EDGE] frame=${fr} sl=${sl} dot=${dot}`);
+        if (debugVideoTiming) console.debug(`[PPUCTRL NMI EDGE] frame=${fr} sl=${sl} dot=${dot}`);
         }
         break;
       }
