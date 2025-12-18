@@ -1,3 +1,51 @@
+// ============================================================================
+// SCREEN BOOT + LAYERS (WEBGL presenter) + RF FUZZ (CPU-GENERATED LIKE 2D DEMO)
+// ============================================================================
+//
+// Why this rewrite exists:
+// - Shader-hash fuzz tends to create stable spatial patterns that "drift/scroll"
+//   with time/UV math. It can look like a static image sliding left.
+// - The classic CRT "snow" is closer to per-frame random pixels (like your 2D demo).
+//
+// This file restores that by generating RF fuzz on the CPU (Uint32Array) and
+// uploading it as a WebGL texture, while still using WebGL for the real NES frame.
+//
+// ----------------------------------------------------------------------------
+// RF TUNING KNOBS (EDIT THESE FIRST)
+// ----------------------------------------------------------------------------
+// Tips:
+// - Too bright: lower brightness or contrast, or raise blackFloor.
+// - Too harsh: lower contrast, raise gamma, lower noiseAmount.
+// - Too "slow": increase fpsHz or disable everyOtherFrame.
+// - Want more "TV-ish": set everyOtherFrame=true and fpsHz=60.
+//
+// You can hot tweak from DevTools:
+//   RF.brightness = 0.06; RF.contrast = 1.1; RF.everyOtherFrame = false;
+//
+// ----------------------------------------------------------------------------
+const RF = {
+  // Update cadence
+  everyOtherFrame: true,  // like your example toggle: halves updates (more "TV snow")
+  fpsHz: 60,              // used if you choose to step by time (we do)
+
+  // Tone shaping
+  brightness: 0.05,       // 0..1 add a base floor (prevents full black)
+  contrast: 1.15,         // 0.5..2.0 overall contrast on noise
+  gamma: 1.25,            // >1 darkens midtones
+  blackFloor: 0.02,       // 0..1 clamp minimum luma
+
+  // Noise characteristics
+  noiseAmount: 1.0,       // 0..1 mix between flat brightness and noise
+  mono: true,             // true = grayscale snow (more RF-ish)
+  seedSalt: 0,            // integer; change if you want a different "family"
+
+  // Optional subtle horizontal banding (very light)
+  bandStrength: 0.12,     // 0..0.5 subtle scanline-ish modulation
+  bandFreq: 2.0,          // ~1..6
+};
+// expose for console tweaking
+window.RF = RF;
+
 // --- Screen boot + layers ---------------------------------------------------
 // These globals are read by other files because of load order; no window.* here.
 
@@ -6,7 +54,7 @@ const grilleScreen   = document.getElementById('grille-screen-modal');
 const scanlineScreen = document.getElementById('scanline-simulation-modal');
 const blackScreen    = document.getElementById('black-screen-modal');
 
-const canvas         = document.getElementById('screen-canvas');     // main picture (WEBGL now)
+const canvas         = document.getElementById('screen-canvas');     // main picture (WEBGL)
 const grilleCanvas   = document.getElementById('grille-canvas');     // grille / masks
 const scanlineCanvas = document.getElementById('scanline-canvas');   // scanline overlay
 
@@ -54,9 +102,6 @@ let _vb = null;
 let _aPos = -1;
 let _aUV  = -1;
 let _uTex = null;
-let _uMode = null;
-let _uTime = null;
-let _uSrcSize = null;
 
 let _texFrame = null;
 
@@ -67,6 +112,11 @@ let _srcH = BASE_H;
 let _stageBytes = null;
 let _stageU32   = null;
 let _stagePixels = 0;
+
+// separate RF fuzz buffer (so real frames don't reuse it accidentally)
+let _rfBytes = null;
+let _rfU32   = null;
+let _rfPixels = 0;
 
 function _glCompile(type, src) {
   const s = GL.createShader(type);
@@ -117,7 +167,7 @@ function initWebGL() {
   });
 
   if (!GL) {
-    console.warn("[webgl] WebGL unavailable (falling back to 2D fuzz only)");
+    console.warn("[webgl] WebGL unavailable (no signal fuzz will not show)");
     _glReady = false;
     return false;
   }
@@ -132,35 +182,13 @@ function initWebGL() {
     }
   `;
 
-  // u_mode: 0 = fuzz, 1 = show texture
-  // "clean RF": frame-stepped noise, not continuous sparkling
+  // Simple presenter: always show the texture. (Fuzz is now generated on CPU)
   const fsSrc = `
     precision mediump float;
     varying vec2 v_uv;
-
     uniform sampler2D u_tex;
-    uniform float u_mode;
-    uniform float u_time;
-    uniform vec2 u_srcSize;
-
-    float hash(vec2 p) {
-      p = fract(p * vec2(123.34, 456.21));
-      p += dot(p, p + 45.32);
-      return fract(p.x * p.y);
-    }
-
     void main() {
-      if (u_mode < 0.5) {
-        // stable per-frame noise
-        float frame = floor(u_time * 60.0); // 60Hz-ish
-        vec2 p = v_uv * u_srcSize;
-        float n = hash(p + vec2(frame, frame * 0.37));
-        // slight contrast curve to look more "RF"
-        n = n * n * (3.0 - 2.0 * n);
-        gl_FragColor = vec4(n, n, n, 1.0);
-      } else {
-        gl_FragColor = texture2D(u_tex, v_uv);
-      }
+      gl_FragColor = texture2D(u_tex, v_uv);
     }
   `;
 
@@ -190,9 +218,6 @@ function initWebGL() {
   _aPos = GL.getAttribLocation(_prog, "a_pos");
   _aUV  = GL.getAttribLocation(_prog, "a_uv");
   _uTex = GL.getUniformLocation(_prog, "u_tex");
-  _uMode = GL.getUniformLocation(_prog, "u_mode");
-  _uTime = GL.getUniformLocation(_prog, "u_time");
-  _uSrcSize = GL.getUniformLocation(_prog, "u_srcSize");
 
   _texFrame = GL.createTexture();
   GL.activeTexture(GL.TEXTURE0);
@@ -222,7 +247,7 @@ function initWebGL() {
   return true;
 }
 
-function _glDraw(mode /*0 fuzz, 1 frame*/, timeSec) {
+function _glPresentTexture() {
   if (!_glReady) return;
 
   GL.useProgram(_prog);
@@ -235,18 +260,28 @@ function _glDraw(mode /*0 fuzz, 1 frame*/, timeSec) {
 
   GL.activeTexture(GL.TEXTURE0);
   GL.bindTexture(GL.TEXTURE_2D, _texFrame);
-
   GL.uniform1i(_uTex, 0);
-  GL.uniform1f(_uMode, mode ? 1.0 : 0.0);
-  GL.uniform1f(_uTime, timeSec || 0.0);
-  GL.uniform2f(_uSrcSize, _srcW, _srcH);
 
   GL.viewport(0, 0, canvas.width, canvas.height);
-
-  // important: clear so we never show stale garbage / uninitialized buffer
   GL.clear(GL.COLOR_BUFFER_BIT);
-
   GL.drawArrays(GL.TRIANGLES, 0, 6);
+}
+
+function _glUploadRGBA(bytes, w, h) {
+  if (!_glReady) return;
+
+  GL.activeTexture(GL.TEXTURE0);
+  GL.bindTexture(GL.TEXTURE_2D, _texFrame);
+  GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
+  GL.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, 0);
+
+  if (_srcW !== (w|0) || _srcH !== (h|0)) {
+    _srcW = w|0;
+    _srcH = h|0;
+    GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, _srcW, _srcH, 0, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
+  } else {
+    GL.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, _srcW, _srcH, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
+  }
 }
 
 // --- Scaling / sizing --------------------------------------------------------
@@ -368,7 +403,6 @@ function _rebuildPaletteLUT() {
   const pal = (typeof window !== 'undefined' && window.currentPalette) ? window.currentPalette : null;
 
   if (!pal) {
-    // If we never got a real palette yet, keep fallback (visible).
     if (!_palEverNonFallback) _buildFallbackPalette();
     return;
   }
@@ -392,7 +426,6 @@ function _rebuildPaletteLUT() {
   _palEverNonFallback = true;
 }
 
-// build once now (fallback if palette not ready yet)
 _rebuildPaletteLUT();
 window._rebuildPaletteLUT = _rebuildPaletteLUT;
 
@@ -409,13 +442,125 @@ function _fpsMarkIfNewFrame() {
 window._fpsMarkIfNewFrame = _fpsMarkIfNewFrame;
 
 // ---------------------------------------------------------------------------
-// RF fuzz while nothing is rendered
+// RF fuzz while nothing is rendered (CPU-generated noise like your 2D example)
 // ---------------------------------------------------------------------------
 let requestId = 0;
 
+let _rfToggle = true;
+let _rfLastStep = -1;
+
+function _ensureRfBuffer(w, h) {
+  const nPix = (w * h) | 0;
+  if (!_rfBytes || _rfPixels !== nPix) {
+    _rfPixels = nPix;
+    _rfBytes = new Uint8Array(nPix * 4);
+    _rfU32   = new Uint32Array(_rfBytes.buffer);
+  }
+}
+
+function _clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+
+// xorshift-ish for cheap deterministic randomness per frame (faster than Math.random)
+// (still "random enough" for snow, and avoids time-based drift patterns)
+function _makeRng(seed) {
+  let s = (seed | 0) || 1;
+  return function next() {
+    s ^= s << 13; s |= 0;
+    s ^= s >>> 17; s |= 0;
+    s ^= s << 5;  s |= 0;
+    return (s >>> 0);
+  };
+}
+
+function _generateRfNoiseU32(w, h, timeSec) {
+  _ensureRfBuffer(w, h);
+
+  // Step at RF.fpsHz so the snow is frame-stepped (TV-ish)
+  const step = (timeSec * RF.fpsHz) | 0;
+  if (step === _rfLastStep) return; // already generated this step
+  _rfLastStep = step;
+
+  // Every-other-frame toggle (like your demo)
+  if (RF.everyOtherFrame) {
+    _rfToggle = !_rfToggle;
+    if (_rfToggle) return;
+  }
+
+  const out = _rfU32;
+
+  // Seed changes each step, but does NOT create spatial drift: we regenerate all pixels.
+  const baseSeed = (step * 1664525 + 1013904223 + (RF.seedSalt|0)) | 0;
+  const rng = _makeRng(baseSeed);
+
+  const strength = _clamp01(RF.noiseAmount);
+  const bri = _clamp01(RF.brightness);
+  const floorL = _clamp01(RF.blackFloor);
+  const con = RF.contrast;
+  const gam = Math.max(0.01, RF.gamma);
+
+  const bandStr = _clamp01(RF.bandStrength);
+  const bandFreq = Math.max(0.01, RF.bandFreq);
+
+  // Precompute band per scanline (subtle)
+  const band = new Float32Array(h);
+  if (bandStr > 0) {
+    for (let y = 0; y < h; y++) {
+      const t = (y / h) * Math.PI * 2 * bandFreq;
+      // 0.9..1.1-ish when small strength
+      band[y] = 1.0 - bandStr * 0.5 + bandStr * (0.5 + 0.5 * Math.sin(t));
+    }
+  } else {
+    for (let y = 0; y < h; y++) band[y] = 1.0;
+  }
+
+  let i = 0;
+  for (let y = 0; y < h; y++) {
+    const bmul = band[y];
+    for (let x = 0; x < w; x++, i++) {
+      // 0..255 noise
+      const r = rng() & 255;
+      let l = r / 255;
+
+      // contrast around 0.5
+      l = (l - 0.5) * con + 0.5;
+
+      // banding
+      l *= bmul;
+
+      // clamp
+      l = _clamp01(l);
+
+      // gamma
+      l = Math.pow(l, gam);
+
+      // apply floor + brightness blend
+      l = Math.max(l, floorL);
+      l = bri + (l - bri) * strength;
+      l = _clamp01(l);
+
+      const v = (l * 255) | 0;
+
+      if (RF.mono) {
+        // ABGR on little-endian: A << 24 | B << 16 | G << 8 | R
+        out[i] = ((255 << 24) | (v << 16) | (v << 8) | v) >>> 0;
+      } else {
+        // slightly colored snow (optional): decorrelate channels a bit
+        const g = (rng() & 255);
+        const b = (rng() & 255);
+        out[i] = ((255 << 24) | (b << 16) | (g << 8) | v) >>> 0;
+      }
+    }
+  }
+}
+
 function animateFuzz(t) {
   if (_glReady && !_firstRealFrameSeen) {
-    _glDraw(0, (t || 0) * 0.001);
+    const timeSec = (t || 0) * 0.001;
+
+    // generate CPU snow at NES base res and upload, then present
+    _generateRfNoiseU32(BASE_W, BASE_H, timeSec);
+    if (_rfBytes) _glUploadRGBA(_rfBytes, BASE_W, BASE_H);
+    _glPresentTexture();
   }
   requestId = requestAnimationFrame(animateFuzz);
 }
@@ -465,20 +610,8 @@ function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE
     out32[i] = pal32[indexUint8Array[i] & 0x3F];
   }
 
-  GL.activeTexture(GL.TEXTURE0);
-  GL.bindTexture(GL.TEXTURE_2D, _texFrame);
-  GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
-  GL.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, 0);
-
-  if (_srcW !== (width|0) || _srcH !== (height|0)) {
-    _srcW = width|0;
-    _srcH = height|0;
-    GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, _srcW, _srcH, 0, GL.RGBA, GL.UNSIGNED_BYTE, _stageBytes);
-  } else {
-    GL.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, _srcW, _srcH, GL.RGBA, GL.UNSIGNED_BYTE, _stageBytes);
-  }
-
-  _glDraw(1, performance.now() * 0.001);
+  _glUploadRGBA(_stageBytes, width|0, height|0);
+  _glPresentTexture();
 
   window._lastIndexFrame = indexUint8Array;
   window._lastIndexSize  = { w: width, h: height };
