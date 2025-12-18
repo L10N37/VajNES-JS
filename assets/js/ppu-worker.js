@@ -2,15 +2,18 @@ importScripts('/assets/js/ppu-worker-setup.js');
 console.debug('[PPU Worker init]');
 
 // ---- Shared indices ----
-const SYNC_SCANLINE = 2;
-const SYNC_DOT      = 3;
-const SYNC_FRAME    = 4;
+const SYNC_SCANLINE    = 2;
+const SYNC_DOT         = 3;
+const SYNC_FRAME       = 4;
+// NEW: ultra-cheap "frame ready" signal (no postMessage, no Atomics)
+const SYNC_FRAME_READY = 5;
 
 // ---- Shared setters (NO ATOMICS) ----
-// Your CPU side must also read without Atomics.load().
 const STORE_CURRENT_SCANLINE = v => { SHARED.SYNC[SYNC_SCANLINE] = v | 0; };
 const STORE_CURRENT_DOT      = v => { SHARED.SYNC[SYNC_DOT]      = v | 0; };
 const STORE_CURRENT_FRAME    = v => { SHARED.SYNC[SYNC_FRAME]    = v | 0; };
+// NEW:
+const STORE_FRAME_READY      = v => { SHARED.SYNC[SYNC_FRAME_READY] = v | 0; };
 
 // ---- Status bit helpers ----
 const CLEAR_VBLANK          = () => { PPUSTATUS &= ~0x80; };
@@ -347,7 +350,6 @@ function emitPixelHardwarePalette() {
   if (PPUMASK & MASK_GREYSCALE) bgPalIndex6 &= 0x30;
 
   const spr = sampleSpritePixel(x);
-
   let finalIndex6 = bgPalIndex6;
 
   if (spr) {
@@ -364,13 +366,11 @@ function emitPixelHardwarePalette() {
     }
   }
 
-  // 256-wide => y<<8 is y*256
   const idx  = (y << 8) + x;
   const newv = finalIndex6 & 0x3F;
 
   // Only write when changed (reduces SAB churn a lot on static frames)
   if (paletteIndexFrame[idx] !== newv) paletteIndexFrame[idx] = newv;
-
 }
 
 // ---- Scanline handlers ----
@@ -463,9 +463,10 @@ function preRenderScanline(dot) {
   }
 
   if (dot === 340) {
-    // YOUR ONLY "frame ready" signal (no messages)
     PPU_FRAME_FLAGS |= 0b00000001;
     if (!ppuInitDone) ppuInitDone = true;
+
+    STORE_FRAME_READY(PPUclock.frame);
   }
 }
 
@@ -592,7 +593,6 @@ function vblankStartScanline(dot) {
   if (dot === 1) {
     if (!doNotSetVblank) SET_VBLANK();
 
-    // keep your original logic as-is
     const vblankBitIsSet = (!PPUSTATUS & 0b10000000);
     const nmiBitIsSet = (!PPUCTRL & 0x80);
     if (nmiBitIsSet && !nmiSuppression && vblankBitIsSet) {
@@ -756,7 +756,6 @@ function startPPULoop() {
 
     while (totalTicks < target) {
       // Publish timing BEFORE ticking so CPU-side "current dot" matches this tick’s state
-      // (this is the safest for $2002 suppression windows)
       STORE_CURRENT_FRAME(PPUclock.frame);
       STORE_CURRENT_SCANLINE(PPUclock.scanline);
       STORE_CURRENT_DOT(PPUclock.dot);

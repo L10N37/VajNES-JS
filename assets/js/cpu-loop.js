@@ -11,9 +11,6 @@ let irqPending = 0;
 const NES_W = 256;
 const NES_H = 240;
 
-// Keep these outside renderFrame so they persist and don't GC every frame
-let _rgbaHeap = null;
-
 function renderFrame() {
 
   blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
@@ -21,9 +18,7 @@ function renderFrame() {
 
   //const bgColor = PALETTE_RAM[0x00] & 0x3F;
   //paletteIndexFrame.fill(bgColor);
-
   if (perFrameStep) pause();
-  PPU_FRAME_FLAGS &= 0b11111110;
 }
 
 function checkInterrupts() {

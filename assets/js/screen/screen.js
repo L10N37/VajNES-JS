@@ -2,53 +2,37 @@
 // SCREEN BOOT + LAYERS (WEBGL presenter) + RF FUZZ (CPU-GENERATED LIKE 2D DEMO)
 // ============================================================================
 //
-// Why this rewrite exists:
-// - Shader-hash fuzz tends to create stable spatial patterns that "drift/scroll"
-//   with time/UV math. It can look like a static image sliding left.
-// - The classic CRT "snow" is closer to per-frame random pixels (like your 2D demo).
+// PERFORMANCE NOTE (IMPORTANT):
+// - The old blitter expanded 256*240 palette indices into RGBA on the CPU every frame.
+//   That loop is expensive and often caps FPS ~30–40.
+// - This version uploads the palette index frame as a 1-byte texture and does
+//   index->RGB palette lookup in the fragment shader (fast).
 //
-// This file restores that by generating RF fuzz on the CPU (Uint32Array) and
-// uploading it as a WebGL texture, while still using WebGL for the real NES frame.
+// RF fuzz stays CPU-generated RGBA (your "real snow" look) and uploads while
+// waiting for the first real frame.
 //
 // ----------------------------------------------------------------------------
 // RF TUNING KNOBS (EDIT THESE FIRST)
 // ----------------------------------------------------------------------------
-// Tips:
-// - Too bright: lower brightness or contrast, or raise blackFloor.
-// - Too harsh: lower contrast, raise gamma, lower noiseAmount.
-// - Too "slow": increase fpsHz or disable everyOtherFrame.
-// - Want more "TV-ish": set everyOtherFrame=true and fpsHz=60.
-//
-// You can hot tweak from DevTools:
-//   RF.brightness = 0.06; RF.contrast = 1.1; RF.everyOtherFrame = false;
-//
-// ----------------------------------------------------------------------------
 const RF = {
-  // Update cadence
-  everyOtherFrame: true,  // like your example toggle: halves updates (more "TV snow")
-  fpsHz: 60,              // used if you choose to step by time (we do)
+  everyOtherFrame: true,
+  fpsHz: 60,
 
-  // Tone shaping
-  brightness: 0.05,       // 0..1 add a base floor (prevents full black)
-  contrast: 1.15,         // 0.5..2.0 overall contrast on noise
-  gamma: 1.25,            // >1 darkens midtones
-  blackFloor: 0.02,       // 0..1 clamp minimum luma
+  brightness: 0.05,
+  contrast: 1.15,
+  gamma: 1.25,
+  blackFloor: 0.02,
 
-  // Noise characteristics
-  noiseAmount: 1.0,       // 0..1 mix between flat brightness and noise
-  mono: true,             // true = grayscale snow (more RF-ish)
-  seedSalt: 0,            // integer; change if you want a different "family"
+  noiseAmount: 1.0,
+  mono: true,
+  seedSalt: 0,
 
-  // Optional subtle horizontal banding (very light)
-  bandStrength: 0.12,     // 0..0.5 subtle scanline-ish modulation
-  bandFreq: 2.0,          // ~1..6
+  bandStrength: 0.12,
+  bandFreq: 2.0,
 };
-// expose for console tweaking
 window.RF = RF;
 
 // --- Screen boot + layers ---------------------------------------------------
-// These globals are read by other files because of load order; no window.* here.
-
 const systemScreen   = document.getElementById('system-screen-modal');
 const grilleScreen   = document.getElementById('grille-screen-modal');
 const scanlineScreen = document.getElementById('scanline-simulation-modal');
@@ -58,14 +42,11 @@ const canvas         = document.getElementById('screen-canvas');     // main pic
 const grilleCanvas   = document.getElementById('grille-canvas');     // grille / masks
 const scanlineCanvas = document.getElementById('scanline-canvas');   // scanline overlay
 
-// 2D contexts remain for overlays only (grille + scanlines)
 const grille_ctx         = grilleCanvas ? grilleCanvas.getContext('2d', { desynchronized: true }) : null;
 const scanlineCanvas_ctx = scanlineCanvas ? scanlineCanvas.getContext('2d', { desynchronized: true }) : null;
 
-// --- Test image (handy for tuning overlays when no ROM) ----------------------
 const TEST_IMAGE_STATE = { enabled: false, img: null };
 
-// NES base res
 const BASE_W = 256;
 const BASE_H = 240;
 let scaleFactor = Number(localStorage.getItem('scaleFactor') || 2);
@@ -90,33 +71,43 @@ function setPixelAspectMode(modeKey) {
 }
 
 // ---------------------------------------------------------------------------
-// WebGL presenter: uploads RGBA and draws a full-screen quad (nearest)
+// WebGL presenter (FAST PATH):
+// - Real NES frames: upload 8-bit indices + palette texture, GPU does lookup
+// - RF fuzz: upload RGBA to separate texture, show it while no real frame
 // ---------------------------------------------------------------------------
 
-let GL = null;                // WebGLRenderingContext
+let GL = null;
 let _glReady = false;
 
-let _prog = null;
+let _progNES = null;     // palette-index -> RGB shader
+let _progRGBA = null;    // straight RGBA presenter (for fuzz)
+
 let _vb = null;
 
-let _aPos = -1;
-let _aUV  = -1;
-let _uTex = null;
+let _aPosNES = -1, _aUVNES = -1;
+let _uIdxTex = null, _uPalTex = null;
 
-let _texFrame = null;
+let _aPosRGBA = -1, _aUVRGBA = -1;
+let _uRgbTex = null;
 
-let _srcW = BASE_W;
-let _srcH = BASE_H;
+// textures
+let _texIndex = null;    // LUMINANCE 256x240
+let _texPal   = null;    // RGB 64x1
+let _texRFFuzz = null;   // RGBA 256x240
 
-// staging RGBA (heap, not shared)
-let _stageBytes = null;
-let _stageU32   = null;
-let _stagePixels = 0;
+// palette upload state
+let _palRGB = new Uint8Array(64 * 3);
+let _palDirty = true;           // upload palette when true
+let _palEverNonFallback = false;
 
-// separate RF fuzz buffer (so real frames don't reuse it accidentally)
+// RF buffers
 let _rfBytes = null;
 let _rfU32   = null;
 let _rfPixels = 0;
+
+// For draw viewport (canvas is scaled via CSS, but we draw to its backing size)
+let _srcW = BASE_W;
+let _srcH = BASE_H;
 
 function _glCompile(type, src) {
   const s = GL.createShader(type);
@@ -167,7 +158,7 @@ function initWebGL() {
   });
 
   if (!GL) {
-    console.warn("[webgl] WebGL unavailable (no signal fuzz will not show)");
+    console.warn("[webgl] WebGL unavailable");
     _glReady = false;
     return false;
   }
@@ -182,28 +173,49 @@ function initWebGL() {
     }
   `;
 
-  // Simple presenter: always show the texture. (Fuzz is now generated on CPU)
-  const fsSrc = `
+  // NES palette lookup shader:
+  // idxTex: LUMINANCE, value 0..255 in .r
+  // palTex: 64x1 RGB, lookup using idx&63
+  const fsNES = `
     precision mediump float;
     varying vec2 v_uv;
-    uniform sampler2D u_tex;
+
+    uniform sampler2D u_idxTex;
+    uniform sampler2D u_palTex;
+
     void main() {
-      gl_FragColor = texture2D(u_tex, v_uv);
+      float idx = texture2D(u_idxTex, v_uv).r * 255.0;
+      float pi = floor(mod(idx, 64.0));          // 0..63
+
+      float u = (pi + 0.5) / 64.0;               // center of texel
+      vec3 rgb = texture2D(u_palTex, vec2(u, 0.5)).rgb;
+
+      gl_FragColor = vec4(rgb, 1.0);
     }
   `;
 
-  _prog = _glLink(vsSrc, fsSrc);
-  if (!_prog) {
+  // Straight RGBA presenter (for RF fuzz texture)
+  const fsRGBA = `
+    precision mediump float;
+    varying vec2 v_uv;
+    uniform sampler2D u_rgbTex;
+    void main() {
+      gl_FragColor = texture2D(u_rgbTex, v_uv);
+    }
+  `;
+
+  _progNES = _glLink(vsSrc, fsNES);
+  _progRGBA = _glLink(vsSrc, fsRGBA);
+  if (!_progNES || !_progRGBA) {
     _glReady = false;
     return false;
   }
 
+  // Fullscreen quad
   const quad = new Float32Array([
-    // x, y,   u, v
     -1, -1,   0, 1,
      1, -1,   1, 1,
     -1,  1,   0, 0,
-
     -1,  1,   0, 0,
      1, -1,   1, 1,
      1,  1,   1, 0,
@@ -213,76 +225,206 @@ function initWebGL() {
   GL.bindBuffer(GL.ARRAY_BUFFER, _vb);
   GL.bufferData(GL.ARRAY_BUFFER, quad, GL.STATIC_DRAW);
 
-  GL.useProgram(_prog);
+  // lookups
+  GL.useProgram(_progNES);
+  _aPosNES  = GL.getAttribLocation(_progNES, "a_pos");
+  _aUVNES   = GL.getAttribLocation(_progNES, "a_uv");
+  _uIdxTex  = GL.getUniformLocation(_progNES, "u_idxTex");
+  _uPalTex  = GL.getUniformLocation(_progNES, "u_palTex");
 
-  _aPos = GL.getAttribLocation(_prog, "a_pos");
-  _aUV  = GL.getAttribLocation(_prog, "a_uv");
-  _uTex = GL.getUniformLocation(_prog, "u_tex");
+  GL.useProgram(_progRGBA);
+  _aPosRGBA = GL.getAttribLocation(_progRGBA, "a_pos");
+  _aUVRGBA  = GL.getAttribLocation(_progRGBA, "a_uv");
+  _uRgbTex  = GL.getUniformLocation(_progRGBA, "u_rgbTex");
 
-  _texFrame = GL.createTexture();
+  // --- create textures ------------------------------------------------------
+
+  // 0: index texture (LUMINANCE 256x240)
+  _texIndex = GL.createTexture();
   GL.activeTexture(GL.TEXTURE0);
-  GL.bindTexture(GL.TEXTURE_2D, _texFrame);
+  GL.bindTexture(GL.TEXTURE_2D, _texIndex);
   GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
-  GL.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, 0);
   GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
   GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
   GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
   GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
 
-  // allocate initial texture to avoid "lazy init" stalls
-  const zero = new Uint8Array(BASE_W * BASE_H * 4);
-  GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, BASE_W, BASE_H, 0, GL.RGBA, GL.UNSIGNED_BYTE, zero);
+  // allocate once
+  const zeroIdx = new Uint8Array(BASE_W * BASE_H);
+  GL.texImage2D(GL.TEXTURE_2D, 0, GL.LUMINANCE, BASE_W, BASE_H, 0, GL.LUMINANCE, GL.UNSIGNED_BYTE, zeroIdx);
 
+  // 1: palette texture (RGB 64x1)
+  _texPal = GL.createTexture();
+  GL.activeTexture(GL.TEXTURE1);
+  GL.bindTexture(GL.TEXTURE_2D, _texPal);
+  GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
+
+  // allocate palette (filled by _uploadPaletteTex())
+  const zeroPal = new Uint8Array(64 * 3);
+  GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGB, 64, 1, 0, GL.RGB, GL.UNSIGNED_BYTE, zeroPal);
+
+  // 2: RF fuzz texture (RGBA 256x240)
+  _texRFFuzz = GL.createTexture();
+  GL.activeTexture(GL.TEXTURE2);
+  GL.bindTexture(GL.TEXTURE_2D, _texRFFuzz);
+  GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
+  GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
+
+  const zeroRGBA = new Uint8Array(BASE_W * BASE_H * 4);
+  GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, BASE_W, BASE_H, 0, GL.RGBA, GL.UNSIGNED_BYTE, zeroRGBA);
+
+  // global GL state
   GL.disable(GL.DEPTH_TEST);
   GL.disable(GL.CULL_FACE);
   GL.disable(GL.BLEND);
-
   GL.clearColor(0, 0, 0, 1);
 
   _srcW = BASE_W;
   _srcH = BASE_H;
 
   _glReady = true;
-  console.debug("[webgl] ready");
+  console.debug("[webgl] ready (GPU palette lookup enabled)");
   return true;
 }
 
-function _glPresentTexture() {
+function _glBindQuadAttribs(aPos, aUV) {
+  GL.bindBuffer(GL.ARRAY_BUFFER, _vb);
+  GL.enableVertexAttribArray(aPos);
+  GL.enableVertexAttribArray(aUV);
+  GL.vertexAttribPointer(aPos, 2, GL.FLOAT, false, 16, 0);
+  GL.vertexAttribPointer(aUV,  2, GL.FLOAT, false, 16, 8);
+}
+
+function _glPresentNES() {
   if (!_glReady) return;
 
-  GL.useProgram(_prog);
-  GL.bindBuffer(GL.ARRAY_BUFFER, _vb);
+  GL.useProgram(_progNES);
+  _glBindQuadAttribs(_aPosNES, _aUVNES);
 
-  GL.enableVertexAttribArray(_aPos);
-  GL.enableVertexAttribArray(_aUV);
-  GL.vertexAttribPointer(_aPos, 2, GL.FLOAT, false, 16, 0);
-  GL.vertexAttribPointer(_aUV,  2, GL.FLOAT, false, 16, 8);
-
+  // idx on unit 0, pal on unit 1
   GL.activeTexture(GL.TEXTURE0);
-  GL.bindTexture(GL.TEXTURE_2D, _texFrame);
-  GL.uniform1i(_uTex, 0);
+  GL.bindTexture(GL.TEXTURE_2D, _texIndex);
+  GL.uniform1i(_uIdxTex, 0);
+
+  GL.activeTexture(GL.TEXTURE1);
+  GL.bindTexture(GL.TEXTURE_2D, _texPal);
+  GL.uniform1i(_uPalTex, 1);
 
   GL.viewport(0, 0, canvas.width, canvas.height);
   GL.clear(GL.COLOR_BUFFER_BIT);
   GL.drawArrays(GL.TRIANGLES, 0, 6);
 }
 
-function _glUploadRGBA(bytes, w, h) {
+function _glPresentRFFuzz() {
   if (!_glReady) return;
 
-  GL.activeTexture(GL.TEXTURE0);
-  GL.bindTexture(GL.TEXTURE_2D, _texFrame);
-  GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
-  GL.pixelStorei(GL.UNPACK_FLIP_Y_WEBGL, 0);
+  GL.useProgram(_progRGBA);
+  _glBindQuadAttribs(_aPosRGBA, _aUVRGBA);
 
-  if (_srcW !== (w|0) || _srcH !== (h|0)) {
-    _srcW = w|0;
-    _srcH = h|0;
-    GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGBA, _srcW, _srcH, 0, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
-  } else {
-    GL.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, _srcW, _srcH, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
+  // fuzz texture on unit 2 (we bind it but tell sampler 0 to avoid extra uniforms? no — just use unit 0 here)
+  // Keep it simple: bind fuzz on unit 0 for this program.
+  GL.activeTexture(GL.TEXTURE0);
+  GL.bindTexture(GL.TEXTURE_2D, _texRFFuzz);
+  GL.uniform1i(_uRgbTex, 0);
+
+  GL.viewport(0, 0, canvas.width, canvas.height);
+  GL.clear(GL.COLOR_BUFFER_BIT);
+  GL.drawArrays(GL.TRIANGLES, 0, 6);
+}
+
+function _uploadIndexFrame(indexUint8Array, w, h) {
+  if (!_glReady) return;
+
+  if ((w|0) !== BASE_W || (h|0) !== BASE_H) {
+    // if you ever support non-256x240, handle resize here
+    // for now, keep strict for speed / simplicity
+    w = BASE_W; h = BASE_H;
+  }
+
+  GL.activeTexture(GL.TEXTURE0);
+  GL.bindTexture(GL.TEXTURE_2D, _texIndex);
+  GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
+  GL.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, w, h, GL.LUMINANCE, GL.UNSIGNED_BYTE, indexUint8Array);
+}
+
+function _uploadRFFuzzRGBA(bytesRGBA, w, h) {
+  if (!_glReady) return;
+
+  if ((w|0) !== BASE_W || (h|0) !== BASE_H) {
+    w = BASE_W; h = BASE_H;
+  }
+
+  GL.activeTexture(GL.TEXTURE0);
+  GL.bindTexture(GL.TEXTURE_2D, _texRFFuzz);
+  GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
+  GL.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, w, h, GL.RGBA, GL.UNSIGNED_BYTE, bytesRGBA);
+}
+
+// --- palette building & upload (RGB 64x1) -----------------------------------
+
+function _hexToRgb(hex) {
+  if (!hex || hex[0] !== '#' || hex.length < 7) return { r: 0, g: 0, b: 0 };
+  return {
+    r: parseInt(hex.slice(1, 3), 16) | 0,
+    g: parseInt(hex.slice(3, 5), 16) | 0,
+    b: parseInt(hex.slice(5, 7), 16) | 0
+  };
+}
+
+function _buildFallbackPaletteRGB() {
+  for (let i = 0; i < 64; i++) {
+    const v = ((i / 63) * 255) | 0;
+    _palRGB[i*3+0] = v;
+    _palRGB[i*3+1] = v;
+    _palRGB[i*3+2] = v;
   }
 }
+
+function _rebuildPaletteRGB() {
+  const pal = (typeof window !== 'undefined' && window.currentPalette) ? window.currentPalette : null;
+  if (!pal) {
+    if (!_palEverNonFallback) _buildFallbackPaletteRGB();
+    _palDirty = true;
+    return;
+  }
+
+  for (let i = 0; i < 64; i++) {
+    const hex = pal[i] ? pal[i] : '#000000';
+    const { r, g, b } = _hexToRgb(hex);
+    _palRGB[i*3+0] = r;
+    _palRGB[i*3+1] = g;
+    _palRGB[i*3+2] = b;
+  }
+
+  _palEverNonFallback = true;
+  _palDirty = true;
+}
+
+function _uploadPaletteTexIfDirty() {
+  if (!_glReady) return;
+  if (!_palDirty) return;
+
+  GL.activeTexture(GL.TEXTURE1);
+  GL.bindTexture(GL.TEXTURE_2D, _texPal);
+  GL.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
+  GL.texSubImage2D(GL.TEXTURE_2D, 0, 0, 0, 64, 1, GL.RGB, GL.UNSIGNED_BYTE, _palRGB);
+
+  _palDirty = false;
+}
+
+// expose old name (other files call it)
+function _rebuildPaletteLUT() {
+  _rebuildPaletteRGB();
+}
+_rebuildPaletteLUT();
+window._rebuildPaletteLUT = _rebuildPaletteLUT;
 
 // --- Scaling / sizing --------------------------------------------------------
 function applyScale() {
@@ -331,7 +473,7 @@ function applyScale() {
   localStorage.setItem('scaleFactor', String(scaleFactor));
 }
 
-// Init GL first, then scale (prevents any "before init" references)
+// Init GL first, then scale
 initWebGL();
 applyScale();
 
@@ -357,79 +499,7 @@ if (screenButton) {
   });
 }
 
-// --- Palette-aware blit (0..63 indices → RGBA via currentPalette) -----------
-
-let _firstRealFrameSeen = false;
-
-// IMPORTANT: if currentPalette isn't ready yet, DON'T build an all-black LUT.
-// We'll keep a non-black fallback so frames are never black unless data really is.
-const _LITTLE_ENDIAN = (() => {
-  const b = new ArrayBuffer(4);
-  new DataView(b).setUint32(0, 0x0a0b0c0d, true);
-  return new Uint8Array(b)[0] === 0x0d;
-})();
-
-let _PAL_BYTES = new Uint8ClampedArray(64 * 4);
-let _PAL_U32   = new Uint32Array(64);
-let _palEverNonFallback = false;
-
-function _hexToRgb(hex) {
-  if (!hex || hex[0] !== '#' || hex.length < 7) return { r: 0, g: 0, b: 0 };
-  return {
-    r: parseInt(hex.slice(1, 3), 16) | 0,
-    g: parseInt(hex.slice(3, 5), 16) | 0,
-    b: parseInt(hex.slice(5, 7), 16) | 0
-  };
-}
-
-function _buildFallbackPalette() {
-  // simple grayscale ramp (NOT black) so you always see picture data
-  for (let i = 0; i < 64; i++) {
-    const v = ((i / 63) * 255) | 0;
-    const p = i * 4;
-    _PAL_BYTES[p    ] = v;
-    _PAL_BYTES[p + 1] = v;
-    _PAL_BYTES[p + 2] = v;
-    _PAL_BYTES[p + 3] = 255;
-
-    const r = v, g = v, b = v;
-    _PAL_U32[i] = _LITTLE_ENDIAN
-      ? ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0
-      : ((r << 24) | (g << 16) | (b << 8) | 255) >>> 0;
-  }
-}
-
-function _rebuildPaletteLUT() {
-  const pal = (typeof window !== 'undefined' && window.currentPalette) ? window.currentPalette : null;
-
-  if (!pal) {
-    if (!_palEverNonFallback) _buildFallbackPalette();
-    return;
-  }
-
-  for (let i = 0; i < 64; i++) {
-    const hex = pal[i] ? pal[i] : '#000000';
-    const rgb = _hexToRgb(hex);
-    const r = rgb.r | 0, g = rgb.g | 0, b = rgb.b | 0;
-
-    const p = i * 4;
-    _PAL_BYTES[p    ] = r;
-    _PAL_BYTES[p + 1] = g;
-    _PAL_BYTES[p + 2] = b;
-    _PAL_BYTES[p + 3] = 255;
-
-    _PAL_U32[i] = _LITTLE_ENDIAN
-      ? ((255 << 24) | (b << 16) | (g << 8) | r) >>> 0
-      : ((r << 24) | (g << 16) | (b << 8) | 255) >>> 0;
-  }
-
-  _palEverNonFallback = true;
-}
-
-_rebuildPaletteLUT();
-window._rebuildPaletteLUT = _rebuildPaletteLUT;
-
-// FPS mark (no Atomics here)
+// --- FPS mark (no Atomics here) ---------------------------------------------
 let _fpsLastFrame = -1;
 function _fpsMarkIfNewFrame() {
   if (typeof SHARED === 'undefined' || !SHARED || !SHARED.SYNC) return;
@@ -445,6 +515,7 @@ window._fpsMarkIfNewFrame = _fpsMarkIfNewFrame;
 // RF fuzz while nothing is rendered (CPU-generated noise like your 2D example)
 // ---------------------------------------------------------------------------
 let requestId = 0;
+let _firstRealFrameSeen = false;
 
 let _rfToggle = true;
 let _rfLastStep = -1;
@@ -460,8 +531,6 @@ function _ensureRfBuffer(w, h) {
 
 function _clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
 
-// xorshift-ish for cheap deterministic randomness per frame (faster than Math.random)
-// (still "random enough" for snow, and avoids time-based drift patterns)
 function _makeRng(seed) {
   let s = (seed | 0) || 1;
   return function next() {
@@ -475,12 +544,10 @@ function _makeRng(seed) {
 function _generateRfNoiseU32(w, h, timeSec) {
   _ensureRfBuffer(w, h);
 
-  // Step at RF.fpsHz so the snow is frame-stepped (TV-ish)
   const step = (timeSec * RF.fpsHz) | 0;
-  if (step === _rfLastStep) return; // already generated this step
+  if (step === _rfLastStep) return;
   _rfLastStep = step;
 
-  // Every-other-frame toggle (like your demo)
   if (RF.everyOtherFrame) {
     _rfToggle = !_rfToggle;
     if (_rfToggle) return;
@@ -488,7 +555,6 @@ function _generateRfNoiseU32(w, h, timeSec) {
 
   const out = _rfU32;
 
-  // Seed changes each step, but does NOT create spatial drift: we regenerate all pixels.
   const baseSeed = (step * 1664525 + 1013904223 + (RF.seedSalt|0)) | 0;
   const rng = _makeRng(baseSeed);
 
@@ -501,12 +567,10 @@ function _generateRfNoiseU32(w, h, timeSec) {
   const bandStr = _clamp01(RF.bandStrength);
   const bandFreq = Math.max(0.01, RF.bandFreq);
 
-  // Precompute band per scanline (subtle)
   const band = new Float32Array(h);
   if (bandStr > 0) {
     for (let y = 0; y < h; y++) {
       const t = (y / h) * Math.PI * 2 * bandFreq;
-      // 0.9..1.1-ish when small strength
       band[y] = 1.0 - bandStr * 0.5 + bandStr * (0.5 + 0.5 * Math.sin(t));
     }
   } else {
@@ -517,23 +581,14 @@ function _generateRfNoiseU32(w, h, timeSec) {
   for (let y = 0; y < h; y++) {
     const bmul = band[y];
     for (let x = 0; x < w; x++, i++) {
-      // 0..255 noise
       const r = rng() & 255;
       let l = r / 255;
 
-      // contrast around 0.5
       l = (l - 0.5) * con + 0.5;
-
-      // banding
       l *= bmul;
-
-      // clamp
       l = _clamp01(l);
-
-      // gamma
       l = Math.pow(l, gam);
 
-      // apply floor + brightness blend
       l = Math.max(l, floorL);
       l = bri + (l - bri) * strength;
       l = _clamp01(l);
@@ -541,10 +596,8 @@ function _generateRfNoiseU32(w, h, timeSec) {
       const v = (l * 255) | 0;
 
       if (RF.mono) {
-        // ABGR on little-endian: A << 24 | B << 16 | G << 8 | R
         out[i] = ((255 << 24) | (v << 16) | (v << 8) | v) >>> 0;
       } else {
-        // slightly colored snow (optional): decorrelate channels a bit
         const g = (rng() & 255);
         const b = (rng() & 255);
         out[i] = ((255 << 24) | (b << 16) | (g << 8) | v) >>> 0;
@@ -556,11 +609,9 @@ function _generateRfNoiseU32(w, h, timeSec) {
 function animateFuzz(t) {
   if (_glReady && !_firstRealFrameSeen) {
     const timeSec = (t || 0) * 0.001;
-
-    // generate CPU snow at NES base res and upload, then present
     _generateRfNoiseU32(BASE_W, BASE_H, timeSec);
-    if (_rfBytes) _glUploadRGBA(_rfBytes, BASE_W, BASE_H);
-    _glPresentTexture();
+    if (_rfBytes) _uploadRFFuzzRGBA(_rfBytes, BASE_W, BASE_H);
+    _glPresentRFFuzz();
   }
   requestId = requestAnimationFrame(animateFuzz);
 }
@@ -570,7 +621,6 @@ function stopAnimation() {
   requestId = 0;
 }
 
-// Start with fuzz; first real frame turns it off.
 requestId = requestAnimationFrame(animateFuzz);
 
 // ---------------------------------------------------------------------------
@@ -587,31 +637,18 @@ function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE
   _fpsMarkIfNewFrame();
 
   if (!_firstRealFrameSeen) { stopAnimation(); _firstRealFrameSeen = true; }
-
   if (!_glReady) return;
 
-  // if palette becomes available later, use it (prevents "all-black LUT built too early")
+  // Upload palette (only when dirty / changed)
+  // If palette becomes available later, rebuild once.
   if (!_palEverNonFallback && typeof window !== 'undefined' && window.currentPalette) {
-    _rebuildPaletteLUT();
+    _rebuildPaletteRGB();
   }
+  _uploadPaletteTexIfDirty();
 
-  const nPix = (width * height) | 0;
-
-  if (!_stageBytes || _stagePixels !== nPix) {
-    _stagePixels = nPix;
-    _stageBytes = new Uint8Array(nPix * 4);
-    _stageU32   = new Uint32Array(_stageBytes.buffer);
-  }
-
-  const out32 = _stageU32;
-  const pal32 = _PAL_U32;
-
-  for (let i = 0; i < nPix; i++) {
-    out32[i] = pal32[indexUint8Array[i] & 0x3F];
-  }
-
-  _glUploadRGBA(_stageBytes, width|0, height|0);
-  _glPresentTexture();
+  // FAST PATH: upload 8-bit indices only; GPU maps to RGB
+  _uploadIndexFrame(indexUint8Array, width|0, height|0);
+  _glPresentNES();
 
   window._lastIndexFrame = indexUint8Array;
   window._lastIndexSize  = { w: width, h: height };
@@ -622,6 +659,14 @@ function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE
 window.blitNESFrameRGBA = blitNESFrameRGBA;
 window.blitNESFramePaletteIndex = blitNESFramePaletteIndex;
 
+function redrawWithCurrentPalette() {
+  if (!window._lastIndexFrame || !window._lastIndexSize) return;
+  if (typeof window._rebuildPaletteLUT === 'function') window._rebuildPaletteLUT();
+  const s = window._lastIndexSize;
+  blitNESFramePaletteIndex(window._lastIndexFrame, s.w, s.h);
+}
+window.redrawWithCurrentPalette = redrawWithCurrentPalette;
+
 // Blur slider remains
 const slider = document.getElementById('composite-blur-slider');
 if (slider) {
@@ -630,14 +675,6 @@ if (slider) {
     document.getElementById('screen-canvas').style.filter = `blur(${v.toFixed(1)}px)`;
   });
 }
-
-function redrawWithCurrentPalette() {
-  if (!window._lastIndexFrame || !window._lastIndexSize) return;
-  if (typeof window._rebuildPaletteLUT === 'function') window._rebuildPaletteLUT();
-  const s = window._lastIndexSize;
-  blitNESFramePaletteIndex(window._lastIndexFrame, s.w, s.h);
-}
-window.redrawWithCurrentPalette = redrawWithCurrentPalette;
 
 // --- Palette Modal -----------------------------------------------------------
 const paletteOption = systemScreen && systemScreen.querySelector('.optionsBar li:nth-child(3)');

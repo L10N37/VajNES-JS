@@ -113,7 +113,10 @@ let alignmentDone = false;
 
 function addCycles(x) {
 
-  if (PPU_FRAME_FLAGS & 0b00000001) renderFrame();
+  if (PPU_FRAME_FLAGS & 0b00000001){
+    renderFrame();
+    PPU_FRAME_FLAGS &= 0b11111110;
+  }
 
   cpuCycles += x;
 
