@@ -5,15 +5,13 @@ console.debug('[PPU Worker init]');
 const SYNC_SCANLINE    = 2;
 const SYNC_DOT         = 3;
 const SYNC_FRAME       = 4;
-// NEW: ultra-cheap "frame ready" signal (no postMessage, no Atomics)
-const SYNC_FRAME_READY = 5;
+
+let markFrameReady = false;
 
 // ---- Shared setters (NO ATOMICS) ----
 const STORE_CURRENT_SCANLINE = v => { SHARED.SYNC[SYNC_SCANLINE] = v | 0; };
 const STORE_CURRENT_DOT      = v => { SHARED.SYNC[SYNC_DOT]      = v | 0; };
 const STORE_CURRENT_FRAME    = v => { SHARED.SYNC[SYNC_FRAME]    = v | 0; };
-// NEW:
-const STORE_FRAME_READY      = v => { SHARED.SYNC[SYNC_FRAME_READY] = v | 0; };
 
 // ---- Status bit helpers ----
 const CLEAR_VBLANK          = () => { PPUSTATUS &= ~0x80; };
@@ -83,9 +81,6 @@ let spritesNext = spritesB;
 const SPRITE_SIZE_16 = 0x20; // PPUCTRL bit 5
 const SPR_PATTERN_T  = 0x08; // PPUCTRL bit 3 (8x8 sprites)
 const SPR_Y_OFFSET   = 1;
-
-// ---- Execution counters ----
-let totalTicks = 0;
 
 // ---- render-enable edge tracking (for sprite-only BG priming) ----
 let renderingPrev = false;
@@ -463,10 +458,8 @@ function preRenderScanline(dot) {
   }
 
   if (dot === 340) {
-    PPU_FRAME_FLAGS |= 0b00000001;
+    markFrameReady = true;
     if (!ppuInitDone) ppuInitDone = true;
-
-    STORE_FRAME_READY(PPUclock.frame);
   }
 }
 
@@ -746,24 +739,30 @@ function ppuTick() {
   }
 }
 
-// ---- Main PPU Loop ----
+function frameReady() {
+  PPU_FRAME_FLAGS |= 0b00000001;
+}
+
 function startPPULoop() {
-  while (1) {
-    // Turn-taking: spin until CPU gives us work.
+
+  while (1){
+
     while (!cpuStallFlag) {}
-
-    const target = ppuCycles;
-
-    while (totalTicks < target) {
+    
+      for (let ticks = 0; ticks < 3 ; ticks++) {
       // Publish timing BEFORE ticking so CPU-side "current dot" matches this tick’s state
       STORE_CURRENT_FRAME(PPUclock.frame);
       STORE_CURRENT_SCANLINE(PPUclock.scanline);
       STORE_CURRENT_DOT(PPUclock.dot);
-
+      
       ppuTick();
 
       PPUclock.dot++;
-      totalTicks++;
+      }
+
+    if (markFrameReady){
+    frameReady();
+    markFrameReady = !markFrameReady;
     }
 
     cpuStallFlag = false;
