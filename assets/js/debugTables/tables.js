@@ -544,7 +544,7 @@ function cpuRegisterBitsPopulate() {
 }
 
 function cpuStatusRegisterPopulate() {
-  const values = {
+  let values = {
     0: CPUregisters.P.C ? 1 : 0,
     1: CPUregisters.P.Z ? 1 : 0,
     2: CPUregisters.P.I ? 1 : 0,

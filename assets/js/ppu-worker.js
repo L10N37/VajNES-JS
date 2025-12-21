@@ -682,9 +682,9 @@ function ppuBusRead(addr) {
   }
 
   if (addr >= 0x3F00 && addr < 0x4000) {
-    let p = addr & 0x1F;
-    if ((addr & 0x13) === 0x10) p &= ~0x10;
-    return PALETTE_RAM[p] & 0x3F;
+  let p = addr & 0x1F;
+  if ((p & 0x13) === 0x10) p &= ~0x10; // mirrors $3F10/$14/$18/$1C -> $3F00/$04/$08/$0C
+  return PALETTE_RAM[p] & 0x3F;
   }
 
   return 0xFF;

@@ -137,9 +137,6 @@
     cpuCycles: { get: () => SHARED.CLOCKS[0] | 0, set: v => { SHARED.CLOCKS[0] = (v|0); }, configurable: true },
     ppuCycles: { get: () => SHARED.CLOCKS[1] | 0, set: v => { SHARED.CLOCKS[1] = (v|0); }, configurable: true },
 
-    // open bus (Uint8)
-    cpuOpenBus: { get: () => SHARED.CPU_OPENBUS[0] | 0, set: v => { SHARED.CPU_OPENBUS[0] = make8(v); }, configurable: true },
-
     // packed event flags (Int32)
     nmiSuppression: { get: () => evtGet(EVT_NMI_SUPPRESS), set: v => evtSet(EVT_NMI_SUPPRESS, !!v), configurable: true },
     doNotSetVblank: { get: () => evtGet(EVT_DONT_SET_VBL), set: v => evtSet(EVT_DONT_SET_VBL, !!v), configurable: true },

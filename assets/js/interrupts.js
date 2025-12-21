@@ -204,7 +204,6 @@ function dmaMicroStep() {
     } else {
       // WRITE phase (1 cycle) - MUST hit $2004 handler / OAM
       addCycles(1);
-      cpuOpenBus = DMA.tmp & 0xFF;
 
       checkWriteOffset(0x2004, DMA.tmp);
 

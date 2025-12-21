@@ -653,7 +653,7 @@ function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE
   window._lastIndexFrame = indexUint8Array;
   window._lastIndexSize  = { w: width, h: height };
 
-  if (typeof registerFrameUpdate === 'function') registerFrameUpdate();
+  registerFrameUpdate();
 }
 
 window.blitNESFrameRGBA = blitNESFrameRGBA;

@@ -1,83 +1,313 @@
-// now internally toggled with breakpoints
+// offsetsHandler.js
+// CPU/PPU/APU read/write dispatch + OpenBus tests + T4 trace
+
 let debugLogging = false;
 let debugVideoTiming = false;
+
+let debugOpenBusTests = false;
+let debugOpenBusT4Trace = false;
+
 let ppuOpenBus = 0x00;
+let cpuOpenBus = 0x00;
 let decayTimer = 0;
 breakPending = false;
 
-// writeToggle is an internal PPU latch but implemented here on CPU core, globalThis for logdump
-globalThis.writeToggle = 0;
+let writeToggle = 0;
+globalThis.writeToggle = writeToggle;
 
-// Pattern table read (CHR ROM/RAM). For CHR-RAM writes, add mapperChrWrite handler.
-function chrRead(addr14) {
-  return CHR_ROM[addr14 & 0x1FFF] & 0xFF;
+const OB_DONE = {
+  T1:false, T2:false, T3:false, T4:false,
+  T5:false, T6:false, T7:false, T8:false, T9:false
+};
+
+function _ob2(x){ return (x & 0xFF).toString(16).padStart(2, "0"); }
+function _ob4(x){ return (x & 0xFFFF).toString(16).padStart(4, "0"); }
+function _pc(){ return (CPUregisters && typeof CPUregisters.PC === "number") ? (CPUregisters.PC & 0xFFFF) : 0xFFFF; }
+function _codeNow(){ return (typeof code === "number") ? (code & 0xFF) : 0xFF; }
+
+function obResult(testId, pass, msg) {
+  if (!debugOpenBusTests) return;
+  if (OB_DONE[testId]) return;
+  OB_DONE[testId] = true;
+
+  const style = pass
+    ? "color:#00ff66;background:#052612;font-weight:bold;padding:2px 6px;border-radius:4px;"
+    : "color:#ff3b3b;background:#2a0000;font-weight:bold;padding:2px 6px;border-radius:4px;";
+
+  console.log(`%c[OPENBUS ${testId} ${pass ? "PASS" : "FAIL"}] %c${msg}`, style, "color:inherit;background:inherit;");
 }
 
-// Nametable address mapper
-function mapNT(addr14) {
-  const v   = (addr14 - 0x2000) & 0x0FFF; // normalize to 4KB nametable space
-  const off = v & 0x03FF;                 // offset within NT
-  const nt  = (v >>> 10) & 0x03;          // which nametable
+// ----------------- bus driver ring buffer -----------------
+const BUSLOG = {
+  buf: new Array(256),
+  i: 0,
+  n: 0,
+  max: 256
+};
 
-  switch (MIRRORING) {
-    case "vertical":   return off | ((nt & 1) << 10);   // NT0=NT2, NT1=NT3
-    case "horizontal": return off | ((nt >>> 1) << 10); // NT0=NT1, NT2=NT3
-    case "single0":    return off;                      // all map to NT0
-    case "single1":    return off | 0x400;              // all map to NT1
-    case "four":       return (nt << 10) | off;         // true 4-screen
-    default:           return off | ((nt >>> 1) << 10); // fallback → horizontal
+function buslogPush(kind, pc, addr, busB, busA, raw, out, codeNow) {
+  if (!debugOpenBusT4Trace) return;
+  const e = {
+    kind,
+    pc: pc & 0xFFFF,
+    addr: addr & 0xFFFF,
+    busB: busB & 0xFF,
+    busA: busA & 0xFF,
+    raw: raw & 0xFF,
+    out: out & 0xFF,
+    codeNow: codeNow & 0xFF
+  };
+  BUSLOG.buf[BUSLOG.i] = e;
+  BUSLOG.i = (BUSLOG.i + 1) % BUSLOG.max;
+  if (BUSLOG.n < BUSLOG.max) BUSLOG.n++;
+}
+
+function buslogDump(title, lastN=64) {
+  if (!debugOpenBusT4Trace) return;
+  const count = Math.min(BUSLOG.n, lastN|0);
+  console.log(`[OPENBUS BUSLOG] ${title} count=${count}`);
+  const start = (BUSLOG.i - count + BUSLOG.max) % BUSLOG.max;
+  for (let k = 0; k < count; k++) {
+    const idx = (start + k) % BUSLOG.max;
+    const e = BUSLOG.buf[idx];
+    if (!e) continue;
+    console.log(
+      `[BUS] #${k} kind=${e.kind} pc=$${_ob4(e.pc)} addr=$${_ob4(e.addr)} ` +
+      `codeNow=$${_ob2(e.codeNow)} busB=$${_ob2(e.busB)} raw=$${_ob2(e.raw)} out=$${_ob2(e.out)} busA=$${_ob2(e.busA)}`
+    );
   }
 }
 
-// Palette index normalizer: folds mirrors into base
+// prints immediately when bus becomes $82
+let _watch82Once = false;
+function watchBus82(pc, addr, busB, busA, raw, out, codeNow) {
+  if (!debugOpenBusT4Trace) return;
+  if (_watch82Once) return;
+
+  const bA = busA & 0xFF;
+  const bB = busB & 0xFF;
+
+  if (bA !== 0x82) return;
+  if (bB === 0x82) return;
+
+  _watch82Once = true;
+  console.log(
+    `[OPENBUS WATCH] bus became $82 pc=$${_ob4(pc)} addr=$${_ob4(addr)} codeNow=$${_ob2(codeNow)} ` +
+    `busB=$${_ob2(busB)} raw=$${_ob2(raw)} out=$${_ob2(out)} busA=$${_ob2(busA)}`
+  );
+  buslogDump("recent history before/at bus->82", 96);
+}
+
+// ----------------- T4 trace -----------------
+const T4 = {
+  active:false,
+  entryPc:0,
+  entryBus:0,
+  wrote60:false,
+  events:[],
+  max:512
+};
+
+function t4Reset() {
+  T4.active = false;
+  T4.entryPc = 0;
+  T4.entryBus = 0;
+  T4.wrote60 = false;
+  T4.events.length = 0;
+}
+
+function t4Push(kind, pc, addr, busB, raw, out, busA, codeNow) {
+  if (!debugOpenBusT4Trace) return;
+  if (!T4.active) return;
+  if (T4.events.length >= T4.max) return;
+  T4.events.push({
+    kind,
+    pc: pc & 0xFFFF,
+    addr: addr & 0xFFFF,
+    busB: busB & 0xFF,
+    raw: raw & 0xFF,
+    out: out & 0xFF,
+    busA: busA & 0xFF,
+    codeNow: codeNow & 0xFF
+  });
+}
+
+function t4Dump(reason) {
+  if (!debugOpenBusT4Trace) return;
+
+  const curPC = _pc();
+  const curCode = _codeNow();
+  const curBus = cpuOpenBus & 0xFF;
+
+  console.log(
+    `[OPENBUS T4 TRACE] reason=${reason} events=${T4.events.length} ` +
+    `nowPC=$${_ob4(curPC)} nowCode=$${_ob2(curCode)} nowBus=$${_ob2(curBus)} ` +
+    `entryPc=$${_ob4(T4.entryPc)} entryBus=$${_ob2(T4.entryBus)} wrote60=${T4.wrote60?1:0}`
+  );
+
+  for (let i = 0; i < T4.events.length; i++) {
+    const e = T4.events[i];
+    const tag = (e.kind === "RD") ? "T4_RD" : "T4_WR";
+    if (e.kind === "RD") {
+      console.log(
+        `[${tag}] #${i} pc=$${_ob4(e.pc)} addr=$${_ob4(e.addr)} codeNow=$${_ob2(e.codeNow)} ` +
+        `busB=$${_ob2(e.busB)} raw=$${_ob2(e.raw)} out=$${_ob2(e.out)} busA=$${_ob2(e.busA)}`
+      );
+    } else {
+      console.log(
+        `[${tag}] #${i} pc=$${_ob4(e.pc)} addr=$${_ob4(e.addr)} codeNow=$${_ob2(e.codeNow)} ` +
+        `busB=$${_ob2(e.busB)} val=$${_ob2(e.raw)} busA=$${_ob2(e.busA)}`
+      );
+    }
+  }
+
+  buslogDump("recent history at T4 end", 128);
+}
+
+// ----------------- OpenBus test checks -----------------
+function obCheckRead(addr, raw, out, busBefore, busAfter) {
+  if (!debugOpenBusTests) return;
+
+  const pc = _pc();
+  const codeNow = _codeNow();
+
+  if (!OB_DONE.T1 && (addr === 0x5000 || addr === 0x4654)) {
+    const pass = (out & 0xFF) !== 0x00;
+    obResult("T1", pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$${_ob4(addr)} out=$${_ob2(out)} (expected != $00)`);
+  }
+
+  if (!OB_DONE.T2 && (addr === 0x5501 || addr === 0x4020 || addr === 0x5FFF)) {
+    const expect = (addr >>> 8) & 0xFF;
+    const pass = (out & 0xFF) === expect;
+    obResult("T2", pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$${_ob4(addr)} out=$${_ob2(out)} expectHi=$${_ob2(expect)}`);
+  }
+
+  if (!OB_DONE.T3 && addr === 0x5108) {
+    const expect = 0x50;
+    const pass = (out & 0xFF) === expect;
+    obResult("T3", pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$${_ob4(addr)} out=$${_ob2(out)} expect=$${_ob2(expect)} busBefore=$${_ob2(busBefore)}`);
+  }
+
+  if ((addr === 0x4016 || addr === 0x4017) && (!OB_DONE.T6 || !OB_DONE.T9)) {
+    const pass = ((out & 0xFE) === (busBefore & 0xFE));
+    const which = !OB_DONE.T6 ? "T6" : "T9";
+    obResult(which, pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$${_ob4(addr)} busBefore=$${_ob2(busBefore)} out=$${_ob2(out)} (expected upper bits from bus)`);
+  }
+
+  if (!OB_DONE.T7 && addr === 0x4015) {
+    const pass = (busAfter & 0xFF) === (busBefore & 0xFF);
+    obResult("T7", pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$4015 busBefore=$${_ob2(busBefore)} busAfter=$${_ob2(busAfter)} (expected unchanged)`);
+  }
+
+  const inT4 = (pc >= 0x5600 && pc < 0x6000);
+  const isFetch = ((addr & 0xFFFF) === (pc & 0xFFFF));
+
+  if (!OB_DONE.T4 && inT4 && !T4.active) {
+    T4.active = true;
+    T4.entryPc = pc & 0xFFFF;
+    T4.entryBus = busBefore & 0xFF;
+    T4.wrote60 = false;
+    buslogDump(`dump at T4 entry entryBus=$${_ob2(T4.entryBus)}`, 96);
+  }
+
+  if (T4.active && isFetch) {
+    t4Push("RD", pc, addr, busBefore, raw, out, busAfter, codeNow);
+  }
+
+  if (!OB_DONE.T4 && T4.active && !inT4) {
+    const pass = T4.wrote60 === true;
+    if (!pass) {
+      obResult("T4", false, `entryPc=$${_ob4(T4.entryPc)} entryBus=$${_ob2(T4.entryBus)} missing write($0056)=$60`);
+      t4Dump("missing_write_0056_60");
+    } else {
+      obResult("T4", true, `entryPc=$${_ob4(T4.entryPc)} entryBus=$${_ob2(T4.entryBus)} saw write($0056)=$60`);
+    }
+    t4Reset();
+  }
+}
+
+function obCheckWrite(addr, value, busBefore, busAfter) {
+  if (!debugOpenBusTests) return;
+
+  const pc = _pc();
+  const codeNow = _codeNow();
+
+  if (T4.active) {
+    t4Push("WR", pc, addr, busBefore, value & 0xFF, value & 0xFF, busAfter, codeNow);
+  }
+
+  if (T4.active && (addr & 0xFFFF) === 0x0056 && (value & 0xFF) === 0x60) {
+    T4.wrote60 = true;
+  }
+
+  if (!OB_DONE.T8 && (addr & 0xFFFF) === 0x4015) {
+    const pass = (busAfter & 0xFF) === (value & 0xFF);
+    obResult("T8", pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$4015 value=$${_ob2(value)} busAfter=$${_ob2(busAfter)} (expected busAfter==value)`);
+  }
+}
+
+// ----------------- PPU helpers -----------------
+function chrRead(addr14) { return CHR_ROM[addr14 & 0x1FFF] & 0xFF; }
+
+function mapNT(addr14) {
+  const v   = (addr14 - 0x2000) & 0x0FFF;
+  const off = v & 0x03FF;
+  const nt  = (v >>> 10) & 0x03;
+
+  switch (MIRRORING) {
+    case "vertical":   return off | ((nt & 1) << 10);
+    case "horizontal": return off | ((nt >>> 1) << 10);
+    case "single0":    return off;
+    case "single1":    return off | 0x400;
+    case "four":       return (nt << 10) | off;
+    default:           return off | ((nt >>> 1) << 10);
+  }
+}
+
 function paletteIndex(addr14) {
   let p = addr14 & 0x1F;
-  // $3F10/$14/$18/$1C mirror $3F00/$04/$08/$0C
   if ((p & 0x13) === 0x10) p &= ~0x10;
   return p;
 }
 
+// ----------------- CPU read dispatch -----------------
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
-  let value;
   bpCheckRead(addr);
 
-  // --- $0000–$1FFF: CPU internal RAM mirrors ---
-  if (addr < 0x2000) {
-    value = cpuRead(addr) & 0xFF;
-    cpuOpenBus = value;
-    return value;
-  }
+  const busBefore = cpuOpenBus & 0xFF;
+  const codeNow = _codeNow();
 
-  // --- $2000–$3FFF: PPU registers (mirrored every 8) ---
-  else if (addr < 0x4000) {
+  let raw = 0x00;
+
+  if (addr < 0x2000) {
+    raw = cpuRead(addr) & 0xFF;
+
+  } else if (addr < 0x4000) {
     const reg = 0x2000 + (addr & 0x7);
 
     switch (reg) {
-      case 0x2002: { // PPUSTATUS
+      case 0x2002: {
         const sl    = SHARED.SYNC[2] | 0;
         const dot   = SHARED.SYNC[3] | 0;
         const frame = SHARED.SYNC[4] | 0;
 
-        if (sl === 241 && dot === 0) { // one PPU clock before set
+        if (sl === 241 && dot === 0) {
           doNotSetVblank = true;
           nmiSuppression = true;
-
-          if (debugVideoTiming){
-          console.debug(`%c[NMI/VBL cancelled] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot}`,
-            "color:black;background:cyan;font-weight:bold;");
+          if (debugVideoTiming) {
+            console.debug(`%c[NMI/VBL cancelled] frame=${frame} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot}`, "color:black;background:cyan;font-weight:bold;");
           }
-
         }
 
-        if (sl === 241 && (dot === 1 || dot === 2)) { // same/one later
-
-          if (debugVideoTiming){
-          console.debug(`%c[VBL clear path] frame=${fr} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot} ` +
-                        `vblank=${(PPUSTATUS & 0x80)?1:0} nmiEdge=${(PPU_FRAME_FLAGS & 0b00000100)?1:0}`,
-                        "color:black;background:cyan;font-weight:bold;");
+        if (sl === 241 && (dot === 1 || dot === 2)) {
+          if (debugVideoTiming) {
+            console.debug(
+              `%c[VBL clear path] frame=${frame} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot} ` +
+              `vblank=${(PPUSTATUS & 0x80) ? 1 : 0} nmiEdge=${(PPU_FRAME_FLAGS & 0b00000100) ? 1 : 0}`,
+              "color:black;background:cyan;font-weight:bold;"
+            );
           }
-
           PPU_FRAME_FLAGS &= ~0b00000100;
           nmiPending = 0;
           nmiSuppression = true;
@@ -85,102 +315,62 @@ function checkReadOffset(address) {
 
         const obBefore = ppuOpenBus & 0xFF;
         const stat     = PPUSTATUS & 0xFF;
-        const ret = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
+        raw = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
 
         const wasVBlank = (stat & 0x80) !== 0;
-        PPUSTATUS &= ~0x80;   // clear VBL
-        writeToggle = 0;      // reset $2005/$2006 latch
+        PPUSTATUS &= ~0x80;
 
-        ppuOpenBus = ret;
-        cpuOpenBus = ret;
+        writeToggle = 0;
+        globalThis.writeToggle = writeToggle;
 
-        if (wasVBlank && debugVideoTiming){
-          console.debug("2002 Vblank clear:", cpuCycles, "Frame:", fr);
-        }
-        
-        return ret;
-      }
-
-      case 0x2004: { // OAMDATA (read)
-        value = OAM[OAMADDR & 0xFF] & 0xFF;
-        ppuOpenBus = value;
-        cpuOpenBus = value;
-        if (debugLogging) console.debug(`[R $2004 OAMDATA] val=$${value.toString(16)} OAMADDR=$${(OAMADDR&0xFF).toString(16)}`);
+        ppuOpenBus = raw;
         break;
       }
 
-      case 0x2007: { // PPUDATA (read)
-        const v = VRAM_ADDR & 0x3FFF;
+      case 0x2004:
+        raw = OAM[OAMADDR & 0xFF] & 0xFF;
+        ppuOpenBus = raw;
+        break;
+
+      case 0x2007: {
+        const vv = VRAM_ADDR & 0x3FFF;
         const bufBefore = VRAM_DATA & 0xFF;
         let ret = 0x00;
 
-        // -----------------------------------
-        // Pattern / nametable region (< $3F00)
-        // -----------------------------------
-        if (v < 0x3F00) {
-          ret = bufBefore; // buffered read
+        if (vv < 0x3F00) {
+          ret = bufBefore;
 
-          let newVal;
-
-          if (v < 0x2000) {
-            // -------------------------------
-            // CHR region ($0000–$1FFF)
-            // -------------------------------
+          let newVal = 0x00;
+          if (vv < 0x2000) {
             let chrAddr;
-
             if (mapperNumber === 1) {
-              if (chrIsRAM) {
-                // CHR-RAM: ignore MMC1 banks, just wrap around
-                chrAddr = v & (CHR_ROM.length - 1);
-              } else {
-                // CHR-ROM: apply MMC1 4 KB bank logic
-                const bankOffset =
-                  (v < 0x1000 ? CHR_BANK_LO : CHR_BANK_HI) << 12;
-                chrAddr = (bankOffset + (v & 0x0FFF)) & (CHR_ROM.length - 1);
+              if (chrIsRAM) chrAddr = vv & (CHR_ROM.length - 1);
+              else {
+                const bankOffset = ((vv < 0x1000 ? CHR_BANK_LO : CHR_BANK_HI) << 12);
+                chrAddr = (bankOffset + (vv & 0x0FFF)) & (CHR_ROM.length - 1);
               }
             } else {
-              // NROM or other simple mappers
-              chrAddr = v & (CHR_ROM.length - 1);
+              chrAddr = vv & (CHR_ROM.length - 1);
             }
-
             newVal = CHR_ROM[chrAddr] & 0xFF;
             VRAM_DATA = newVal;
-
-            if (newVal === 0xFF && chrAddr >= 0x0FF0) {
-              console.warn(
-                `[CHR $FF READ] v=$${v.toString(16)} chrAddr=$${chrAddr.toString(
-                  16
-                )} len=${CHR_ROM.length} chrIsRAM=${chrIsRAM}`
-              );
-            }
           } else {
-            // -------------------------------
-            // Nametable region ($2000–$2FFF)
-            // -------------------------------
-            const ntAddr = mapNT(v) & 0x07FF;
+            const ntAddr = mapNT(vv) & 0x07FF;
             newVal = VRAM[ntAddr] & 0xFF;
             VRAM_DATA = newVal;
           }
-        }
-
-        // -----------------------------------
-        // Palette region ($3F00–$3FFF)
-        // -----------------------------------
-        else {
-          const p = paletteIndex(v);
+        } else {
+          const p = paletteIndex(vv);
           const palVal = PALETTE_RAM[p] & 0x3F;
           ret = (ppuOpenBus & 0xC0) | palVal;
 
-          // fill buffer from mirrored nametable region
-          const ntMirror = v & 0x2FFF;
+          const ntMirror = vv & 0x2FFF;
           if (ntMirror < 0x2000) {
             let chrAddr;
             if (mapperNumber === 1) {
-              if (chrIsRAM) {
-                chrAddr = ntMirror & (CHR_ROM.length - 1);
-              } else {
-                const bankOffset =
-                  (ntMirror < 0x1000 ? CHR_BANK_LO : CHR_BANK_HI) << 12;
+              if (chrIsRAM) chrAddr = ntMirror & (CHR_ROM.length - 1);
+              else {
+                const bankOffset = ((ntMirror < 0x1000 ? CHR_BANK_LO : CHR_BANK_HI) << 12);
                 chrAddr = (bankOffset + (ntMirror & 0x0FFF)) & (CHR_ROM.length - 1);
               }
             } else {
@@ -193,285 +383,191 @@ function checkReadOffset(address) {
           }
         }
 
-        // -----------------------------------
-        // Increment VRAM address
-        // -----------------------------------
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
 
-        const out = ret & 0xFF;
-        ppuOpenBus = out;
-        cpuOpenBus = out;
-
-        if (debugLogging) {
-          console.debug(
-            `[R $2007] v=$${v.toString(16).padStart(4, "0")} out=$${out
-              .toString(16)
-              .padStart(2, "0")} bufBefore=$${bufBefore
-              .toString(16)
-              .padStart(2, "0")} bufAfter=$${(VRAM_DATA & 0xff)
-              .toString(16)
-              .padStart(2, "0")} inc=${inc} chrIsRAM=${chrIsRAM}`
-          );
-        }
-
-        return out;
-      }
-
-      default: { // write-only regs mirror bus
-        value = ppuOpenBus & 0xFF;
-        if (debugLogging) console.debug(`[R PPU-OPENBUS] $${reg.toString(16)} -> $${value.toString(16)}`);
+        raw = ret & 0xFF;
+        ppuOpenBus = raw;
         break;
       }
+
+      default:
+        raw = ppuOpenBus & 0xFF;
+        break;
     }
 
-    cpuOpenBus = value & 0xFF;
-    return value & 0xFF;
-  }
-
-  // --- $4000–$401F: APU / I/O ---
-  else if (addr < 0x4020) {
+  } else if (addr < 0x4020) {
     if (addr === 0x4016 || addr === 0x4017) {
-      const bit = (joypadRead(addr) & 1);
-      value = (cpuOpenBus & 0xFE) | bit;
+      const bit = joypadRead(addr) & 1;
+      raw = ((cpuOpenBus & 0xFE) | bit) & 0xFF;
     } else {
-      value = apuRead(addr) & 0xFF;
+      raw = apuRead(addr) & 0xFF;
     }
-    if (debugLogging) console.debug(`[R IO] $${addr.toString(16)} -> $${(value & 0xFF).toString(16)}`);
-  }
 
-  // --- $4020–$5FFF: expansion ---
-  else if (addr < 0x6000) {
-    value = cpuOpenBus & 0xFF;
-    if (debugLogging) console.debug(`[R EXP] $${addr.toString(16)} -> $${value.toString(16)}`);
-  }
+  } else if (addr < 0x6000) {
+    raw = cpuOpenBus & 0xFF;
 
-  // --- $6000–$7FFF: PRG-RAM (mapper dependent) ---
-  else if (addr < 0x8000) {
-    value = (mapperNumber === 1)
+  } else if (addr < 0x8000) {
+    raw = (mapperNumber === 1)
       ? (mmc1CpuRead(addr) & 0xFF)
       : (prgRam[addr - 0x6000] & 0xFF);
-    if (debugLogging) console.debug(`[R PRG-RAM] $${addr.toString(16)} -> $${value.toString(16)}`);
-  }
 
-  // --- $8000–$FFFF: PRG-ROM (mapper dependent) ---
-  else {
-    value = (mapperNumber === 1)
+  } else {
+    raw = (mapperNumber === 1)
       ? (mmc1CpuRead(addr) & 0xFF)
       : (mapperReadPRG(addr) & 0xFF);
-    if (debugLogging) console.debug(`[R PRG-ROM] $${addr.toString(16)} -> $${value.toString(16)}`);
   }
 
-  cpuOpenBus = value & 0xFF;
-  return value & 0xFF;
+  const out = cpuOpenBusFinalise(addr, raw, codeNow, false) & 0xFF;
+  const busAfter = cpuOpenBus & 0xFF;
+
+  buslogPush("RD", _pc(), addr, busBefore, busAfter, raw, out, codeNow);
+  watchBus82(_pc(), addr, busBefore, busAfter, raw, out, codeNow);
+
+  obCheckRead(addr, raw, out, busBefore, busAfter);
+  return out;
 }
 
-// gate threshold from power-on to when PPU registers actually start working
 const PPU_WRITE_GATE_CYCLES = 29658;
 
+// ----------------- CPU write dispatch -----------------
 function checkWriteOffset(address, value) {
   const addr = address & 0xFFFF;
   value &= 0xFF;
   bpCheckWrite(addr, value);
 
-  // --- $0000–$1FFF: CPU RAM mirrors ---
-  if (addr < 0x2000) { 
-    cpuWrite(addr, value);
-    return;
-  }
+  const busBefore = cpuOpenBus & 0xFF;
+  const codeNow = _codeNow();
 
-  // --- $2000–$3FFF: PPU registers (mirrored every 8) ---
-  else if (addr < 0x4000) {
+  if (addr < 0x2000) {
+    cpuWrite(addr, value);
+
+  } else if (addr < 0x4000) {
     const reg = 0x2000 + (addr & 0x7);
 
-    // block early writes to 2000/2001/2005/2006 until gate threshold
     const gateThis = (reg === 0x2000 || reg === 0x2001 || reg === 0x2005 || reg === 0x2006);
     if (gateThis && (cpuCycles < PPU_WRITE_GATE_CYCLES)) {
-      if (debugLogging) console.debug(`[PPU-GATE] Ignored write $${reg.toString(16)} val=$${value.toString(16)} @${cpuCycles}`);
+      cpuOpenBusFinalise(addr, value, codeNow, true);
+      const busAfterGate = cpuOpenBus & 0xFF;
+
+      buslogPush("WR", _pc(), addr, busBefore, busAfterGate, value, value, codeNow);
+      watchBus82(_pc(), addr, busBefore, busAfterGate, value, value, codeNow);
+
+      obCheckWrite(addr, value, busBefore, busAfterGate);
       return;
     }
 
     switch (reg) {
-      case 0x2000: { // PPUCTRL
+      case 0x2000: {
         const wasEN = (PPUCTRL & 0x80) !== 0;
         PPUCTRL = value;
-        if (debugLogging) console.debug(`[W $2000 PPUCTRL] val=$${value.toString(16)} wasEN=${wasEN?1:0}`);
+
         const nowEN = (value & 0x80) !== 0;
         if (!wasEN && nowEN && (PPUSTATUS & 0x80)) {
-        const sl    = SHARED.SYNC[2] | 0;
-        const dot   = SHARED.SYNC[3] | 0;
-        const frame = SHARED.SYNC[4] | 0;
           PPU_FRAME_FLAGS |= 0b00000100;
-        if (debugVideoTiming) console.debug(`[PPUCTRL NMI EDGE] frame=${fr} sl=${sl} dot=${dot}`);
         }
         break;
       }
 
-      case 0x2001: { // PPUMASK
-        PPUMASK = value;
-        if (debugLogging) console.debug(`[W $2001 PPUMASK] val=$${value.toString(16)}`);
-        break;
-      }
+      case 0x2001: PPUMASK = value; break;
+      case 0x2003: OAMADDR = value & 0xFF; break;
 
-      case 0x2003: { // OAMADDR
-        OAMADDR = value;
-        if (debugLogging) console.debug(`[W $2003 OAMADDR] val=$${value.toString(16)}`);
-        break;
-      }
-
-      case 0x2004: { // OAMDATA
-        if (debugLogging) console.debug(`[W $2004 OAMDATA] val=$${value.toString(16)} @OAMADDR=$${(OAMADDR&0xFF).toString(16)}`);
-        OAM[OAMADDR & 0xFF] = value;
+      case 0x2004:
+        OAM[OAMADDR & 0xFF] = value & 0xFF;
         OAMADDR = (OAMADDR + 1) & 0xFF;
         break;
 
-      }
-
-      case 0x2005: { // PPUSCROLL
-        let t = ((t_hi << 8) | t_lo) & 0x7FFF;        // keep 15-bit v/t space
+      case 0x2005: {
+        let t = ((t_hi << 8) | t_lo) & 0x7FFF;
         if (writeToggle === 0) {
           SCROLL_X = value;
-          fineX = value & 0x07;                       // x (fine)
-          t = (t & ~0x001F) | ((value >>> 3) & 0x1F); // coarse X
+          fineX = value & 0x07;
+          t = (t & ~0x001F) | ((value >>> 3) & 0x1F);
           writeToggle = 1;
         } else {
           SCROLL_Y = value;
-          t = (t & ~(0x7000 | 0x03E0))                // clear fineY/coarseY
-            | ((value & 0x07) << 12)                  // fine Y
-            | (((value >>> 3) & 0x1F) << 5);          // coarse Y
+          t = (t & ~(0x7000 | 0x03E0))
+            | ((value & 0x07) << 12)
+            | (((value >>> 3) & 0x1F) << 5);
           writeToggle = 0;
         }
         t_hi = (t >>> 8) & 0xFF;
         t_lo = t & 0xFF;
+        globalThis.writeToggle = writeToggle;
         break;
       }
 
-      case 0x2006: { // PPUADDR
-        if (writeToggle === 0) {
-          t_hi = value & 0x3F;                        // t[8..13]
-          writeToggle = 1;
-        } else {
-          t_lo = value & 0xFF;                        // t[0..7]
-          VRAM_ADDR = ((t_hi << 8) | t_lo);           // v=t immediately (keep bit14)
-          writeToggle = 0;
-        }
+      case 0x2006:
+        if (writeToggle === 0) { t_hi = value & 0x3F; writeToggle = 1; }
+        else { t_lo = value & 0xFF; VRAM_ADDR = (((t_hi << 8) | t_lo) & 0x3FFF); writeToggle = 0; }
+        globalThis.writeToggle = writeToggle;
         break;
-      }
-      
-      case 0x2007: { // PPUDATA (write)
+
+      case 0x2007: {
         const v = VRAM_ADDR & 0x3FFF;
 
-        // ------------------------------
-        // Pattern table / CHR region
-        // ------------------------------
         if (v < 0x2000) {
           if (mapperNumber === 1) {
-            // Mapper 1: CHR may be RAM or ROM
-            if (chrIsRAM) {
-              CHR_ROM[v & 0x1FFF] = value;
-            } else {
-              mmc1ChrWrite(v & 0x1FFF, value);
-            }
+            if (chrIsRAM) CHR_ROM[v & 0x1FFF] = value;
+            else mmc1ChrWrite(v & 0x1FFF, value);
           } else if (chrIsRAM) {
-            // Simple mappers: CHR-RAM only
             CHR_ROM[v & 0x1FFF] = value;
           }
-
-          if (debugLogging) {
-            console.debug(
-              `[W $2007 CHR] v=$${v.toString(16).padStart(4, "0")} val=$${value
-                .toString(16)
-                .padStart(2, "0")} chrIsRAM=${chrIsRAM}`
-            );
-          }
-        }
-
-        // ------------------------------
-        // Nametable region
-        // ------------------------------
-        else if (v < 0x3F00) {
+        } else if (v < 0x3F00) {
           const ntAddr = mapNT(v) & 0x07FF;
           VRAM[ntAddr] = value;
-
-          if (debugLogging) {
-            console.debug(
-              `[W $2007 NT] v=$${v.toString(16).padStart(4, "0")} mapped=$${ntAddr
-                .toString(16)
-                .padStart(4, "0")} val=$${value
-                .toString(16)
-                .padStart(2, "0")} mirr=${MIRRORING}`
-            );
-          }
-        }
-
-        // ------------------------------
-        // Palette region
-        // ------------------------------
-        else {
-          let p = v & 0x1F;
-          if ((p & 0x13) === 0x10) p &= ~0x10;
+        } else {
+          const p = paletteIndex(v);
           PALETTE_RAM[p] = value & 0x3F;
-
-          if (debugLogging) {
-            console.debug(
-              `[W $2007 PAL] v=$${v.toString(16).padStart(4, "0")} pIdx=${p
-                .toString(16)
-                .padStart(2, "0")} val=$${value.toString(16).padStart(2, "0")}`
-            );
-          }
         }
 
-        // ------------------------------
-        // Increment VRAM address
-        // ------------------------------
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
         break;
       }
 
-  }
+      default:
+        break;
+    }
 
-    ppuOpenBus = value;
-    cpuOpenBus = value;
-    return;
-  }
+    ppuOpenBus = value & 0xFF;
 
-  // --- $4014/$4016/$4017 and APU/IO ---
-  else if (addr === 0x4014) { dmaTransfer(value); }
-  else if (addr === 0x4016) { joypadWrite(addr, value); }
-  else if (addr === 0x4017) { APUregister.FRAME_CNT = value; cpuOpenBus = value; }
-  else if (addr < 0x4020)   { apuWrite(addr, value); }
+  } else if (addr === 0x4014) {
+    dmaTransfer(value);
 
-  // --- $4020–$5FFF: expansion ---
-  else if (addr < 0x6000)   { cpuOpenBus = value; }
+  } else if (addr === 0x4016) {
+    joypadWrite(addr, value);
 
-  // --- $6000–$7FFF: PRG-RAM (mapper dependent) ---
-  else if (addr < 0x8000) {
-    if (mapperNumber === 1) {
-      mmc1CpuWrite(addr, value); // MMC1 handles PRG-RAM enabling
-    } else {
-      prgRam[addr - 0x6000] = value & 0xFF; // NROM
+  } else if (addr === 0x4017) {
+    APUregister.FRAME_CNT = value;
+
+  } else if (addr < 0x4020) {
+    apuWrite(addr, value);
+
+  } else if (addr < 0x8000) {
+    if (mapperNumber === 1) mmc1CpuWrite(addr, value);
+    else prgRam[addr - 0x6000] = value & 0xFF;
+
+  } else {
+    if (addr < 0xFFFA) {
+      if (mapperNumber === 1) mmc1CpuWrite(addr, value);
+      else mapperWritePRG(addr, value);
     }
   }
 
-  // --- $8000–$FFFF: PRG area (mapper dependent) ---
-  else {
-    if (addr >= 0xFFFA) return; // don't touch vectors
-    if (mapperNumber === 1) {
-      mmc1CpuWrite(addr, value);
-    } else {
-      mapperWritePRG(addr, value); // NROM: usually no-op
-    }
-  }
+  cpuOpenBusFinalise(addr, value, codeNow, true);
+  const busAfter = cpuOpenBus & 0xFF;
 
-  cpuOpenBus = value & 0xFF;
+  buslogPush("WR", _pc(), addr, busBefore, busAfter, value, value, codeNow);
+  watchBus82(_pc(), addr, busBefore, busAfter, value, value, codeNow);
+
+  obCheckWrite(addr, value, busBefore, busAfter);
 }
 
+// ----------------- CPU RAM helpers -----------------
 function cpuRead(addr) {
   addr &= 0xFFFF;
-  let val = systemMemory[addr & 0x7FF] & 0xFF;
-  if (debugLogging) console.debug(`[READ CPU-RAM] $${addr.toString(16).padStart(4,"0")} -> ${val.toString(16).padStart(2,"0")}`);
-  cpuOpenBus = val;
+  const val = systemMemory[addr & 0x7FF] & 0xFF;
   return val;
 }
 
@@ -479,52 +575,40 @@ function cpuWrite(addr, value) {
   addr &= 0xFFFF;
   value &= 0xFF;
   systemMemory[addr & 0x7FF] = value;
-  if (debugLogging) console.debug(`[WRITE CPU-RAM] $${addr.toString(16).padStart(4,"0")} <= ${value.toString(16).padStart(2,"0")}`);
-  cpuOpenBus = value;
 }
 
-function mapperReadPRG(addr) {
-  return prgRom[addr - 0x8000];
-}
+// ----------------- mapper PRG -----------------
+function mapperReadPRG(addr) { return prgRom[addr - 0x8000]; }
+function mapperWritePRG(addr, value) {}
 
-function mapperWritePRG(addr, value) {
-  // NROM PRG is read-only, but some test ROMs poke it
-  // causes a fail on CPU_DUMMY_WRITES_OAM test rom
-  //prgRom[addr - 0x8000] = value;
-}
-
+// ----------------- APU -----------------
 function apuWrite(address, value) {
   switch (address) {
-    case 0x4000: APUregister.SQ1_VOL = value;   cpuOpenBus = value; break;
-    case 0x4001: APUregister.SQ1_SWEEP = value; cpuOpenBus = value; break;
-    case 0x4002: APUregister.SQ1_LO = value;    cpuOpenBus = value; break;
-    case 0x4003: APUregister.SQ1_HI = value;    cpuOpenBus = value; break;
+    case 0x4000: APUregister.SQ1_VOL = value;    break;
+    case 0x4001: APUregister.SQ1_SWEEP = value;  break;
+    case 0x4002: APUregister.SQ1_LO = value;     break;
+    case 0x4003: APUregister.SQ1_HI = value;     break;
 
-    case 0x4004: APUregister.SQ2_VOL = value;   cpuOpenBus = value; break;
-    case 0x4005: APUregister.SQ2_SWEEP = value; cpuOpenBus = value; break;
-    case 0x4006: APUregister.SQ2_LO = value;    cpuOpenBus = value; break;
-    case 0x4007: APUregister.SQ2_HI = value;    cpuOpenBus = value; break;
+    case 0x4004: APUregister.SQ2_VOL = value;    break;
+    case 0x4005: APUregister.SQ2_SWEEP = value;  break;
+    case 0x4006: APUregister.SQ2_LO = value;     break;
+    case 0x4007: APUregister.SQ2_HI = value;     break;
 
-    case 0x4008: APUregister.TRI_LINEAR = value; cpuOpenBus = value; break;
-    case 0x400A: APUregister.TRI_LO = value;     cpuOpenBus = value; break;
-    case 0x400B: APUregister.TRI_HI = value;     cpuOpenBus = value; break;
+    case 0x4008: APUregister.TRI_LINEAR = value; break;
+    case 0x400A: APUregister.TRI_LO = value;     break;
+    case 0x400B: APUregister.TRI_HI = value;     break;
 
-    case 0x400C: APUregister.NOISE_VOL = value;  cpuOpenBus = value; break;
-    case 0x400E: APUregister.NOISE_LO = value;   cpuOpenBus = value; break;
-    case 0x400F: APUregister.NOISE_HI = value;   cpuOpenBus = value; break;
+    case 0x400C: APUregister.NOISE_VOL = value;  break;
+    case 0x400E: APUregister.NOISE_LO = value;   break;
+    case 0x400F: APUregister.NOISE_HI = value;   break;
 
-    case 0x4010: APUregister.DMC_FREQ = value;   cpuOpenBus = value; break;
-    case 0x4011: APUregister.DMC_RAW = value;    cpuOpenBus = value; break;
-    case 0x4012: APUregister.DMC_START = value;  cpuOpenBus = value; break;
-    case 0x4013: APUregister.DMC_LEN = value;    cpuOpenBus = value; break;
+    case 0x4010: APUregister.DMC_FREQ = value;   break;
+    case 0x4011: APUregister.DMC_RAW = value;    break;
+    case 0x4012: APUregister.DMC_START = value;  break;
+    case 0x4013: APUregister.DMC_LEN = value;    break;
 
-    case 0x4015: APUregister.SND_CHN = value;    cpuOpenBus = value; break;
-    case 0x4017: APUregister.FRAME_CNT = value;  cpuOpenBus = value; break;
-
-    case 0x4016: 
-      cpuOpenBus = value;
-      if (typeof joypadWrite === "function") joypadWrite(address, value);
-      break;
+    case 0x4015: APUregister.SND_CHN = value;    break;
+    case 0x4017: APUregister.FRAME_CNT = value;  break;
 
     default:
       break;
@@ -533,34 +617,25 @@ function apuWrite(address, value) {
 
 function apuRead(address) {
   switch (address) {
-    case 0x4015:
-      cpuOpenBus = APUregister.SND_CHN;
-      return APUregister.SND_CHN;
-    default:
-      return cpuOpenBus;
+    case 0x4015: return APUregister.SND_CHN & 0xFF;
+    default:     return cpuOpenBus & 0xFF;
   }
 }
 
-// ================= NES Joypad (P1 keyboard) — no globalThis, with debug =================
+// ----------------- Joypad -----------------
+let joypadStrobe = 0;
+let joypad1Buttons = 0x00;
+let joypad2Buttons = 0x00;
+let joypad1State   = 0x00;
+let joypad2State   = 0x00;
 
-// Internal state (module/file scope)
-let joypadStrobe = 0;      // $4016 bit0
-let joypad1Buttons = 0x00; // live button mask (polled on latch)
-let joypad2Buttons = 0x00; // reserved (P2)
-let joypad1State   = 0x00; // latched & shifted by reads
-let joypad2State   = 0x00; // latched & shifted by reads
+const NES_BUTTON = { A:0, B:1, Select:2, Start:3, Up:4, Down:5, Left:6, Right:7 };
 
-// Bit layout (LSB → MSB): A, B, Select, Start, Up, Down, Left, Right
-const NES_BUTTON = {
-  A: 0, B: 1, Select: 2, Start: 3, Up: 4, Down: 5, Left: 6, Right: 7
-};
-
-// Keyboard → buttons (layout-independent via e.code)
 const codeToButtonP1 = {
-  KeyX: NES_BUTTON.A,           // A = X
-  KeyZ: NES_BUTTON.B,           // B = Z
-  Backspace: NES_BUTTON.Select, // Select = Backspace
-  Enter: NES_BUTTON.Start,      // Start = Enter
+  KeyX: NES_BUTTON.A,
+  KeyZ: NES_BUTTON.B,
+  Backspace: NES_BUTTON.Select,
+  Enter: NES_BUTTON.Start,
   NumpadEnter: NES_BUTTON.Start,
   ArrowUp: NES_BUTTON.Up,
   ArrowDown: NES_BUTTON.Down,
@@ -568,69 +643,35 @@ const codeToButtonP1 = {
   ArrowRight: NES_BUTTON.Right
 };
 
-// Bind keyboard once (no globals)
 let _kbBound = false;
 (function bindJoypadKeyboardOnce(){
   if (_kbBound) return;
   _kbBound = true;
 
-const kbdHandler = (isDown) => (e) => {
-  const btn = codeToButtonP1[e.code];
-  if (btn === undefined) return;
+  const kbdHandler = (isDown) => (e) => {
+    const btn = codeToButtonP1[e.code];
+    if (btn === undefined) return;
 
-  if (isDown) {
-    joypad1Buttons |= (1 << btn);
+    if (isDown) joypad1Buttons |= (1 << btn);
+    else        joypad1Buttons &= ~(1 << btn);
 
-    /*
-    if (e.code === "KeyX") {
-      perFrameStep = true;
-      if (debugLogging) {
-        console.debug("[STEP] armed via KeyX (perFrameStep = true)");
-      }
-    }
-    */
-   
-  } else {
-    joypad1Buttons &= ~(1 << btn);
-  }
-
-  if (debugLogging) {
-    console.debug(
-      "[JOY]", isDown ? "keydown" : "keyup",
-      e.code, "P1:", joypad1Buttons.toString(2, 2).padStart(8, "0")
-    );
-  }
-
-  e.preventDefault();
-};
-
+    e.preventDefault();
+  };
 
   window.addEventListener("keydown", kbdHandler(true),  { passive: false });
   window.addEventListener("keyup",   kbdHandler(false), { passive: false });
 })();
 
-// Pollers (what gets latched on $4016 falling edge)
 function pollController1() { return joypad1Buttons & 0xFF; }
 function pollController2() { return joypad2Buttons & 0xFF; }
 
-// Latch helpers
 function latchIfFallingEdge(oldStrobe, newStrobe) {
-  // NES: when strobe goes 1→0, copy live buttons into 8-bit shift regs
   if (oldStrobe && !newStrobe) {
     joypad1State = pollController1();
     joypad2State = pollController2();
-    if (debugLogging) {
-      console.debug(
-        "[JOY] LATCH P1:", joypad1State.toString(2).padStart(8, "0"),
-        "P2:", joypad2State.toString(2).padStart(8, "0")
-      );
-    }
   }
 }
 
-// ---- CPU <-> Joypad I/O ----
-
-// $4016/$4017 write
 function joypadWrite(address, value) {
   value &= 0xFF;
 
@@ -638,73 +679,36 @@ function joypadWrite(address, value) {
     const old = joypadStrobe & 1;
     const now = value & 1;
     joypadStrobe = now;
-
-    // open bus mirrors written value
-    cpuOpenBus = value & 0xFF;
-
     latchIfFallingEdge(old, now);
 
-    // mirror (for your debug/inspection)
-    JoypadRegister.JOYPAD1 = value;
-
-    if (debugLogging) {
-      console.debug(`[W $4016 JOY] val=$${value.toString(16).padStart(2,"0")} strobe=${now}`);
+    if (typeof JoypadRegister === "object" && JoypadRegister) {
+      JoypadRegister.JOYPAD1 = value;
     }
+    return;
+  }
 
-  } else if (address === 0x4017) {
-    // You keep strobe behavior unified (matches your previous code)
+  if (address === 0x4017) {
     joypadStrobe = value & 1;
-    cpuOpenBus = value & 0xFF;
-    JoypadRegister.JOYPAD2 = value;
-
-    if (debugLogging) {
-      console.debug(`[W $4017 JOY] val=$${value.toString(16).padStart(2,"0")} strobe=${joypadStrobe}`);
+    if (typeof JoypadRegister === "object" && JoypadRegister) {
+      JoypadRegister.JOYPAD2 = value;
     }
   }
 }
 
-// $4016/$4017 read (bit0 = serial stream; bit6 open bus commonly high)
 function joypadRead(address) {
-  let result = 0x40; // keep bit6 set like your core
-
   if (address === 0x4016) {
     const strobe = joypadStrobe & 1;
-
-    // strobe=1 → read live A repeatedly; strobe=0 → shift latched bits LSB-first
     const bit = strobe ? (pollController1() & 1) : (joypad1State & 1);
-    result |= bit;
-
     if (!strobe) joypad1State = ((joypad1State >> 1) | 0x80) & 0xFF;
-
-    cpuOpenBus = result & 0xFF;
-
-    if (debugLogging) {
-      console.debug(
-        `[R $4016 JOY] -> $${result.toString(16).padStart(2,"0")} ` +
-        `P1_shift=${joypad1State.toString(2).padStart(8,"0")}`
-      );
-    }
-    return result & 0xFF;
+    return bit & 1;
   }
 
   if (address === 0x4017) {
     const strobe = joypadStrobe & 1;
     const bit = strobe ? (pollController2() & 1) : (joypad2State & 1);
-    result |= bit;
-
     if (!strobe) joypad2State = ((joypad2State >> 1) | 0x80) & 0xFF;
-
-    cpuOpenBus = result & 0xFF;
-
-    if (debugLogging) {
-      console.debug(
-        `[R $4017 JOY] -> $${result.toString(16).padStart(2,"0")} ` +
-        `P2_shift=${joypad2State.toString(2).padStart(8,"0")}`
-      );
-    }
-    return result & 0xFF;
+    return bit & 1;
   }
 
-  // unmapped: return bus
-  return cpuOpenBus & 0xFF;
+  return 0;
 }

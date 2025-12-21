@@ -11,15 +11,7 @@ let irqPending = 0;
 const NES_W = 256;
 const NES_H = 240;
 
-function renderFrame() {
-
-  blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
-  //registerFrameUpdate(); // called at the end of the blit function/s
-
-  //const bgColor = PALETTE_RAM[0x00] & 0x3F;
-  //paletteIndexFrame.fill(bgColor);
-  if (perFrameStep) pause();
-}
+let code = 0x00; // current opcode now global for CPU openbus logic
 
 function checkInterrupts() {
   const nmiEdgeExists = (PPU_FRAME_FLAGS & 0b00000100) !== 0;
@@ -45,6 +37,50 @@ const CPU_HZ   = 1789773;          // NTSC 2A03
 const FPS      = 60.0988;
 const FRAME_MS = 1000 / FPS;       // ~16.64 ms
 
+let debugT4InstrTrace = true;
+
+const INSTRLOG = {
+  buf: new Array(256),
+  i: 0,
+  n: 0,
+  max: 256
+};
+
+function _hx2(x){ return (x & 0xFF).toString(16).padStart(2,"0"); }
+function _hx4(x){ return (x & 0xFFFF).toString(16).padStart(4,"0"); }
+
+function instrlogPush(e){
+  INSTRLOG.buf[INSTRLOG.i] = e;
+  INSTRLOG.i = (INSTRLOG.i + 1) & 255;
+  if (INSTRLOG.n < 256) INSTRLOG.n++;
+}
+
+function instrlogDump(title){
+  console.log(`[T4 INSTRLOG] ${title} count=${INSTRLOG.n}`);
+  const start = (INSTRLOG.i - INSTRLOG.n + 256) & 255;
+  for (let k = 0; k < INSTRLOG.n; k++) {
+    const idx = (start + k) & 255;
+    const e = INSTRLOG.buf[idx];
+    if (!e) continue;
+    console.log(
+      `[I] #${k} pc=$${_hx4(e.pc)} op=$${_hx2(e.op)} b1=$${_hx2(e.b1)} b2=$${_hx2(e.b2)} ` +
+      `busBefore=$${_hx2(e.busBefore)} busAfterFetch=$${_hx2(e.busAfterFetch)} busAfterExec=$${_hx2(e.busAfterExec)}`
+    );
+  }
+}
+
+// peek-only PRG read (does not touch cpuOpenBus / does not call checkReadOffset)
+function peekPRG(addr){
+  addr &= 0xFFFF;
+  if (addr < 0x8000) return 0x00;
+  if (typeof mmc1CpuRead === "function" && typeof mapperNumber === "number" && mapperNumber === 1) {
+    // assumes mmc1CpuRead is pure on reads; if not, replace with direct PRG ROM indexing
+    return mmc1CpuRead(addr) & 0xFF;
+  }
+  return prgRom[addr - 0x8000] & 0xFF;
+}
+
+
 window.step = function () {
 
   debugLogging = false;
@@ -57,7 +93,7 @@ window.step = function () {
     return used | 0;
   }
 
-  const code = checkReadOffset(CPUregisters.PC); 
+  code = checkReadOffset(CPUregisters.PC); 
 
   const op = OPCODES[code];
 
@@ -89,7 +125,9 @@ window.step = function () {
 
   // Measure cycles consumed by this opcode (handlers call addCycles internally)
   const before = cpuCycles;
+  
   op.func();                                       // executes and calls addCycles(...) multiple times
+  
   const after  = cpuCycles;
   const used   = (after - before) | 0;
 
@@ -255,7 +293,7 @@ const OPCODES = [
   { pc:1, func: SEI_IMP },   { pc:3, func: ADC_ABSY }, { pc:1, func: NOP },      { pc:3, func: RRA_ABSY },
   { pc:3, func: NOP_ABSX },  { pc:3, func: ADC_ABSX }, { pc:3, func: ROR_ABSX }, { pc:3, func: RRA_ABSX },
 
-  { pc:2, func: DOP_IMM },   { pc:2, func: STA_INDX }, { pc:2, func: NOP },      { pc:2, func: SAX_INDX },
+  { pc:2, func: DOP_IMM },   { pc:2, func: STA_INDX }, { pc:2, func: NOP_0x82 },      { pc:2, func: SAX_INDX },
   { pc:2, func: STY_ZP },    { pc:2, func: STA_ZP },   { pc:2, func: STX_ZP },   { pc:2, func: SAX_ZP },
   { pc:1, func: DEY_IMP },   { pc:2, func: NOP },      { pc:1, func: TXA_IMP },  { pc:2, func: XAA_IMM },
   { pc:3, func: STY_ABS },   { pc:3, func: STA_ABS },  { pc:3, func: STX_ABS },  { pc:3, func: SAX_ABS },
@@ -288,7 +326,6 @@ const OPCODES = [
   { pc:2, func: CPX_IMM },   { pc:2, func: SBC_INDX }, { pc:2, func: NOP },      { pc:2, func: ISC_INDX },
   { pc:2, func: CPX_ZP },    { pc:2, func: SBC_ZP },   { pc:2, func: INC_ZP },   { pc:2, func: ISC_ZP },
   { pc:1, func: INX_IMP },   { pc:2, func: SBC_IMM },  { pc:1, func: NOP },      { pc:2, func: SBC_IMM },
-
   { pc:3, func: CPX_ABS },   { pc:3, func: SBC_ABS },  { pc:3, func: INC_ABS },  { pc:3, func: ISC_ABS },
 
   { pc:0, func: BEQ_REL },   { pc:2, func: SBC_INDY }, { pc:1, func: KIL_IMP },  { pc:2, func: ISC_INDY },
