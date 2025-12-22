@@ -2,9 +2,9 @@ importScripts('/assets/js/ppu-worker-setup.js');
 console.debug('[PPU Worker init]');
 
 // ---- Shared indices ----
-const SYNC_SCANLINE    = 2;
-const SYNC_DOT         = 3;
-const SYNC_FRAME       = 4;
+const SYNC_SCANLINE = 2;
+const SYNC_DOT      = 3;
+const SYNC_FRAME    = 4;
 
 // ---- Shared setters (NO ATOMICS) ----
 const STORE_CURRENT_SCANLINE = v => { SHARED.SYNC[SYNC_SCANLINE] = v | 0; };
@@ -20,10 +20,7 @@ const CLEAR_SPRITE_OVERFLOW = () => { PPUSTATUS &= ~0x20; };
 const SET_SPRITE_OVERFLOW   = () => { PPUSTATUS |=  0x20; };
 
 // ---- Geometry ----
-const DOTS_PER_SCANLINE   = 340; // 0..340 = 341
-const SCANLINES_PER_FRAME = 262; // 0..261
 const NES_W = 256, NES_H = 240;
-const PIXELS = NES_W * NES_H;
 
 // ---- PPUMASK bits ----
 const MASK_GREYSCALE      = 0x01;
@@ -80,7 +77,7 @@ const SPRITE_SIZE_16 = 0x20; // PPUCTRL bit 5
 const SPR_PATTERN_T  = 0x08; // PPUCTRL bit 3 (8x8 sprites)
 const SPR_Y_OFFSET   = 1;
 
-// ---- render-enable edge tracking (for sprite-only BG priming) ----
+// ---- render-enable edge tracking ----
 let renderingPrev = false;
 let spriteOnlyPrimePending = false;
 
@@ -101,6 +98,43 @@ function reverseByte(b) {
   b = ((b & 0xCC) >> 2) | ((b & 0x33) << 2);
   b = ((b & 0xAA) >> 1) | ((b & 0x55) << 1);
   return b & 0xFF;
+}
+
+// ---- Nametable mapping (uses SAB MIRRORING_MODE) ----
+// MIRRORING_MODE: 0=VERT, 1=HORZ, 4=FOUR
+function mapNametableAddr(addr2000_2FFF) {
+  const a      = (addr2000_2FFF - 0x2000) & 0x0FFF; // 0..0xFFF
+  const table  = (a >> 10) & 3;                    // 0..3
+  const offset = a & 0x03FF;                       // 0..1023
+
+  let phys = 0;
+
+  switch (MIRRORING_MODE | 0) {
+    case 0: { // vertical: [0,1,0,1]
+      const nt = (table & 1);
+      phys = (nt << 10) | offset;
+      break;
+    }
+    case 1: { // horizontal: [0,0,1,1]
+      const nt = (table >> 1);
+      phys = (nt << 10) | offset;
+      break;
+    }
+    case 4: { // four-screen: [0,1,2,3] (requires 4KB VRAM)
+      phys = (table << 10) | offset;
+      break;
+    }
+    default: { // fallback: treat as vertical
+      const nt = (table & 1);
+      phys = (nt << 10) | offset;
+      break;
+    }
+  }
+
+  // Safety clamp for 2KB VRAM builds (avoids out-of-range reads on FOUR)
+  if (VRAM.length === 0x800) return phys & 0x07FF;
+  if (VRAM.length === 0x1000) return phys & 0x0FFF;
+  return phys % VRAM.length;
 }
 
 // ---- OAM Corruption helpers ----
@@ -174,7 +208,6 @@ function evalSpritesForScanline(target, scanline) {
   const sprH   = is8x16 ? 16 : 8;
 
   let overflow = false;
-
   const startAddr = (OAMADDR & 0xFF);
 
   for (let m = 0; m < 64; m++) {
@@ -304,7 +337,6 @@ function primeBGForSpriteOnly() {
 }
 
 // ---- Pixel output ----
-// Worker writes ONLY paletteIndexFrame; main thread blits it.
 function emitPixelHardwarePalette() {
   const bgOn = bgEnabledNow();
 
@@ -359,11 +391,90 @@ function emitPixelHardwarePalette() {
     }
   }
 
-  const idx  = (y << 8) + x;
-  const newv = finalIndex6 & 0x3F;
+  const idx = (y << 8) + x;
+  paletteIndexFrame[idx] = finalIndex6 & 0x3F;
+}
 
-  // Only write when changed (reduces SAB churn a lot on static frames)
-  if (paletteIndexFrame[idx] !== newv) paletteIndexFrame[idx] = newv;
+// ---- Scroll / VRAM address ops ----
+function incCoarseX() {
+  if (!renderingNow()) return;
+  let v = VRAM_ADDR;
+  if ((v & 0x001F) === 31) { v &= ~0x001F; v ^= 0x0400; }
+  else { v = (v + 1) & 0x7FFF; }
+  VRAM_ADDR = v;
+}
+
+function incY() {
+  if (!renderingNow()) return;
+  let v = VRAM_ADDR;
+  if ((v & 0x7000) !== 0x7000) {
+    v = (v + 0x1000) & 0x7FFF;
+  } else {
+    v &= ~0x7000;
+    let y = (v & 0x03E0) >> 5;
+    if (y === 29) { y = 0; v ^= 0x0800; }
+    else if (y === 31) { y = 0; }
+    else { y++; }
+    v = (v & ~0x03E0) | (y << 5);
+  }
+  VRAM_ADDR = v;
+}
+
+function copyHoriz() {
+  if (!renderingNow()) return;
+  const t = (t_hi << 8) | t_lo;
+  VRAM_ADDR = (VRAM_ADDR & ~0x041F) | (t & 0x041F);
+}
+
+function copyVert() {
+  if (!renderingNow()) return;
+  const t = (t_hi << 8) | t_lo;
+  VRAM_ADDR = (VRAM_ADDR & ~0x7BE0) | (t & 0x7BE0);
+}
+
+// ---- PPU bus read ----
+function ppuBusRead(addr) {
+  addr &= 0x3FFF;
+
+  if (addr < 0x2000) {
+    addr &= 0x1FFF;
+
+    if (mapperNumber === 1) {
+      if (chr8kModeFlag) {
+        const index = addr & 0x1FFF;
+        return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
+      }
+
+      if (addr < 0x1000) {
+        const index = (CHR_BANK_LO << 12) + addr;
+        return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
+      } else {
+        const index = (CHR_BANK_HI << 12) + (addr - 0x1000);
+        return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
+      }
+    }
+
+    return CHR_ROM[addr] & 0xFF;
+  }
+
+  // Nametables $2000-$3EFF ($3000-$3EFF mirrors to $2000-$2EFF)
+  if (addr < 0x3F00) {
+    let a = addr & 0x0FFF;          // 0..0xFFF
+    if (a >= 0x1000) a -= 0x1000;   // safety
+    if (a >= 0x0F00) a -= 0x1000;   // $3000-$3EFF -> $2000-$2EFF
+
+    const mapped = mapNametableAddr(0x2000 | a);
+    return VRAM[mapped] & 0xFF;
+  }
+
+  // Palette $3F00-$3FFF
+  if (addr < 0x4000) {
+    let p = addr & 0x1F;
+    if ((p & 0x13) === 0x10) p &= ~0x10;
+    return PALETTE_RAM[p] & 0x3F;
+  }
+
+  return 0xFF;
 }
 
 // ---- Scanline handlers ----
@@ -388,9 +499,7 @@ function preRenderScanline(dot) {
     CLEAR_SPRITE_OVERFLOW();
   }
 
-  if (dot === 65) {
-    evalSpritesForScanline(spritesNext, 0);
-  }
+  if (dot === 65) evalSpritesForScanline(spritesNext, 0);
 
   if (ren && dot === 256) incY();
   if (ren && dot === 257) copyHoriz();
@@ -399,9 +508,7 @@ function preRenderScanline(dot) {
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
   const phase   = (dot - 1) & 7;
 
-  if (ren && phase === 0 && dot >= 9 && dot <= 257) {
-    reloadBGShifters(false);
-  }
+  if (ren && phase === 0 && dot >= 9 && dot <= 257) reloadBGShifters(false);
 
   if (ren && dot >= 2 && dot <= 256) {
     background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
@@ -455,7 +562,7 @@ function preRenderScanline(dot) {
     }
   }
 
-  if (dot === 340) { //frame ready here, but we now count CPU cycles per frame
+  if (dot === 340) {
     if (!ppuInitDone) ppuInitDone = true;
   }
 }
@@ -497,13 +604,9 @@ function visibleScanline(dot) {
     background.atShiftHi |= atHi1;
   }
 
-  if (dot === 65) {
-    evalSpritesForScanline(spritesNext, (PPUclock.scanline + 1) | 0);
-  }
+  if (dot === 65) evalSpritesForScanline(spritesNext, (PPUclock.scanline + 1) | 0);
 
-  if (ren && phase === 0 && dot >= 9 && dot <= 257) {
-    reloadBGShifters(false);
-  }
+  if (ren && phase === 0 && dot >= 9 && dot <= 257) reloadBGShifters(false);
 
   if (dot >= 1 && dot <= 256) {
     emitPixelHardwarePalette();
@@ -515,9 +618,7 @@ function visibleScanline(dot) {
       background.atShiftHi = (background.atShiftHi << 1) & 0xFFFF;
     }
 
-    if (ren && dot >= 1 && dot <= 256) {
-      spriteShiftersTick();
-    }
+    if (ren) spriteShiftersTick();
   }
 
   if (ren && inFetch) {
@@ -576,8 +677,7 @@ function vblankStartScanline(dot) {
 
   if (dot === 0) {
     PPU_FRAME_FLAGS |= 0b00000010;
-    const nmiBitIsSet = (PPUCTRL & 0x80) !== 0;
-    if (nmiBitIsSet) PPU_FRAME_FLAGS |= 0b00000100;
+    if ((PPUCTRL & 0x80) !== 0) PPU_FRAME_FLAGS |= 0b00000100;
   }
 
   if (dot === 1) {
@@ -606,87 +706,6 @@ scanlineLUT[241] = vblankStartScanline;
 for (let i = 242; i <= 260; i++) scanlineLUT[i] = vblankIdleScanline;
 scanlineLUT[261] = preRenderScanline;
 
-// ---- Scroll / VRAM address ops ----
-function incCoarseX() {
-  if (!renderingNow()) return;
-  let v = VRAM_ADDR;
-  if ((v & 0x001F) === 31) { v &= ~0x001F; v ^= 0x0400; }
-  else { v = (v + 1) & 0x7FFF; }
-  VRAM_ADDR = v;
-}
-
-function incY() {
-  if (!renderingNow()) return;
-  let v = VRAM_ADDR;
-  if ((v & 0x7000) !== 0x7000) {
-    v = (v + 0x1000) & 0x7FFF;
-  } else {
-    v &= ~0x7000;
-    let y = (v & 0x03E0) >> 5;
-    if (y === 29) { y = 0; v ^= 0x0800; }
-    else if (y === 31) { y = 0; }
-    else { y++; }
-    v = (v & ~0x03E0) | (y << 5);
-  }
-  VRAM_ADDR = v;
-}
-
-function copyHoriz() {
-  if (!renderingNow()) return;
-  const t = (t_hi << 8) | t_lo;
-  VRAM_ADDR = (VRAM_ADDR & ~0x041F) | (t & 0x041F);
-}
-
-function copyVert() {
-  if (!renderingNow()) return;
-  const t = (t_hi << 8) | t_lo;
-  VRAM_ADDR = (VRAM_ADDR & ~0x7BE0) | (t & 0x7BE0);
-}
-
-// ---- PPU bus read ----
-function ppuBusRead(addr) {
-  addr &= 0x3FFF;
-  let value = 0xFF;
-  let index = 0;
-
-  if (addr < 0x2000) {
-    addr &= 0x1FFF;
-
-    if (mapperNumber === 1) {
-      if (chr8kModeFlag) {
-        index = addr & 0x1FFF;
-        if (index < CHR_ROM.length) value = CHR_ROM[index] & 0xFF;
-      } else {
-        if (addr < 0x1000) {
-          index = (CHR_BANK_LO << 12) + addr;
-          if (index < CHR_ROM.length) value = CHR_ROM[index] & 0xFF;
-        } else {
-          index = (CHR_BANK_HI << 12) + (addr - 0x1000);
-          if (index < CHR_ROM.length) value = CHR_ROM[index] & 0xFF;
-        }
-      }
-    } else {
-      index = addr & 0x1FFF;
-      value = CHR_ROM[index] & 0xFF;
-    }
-
-    return value;
-  }
-
-  if (addr < 0x3F00) {
-    const base = addr & 0x07FF;
-    return VRAM[base] & 0xFF;
-  }
-
-  if (addr >= 0x3F00 && addr < 0x4000) {
-  let p = addr & 0x1F;
-  if ((p & 0x13) === 0x10) p &= ~0x10; // mirrors $3F10/$14/$18/$1C -> $3F00/$04/$08/$0C
-  return PALETTE_RAM[p] & 0x3F;
-  }
-
-  return 0xFF;
-}
-
 // ---- Tick ----
 function ppuTick() {
   const maskNow = PPUMASK & 0xFF;
@@ -710,7 +729,6 @@ function ppuTick() {
   }
   renderingPrev = renNow2;
 
-  // Odd frame skip
   if (PPUclock.oddFrame && renNow2 &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
     PPUclock.scanline = 0;
@@ -722,9 +740,7 @@ function ppuTick() {
 
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
 
-  if (PPUclock.scanline === 260 && PPUclock.dot === 340) {
-    PPUclock.frame++;
-  }
+  if (PPUclock.scanline === 260 && PPUclock.dot === 340) PPUclock.frame++;
 
   if (PPUclock.scanline === 261 && PPUclock.dot === 340) {
     PPUclock.scanline = 0;
@@ -736,26 +752,20 @@ function ppuTick() {
   }
 }
 
-function frameReady() {
-  PPU_FRAME_FLAGS |= 0b00000001;
-}
-
+// ---- Main PPU Loop ----
 function startPPULoop() {
-
-  while (1){
-
+  while (1) {
     while (!cpuStallFlag) {}
-    
-      for (let ticks = 0; ticks < 3 ; ticks++) {
-      // Publish timing BEFORE ticking so CPU-side "current dot" matches this tick’s state
+
+    for (let ticks = 0; ticks < 3; ticks++) {
       STORE_CURRENT_FRAME(PPUclock.frame);
       STORE_CURRENT_SCANLINE(PPUclock.scanline);
       STORE_CURRENT_DOT(PPUclock.dot);
-      
-      ppuTick();
 
+      ppuTick();
       PPUclock.dot++;
-      }
+    }
+
     cpuStallFlag = false;
   }
 }

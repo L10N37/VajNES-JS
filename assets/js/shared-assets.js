@@ -30,7 +30,7 @@
   SHARED.CPU_OPENBUS     = new Uint8Array(SHARED.SAB_CPU_OPENBUS);
   SHARED.CPU_OPENBUS[0]  = 0;
 
-  SHARED.SAB_PPU_REGS = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT * 22);
+  SHARED.SAB_PPU_REGS = new SharedArrayBuffer(Uint8Array.BYTES_PER_ELEMENT * 23);
   SHARED.PPU_REGS     = new Uint8Array(SHARED.SAB_PPU_REGS);
 
   SHARED.SAB_VRAM_ADDR = new SharedArrayBuffer(Uint16Array.BYTES_PER_ELEMENT);
@@ -46,7 +46,7 @@
 
   console.debug(`[main] Allocated CHR SAB = ${CHR_TOTAL_SIZE.toString(16)} bytes (${TOTAL_CHR_BANKS} banks)`);
 
-  SHARED.SAB_VRAM = new SharedArrayBuffer(0x800);
+  SHARED.SAB_VRAM = new SharedArrayBuffer(1024 * 4); //2KB or 4KB for mirroring mode four
   SHARED.VRAM     = new Uint8Array(SHARED.SAB_VRAM);
 
   SHARED.SAB_PALETTE = new SharedArrayBuffer(0x20);
@@ -129,6 +129,9 @@
     mapperNumber: { get: () => SHARED.PPU_REGS[19] | 0, set: v => { SHARED.PPU_REGS[19] = make8(v); }, configurable: true },
     CHR_BANK_LO:  { get: () => SHARED.PPU_REGS[20] | 0, set: v => { SHARED.PPU_REGS[20] = make8(v); }, configurable: true },
     CHR_BANK_HI:  { get: () => SHARED.PPU_REGS[21] | 0, set: v => { SHARED.PPU_REGS[21] = make8(v); }, configurable: true },
+
+    // 0=VERT, 1=HORZ, 4=FOUR
+    MIRRORING_MODE:  { get: () => SHARED.PPU_REGS[22] | 0, set: v => { SHARED.PPU_REGS[22] = make8(v); }, configurable: true },
 
     // VRAM address (Uint16)
     VRAM_ADDR: { get: () => SHARED.VRAM_ADDR[0] | 0, set: v => { SHARED.VRAM_ADDR[0] = make16(v); }, configurable: true },

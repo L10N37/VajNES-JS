@@ -54,6 +54,9 @@ function installLiveScalars() {
     CHR_BANK_LO:  { get: () => (SHARED.PPU_REGS[20] | 0), set: v => { SHARED.PPU_REGS[20] = make8(v); }, configurable: true },
     CHR_BANK_HI:  { get: () => (SHARED.PPU_REGS[21] | 0), set: v => { SHARED.PPU_REGS[21] = make8(v); }, configurable: true },
 
+    // 0=VERT, 1=HORZ, 4=FOUR
+    MIRRORING_MODE:  { get: () => SHARED.PPU_REGS[22] | 0, set: v => { SHARED.PPU_REGS[22] = make8(v); }, configurable: true },
+
     // ---- VRAM address (Uint16) ----
     VRAM_ADDR: { get: () => (SHARED.VRAM_ADDR[0] | 0), set: v => { SHARED.VRAM_ADDR[0] = make16(v); }, configurable: true },
 

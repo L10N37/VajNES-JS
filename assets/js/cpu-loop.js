@@ -32,6 +32,8 @@ function checkInterrupts() {
   }
 }
 
+const NTSC_CPU_CYCLES_PER_FRAME = 29780;
+
 // Lock to 60fps (exact), independent of monitor refresh rate (144Hz etc)
 const EMU_FPS   = 60;
 const FRAME_MS  = 1000 / EMU_FPS;

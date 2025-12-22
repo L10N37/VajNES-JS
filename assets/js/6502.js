@@ -74,7 +74,9 @@ function resetCPU() {
   const hi = checkReadOffset(0xFFFD);
   CPUregisters.PC = lo | (hi << 8);;
 
-  addCycles(7); // burn 7 cycles straight away (PPU 21 ticks in)
+  for (let index = 0; index < 7; index++) {
+  addCycles(1); // burn 7 cycles straight away (PPU 21 ticks in)
+  }
 
   console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
   console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());

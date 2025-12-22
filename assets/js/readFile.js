@@ -65,6 +65,11 @@ function loadRom(romBytes) {
   const verticalFlag = (nesHeader[6] & 0x01) !== 0;
   MIRRORING = fourScreen ? 'four' : (verticalFlag ? 'vertical' : 'horizontal');
 
+  // SAB COPY
+  if (MIRRORING === 'vertical') MIRRORING_MODE = 0;
+  if (MIRRORING === 'horizontal') MIRRORING_MODE = 1;
+  if (MIRRORING === 'four') MIRRORING_MODE= 4;
+
   console.debug(`[HEADER] Detected iNES v${headerVersion}`);
   console.debug(`[HEADER] PRG banks: ${prgBanks} (${prgSize} bytes), CHR banks: ${chrBanks} (${chrSize} bytes)`);
   console.debug(`[HEADER] Mapper: ${mapperNumber}, Mirroring: ${MIRRORING}`);
