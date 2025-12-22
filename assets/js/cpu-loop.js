@@ -32,41 +32,55 @@ function checkInterrupts() {
   }
 }
 
-// ===== NTSC constants =====
-const CPU_HZ   = 1789773;          // NTSC 2A03
-const FPS      = 60.0988;
-const FRAME_MS = 1000 / FPS;       // ~16.64 ms
+// Lock to 60fps (exact), independent of monitor refresh rate (144Hz etc)
+const EMU_FPS   = 60;
+const FRAME_MS  = 1000 / EMU_FPS;
 
-let debugT4InstrTrace = true;
+// Prevent spiral-of-death if a tab stalls; run at most N frames per RAF tick.
+const MAX_FRAMES_PER_TICK = 2;
 
-const INSTRLOG = {
-  buf: new Array(256),
-  i: 0,
-  n: 0,
-  max: 256
-};
+let _lastNow = 0;
+let _accumMs = 0;
 
-function _hx2(x){ return (x & 0xFF).toString(16).padStart(2,"0"); }
-function _hx4(x){ return (x & 0xFFFF).toString(16).padStart(4,"0"); }
+function _runOneEmuFrame() {
+  // Run CPU until we consume one full frame worth of CPU cycles.
+  // (step() returns real cycles used, including DMA microsteps)
+  let frameCycles = 0;
 
-function instrlogPush(e){
-  INSTRLOG.buf[INSTRLOG.i] = e;
-  INSTRLOG.i = (INSTRLOG.i + 1) & 255;
-  if (INSTRLOG.n < 256) INSTRLOG.n++;
+  while (cpuRunning && frameCycles < NTSC_CPU_CYCLES_PER_FRAME) {
+    const used = step() | 0;
+    if (used <= 0) break; // paused/break/unknown opcode path
+    frameCycles += used;
+  }
 }
 
-function instrlogDump(title){
-  console.log(`[T4 INSTRLOG] ${title} count=${INSTRLOG.n}`);
-  const start = (INSTRLOG.i - INSTRLOG.n + 256) & 255;
-  for (let k = 0; k < INSTRLOG.n; k++) {
-    const idx = (start + k) & 255;
-    const e = INSTRLOG.buf[idx];
-    if (!e) continue;
-    console.log(
-      `[I] #${k} pc=$${_hx4(e.pc)} op=$${_hx2(e.op)} b1=$${_hx2(e.b1)} b2=$${_hx2(e.b2)} ` +
-      `busBefore=$${_hx2(e.busBefore)} busAfterFetch=$${_hx2(e.busAfterFetch)} busAfterExec=$${_hx2(e.busAfterExec)}`
-    );
+function _mainLoopRAF(now) {
+  if (!cpuRunning) return;
+
+  if (!_lastNow) _lastNow = now;
+  let dt = now - _lastNow;
+  _lastNow = now;
+
+  // Clamp crazy dt (background tab etc) so we don't attempt to catch up forever
+  if (dt < 0) dt = 0;
+  if (dt > 250) dt = 250;
+
+  _accumMs += dt;
+
+  let frames = 0;
+  while (cpuRunning && _accumMs >= FRAME_MS && frames < MAX_FRAMES_PER_TICK) {
+    _accumMs -= FRAME_MS;
+    frames++;
+
+    _runOneEmuFrame();
+
+    if (perFrameStep) {
+      pause();
+      break;
+    }
   }
+
+  requestAnimationFrame(_mainLoopRAF);
 }
 
 // peek-only PRG read (does not touch cpuOpenBus / does not call checkReadOffset)
@@ -80,9 +94,7 @@ function peekPRG(addr){
   return prgRom[addr - 0x8000] & 0xFF;
 }
 
-
 window.step = function () {
-
   debugLogging = false;
   NoSignalAudio.setEnabled(false);
   if (!cpuRunning) return 0;
@@ -93,7 +105,7 @@ window.step = function () {
     return used | 0;
   }
 
-  code = checkReadOffset(CPUregisters.PC); 
+  code = checkReadOffset(CPUregisters.PC);
 
   const op = OPCODES[code];
 
@@ -106,9 +118,9 @@ window.step = function () {
   }
 
   if (disasmRunning){
-  var _op  = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF);
-  var __op = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF);
-  var disasmPc = CPUregisters.PC;
+    var _op  = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF);
+    var __op = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF);
+    var disasmPc = CPUregisters.PC;
   }
 
   if (bpStepOnce) {
@@ -125,11 +137,11 @@ window.step = function () {
 
   // Measure cycles consumed by this opcode (handlers call addCycles internally)
   const before = cpuCycles;
-  
-  op.func();                                       // executes and calls addCycles(...) multiple times
-  
-  const after  = cpuCycles;
-  const used   = (after - before) | 0;
+
+  op.func(); // executes and calls addCycles(...) multiple times
+
+  const after = cpuCycles;
+  const used  = (after - before) | 0;
 
   if (disasmRunning) DISASM.appendRow(buildDisasmRow(code, _op, __op, disasmPc));
 
@@ -170,76 +182,15 @@ window.step = function () {
   return used;
 };
 
-// ===== NTSC-paced turbo scheduler =====
-const BURST_INSNS = 250;        // inner burst granularity
-const SLICE_MS    = 12;         // responsive cross-browser
-const PAINT_MS    = FRAME_MS;   // ~16.64 ms (NTSC-aligned)
-
-let lastPaint     = 0;
-let lastTickTime  = 0;
-let cycleBudget   = 0;
-
-// Cap runaway budget after throttling (e.g., background tab)
-const MAX_BUDGET_CYCLES = CPU_HZ * 0.20; // ~200ms worth
-
-const chan = new MessageChannel();
-const post = () => chan.port2.postMessage(0);
-
-chan.port1.onmessage = function pump() {
-  if (!cpuRunning) return;
-
-  // 1) Fund budget from elapsed wall time
-  const now = performance.now();
-  const dt  = Math.max(0, now - (lastTickTime || now));
-  lastTickTime = now;
-
-  cycleBudget += (CPU_HZ * dt) / 1000;
-  if (cycleBudget > MAX_BUDGET_CYCLES) cycleBudget = MAX_BUDGET_CYCLES;
-
-  // 2) Spend budget within a micro-slice
-  const sliceStart = now;
-
-  do {
-    for (let i = 0; i < BURST_INSNS; i++) {
-      if (!cpuRunning) break;
-      if (cycleBudget <= 0) break;
-
-      const used = step() | 0;   // returns the REAL cycles (DMA or opcode)
-      if (used > 0) {
-        cycleBudget -= used;
-        if (cycleBudget < 0) cycleBudget = 0;
-      } else {
-        // paused/break/unknown opcode path; avoid spinning
-        break;
-      }
-    }
-
-    // Yield if input is pending
-    if (navigator.scheduling?.isInputPending?.({ includeContinuous: true })) break;
-
-  } while (
-    cpuRunning &&
-    cycleBudget > 0 &&
-    (performance.now() - sliceStart) < SLICE_MS
-  );
-
-  // 3) Force a real paint roughly once per NTSC frame
-  const t = performance.now();
-  if (t - lastPaint >= PAINT_MS) {
-    lastPaint = t;
-    requestAnimationFrame(() => { if (cpuRunning) post(); });
-  } else {
-    post();
-  }
-};
-
 window.run = function () {
   if (cpuRunning) return;
-  cpuRunning   = true;
-  lastPaint    = performance.now();
-  lastTickTime = lastPaint;
-  cycleBudget  = 0;
-  post();
+  cpuRunning = true;
+
+  // reset loop timing state
+  _lastNow = 0;
+  _accumMs = 0;
+
+  requestAnimationFrame(_mainLoopRAF);
 };
 
 window.pause = function () {
@@ -334,10 +285,10 @@ const OPCODES = [
   { pc:3, func: NOP_ABSX },  { pc:3, func: SBC_ABSX }, { pc:3, func: INC_ABSX }, { pc:3, func: ISC_ABSX },
 ];
 
-  function buildDisasmRow(opc, op1, op2, pc, len) {
+function buildDisasmRow(opc, op1, op2, pc, len) {
   // --- ensure correct len for control flow opcodes ---
   if (len === 0) {
-    if (opc === 0x00 || opc === 0x40 || opc === 0x60) len = 1;     // BRK/RTI/RTS
+    if (opc === 0x00 || opc === 0x40 || opc === 0x60) len = 1;      // BRK/RTI/RTS
     else if (opc === 0x20 || opc === 0x4C || opc === 0x6C) len = 3; // JSR/JMP abs/ind
     else len = 2; // branches
   }
