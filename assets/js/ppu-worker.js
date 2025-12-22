@@ -6,8 +6,6 @@ const SYNC_SCANLINE    = 2;
 const SYNC_DOT         = 3;
 const SYNC_FRAME       = 4;
 
-let markFrameReady = false;
-
 // ---- Shared setters (NO ATOMICS) ----
 const STORE_CURRENT_SCANLINE = v => { SHARED.SYNC[SYNC_SCANLINE] = v | 0; };
 const STORE_CURRENT_DOT      = v => { SHARED.SYNC[SYNC_DOT]      = v | 0; };
@@ -457,8 +455,7 @@ function preRenderScanline(dot) {
     }
   }
 
-  if (dot === 340) {
-    markFrameReady = true;
+  if (dot === 340) { //frame ready here, but we now count CPU cycles per frame
     if (!ppuInitDone) ppuInitDone = true;
   }
 }
@@ -759,12 +756,6 @@ function startPPULoop() {
 
       PPUclock.dot++;
       }
-
-    if (markFrameReady){
-    frameReady();
-    markFrameReady = !markFrameReady;
-    }
-
     cpuStallFlag = false;
   }
 }

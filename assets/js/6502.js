@@ -113,6 +113,14 @@ let alignmentDone = false;
 
 function addCycles(x) {
 
+  // console technically produces odds, then even lines one PPU cycle later
+  // not worth doing (previously did try it, unrequired logic)
+  const NTSC_cpu_cycles_per_frame = 29780;
+  if (cpuCycles % NTSC_cpu_cycles_per_frame === 0) { 
+  blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
+  if (perFrameStep) pause();
+  }
+
   cpuCycles += x;
 
   // Handle alignment offset (only once at startup/reset)
@@ -140,21 +148,6 @@ function addCycles(x) {
     decayTimer = 1789772;
   }
 
-  function frameReady(){
-  if (PPU_FRAME_FLAGS & 0b00000001) return true;
-  }
-
-  function notifyWorkerFrameRendered(){
-    PPU_FRAME_FLAGS &= 0b11111110;
-  }
-  // console technically produces odds, then even lines one PPU cycle later
-  // not worth doing (previously did try it, unrequired logic)
-  if (frameReady()){
-    blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
-    if (perFrameStep) pause();
-    notifyWorkerFrameRendered();
-  }
-  
   cpuStallFlag = true;
   while (cpuStallFlag) {
   }
