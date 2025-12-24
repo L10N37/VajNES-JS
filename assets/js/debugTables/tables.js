@@ -720,7 +720,7 @@ let instructionStepTable = `
   <div class="crt-display">
   </div>
   <div class="crt-controls">
-    <button class="crt-btn" onclick="window.step()">STEP / Test Suite</button>
+    <button class="crt-btn" onclick="window.step()">STEP</button>
     <button class="crt-btn" onclick="window.run()">RUN</button>
     <button class="crt-btn" onclick="window.pause()">PAUSE / Refresh UI</button>
   </div>

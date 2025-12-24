@@ -154,22 +154,12 @@ function serviceIRQ() {
 }
 
 // not an interrupt, get it TF out of the way for now #relocate
+// handle inline directly in 4014 case + calls in cpu-loop?
 
 // ===== OAM DMA ($4014) =====
 // Copies 256 bytes from CPU RAM page (value << 8) into PPU OAM.
 // Adds 513 cycles if CPU starts on odd cycle, 514 if even.
 // Microstepped: 1 CPU cycle per call (PPU +3 each).
-
-const DMA = {
-  active: false,
-  page:   0x00,    // high byte written to $4014
-  addr:   0x0000,  // page<<8 | index
-  index:  0,       // 0..255
-  tmp:    0,       // latched byte (read phase)
-  phase:  0,       // 0=read phase, 1=write phase
-  pad:    0        // 1 or 2 initial alignment cycles
-};
-
 function dmaTransfer(value) {
   const cur = SHARED.CLOCKS[0] ?? 0;
 
@@ -183,38 +173,3 @@ function dmaTransfer(value) {
   // If current CPU cycle is odd -> 1-cycle pad (total 513), else 2-cycle pad (total 514)
   DMA.pad = (cur & 1) ? 1 : 2;
 }
-
-// Call at TOP of step(); returns cycles spent this microstep (0 or 1)
-function dmaMicroStep() {
-  if (!DMA.active) return 0;
-
-  if (DMA.pad > 0) {
-    addCycles(1);
-    DMA.pad -= 1;
-    return 1;
-  }
-
-  if (DMA.index < 256) {
-    if (DMA.phase === 0) {
-      // READ phase (1 cycle) - MUST be full bus read
-      addCycles(1);
-      DMA.tmp   = checkReadOffset(DMA.addr) & 0xFF;
-      DMA.phase = 1;
-      return 1;
-    } else {
-      // WRITE phase (1 cycle) - MUST hit $2004 handler / OAM
-      addCycles(1);
-
-      checkWriteOffset(0x2004, DMA.tmp);
-
-      DMA.addr  = (DMA.addr + 1) & 0xFFFF;
-      DMA.index += 1;
-      DMA.phase  = 0;
-      return 1;
-    }
-  }
-
-  DMA.active = false;
-  return 0;
-}
-

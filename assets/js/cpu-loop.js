@@ -13,6 +13,50 @@ const NES_H = 240;
 
 let code = 0x00; // current opcode now global for CPU openbus logic
 
+const DMA = {
+  active: false,
+  page:   0x00,
+  addr:   0x0000,
+  index:  0,     // 0..255
+  tmp:    0x00,
+  phase:  0,     // 0 = read, 1 = write
+  pad:    0      // 1 or 2 cycles
+};
+
+function dmaMicroStep() {
+  if (!DMA.active) return 0;
+
+  // ---- alignment pad (1 or 2 cycles) ----
+  if (DMA.pad > 0) {
+    DMA.pad--;
+    addCycles(1);
+    return 1;
+  }
+
+  // ---- finished ----
+  if (DMA.index >= 256) {
+    DMA.active = false;
+    return 0;
+  }
+
+  // ---- transfer ----
+  if (DMA.phase === 0) {
+    // READ cycle
+    DMA.tmp = checkReadOffset(DMA.addr) & 0xFF;
+    DMA.phase = 1;
+    addCycles(1);
+    return 1;
+  } else {
+    // WRITE cycle
+    checkWriteOffset(0x2004, DMA.tmp);
+    DMA.addr = (DMA.addr + 1) & 0xFFFF;
+    DMA.index++;
+    DMA.phase = 0;
+    addCycles(1);
+    return 1;
+  }
+}
+
 function checkInterrupts() {
   const nmiEdgeExists = (PPU_FRAME_FLAGS & 0b00000100) !== 0;
   if (!nmiEdgeExists) return;
@@ -251,10 +295,10 @@ const OPCODES = [
   { pc:1, func: DEY_IMP },   { pc:2, func: NOP },      { pc:1, func: TXA_IMP },  { pc:2, func: XAA_IMM },
   { pc:3, func: STY_ABS },   { pc:3, func: STA_ABS },  { pc:3, func: STX_ABS },  { pc:3, func: SAX_ABS },
 
-  { pc:0, func: BCC_REL },   { pc:2, func: STA_INDY }, { pc:2, func: NOP_ZPY },  { pc:2, func: AXA_INDY },
+  { pc:0, func: BCC_REL },   { pc:2, func: STA_INDY }, { pc:2, func: NOP_ZPY },  { pc:2, func: SHA_INDY },
   { pc:2, func: STY_ZPX },   { pc:2, func: STA_ZPX },  { pc:2, func: STX_ZPY },  { pc:2, func: SAX_ZPY },
   { pc:1, func: TYA_IMP },   { pc:3, func: STA_ABSY }, { pc:1, func: TXS_IMP },  { pc:3, func: TAS_ABSY },
-  { pc:3, func: SHY_ABSX },  { pc:3, func: STA_ABSX }, { pc:3, func: SHX_ABSY }, { pc:3, func: AXA_ABSY },
+  { pc:3, func: SHY_ABSX },  { pc:3, func: STA_ABSX }, { pc:3, func: SHX_ABSY }, { pc:3, func: SHA_ABSY },
 
   { pc:2, func: LDY_IMM },   { pc:2, func: LDA_INDX }, { pc:2, func: LDX_IMM },  { pc:2, func: LAX_INDX },
   { pc:2, func: LDY_ZP },    { pc:2, func: LDA_ZP },   { pc:2, func: LDX_ZP },   { pc:2, func: LAX_ZP },

@@ -5098,25 +5098,43 @@ function XAA_IMM() {
   addCycles(1);
 }
 
-function AXA_ABSY() {
-  // C1: opcode
+// 1 = "behavior 1" (mask uses A&X)
+// 2 = "behavior 2" (mask uses X only)  <-- common on later RP2A03G
+function SHA_ABSY() {
+  // C1: opcode fetch
   addCycles(1);
 
-  // C2: lo
+  // C2: low byte
   const lo = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   addCycles(1);
 
-  // C3: hi
+  // C3: high byte
   const hi = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
   addCycles(1);
 
-  // C4: write (A & X & (high+1)) to EA
-  const base      = ((hi << 8) | lo) & 0xFFFF;
-  const address   = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
-  let value     = (CPUregisters.A & CPUregisters.X) & (((address >> 8) + 1) & 0xFF);
-  checkWriteOffset(address, value);
+  const base = (hi << 8) | lo;
+  const ea   = (base + CPUregisters.Y) & 0xFFFF;
+
+  const eaHi = (ea >> 8) & 0xFF;
+  const eaLo = ea & 0xFF;
+
+  // C4: dummy read from unwrapped address (6502 quirk)
+  checkReadOffset(((base & 0xFF00) | eaLo) & 0xFFFF);
+  addCycles(1);
+
+  // Value mask
+  const ax   = CPUregisters.A & CPUregisters.X;
+  const mask = ax & ((eaHi + 1) & 0xFF);
+
+  // *** THIS IS THE IMPORTANT PART ***
+  const writeHi   = eaHi & mask;
+  const writeAddr = ((writeHi << 8) | eaLo) & 0xFFFF;
+
+  checkWriteOffset(writeAddr, mask);
   addCycles(1);
 }
+
+
 
 // RP2A03G quirk profile (Variant A):
 // - Data written = (A & X) & (H_plus_1)
@@ -5124,7 +5142,7 @@ function AXA_ABSY() {
 //     finalHigh = (effectiveHigh) & (A & X)
 // Here H_plus_1 = (base pointer high + 1). For a page-cross case, H_plus_1 == effectiveHigh.
 
-function AXA_INDY() { // $93
+function SHA_INDY() { // $93
   // C1: opcode
   addCycles(1);
 
