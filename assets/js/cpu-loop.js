@@ -57,20 +57,22 @@ function dmaMicroStep() {
   }
 }
 
-function checkInterrupts() {
-  const nmiEdgeExists = (PPU_FRAME_FLAGS & 0b00000100) !== 0;
-  if (!nmiEdgeExists) return;
+function clearNmiEdge(){
+  PPU_FRAME_FLAGS &= ~0b00000100;
+}
 
-  const s = SHARED.SYNC;
-  nmiPending = (s[4] | 0);         // only need frame id
-  PPU_FRAME_FLAGS &= ~0b00000100;  // clear edge
+function doesNmiEdgeExist() {
+    return (PPU_FRAME_FLAGS & 0b00000100) !== 0;
+}
+
+function checkInterrupts() {
+  if (!doesNmiEdgeExist()) return;
+
+  nmiPending = (currentFrame);
 
   if (debugVideoTiming) {
-    const sl  = s[2] | 0;
-    const dot = s[3] | 0;
-    const frame = nmiPending | 0;
     console.debug(
-      `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
+      `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${currentFrame} sl=${currentScanline} dot=${currentDot}`,
       "color:black;background:lime;font-weight:bold;font-size:14px;"
     );
   }

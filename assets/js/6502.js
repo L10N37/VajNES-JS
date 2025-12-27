@@ -47,11 +47,11 @@ let P_VARIABLES = ['C', 'Z', 'I', 'D', 'V', 'N'];
 
 function resetCPU() {
   // clear Vblank and NMI edge on reset
-  PPU_FRAME_FLAGS &= ~0b00000100; // clear nmi edge
+  clearNmiEdge();
   nmiPending = false; // clear nmi timing latch
   cpuCycles = 0; // clear cpu cycles
   ppuCycles = 0; // clear ppu cycles
-  PPUSTATUS &= ~0x80; // clear PPUSTATUS register, contains vblank VBL flag
+  PPUSTATUS = 0; // clear PPUSTATUS register, contains vblank VBL flag
   VRAM_DATA = 0x00;
   writeToggle = 0; 
   SHARED.VRAM.fill(0x00);  // doesn't happen on a real system, lets clear junk from VRAM though
@@ -75,7 +75,7 @@ function resetCPU() {
   CPUregisters.PC = lo | (hi << 8);;
 
   for (let index = 0; index < 7; index++) {
-  addCycles(1); // burn 7 cycles straight away (PPU 21 ticks in)
+  addCycles(1); // burn 7 cycles straight away (PPU 21 ticks in), don't pass the function 7 cycles at once - logic was hardcoded to 3 PPU ticks per addCycles function call
   }
 
   console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
@@ -5098,43 +5098,25 @@ function XAA_IMM() {
   addCycles(1);
 }
 
-// 1 = "behavior 1" (mask uses A&X)
-// 2 = "behavior 2" (mask uses X only)  <-- common on later RP2A03G
 function SHA_ABSY() {
-  // C1: opcode fetch
+  // C1: opcode
   addCycles(1);
 
-  // C2: low byte
+  // C2: lo
   const lo = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   addCycles(1);
 
-  // C3: high byte
+  // C3: hi
   const hi = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
   addCycles(1);
 
-  const base = (hi << 8) | lo;
-  const ea   = (base + CPUregisters.Y) & 0xFFFF;
-
-  const eaHi = (ea >> 8) & 0xFF;
-  const eaLo = ea & 0xFF;
-
-  // C4: dummy read from unwrapped address (6502 quirk)
-  checkReadOffset(((base & 0xFF00) | eaLo) & 0xFFFF);
-  addCycles(1);
-
-  // Value mask
-  const ax   = CPUregisters.A & CPUregisters.X;
-  const mask = ax & ((eaHi + 1) & 0xFF);
-
-  // *** THIS IS THE IMPORTANT PART ***
-  const writeHi   = eaHi & mask;
-  const writeAddr = ((writeHi << 8) | eaLo) & 0xFFFF;
-
-  checkWriteOffset(writeAddr, mask);
+  // C4: write (A & X & (high+1)) to EA
+  const base      = ((hi << 8) | lo) & 0xFFFF;
+  const address   = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  let value     = (CPUregisters.A & CPUregisters.X) & (((address >> 8) + 1) & 0xFF);
+  checkWriteOffset(address, value);
   addCycles(1);
 }
-
-
 
 // RP2A03G quirk profile (Variant A):
 // - Data written = (A & X) & (H_plus_1)
@@ -5873,9 +5855,9 @@ const opcodes = {
   },
   ALR: { immediate: { code: 0x4B, length: 2, pcIncrement: 2, func: ALR_IMM } },
   ARR: { immediate: { code: 0x6B, length: 2, pcIncrement: 2, func: ARR_IMM } },
-  AXA: {
-    absoluteY:  { code: 0x9F, length: 3, pcIncrement: 3, func: AXA_ABSY },  // 0x9F, 0x93 -- (SHA/AHX/AXA)
-    indirectY:  { code: 0x93, length: 2, pcIncrement: 2, func: AXA_INDY }
+  SHA: {
+    absoluteY:  { code: 0x9F, length: 3, pcIncrement: 3, func: SHA_ABSY },  // 0x9F, 0x93 -- (SHA/AHX/AXA)
+    indirectY:  { code: 0x93, length: 2, pcIncrement: 2, func: SHA_INDY }
   },
   XAA: { immediate: { code: 0x8B, length: 2, pcIncrement: 2, func: XAA_IMM } },
   LAS: { absoluteY: { code: 0xBB, length: 3, pcIncrement: 3, func: LAS_ABSY } },

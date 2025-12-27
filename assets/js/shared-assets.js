@@ -140,6 +140,11 @@
     cpuCycles: { get: () => SHARED.CLOCKS[0] | 0, set: v => { SHARED.CLOCKS[0] = (v|0); }, configurable: true },
     ppuCycles: { get: () => SHARED.CLOCKS[1] | 0, set: v => { SHARED.CLOCKS[1] = (v|0); }, configurable: true },
 
+    // scanline / dot / frame
+    currentScanline: { get: () => SHARED.SYNC[2] | 0, set: v => { SHARED.SYNC[2] = (v|0); }, configurable: true },
+    currentDot: { get: () => SHARED.SYNC[3] | 0, set: v => { SHARED.SYNC[3] = (v|0); }, configurable: true },
+    currentFrame: { get: () => SHARED.SYNC[4] | 0, set: v => { SHARED.SYNC[4] = (v|0); }, configurable: true },
+
     // packed event flags (Int32)
     nmiSuppression: { get: () => evtGet(EVT_NMI_SUPPRESS), set: v => evtSet(EVT_NMI_SUPPRESS, !!v), configurable: true },
     doNotSetVblank: { get: () => evtGet(EVT_DONT_SET_VBL), set: v => evtSet(EVT_DONT_SET_VBL, !!v), configurable: true },

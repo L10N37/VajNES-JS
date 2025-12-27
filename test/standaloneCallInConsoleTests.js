@@ -276,7 +276,7 @@ function testTimingReal() {
   console.debug(`PPU ticks=${localPPUTicks} Expected=${expectedTicks}`);
 
   console.debug("=== NMI latency ===");
-  nmiPending = true;
+  nmiPending = 0;
   runAndCheck("NOP + NMI (2+7)", 2 + 7);
 
   console.debug("=== Final totals ===");

@@ -6,11 +6,6 @@ const SYNC_SCANLINE = 2;
 const SYNC_DOT      = 3;
 const SYNC_FRAME    = 4;
 
-// ---- Shared setters (NO ATOMICS) ----
-const STORE_CURRENT_SCANLINE = v => { SHARED.SYNC[SYNC_SCANLINE] = v | 0; };
-const STORE_CURRENT_DOT      = v => { SHARED.SYNC[SYNC_DOT]      = v | 0; };
-const STORE_CURRENT_FRAME    = v => { SHARED.SYNC[SYNC_FRAME]    = v | 0; };
-
 // ---- Status bit helpers ----
 const CLEAR_VBLANK          = () => { PPUSTATUS &= ~0x80; };
 const SET_VBLANK            = () => { PPUSTATUS |=  0x80; };
@@ -675,19 +670,43 @@ function postRenderScanline(dot) {}
 function vblankStartScanline(dot) {
   if (!ppuInitDone) return;
 
+  function setNmiEdge(){
+    PPU_FRAME_FLAGS |= 0b00000100;
+  }
+
+  function clearNmiEdge(){
+    PPU_FRAME_FLAGS &= ~0b00000100;
+  }
+
+  function isNmiBitSet(){
+    return (PPUCTRL & 0x80) !== 0;
+  }
+
+  function isVblankBitSet() {
+    return (PPUSTATUS & 0x80) !== 0;
+ } 
+
+  // vblank signal might be rising
   if (dot === 0) {
-    PPU_FRAME_FLAGS |= 0b00000010;
-    if ((PPUCTRL & 0x80) !== 0) PPU_FRAME_FLAGS |= 0b00000100;
+    // PPU_FRAME_FLAGS |= 0b00000010; // # I think i was using bit 1 to track v blank at one stage, this is a spare bit (bit 1)
+    if (isNmiBitSet()){
+    setNmiEdge(); // for now, set the NMI edge based on the NMI bit in PPU Control Reg - no other conditions (like vblank = 1)
+    }
   }
 
   if (dot === 1) {
-    if (!doNotSetVblank) SET_VBLANK();
+    // yes, set vblank at dot 1 unconditionally (not based off bit 7 of PPUSTATUS being set)
+    // we can gate this with that check, but its not necessary. If the CPU did a $2002 (PPUSTATUS) read
+    // at dot zero, it clears the vblank bit (7) and thats checked after in both this dot (1) and dot 2
+    SET_VBLANK(); 
 
-    const vblankBitIsSet = (!PPUSTATUS & 0b10000000);
-    const nmiBitIsSet = (!PPUCTRL & 0x80);
-    if (nmiBitIsSet && !nmiSuppression && vblankBitIsSet) {
-      PPU_FRAME_FLAGS |= 0b00000100;
-    }
+    if (!isNmiBitSet()) clearNmiEdge();
+    if (doNotSetVblank) CLEAR_VBLANK();
+  }
+  // for NMI disabled at Vblank test
+  if (dot === 2){ 
+    if (doNotSetVblank) CLEAR_VBLANK();
+    if (!isNmiBitSet()) clearNmiEdge();
   }
 }
 
@@ -758,9 +777,9 @@ function startPPULoop() {
     while (!cpuStallFlag) {}
 
     for (let ticks = 0; ticks < 3; ticks++) {
-      STORE_CURRENT_FRAME(PPUclock.frame);
-      STORE_CURRENT_SCANLINE(PPUclock.scanline);
-      STORE_CURRENT_DOT(PPUclock.dot);
+      currentFrame = PPUclock.frame
+      currentScanline = PPUclock.scanline;
+      currentDot = PPUclock.dot;
 
       ppuTick();
       PPUclock.dot++;

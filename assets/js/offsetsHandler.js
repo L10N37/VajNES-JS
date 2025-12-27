@@ -288,27 +288,26 @@ function checkReadOffset(address) {
 
     switch (reg) {
       case 0x2002: {
-        const sl    = SHARED.SYNC[2] | 0;
-        const dot   = SHARED.SYNC[3] | 0;
-        const frame = SHARED.SYNC[4] | 0;
 
-        if (sl === 241 && dot === 0) {
+        if (currentScanline === 241 && currentDot === 0) {
           doNotSetVblank = true;
           nmiSuppression = true;
+          nmiPending = 0;
+          clearNmiEdge();
           if (debugVideoTiming) {
-            console.debug(`%c[NMI/VBL cancelled] frame=${frame} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot}`, "color:black;background:cyan;font-weight:bold;");
+            console.debug(`%c[NMI/VBL cancelled] frame=${currentFrame} cpu=${cpuCycles} ppu=${ppuCycles} sl=${currentScanline} dot=${currentDot}`, "color:black;background:cyan;font-weight:bold;");
           }
         }
 
-        if (sl === 241 && (dot === 1 || dot === 2)) {
+        if (currentScanline === 241 && (currentDot === 1 || currentDot === 2)) {
           if (debugVideoTiming) {
             console.debug(
-              `%c[VBL clear path] frame=${frame} cpu=${cpuCycles} ppu=${ppuCycles} sl=${sl} dot=${dot} ` +
-              `vblank=${(PPUSTATUS & 0x80) ? 1 : 0} nmiEdge=${(PPU_FRAME_FLAGS & 0b00000100) ? 1 : 0}`,
+              `%c[VBL clear path] frame=${currentFrame} cpu=${cpuCycles} ppu=${ppuCycles} sl=${currentScanline} dot=${currentDot} ` +
+              `vblank=${(PPUSTATUS & 0x80) ? 1 : 0} nmiEdge=${(doesNmiEdgeExist())}`,
               "color:black;background:cyan;font-weight:bold;"
             );
           }
-          PPU_FRAME_FLAGS &= ~0b00000100;
+          clearNmiEdge();
           nmiPending = 0;
           nmiSuppression = true;
         }
@@ -317,7 +316,7 @@ function checkReadOffset(address) {
         const stat     = PPUSTATUS & 0xFF;
         raw = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
 
-        const wasVBlank = (stat & 0x80) !== 0;
+        const wasVBlank = (stat & 0x80) !== 0; // # not used, why is it here 
         PPUSTATUS &= ~0x80;
 
         writeToggle = 0;

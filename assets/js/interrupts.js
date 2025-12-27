@@ -1,11 +1,8 @@
 // ======== Interrupts ======== 
 // https://www.nesdev.org/wiki/CPU_interrupts
-function serviceNMI() {
+function serviceNMI(){
 
-const sl    = SHARED.SYNC[2] | 0;
-const dot   = SHARED.SYNC[3] | 0;
-const frame = SHARED.SYNC[4] | 0;
-
+  clearNmiEdge();
   if (debugLogging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
   
 // nmiPending (NMI timing latch) now contains the frame it was generated
@@ -13,17 +10,22 @@ const frame = SHARED.SYNC[4] | 0;
 // i.e a test ROM created an NMI edge at 260/338, this armed at dot 0 of 261 ..but that's a new frame!
 // also exposed a frame counter bug, fixed.
 
-// extra guard,  needed?
-const inVBlank = 
-  (sl === 241 && dot >= 1) ||   // VBlank starts on scanline 241, dot 1
-  (sl >= 242 && sl <= 260);     // All of scanlines 242–260
-// temp logging , like most of it
-  if (nmiPending !== frame) {
+// you would think this would be a sensible guard, but it breaks passing tests in both accuracy coin and 'ppu_vbl_nmi.nes'
+const inVBlank = (currentScanline >= 241 && currentScanline <= 260);        // VBlank starts on scanline 241
+  
+  // temp logging , like most of it
+  if (nmiPending !== null && nmiPending !== currentFrame) {
     console.log(
-      `[NMI DEBUG] ppu=${ppuCycles} cpu=${cpuCycles} ` +
-      `sl=${sl} dot=${dot} frame=${frame}`
+      `[NMI DEBUG] ` +
+      `currentFrame=${currentFrame} ` +
+      `nmiLatchedFrame=${nmiPending} ` +
+      `cpu=${cpuCycles} ` +
+      `ppu=${ppuCycles} ` +
+      `sl=${currentScanline} ` +
+      `dot=${currentDot}`
     );
   }
+
 /*
 Had this NMI sneak through, past the suppression flag (do not set), so added nmiSuppression
 here as a final guard
@@ -34,7 +36,24 @@ here as a final guard
 [NMI VECTOR LOADED → PC=$e308] cpu=2767339 ppu=8302017 frame=92 sl=241 dot=9 interrupts.js:69:11
 Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no render) ppu-worker.js:99:11
 */
-  if (!nmiSuppression && (frame !== nmiPending + 1)){ // pointless frame check guard? 
+
+/*
+-> notty notty
+[NMI DEBUG] currentFrame=995 nmiLatchedFrame=994 cpu=29631760 ppu=88895280 sl=261 dot=4
+[NMI DEBUG] currentFrame=1011 nmiLatchedFrame=1010 cpu=30108251 ppu=90324753 sl=261 dot=5
+*/
+
+  /*
+  The 2nd guard here doesn't seem to matter for accuracy coin tests, but an NMI should definitely
+  occur within the frame it was generated in, you can see the above log which is from 'ppu_vbl_nmi.nes'
+  hence adding the guard back, the emulator at this stage gets to test 8 out of 10, failing test 8 which
+  is 'NMI off timing', though originally i was anding these gates instead of or'ing... whoops
+
+  The only video timing test which fails on accuracy coin is now nmi timing, which passes on the old suite mentioned above
+  (or the rom singles, which are mapper 0 and can be run individually)
+  */
+
+  if (!nmiSuppression || currentFrame != nmiPending){
   const pc = CPUregisters.PC & 0xFFFF;
 
   // Push PCH
@@ -77,12 +96,12 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
 
   if (debugVideoTiming){
   console.debug(
-    `%c[NMI VECTOR LOADED → PC=$${CPUregisters.PC.toString(16).padStart(4,"0")}] cpu=${cpuCycles} ppu=${ppuCycles} frame=${frame} sl=${sl} dot=${dot}`,
+    `%c[NMI VECTOR LOADED → PC=$${CPUregisters.PC.toString(16).padStart(4,"0")}] cpu=${cpuCycles} ppu=${ppuCycles} frame=${currentFrame} sl=${currentScanline} dot=${currentDot}`,
     "color:black;background:yellow;font-weight:bold;font-size:14px;"
   );
  }
 }
-
+nmiPending = 0;
 }
 
 function serviceIRQ() {
