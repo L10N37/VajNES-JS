@@ -52,8 +52,7 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
   The only video timing test which fails on accuracy coin is now nmi timing, which passes on the old suite mentioned above
   (or the rom singles, which are mapper 0 and can be run individually)
   */
-
-  if (!nmiSuppression || currentFrame != nmiPending){
+  // removed guard for nmi suppression here on the NMI handler (i.e. makes to NMI handler, but then cancel)
   const pc = CPUregisters.PC & 0xFFFF;
 
   // Push PCH
@@ -100,8 +99,8 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
     "color:black;background:yellow;font-weight:bold;font-size:14px;"
   );
  }
-}
-nmiPending = 0;
+
+
 }
 
 function serviceIRQ() {

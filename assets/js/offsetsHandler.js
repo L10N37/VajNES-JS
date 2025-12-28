@@ -444,7 +444,10 @@ function checkWriteOffset(address, value) {
   } else if (addr < 0x4000) {
     const reg = 0x2000 + (addr & 0x7);
 
-    const gateThis = (reg === 0x2000 || reg === 0x2001 || reg === 0x2005 || reg === 0x2006);
+    const gateThis =
+  (reg === 0x2000 || reg === 0x2001 || reg === 0x2003 ||
+   reg === 0x2004 || reg === 0x2005 || reg === 0x2006 || reg === 0x2007);
+
     if (gateThis && (cpuCycles < PPU_WRITE_GATE_CYCLES)) {
       cpuOpenBusFinalise(addr, value, codeNow, true);
       const busAfterGate = cpuOpenBus & 0xFF;
