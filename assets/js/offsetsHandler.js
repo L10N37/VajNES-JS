@@ -330,12 +330,20 @@ function checkReadOffset(address) {
 
       case 0x2004: {
 
-        //4: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering enabled) should always read $FF.
+        
         const visibleScanlines = currentScanline >= 0 && currentScanline <= 329;
         const ffDots = currentDot >=1 && currentDot <= 64;
-        if (visibleScanlines && ffDots) return 0xFF;
+        const renderingEnabled = (PPUMASK & 0b00011000) !== 0;
+        //4: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering enabled) should always read $FF.
+        if (visibleScanlines && ffDots && renderingEnabled) return 0xFF;
+        // 5: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering disabled) should do a regular read of $2004.
+        if (visibleScanlines && ffDots && !renderingEnabled) {
+        let oamAddr = OAMADDR & 0xFF;
+        let v = OAM[oamAddr];
+        return v & 0xFF;
+        }
 
-        let oamAddr = OAMADDR & 0xFF;      // your $2003-backed OAMADDR
+        let oamAddr = OAMADDR & 0xFF;
         let v = OAM[oamAddr];
 
         // Attribute byte of each sprite (02,06,0A,...): clear bits 2..4
