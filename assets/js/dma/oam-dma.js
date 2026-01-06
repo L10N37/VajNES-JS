@@ -24,7 +24,6 @@ function dmaTransfer(value) {
 
 const startCycle = (cpuCycles + 1) & 1;   // first cycle after the write
 DMA.pad = startCycle ? 2 : 1;             // odd start => 2, even start => 1
-
 }
 
 function dmaMicroStep() {
@@ -60,7 +59,7 @@ function dmaMicroStep() {
     // WRITE cycle
     checkWriteOffset(0x2004, DMA.tmp);
     DMA.addr = (DMA.addr + 1) & 0xFFFF;
-    DMA.index++;
+    DMA.index = (DMA.index + 1) & 0xFFFF;
     DMA.phase = "get";
     addCycles(1);
     //console.log( "  cpuCycles:", cpuCycles);

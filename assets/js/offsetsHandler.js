@@ -329,20 +329,13 @@ function checkReadOffset(address) {
       }
 
       case 0x2004: {
-        const a = OAMADDR & 0xFF;
-        let v = OAM[a] & 0xFF;
+        let oamAddr = OAMADDR & 0xFF;      // your $2003-backed OAMADDR
+        let v = OAM[oamAddr];
 
-        /*
-        // Attribute bytes: 0x02, 0x06, 0x0A, ... (a % 4 === 2)
-        if ((a % 4) === 2) {
-          v &= 0b11000011;
-          console.log(`attr addr=$${a.toString(16).padStart(2,'0')} val=$${v.toString(16).padStart(2,'0')}`);
-        }
-        */
+        // Attribute byte of each sprite (02,06,0A,...): clear bits 2..4
+        if ((oamAddr & 3) === 2) v &= 0xE3;
 
-        openBus.PPU = v;
-        raw = v;
-        return v;
+        return v & 0xFF;
       }
 
       case 0x2007: {
