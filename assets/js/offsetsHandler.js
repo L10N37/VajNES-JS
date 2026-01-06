@@ -329,6 +329,12 @@ function checkReadOffset(address) {
       }
 
       case 0x2004: {
+
+        //4: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering enabled) should always read $FF.
+        const visibleScanlines = currentScanline >= 0 && currentScanline <= 329;
+        const ffDots = currentDot >=1 && currentDot <= 64;
+        if (visibleScanlines && ffDots) return 0xFF;
+
         let oamAddr = OAMADDR & 0xFF;      // your $2003-backed OAMADDR
         let v = OAM[oamAddr];
 
