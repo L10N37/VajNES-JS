@@ -191,7 +191,7 @@ PPUCTRL
 PPUMASK
 PPUSTATUS
 OAMADDR
-OAMDATA
+OAMDATA -> # this is a PPU register name, causing confusion actually. We want all the OAM DMA stuff saved and restored, and in future DMC DMA stuff. We can save and restore this if we actually use the register to hold values
 SCROLL_X
 SCROLL_Y
 ADDR_HIGH
@@ -200,20 +200,7 @@ t_lo
 t_hi
 fineX
 
-
-When we click save state, we output all these variables data into a file, each variable will
-require either a marker, or a known offset as the beginning of the variable in the file, and a marker
-or offset to mark the end of the variables data, so that we can reload it.
-
-WHEN WE CLICK LOAD STATE, TOGGLE A BOOLEAN TO TRUE, i.e loadState.
-When that boolean is true, (check per cpu cycle) the emulator should know that a loadstate has occurred
-and that loadstate can be temporariy loaded into a variable and sorted through, and each variable will be 
-reset / loaded with the data/state from the file, on next CPU cycle the save state should be loaded.
-
-
-
 */
-
 
 // =====================================
 // SAVE STATE SAVE / LOAD DROPDOWN (RAW .state)
@@ -522,8 +509,8 @@ document.addEventListener("DOMContentLoaded", () => {
     chunks.push(buildSection("IRQP", bool1(typeof irqPending !== "undefined" ? irqPending : false)));
     chunks.push(buildSection("STAL", num32LE((typeof cpuStallFlag !== "undefined" ? cpuStallFlag : 0) >>> 0)));
 
-    chunks.push(buildSection("CPUB", num8((typeof cpuOpenBus !== "undefined" ? cpuOpenBus : 0) & 0xFF)));
-    chunks.push(buildSection("PPUB", num8((typeof ppuOpenBus !== "undefined" ? ppuOpenBus : 0) & 0xFF)));
+    chunks.push(buildSection("CPUB", num8((typeof openBus.CPU !== "undefined" ? openBus.CPU : 0) & 0xFF)));
+    chunks.push(buildSection("PPUB", num8((typeof openBus.PPU !== "undefined" ? openBus.PPU : 0) & 0xFF)));
     chunks.push(buildSection("RUNN", bool1(typeof cpuRunning !== "undefined" ? cpuRunning : true)));
 
     // PPU memory
@@ -642,8 +629,8 @@ document.addEventListener("DOMContentLoaded", () => {
         case "IRQP": irqPending = !!(payload[0] & 1); break;
         case "STAL": cpuStallFlag = bytesToU32LE(payload, 0) >>> 0; break;
 
-        case "CPUB": cpuOpenBus = payload[0] & 0xFF; break;
-        case "PPUB": ppuOpenBus = payload[0] & 0xFF; break;
+        case "CPUB": openBus.CPU = payload[0] & 0xFF; break;
+        case "PPUB": openBus.PPU = payload[0] & 0xFF; break;
         case "RUNN": cpuRunning = !!(payload[0] & 1); break;
 
         case "VRAM": {

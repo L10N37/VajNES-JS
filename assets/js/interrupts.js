@@ -3,7 +3,7 @@
 function serviceNMI(){
 
   clearNmiEdge();
-  if (debugLogging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
+  if (debug.logging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
   
 // nmiPending (NMI timing latch) now contains the frame it was generated
 // if the frame doesn't match the current frame, don't fire the NMI, it was generated on vblank boundaries <- this guard not required
@@ -93,14 +93,12 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
   addCycles(1);
 
-  if (debugVideoTiming){
+  if (debug.videoTiming){
   console.debug(
     `%c[NMI VECTOR LOADED → PC=$${CPUregisters.PC.toString(16).padStart(4,"0")}] cpu=${cpuCycles} ppu=${ppuCycles} frame=${currentFrame} sl=${currentScanline} dot=${currentDot}`,
     "color:black;background:yellow;font-weight:bold;font-size:14px;"
   );
  }
-
-
 }
 
 function serviceIRQ() {
@@ -169,25 +167,4 @@ function serviceIRQ() {
     console.log(`[IRQ] Stack pointer after push: 0x${CPUregisters.S.toString(16).padStart(2,'0')}`);
     console.log("[IRQ] -------------------------\n");
     */
-}
-
-// not an interrupt, get it TF out of the way for now #relocate
-// handle inline directly in 4014 case + calls in cpu-loop?
-
-// ===== OAM DMA ($4014) =====
-// Copies 256 bytes from CPU RAM page (value << 8) into PPU OAM.
-// Adds 513 cycles if CPU starts on odd cycle, 514 if even.
-// Microstepped: 1 CPU cycle per call (PPU +3 each).
-function dmaTransfer(value) {
-  const cur = SHARED.CLOCKS[0] ?? 0;
-
-  DMA.active = true;
-  DMA.page   = value & 0xFF;
-  DMA.addr   = (DMA.page << 8) | 0;
-  DMA.index  = 0;
-  DMA.tmp    = 0;
-  DMA.phase  = 0;
-
-  // If current CPU cycle is odd -> 1-cycle pad (total 513), else 2-cycle pad (total 514)
-  DMA.pad = (cur & 1) ? 1 : 2;
 }

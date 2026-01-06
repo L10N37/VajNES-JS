@@ -38,7 +38,7 @@ function breakHere(reason = "manual", ctx = {}) {
   if (!breakPending) {
     breakPending = true;
     if (Breakpoints.logOnBreak) {
-      debugLogging = true;
+      debug.logging = true;
       console.warn(
         `%c[BREAK] ${reason}`,
         "background:gold;color:black;font-weight:bold;padding:2px 6px;border-radius:4px;",

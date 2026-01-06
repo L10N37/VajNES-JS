@@ -39,7 +39,7 @@ function cpuOpenBusFinalise(addr, raw, op, isWrite) {
   raw  &= 0xFF;
   op   &= 0xFF;
 
-  const busBefore = cpuOpenBus & 0xFF;
+  const busBefore = openBus.CPU & 0xFF;
   const regn = _region(addr);
 
   let out = raw & 0xFF;
@@ -49,7 +49,7 @@ function cpuOpenBusFinalise(addr, raw, op, isWrite) {
   // ------------------------------------------------------------
   // RAM, PPU regs (as read by CPU), PRG-RAM, PRG-ROM
   if (regn === 0 || regn === 1 || regn === 4 || regn === 5) {
-    cpuOpenBus = out & 0xFF;
+    openBus.CPU = out & 0xFF;
     return out & 0xFF;
   }
 
@@ -57,24 +57,24 @@ function cpuOpenBusFinalise(addr, raw, op, isWrite) {
   // IO quirks
   // ------------------------------------------------------------
   if (regn === 2) {
-    // $4015 READ: return value may have open-bus-ish bit behaviour, BUT it does NOT drive cpuOpenBus.
+    // $4015 READ: return value may have open-bus-ish bit behaviour, BUT it does NOT drive openBus.CPU.
     // offsetsHandler.js should supply raw = apuRead($4015). Here we merge bit5 from bus.
     if (!isWrite && addr === 0x4015) {
       const merged = ((out & ~0x20) | (busBefore & 0x20)) & 0xFF;
-      // IMPORTANT: cpuOpenBus NOT updated
+      // IMPORTANT: openBus.CPU NOT updated
       return merged;
     }
 
     // $4016/$4017 READ: only bit0 is fresh; upper bits float from previous bus
     if (!isWrite && (addr === 0x4016 || addr === 0x4017)) {
       out = ((busBefore & 0xFE) | (out & 0x01)) & 0xFF;
-      cpuOpenBus = out & 0xFF;
+      openBus.CPU = out & 0xFF;
       return out & 0xFF;
     }
 
     // writes (including $4015 write) always drive bus
     // normal IO reads also drive bus with the returned value for that cycle
-    cpuOpenBus = out & 0xFF;
+    openBus.CPU = out & 0xFF;
     return out & 0xFF;
   }
 
@@ -97,17 +97,17 @@ function cpuOpenBusFinalise(addr, raw, op, isWrite) {
         out = busBefore & 0xFF;
       }
 
-      // IMPORTANT: EXP reads do NOT update cpuOpenBus
-      cpuOpenBus = busBefore & 0xFF;
+      // IMPORTANT: EXP reads do NOT update openBus.CPU
+      openBus.CPU = busBefore & 0xFF;
       return out & 0xFF;
     }
 
     // EXP writes: CPU is driving the data bus
-    cpuOpenBus = out & 0xFF;
+    openBus.CPU = out & 0xFF;
     return out & 0xFF;
   }
 
   // fallback (shouldn't hit)
-  cpuOpenBus = out & 0xFF;
+  openBus.CPU = out & 0xFF;
   return out & 0xFF;
 }

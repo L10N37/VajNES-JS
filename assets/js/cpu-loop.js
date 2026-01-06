@@ -13,50 +13,6 @@ const NES_H = 240;
 
 let code = 0x00; // current opcode now global for CPU openbus logic
 
-const DMA = {
-  active: false,
-  page:   0x00,
-  addr:   0x0000,
-  index:  0,     // 0..255
-  tmp:    0x00,
-  phase:  0,     // 0 = read, 1 = write
-  pad:    0      // 1 or 2 cycles
-};
-
-function dmaMicroStep() {
-  if (!DMA.active) return 0;
-
-  // ---- alignment pad (1 or 2 cycles) ----
-  if (DMA.pad > 0) {
-    DMA.pad--;
-    addCycles(1);
-    return 1;
-  }
-
-  // ---- finished ----
-  if (DMA.index >= 256) {
-    DMA.active = false;
-    return 0;
-  }
-
-  // ---- transfer ----
-  if (DMA.phase === 0) {
-    // READ cycle
-    DMA.tmp = checkReadOffset(DMA.addr) & 0xFF;
-    DMA.phase = 1;
-    addCycles(1);
-    return 1;
-  } else {
-    // WRITE cycle
-    checkWriteOffset(0x2004, DMA.tmp);
-    DMA.addr = (DMA.addr + 1) & 0xFFFF;
-    DMA.index++;
-    DMA.phase = 0;
-    addCycles(1);
-    return 1;
-  }
-}
-
 function clearNmiEdge(){
   PPU_FRAME_FLAGS &= ~0b00000100;
 }
@@ -70,7 +26,7 @@ function checkInterrupts() {
 
   nmiPending = (currentFrame);
 
-  if (debugVideoTiming) {
+  if (debug.videoTiming) {
     console.debug(
       `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${currentFrame} sl=${currentScanline} dot=${currentDot}`,
       "color:black;background:lime;font-weight:bold;font-size:14px;"
@@ -131,7 +87,7 @@ function _mainLoopRAF(now) {
   requestAnimationFrame(_mainLoopRAF);
 }
 
-// peek-only PRG read (does not touch cpuOpenBus / does not call checkReadOffset)
+// peek-only PRG read (does not touch openBus.CPU / does not call checkReadOffset)
 function peekPRG(addr){
   addr &= 0xFFFF;
   if (addr < 0x8000) return 0x00;
@@ -143,7 +99,7 @@ function peekPRG(addr){
 }
 
 window.step = function () {
-  debugLogging = false;
+  debug.logging = false;
   NoSignalAudio.setEnabled(false);
   if (!cpuRunning) return 0;
 
@@ -200,7 +156,7 @@ window.step = function () {
   // ---- handle interrupts ----
   // Only take NMI if it's pending *and not suppressed this vblank*
   if (nmiPending) {
-    if (debugVideoTiming) {
+    if (debug.videoTiming) {
       const s = SHARED.SYNC;
       console.debug(
         `%c[NMI handler entered] cpu=${cpuCycles} ppu=${ppuCycles} frame=${(s[4]|0)} sl=${(s[2]|0)} dot=${(s[3]|0)}`,

@@ -203,6 +203,7 @@ function evalSpritesForScanline(target, scanline) {
   const sprH   = is8x16 ? 16 : 8;
 
   let overflow = false;
+  // leave this as OAMADDR, do not force 0 here on PPU side, logic in addCycles function
   const startAddr = (OAMADDR & 0xFF);
 
   for (let m = 0; m < 64; m++) {

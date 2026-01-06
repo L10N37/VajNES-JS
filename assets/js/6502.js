@@ -36,7 +36,7 @@ let CPUregisters = {
   P: {
       C: 0,    // Carry
       Z: 0,    // Zero
-      I: 0,    // Interrupt Disable
+      I: 1,    // Interrupt Disable
       D: 0,    // Decimal Mode
       V: 0,    // Overflow
       N: 0     // Negative
@@ -56,6 +56,7 @@ function resetCPU() {
   writeToggle = 0; 
   SHARED.VRAM.fill(0x00);  // doesn't happen on a real system, lets clear junk from VRAM though
   systemMemory.fill(0x00); // may not happen on a real system, lets clear junk from RAM though
+  OAM.fill(0xFF);
   CPUregisters.A = 0x00;
   CPUregisters.X = 0x00;
   CPUregisters.Y = 0x00;
@@ -115,6 +116,16 @@ let alignmentDone = false;
 
 function addCycles(x) {
 
+  
+  // Visible scanlines only -> OAM address reset logic
+  // Fixes a few sprite evaluation emulation bugs
+  if (currentScanline >= 0 && currentScanline <= 239) {
+      // Sprite evaluation start
+      if (currentDot === 257 && (PPUMASK & 0x18)) {
+          OAMADDR = 0;
+      }
+  }
+
   cpuCycles += x;
 
   // Handle alignment offset (only once at startup/reset)
@@ -133,13 +144,13 @@ function addCycles(x) {
 
   ppuCycles += 3 * x;
 
-  if (decayTimer > 0) {
-    decayTimer--;
-    if (decayTimer === 0) {
-      ppuOpenBus = 0;
+  if (openBus.ppuDecayTimer > 0) {
+    openBus.ppuDecayTimer--;
+    if (openBus.ppuDecayTimer === 0) {
+      openBus.PPU = 0;
     }
   } else {
-    decayTimer = 1789772;
+    openBus.ppuDecayTimer = 1789772;
   }
 
   cpuStallFlag = true;
@@ -3087,7 +3098,7 @@ function NOP_ZPX() {
 function NOP_0x82(){
   // DOP / SKB #imm (illegal NOP)
   addCycles(1);
-  cpuOpenBus = checkReadOffset(CPUregisters.PC) & 0xFF; // real bus read
+  openBus.CPU = checkReadOffset(CPUregisters.PC) & 0xFF; // real bus read
   addCycles(1);                                           // second cycle for operand read
 }
 

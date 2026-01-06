@@ -1,15 +1,18 @@
-// offsetsHandler.js
-// CPU/PPU/APU read/write dispatch + OpenBus tests + T4 trace
 
-let debugLogging = false;
-let debugVideoTiming = false;
+let debug = {
+  oamDma: false,
+  logging: false,
+  videoTiming: false,
+  openBusTests: false,
+  openBusT4Trace: false
+};
 
-let debugOpenBusTests = false;
-let debugOpenBusT4Trace = false;
+let openBus = {
+    PPU: 0x00,
+    CPU: 0x00,
+    ppuDecayTimer: 0x00
+};
 
-let ppuOpenBus = 0x00;
-let cpuOpenBus = 0x00;
-let decayTimer = 0;
 breakPending = false;
 
 let writeToggle = 0;
@@ -26,7 +29,7 @@ function _pc(){ return (CPUregisters && typeof CPUregisters.PC === "number") ? (
 function _codeNow(){ return (typeof code === "number") ? (code & 0xFF) : 0xFF; }
 
 function obResult(testId, pass, msg) {
-  if (!debugOpenBusTests) return;
+  if (!debug.openBusTests) return;
   if (OB_DONE[testId]) return;
   OB_DONE[testId] = true;
 
@@ -46,7 +49,7 @@ const BUSLOG = {
 };
 
 function buslogPush(kind, pc, addr, busB, busA, raw, out, codeNow) {
-  if (!debugOpenBusT4Trace) return;
+  if (!debug.debugOpenBusT4Trace) return;
   const e = {
     kind,
     pc: pc & 0xFFFF,
@@ -63,7 +66,7 @@ function buslogPush(kind, pc, addr, busB, busA, raw, out, codeNow) {
 }
 
 function buslogDump(title, lastN=64) {
-  if (!debugOpenBusT4Trace) return;
+  if (!debug.debugOpenBusT4Trace) return;
   const count = Math.min(BUSLOG.n, lastN|0);
   console.log(`[OPENBUS BUSLOG] ${title} count=${count}`);
   const start = (BUSLOG.i - count + BUSLOG.max) % BUSLOG.max;
@@ -81,7 +84,7 @@ function buslogDump(title, lastN=64) {
 // prints immediately when bus becomes $82
 let _watch82Once = false;
 function watchBus82(pc, addr, busB, busA, raw, out, codeNow) {
-  if (!debugOpenBusT4Trace) return;
+  if (!debug.debugOpenBusT4Trace) return;
   if (_watch82Once) return;
 
   const bA = busA & 0xFF;
@@ -117,7 +120,7 @@ function t4Reset() {
 }
 
 function t4Push(kind, pc, addr, busB, raw, out, busA, codeNow) {
-  if (!debugOpenBusT4Trace) return;
+  if (!debug.debugOpenBusT4Trace) return;
   if (!T4.active) return;
   if (T4.events.length >= T4.max) return;
   T4.events.push({
@@ -133,11 +136,11 @@ function t4Push(kind, pc, addr, busB, raw, out, busA, codeNow) {
 }
 
 function t4Dump(reason) {
-  if (!debugOpenBusT4Trace) return;
+  if (!debug.debugOpenBusT4Trace) return;
 
   const curPC = _pc();
   const curCode = _codeNow();
-  const curBus = cpuOpenBus & 0xFF;
+  const curBus = openBus.CPU & 0xFF;
 
   console.log(
     `[OPENBUS T4 TRACE] reason=${reason} events=${T4.events.length} ` +
@@ -166,7 +169,7 @@ function t4Dump(reason) {
 
 // ----------------- OpenBus test checks -----------------
 function obCheckRead(addr, raw, out, busBefore, busAfter) {
-  if (!debugOpenBusTests) return;
+  if (!debug.openBusTests) return;
 
   const pc = _pc();
   const codeNow = _codeNow();
@@ -227,7 +230,7 @@ function obCheckRead(addr, raw, out, busBefore, busAfter) {
 }
 
 function obCheckWrite(addr, value, busBefore, busAfter) {
-  if (!debugOpenBusTests) return;
+  if (!debug.openBusTests) return;
 
   const pc = _pc();
   const codeNow = _codeNow();
@@ -275,7 +278,7 @@ function checkReadOffset(address) {
   const addr = address & 0xFFFF;
   bpCheckRead(addr);
 
-  const busBefore = cpuOpenBus & 0xFF;
+  const busBefore = openBus.CPU & 0xFF;
   const codeNow = _codeNow();
 
   let raw = 0x00;
@@ -294,13 +297,13 @@ function checkReadOffset(address) {
           nmiSuppression = true;
           nmiPending = 0;
           clearNmiEdge();
-          if (debugVideoTiming) {
+          if (debug.videoTiming) {
             console.debug(`%c[NMI/VBL cancelled] frame=${currentFrame} cpu=${cpuCycles} ppu=${ppuCycles} sl=${currentScanline} dot=${currentDot}`, "color:black;background:cyan;font-weight:bold;");
           }
         }
 
         if (currentScanline === 241 && (currentDot === 1 || currentDot === 2)) {
-          if (debugVideoTiming) {
+          if (debug.videoTiming) {
             console.debug(
               `%c[VBL clear path] frame=${currentFrame} cpu=${cpuCycles} ppu=${ppuCycles} sl=${currentScanline} dot=${currentDot} ` +
               `vblank=${(PPUSTATUS & 0x80) ? 1 : 0} nmiEdge=${(doesNmiEdgeExist())}`,
@@ -312,24 +315,35 @@ function checkReadOffset(address) {
           nmiSuppression = true;
         }
 
-        const obBefore = ppuOpenBus & 0xFF;
+        const obBefore = openBus.PPU & 0xFF;
         const stat     = PPUSTATUS & 0xFF;
         raw = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
 
-        const wasVBlank = (stat & 0x80) !== 0; // # not used, why is it here 
         PPUSTATUS &= ~0x80;
 
         writeToggle = 0;
         globalThis.writeToggle = writeToggle;
 
-        ppuOpenBus = raw;
+        openBus.PPU = raw;
         break;
       }
 
-      case 0x2004:
-        raw = OAM[OAMADDR & 0xFF] & 0xFF;
-        ppuOpenBus = raw;
-        break;
+      case 0x2004: {
+        const a = OAMADDR & 0xFF;
+        let v = OAM[a] & 0xFF;
+
+        /*
+        // Attribute bytes: 0x02, 0x06, 0x0A, ... (a % 4 === 2)
+        if ((a % 4) === 2) {
+          v &= 0b11000011;
+          console.log(`attr addr=$${a.toString(16).padStart(2,'0')} val=$${v.toString(16).padStart(2,'0')}`);
+        }
+        */
+
+        openBus.PPU = v;
+        raw = v;
+        return v;
+      }
 
       case 0x2007: {
         const vv = VRAM_ADDR & 0x3FFF;
@@ -361,7 +375,7 @@ function checkReadOffset(address) {
         } else {
           const p = paletteIndex(vv);
           const palVal = PALETTE_RAM[p] & 0x3F;
-          ret = (ppuOpenBus & 0xC0) | palVal;
+          ret = (openBus.PPU & 0xC0) | palVal;
 
           const ntMirror = vv & 0x2FFF;
           if (ntMirror < 0x2000) {
@@ -386,25 +400,25 @@ function checkReadOffset(address) {
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
 
         raw = ret & 0xFF;
-        ppuOpenBus = raw;
+        openBus.PPU = raw;
         break;
       }
 
       default:
-        raw = ppuOpenBus & 0xFF;
+        raw = openBus.PPU & 0xFF;
         break;
     }
 
   } else if (addr < 0x4020) {
     if (addr === 0x4016 || addr === 0x4017) {
       const bit = joypadRead(addr) & 1;
-      raw = ((cpuOpenBus & 0xFE) | bit) & 0xFF;
+      raw = ((openBus.CPU & 0xFE) | bit) & 0xFF;
     } else {
       raw = apuRead(addr) & 0xFF;
     }
 
   } else if (addr < 0x6000) {
-    raw = cpuOpenBus & 0xFF;
+    raw = openBus.CPU & 0xFF;
 
   } else if (addr < 0x8000) {
     raw = (mapperNumber === 1)
@@ -418,7 +432,7 @@ function checkReadOffset(address) {
   }
 
   const out = cpuOpenBusFinalise(addr, raw, codeNow, false) & 0xFF;
-  const busAfter = cpuOpenBus & 0xFF;
+  const busAfter = openBus.CPU & 0xFF;
 
   buslogPush("RD", _pc(), addr, busBefore, busAfter, raw, out, codeNow);
   watchBus82(_pc(), addr, busBefore, busAfter, raw, out, codeNow);
@@ -435,7 +449,7 @@ function checkWriteOffset(address, value) {
   value &= 0xFF;
   bpCheckWrite(addr, value);
 
-  const busBefore = cpuOpenBus & 0xFF;
+  const busBefore = openBus.CPU & 0xFF;
   const codeNow = _codeNow();
 
   if (addr < 0x2000) {
@@ -444,13 +458,21 @@ function checkWriteOffset(address, value) {
   } else if (addr < 0x4000) {
     const reg = 0x2000 + (addr & 0x7);
 
+    // for reset flag behaviour, $2004 is left out in deliberation
     const gateThis =
-  (reg === 0x2000 || reg === 0x2001 || reg === 0x2003 ||
-   reg === 0x2004 || reg === 0x2005 || reg === 0x2006 || reg === 0x2007);
+    (reg === 0x2000 || // PPUCTRL
+    reg === 0x2001 || // PPUMASK
+    reg === 0x2002 || // PPUSTATUS
+    reg === 0x2003 || // OAMADDR
+    //reg === 0x2004 || // OAMDATA
+    reg === 0x2005 || // PPUSCROLL
+    reg === 0x2006 || // PPUADDR
+    reg === 0x2007);  // PPUDATA
+
 
     if (gateThis && (cpuCycles < PPU_WRITE_GATE_CYCLES)) {
       cpuOpenBusFinalise(addr, value, codeNow, true);
-      const busAfterGate = cpuOpenBus & 0xFF;
+      const busAfterGate = openBus.CPU & 0xFF;
 
       buslogPush("WR", _pc(), addr, busBefore, busAfterGate, value, value, codeNow);
       watchBus82(_pc(), addr, busBefore, busAfterGate, value, value, codeNow);
@@ -474,10 +496,23 @@ function checkWriteOffset(address, value) {
       case 0x2001: PPUMASK = value; break;
       case 0x2003: OAMADDR = value & 0xFF; break;
 
-      case 0x2004:
-        OAM[OAMADDR & 0xFF] = value & 0xFF;
-        OAMADDR = (OAMADDR + 1) & 0xFF;
+      case 0x2004: {
+        const slot = OAMADDR & 0xFF;
+        const v = value & 0xFF;
+
+        OAM[slot] = v;
+        OAMADDR = (OAMADDR + 1) & 0xFF; // auto-increment after write
+
+        if (debug.oamDma) {
+          // Filter out DMA fill noise ($FF)
+          if (v !== 0xFF) {
+            console.log(
+              `2004 write: OAM[${slot.toString(16).padStart(2,'0')}] = ${v.toString(16).padStart(2,'0')}`
+            );
+          }
+        }
         break;
+      }
 
       case 0x2005: {
         let t = ((t_hi << 8) | t_lo) & 0x7FFF;
@@ -532,12 +567,16 @@ function checkWriteOffset(address, value) {
         break;
     }
 
-    ppuOpenBus = value & 0xFF;
+    openBus.PPU = value & 0xFF;
 
-  } else if (addr === 0x4014) {
+  } 
+  
+  else if (addr === 0x4014) {
+
     dmaTransfer(value);
-
-  } else if (addr === 0x4016) {
+  } 
+  
+  else if (addr === 0x4016) {
     joypadWrite(addr, value);
 
   } else if (addr === 0x4017) {
@@ -558,7 +597,7 @@ function checkWriteOffset(address, value) {
   }
 
   cpuOpenBusFinalise(addr, value, codeNow, true);
-  const busAfter = cpuOpenBus & 0xFF;
+  const busAfter = openBus.CPU & 0xFF;
 
   buslogPush("WR", _pc(), addr, busBefore, busAfter, value, value, codeNow);
   watchBus82(_pc(), addr, busBefore, busAfter, value, value, codeNow);
@@ -620,7 +659,7 @@ function apuWrite(address, value) {
 function apuRead(address) {
   switch (address) {
     case 0x4015: return APUregister.SND_CHN & 0xFF;
-    default:     return cpuOpenBus & 0xFF;
+    default:     return openBus.CPU & 0xFF;
   }
 }
 
