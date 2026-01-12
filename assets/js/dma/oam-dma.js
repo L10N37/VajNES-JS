@@ -49,7 +49,6 @@ function dmaMicroStep() {
   // ---- transfer ----
   if (DMA.phase === "get") {
     // READ cycle
-    //console.log(DMA.addr.toString(32));
     DMA.tmp = checkReadOffset(DMA.addr) & 0xFF;
     DMA.phase = "put";
     addCycles(1);
