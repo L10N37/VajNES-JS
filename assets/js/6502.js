@@ -49,39 +49,86 @@ function resetCPU() {
   // clear Vblank and NMI edge on reset
   clearNmiEdge();
   nmiPending = false; // clear nmi timing latch
+
   cpuCycles = 0; // clear cpu cycles
   ppuCycles = 0; // clear ppu cycles
+
   PPUSTATUS = 0; // clear PPUSTATUS register, contains vblank VBL flag
   VRAM_DATA = 0x00;
-  writeToggle = 0; 
+  writeToggle = 0;
+
   SHARED.VRAM.fill(0x00);  // doesn't happen on a real system, lets clear junk from VRAM though
   systemMemory.fill(0x00); // may not happen on a real system, lets clear junk from RAM though
   OAM.fill(0xFF);
+
+  // clear CPU regs
   CPUregisters.A = 0x00;
   CPUregisters.X = 0x00;
   CPUregisters.Y = 0x00;
   CPUregisters.S = 0xFD; // unsure, should be $FC at reset, shouldn't matter
-  // clear CPU regs
   CPUregisters.P = {
-      C: 0,    // Carry
-      Z: 0,    // Zero
-      I: 1,    // Interrupt Disable, set this to disable straight away or IRQ's fire at ROM boot
-      D: 0,    // Decimal Mode
-      V: 0,    // Overflow
-      N: 0     // Negative
+    C: 0,    // Carry
+    Z: 0,    // Zero
+    I: 1,    // Interrupt Disable, set this to disable straight away or IRQ's fire at ROM boot
+    D: 0,    // Decimal Mode
+    V: 0,    // Overflow
+    N: 0     // Negative
   };
+
   // pull PC from reset vector
   const lo = checkReadOffset(0xFFFC);
   const hi = checkReadOffset(0xFFFD);
-  CPUregisters.PC = lo | (hi << 8);;
+  CPUregisters.PC = lo | (hi << 8);
 
+  // burn 7 cycles straight away (PPU 21 ticks in),
+  // don't pass the function 7 cycles at once - logic was hardcoded to 3 PPU ticks per addCycles function call
   for (let index = 0; index < 7; index++) {
-  addCycles(1); // burn 7 cycles straight away (PPU 21 ticks in), don't pass the function 7 cycles at once - logic was hardcoded to 3 PPU ticks per addCycles function call
+    addCycles(1);
   }
 
   console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
   console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
+
+  // PPU / shared
+  PPUCTRL = 0;
+  PPUMASK = 0;
+  PPUSTATUS = 0;
+  OAMADDR = 0;
+  OAMDATA = 0;
+  SCROLL_X = 0;
+  SCROLL_Y = 0;
+  ADDR_HIGH = 0;
+  ADDR_LOW = 0;
+  t_lo = 0;
+  t_hi = 0;
+  fineX = 0;
+
+  BG_ntByte = 0;
+  BG_atByte = 0;
+  BG_tileLo = 0;
+  BG_tileHi = 0;
+
+  PPU_FRAME_FLAGS = 0;
+
+  mapperNumber = 0;
+  CHR_BANK_LO = 0;
+  CHR_BANK_HI = 0;
+
+  MIRRORING_MODE = 0;
+
+  VRAM_ADDR = 0;
+
+  currentScanline = 0;
+  currentDot = 0;
+  currentFrame = 0;
+
+  nmiSuppression = 0;
+  doNotSetVblank = 0;
+  cpuStallFlag = 0;
+  chr8kModeFlag = 0;
 }
+
+resetButton.onclick = resetCPU;
 
 ////////////////////////// CPU Functions //////////////////////////
 // http://www.6502.org/tutorials/6502opcodes.html#ADC
@@ -98,25 +145,8 @@ function opCodeTest(){
   );
 }
 
-
-// ---------------------------------------------------------
-// CPU ↔ PPU alignment selector
-//
-// alignment = 1 → skip 0 PPU cycles  (default)
-// alignment = 2 → skip 1 PPU cycle   (PPU lags by 1 cycle)
-// alignment = 3 → skip 2 PPU cycles  (PPU lags by 2 cycles)
-// alignment = 4 → skip 3 PPU cycles  (PPU lags by 3 cycles)
-//
-// This simulates the 4 possible power-on phase relationships
-// between CPU and PPU (derived from ÷12 and ÷4 master clocks).
-// ---------------------------------------------------------
-let alignment = 1; 
-let ppuAlignmentOffset = (alignment - 1); 
-let alignmentDone = false;
-
 function addCycles(x) {
 
-  
   // Visible scanlines only -> OAM address reset logic
   // Fixes a few sprite evaluation emulation bugs
   if (currentScanline >= 0 && currentScanline <= 239) {
@@ -125,23 +155,20 @@ function addCycles(x) {
           OAMADDR = 0;
       }
   }
+  // delay rendering from time of write by a few dots
+  if (ppumaskPending &&
+    currentScanline === ppumaskApplyScanline &&
+    currentDot >= ppumaskApplyDot) {
+
+    // Clear old render bits & apply new ones
+    PPUMASK_effective = (PPUMASK_effective & ~0x18) | ppumaskPendingValue;
+
+    ppumaskPending = false;
+    renderingEnabled = true;
+}
+
 
   cpuCycles += x;
-
-  // Handle alignment offset (only once at startup/reset)
-  if (!alignmentDone) {
-    // Skip (alignment - 1) PPU cycles before starting
-    if (ppuAlignmentOffset > 0) {
-      let skip = Math.min(ppuAlignmentOffset, 3 * x);
-      ppuCycles += skip; 
-      ppuAlignmentOffset -= skip;
-
-      // If we still have PPU cycles left to skip, bail early
-      if (ppuAlignmentOffset > 0) return;
-    }
-    alignmentDone = true;
-  }
-
   ppuCycles += 3 * x;
 
   if (openBus.ppuDecayTimer > 0) {

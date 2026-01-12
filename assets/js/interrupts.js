@@ -15,7 +15,7 @@ const inVBlank = (currentScanline >= 241 && currentScanline <= 260);        // V
   
   // temp logging , like most of it
   if (nmiPending !== null && nmiPending !== currentFrame) {
-    console.log(
+    console.debug(
       `[NMI DEBUG] ` +
       `currentFrame=${currentFrame} ` +
       `nmiLatchedFrame=${nmiPending} ` +
@@ -109,10 +109,10 @@ function serviceIRQ() {
     // IRQ Debugging output
     // -------------------------
     /*
-    console.log("[IRQ] --- IRQ SERVICED ---");
-    console.log(`[IRQ] Current PC: 0x${pc.toString(16).padStart(4,'0')}`);
-    console.log(`[IRQ] Stack pointer before push: 0x${CPUregisters.S.toString(16).padStart(2,'0')}`);
-    console.log(`[IRQ] Flags before push: N=${CPUregisters.P.N} V=${CPUregisters.P.V} D=${CPUregisters.P.D} I=${CPUregisters.P.I} Z=${CPUregisters.P.Z} C=${CPUregisters.P.C}`);
+    console.debug("[IRQ] --- IRQ SERVICED ---");
+    console.debug(`[IRQ] Current PC: 0x${pc.toString(16).padStart(4,'0')}`);
+    console.debug(`[IRQ] Stack pointer before push: 0x${CPUregisters.S.toString(16).padStart(2,'0')}`);
+    console.debug(`[IRQ] Flags before push: N=${CPUregisters.P.N} V=${CPUregisters.P.V} D=${CPUregisters.P.D} I=${CPUregisters.P.I} Z=${CPUregisters.P.Z} C=${CPUregisters.P.C}`);
     */
    
     // Push PCH
@@ -162,9 +162,9 @@ function serviceIRQ() {
     // IRQ Debugging output end
     // -------------------------
     /*
-    console.log(`[IRQ] Vector memory: 0xFFFE=0x${lo.toString(16).padStart(2,'0')}, 0xFFFF=0x${hi.toString(16).padStart(2,'0')}`);
-    console.log(`[IRQ] Target PC after vector fetch: 0x${CPUregisters.PC.toString(16).padStart(4,'0')}`);
-    console.log(`[IRQ] Stack pointer after push: 0x${CPUregisters.S.toString(16).padStart(2,'0')}`);
-    console.log("[IRQ] -------------------------\n");
+    console.debug(`[IRQ] Vector memory: 0xFFFE=0x${lo.toString(16).padStart(2,'0')}, 0xFFFF=0x${hi.toString(16).padStart(2,'0')}`);
+    console.debug(`[IRQ] Target PC after vector fetch: 0x${CPUregisters.PC.toString(16).padStart(4,'0')}`);
+    console.debug(`[IRQ] Stack pointer after push: 0x${CPUregisters.S.toString(16).padStart(2,'0')}`);
+    console.debug("[IRQ] -------------------------\n");
     */
 }

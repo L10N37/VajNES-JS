@@ -130,7 +130,7 @@ document.addEventListener("DOMContentLoaded", () => {
         prgRam.fill(0, bytes.length);
       }
 
-      console.log("[SRAM] Loaded", bytes.length, "bytes");
+      console.debug("[SRAM] Loaded", bytes.length, "bytes");
     });
 
     document.body.appendChild(input);
@@ -760,7 +760,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      console.log("[SaveState] Loaded", bytes.length, "bytes");
+      console.debug("[SaveState] Loaded", bytes.length, "bytes");
 
       // Optional: if your emulator needs a one-tick "loadState" flag, set it here
       // loadState = true;

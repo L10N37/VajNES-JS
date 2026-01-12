@@ -18,6 +18,16 @@ breakPending = false;
 let writeToggle = 0;
 globalThis.writeToggle = writeToggle;
 
+/* -- for delaying rendering -- */
+let PPUMASK_effective = 0x00;
+let ppumaskPending = false;
+let ppumaskPendingValue = 0;
+let ppumaskApplyDot = 0;
+let ppumaskApplyScanline = 0;
+/* ---------------------------- */
+// global rendering mask based off when its set at the PPU as opposed to the instant write of bits 2/3 to the reg
+renderingEnabled = false;
+
 const OB_DONE = {
   T1:false, T2:false, T3:false, T4:false,
   T5:false, T6:false, T7:false, T8:false, T9:false
@@ -328,27 +338,43 @@ function checkReadOffset(address) {
         break;
       }
 
+      // OAMDATA
       case 0x2004: {
-
+        // accuracy coin is bouncing between different failures no matter what i try - fix one, fails another previously
+        // thought to be patched, using PPUOPENBUS test rom instead. Up to fail #11, "reading 3rd byte of a sprite should refresh
+        // all bits of decay value "
         
-        const visibleScanlines = currentScanline >= 0 && currentScanline <= 329;
-        const ffDots = currentDot >=1 && currentDot <= 64;
-        const renderingEnabled = (PPUMASK & 0b00011000) !== 0;
-        //4: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering enabled) should always read $FF.
-        if (visibleScanlines && ffDots && renderingEnabled) return 0xFF;
-        // 5: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering disabled) should do a regular read of $2004.
-        if (visibleScanlines && ffDots && !renderingEnabled) {
-        let oamAddr = OAMADDR & 0xFF;
-        let v = OAM[oamAddr];
-        return v & 0xFF;
-        }
-
         let oamAddr = OAMADDR & 0xFF;
         let v = OAM[oamAddr];
 
         // Attribute byte of each sprite (02,06,0A,...): clear bits 2..4
         if ((oamAddr & 3) === 2) v &= 0xE3;
 
+        // 241 - 261 $2004 behaviour
+        console.debug("Read sl:", currentScanline, "d:", currentDot);
+        
+        const visibleScanlines = currentScanline >= 0 && currentScanline <= 239;
+        const ffDots = currentDot >=1 && currentDot <= 64;
+        
+        const rendering = {
+        get enabled() {
+        return (PPUMASK_effective & 0x18) !== 0;
+        }
+        };
+
+        // 5: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering disabled) should do a regular read of $2004.
+        if (visibleScanlines && ffDots && !rendering.enabled ) {
+        //console.debug("5th condition");
+        return v & 0xFF;
+        }
+
+        //4: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering enabled) should always read $FF.
+        if (visibleScanlines && ffDots && renderingEnabled){
+        //console.debug("4th condition");
+        return 0xFF;
+        } 
+
+        console.debug("0b" + v.toString(2).padStart(8, '0'));
         return v & 0xFF;
       }
 
@@ -465,7 +491,7 @@ function checkWriteOffset(address, value) {
   } else if (addr < 0x4000) {
     const reg = 0x2000 + (addr & 0x7);
 
-    // for reset flag behaviour, $2004 is left out in deliberation
+    // for reset flag behaviour
     const gateThis =
     (reg === 0x2000 || // PPUCTRL
     reg === 0x2001 || // PPUMASK
@@ -489,6 +515,8 @@ function checkWriteOffset(address, value) {
     }
 
     switch (reg) {
+
+      // PPUCTRL
       case 0x2000: {
         const wasEN = (PPUCTRL & 0x80) !== 0;
         PPUCTRL = value;
@@ -500,18 +528,61 @@ function checkWriteOffset(address, value) {
         break;
       }
 
-      case 0x2001: PPUMASK = value; break;
+      // PPUMASK
+      // Toggling rendering takes effect approximately 3-4 dots after the write. This delay is required by Battletoads to avoid a crash.
+      // https://www.nesdev.org/wiki/PPU_registers#Rendering_control
+      case 0x2001: {
+          PPUMASK = value & 0xFF;
+
+          const newRenderBits = PPUMASK & 0x18;
+          const oldRenderBits = PPUMASK_effective & 0x18;
+
+          if (newRenderBits !== oldRenderBits) {
+              const delayDots = 3;
+
+              let dot = currentDot + delayDots;
+              let scanline = currentScanline;
+
+              if (dot >= 341) {
+                  dot -= 341;
+                  scanline = (scanline + 1) % 262;
+              }
+
+              ppumaskPending = true;
+              ppumaskPendingValue = newRenderBits;
+              ppumaskApplyDot = dot;
+              ppumaskApplyScanline = scanline;
+          }
+
+          break;
+      }
+
+      // OAMADDR
       case 0x2003: OAMADDR = value & 0xFF; break;
 
+      // OAMDATA
       case 0x2004: {
+        const visibleScanline = currentScanline >= 0 && currentScanline <= 239;
+
         const slot = OAMADDR & 0xFF;
         const v = value & 0xFF;
 
+        // Writes during rendering on a visible scanline:
+        // 6: increment by 4
+        // 7: don't write to OAM
+        // A: increment by 4, then AND with $FC
+        if (visibleScanline && renderingEnabled) {
+          OAMADDR = ((OAMADDR + 4) & 0xFF) & 0xFC;
+          OAM[slot] = v;
+          // console.debug("2004 write during rendering: sl", currentScanline, "dot", currentDot, "-> OAMADDR", OAMADDR.toString(16));
+          break;
+        }
+
+        // Normal behaviour (vblank, forced blank, or rendering disabled)
         OAM[slot] = v;
-        OAMADDR = (OAMADDR + 1) & 0xFF; // auto-increment after write
+        OAMADDR = (OAMADDR + 1) & 0xFF;
 
         if (debug.oamDma) {
-          // Filter out DMA fill noise ($FF)
           if (v !== 0xFF) {
             console.log(
               `2004 write: OAM[${slot.toString(16).padStart(2,'0')}] = ${v.toString(16).padStart(2,'0')}`
@@ -521,6 +592,7 @@ function checkWriteOffset(address, value) {
         break;
       }
 
+      // PPUSCROLL
       case 0x2005: {
         let t = ((t_hi << 8) | t_lo) & 0x7FFF;
         if (writeToggle === 0) {
@@ -541,12 +613,14 @@ function checkWriteOffset(address, value) {
         break;
       }
 
+      // PPUADDR
       case 0x2006:
         if (writeToggle === 0) { t_hi = value & 0x3F; writeToggle = 1; }
         else { t_lo = value & 0xFF; VRAM_ADDR = (((t_hi << 8) | t_lo) & 0x3FFF); writeToggle = 0; }
         globalThis.writeToggle = writeToggle;
-        break;
-
+        break;P
+        
+      // PPUDATA
       case 0x2007: {
         const v = VRAM_ADDR & 0x3FFF;
 
