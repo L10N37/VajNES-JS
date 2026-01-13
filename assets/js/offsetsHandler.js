@@ -340,42 +340,47 @@ function checkReadOffset(address) {
 
       // OAMDATA
       case 0x2004: {
-        // accuracy coin is bouncing between different failures no matter what i try - fix one, fails another previously
-        // thought to be patched, using PPUOPENBUS test rom instead. Up to fail #11, "reading 3rd byte of a sprite should refresh
-        // all bits of decay value "
-        
         let oamAddr = OAMADDR & 0xFF;
-        let v = OAM[oamAddr];
+        let v = OAM[oamAddr] & 0xFF;
 
-        // Attribute byte of each sprite (02,06,0A,...): clear bits 2..4
-        if ((oamAddr & 3) === 2) v &= 0xE3;
+        // Attribute byte (3rd byte of sprite): clear bits 2..4 on read
+        if ((oamAddr & 3) === 2) {
+          v &= 0xE3; // 1110 0011
+        }
 
-        // 241 - 261 $2004 behaviour
-        console.debug("Read sl:", currentScanline, "d:", currentDot);
-        
+        // Debug: where the read happened
+        //console.debug("Read sl:", currentScanline, "d:", currentDot);
+
         const visibleScanlines = currentScanline >= 0 && currentScanline <= 239;
-        const ffDots = currentDot >=1 && currentDot <= 64;
-        
+        const ffDots           = currentDot >= 1 && currentDot <= 64;
+
+        let result = v;
+        // although blargs ppu_open_bus will pass using the rendering flag (delayed by a few dots until PPU latches value)
+        // we throw error 6 on accuracy coin for 2004 behaviour, so use this live getter of PPUMASK rendering bits (pre PPU latch)
         const rendering = {
         get enabled() {
-        return (PPUMASK_effective & 0x18) !== 0;
+        return (PPUMASK & 0x18) !== 0;
         }
         };
 
-        // 5: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering disabled) should do a regular read of $2004.
-        if (visibleScanlines && ffDots && !rendering.enabled ) {
-        //console.debug("5th condition");
-        return v & 0xFF;
+        // 4 / 5 from blargg's rules:
+        // 5: visible 1–64, rendering *disabled* -> normal $2004 read
+        // 4: visible 1–64, rendering *enabled*  -> always $FF
+        if (visibleScanlines && ffDots) {
+          if (rendering.enabled) {
+            result = 0xFF;
+          } else {
+            // result already = v (regular read)
+           // 5: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering disabled) should do a regular read of $2004.
+          }
         }
 
-        //4: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering enabled) should always read $FF.
-        if (visibleScanlines && ffDots && renderingEnabled){
-        //console.debug("4th condition");
-        return 0xFF;
-        } 
+        // Latch to PPU open bus and refresh decay
+        openBus.PPU = result & 0xFF;
+        openBus.ppuDecayTimer = 1789772;
 
-        console.debug("0b" + v.toString(2).padStart(8, '0'));
-        return v & 0xFF;
+        console.debug("0b" + result.toString(2).padStart(8, "0"));
+        return result;
       }
 
       case 0x2007: {
@@ -563,6 +568,7 @@ function checkWriteOffset(address, value) {
       // OAMDATA
       case 0x2004: {
         const visibleScanline = currentScanline >= 0 && currentScanline <= 239;
+        const ffDots           = currentDot >= 1 && currentDot <= 64;
 
         const slot = OAMADDR & 0xFF;
         const v = value & 0xFF;
@@ -571,9 +577,9 @@ function checkWriteOffset(address, value) {
         // 6: increment by 4
         // 7: don't write to OAM
         // A: increment by 4, then AND with $FC
-        if (visibleScanline && renderingEnabled) {
+        if (visibleScanline && renderingEnabled && ffDots) {
           OAMADDR = ((OAMADDR + 4) & 0xFF) & 0xFC;
-          OAM[slot] = v;
+          //OAM[slot] = v;
           // console.debug("2004 write during rendering: sl", currentScanline, "dot", currentDot, "-> OAMADDR", OAMADDR.toString(16));
           break;
         }

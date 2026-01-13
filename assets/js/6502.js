@@ -127,7 +127,7 @@ function resetCPU() {
   cpuStallFlag = 0;
   chr8kModeFlag = 0;
 }
-
+// # add mapper variables for resetting in reset function
 resetButton.onclick = resetCPU;
 
 ////////////////////////// CPU Functions //////////////////////////

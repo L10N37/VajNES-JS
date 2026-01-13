@@ -199,7 +199,7 @@ ADDR_LOW
 t_lo
 t_hi
 fineX
-
+# add mapper variables and scanline / dot/ frame
 */
 
 // =====================================
