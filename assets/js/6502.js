@@ -149,12 +149,15 @@ function addCycles(x) {
 
   // Visible scanlines only -> OAM address reset logic
   // Fixes a few sprite evaluation emulation bugs
-  if (currentScanline >= 0 && currentScanline <= 239) {
-      // Sprite evaluation start
-      if (currentDot === 257 && (PPUMASK & 0x18)) {
-          OAMADDR = 0;
-      }
+  const isVisibleOrPre =
+    (currentScanline >= 0 && currentScanline <= 239) ||
+    currentScanline === 261;
+
+  if (renderingEnabled && isVisibleOrPre &&
+      currentDot >= 257 && currentDot <= 320) {
+    OAMADDR = 0;
   }
+
   // delay rendering from time of write by a few dots
   if (ppumaskPending &&
     currentScanline === ppumaskApplyScanline &&
