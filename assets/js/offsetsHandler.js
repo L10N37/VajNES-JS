@@ -18,15 +18,11 @@ breakPending = false;
 let writeToggle = 0;
 globalThis.writeToggle = writeToggle;
 
-/* -- for delaying rendering -- */
-let PPUMASK_effective = 0x00;
-let ppumaskPending = false;
-let ppumaskPendingValue = 0;
-let ppumaskApplyDot = 0;
-let ppumaskApplyScanline = 0;
-/* ---------------------------- */
-// global rendering mask based off when its set at the PPU as opposed to the instant write of bits 2/3 to the reg
-renderingEnabled = false;
+// now set in SAB with a spare bit, same alias - set on ppu worker after the delay
+// Toggling rendering takes effect approximately 3-4 dots after the write. This delay is required by Battletoads to avoid a crash.
+// would be smashing through test suites if i hadn't gone multicore, oof, cbf with a major refactor so some struggles with chunk by chunk on different cores
+// https://www.nesdev.org/wiki/PPU_registers#Rendering_control
+//renderingEnabled = false;
 
 const OB_DONE = {
   T1:false, T2:false, T3:false, T4:false,
@@ -286,7 +282,7 @@ function paletteIndex(addr14) {
 // ----------------- CPU read dispatch -----------------
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
-  bpCheckRead(addr);
+  if (Breakpoints.enabled) bpCheckRead(addr);
 
   const busBefore = openBus.CPU & 0xFF;
   const codeNow = _codeNow();
@@ -340,46 +336,45 @@ function checkReadOffset(address) {
 
       // OAMDATA
       case 0x2004: {
-        let oamAddr = OAMADDR & 0xFF;
+        const oamAddr = OAMADDR & 0xFF;
+
         let v = OAM[oamAddr] & 0xFF;
 
-        // Attribute byte (3rd byte of sprite): clear bits 2..4 on read
-        if ((oamAddr & 3) === 2) {
-          v &= 0xE3; // 1110 0011
-        }
+        // Rule 3: attribute byte read masks bits 2..4
+        if ((oamAddr & 3) === 2) v &= 0xE3;
 
-        // Debug: where the read happened
-        //console.debug("Read sl:", currentScanline, "d:", currentDot);
-
-        const visibleScanlines = currentScanline >= 0 && currentScanline <= 239;
-        const ffDots           = currentDot >= 1 && currentDot <= 64;
+        const scanline = currentScanline | 0;
+        const dot = currentDot | 0;
+        const visibleScanline = (scanline >= 0 && scanline <= 239);
 
         let result = v;
-        // although blargs ppu_open_bus will pass using the rendering flag (delayed by a few dots until PPU latches value)
-        // we throw error 6 on accuracy coin for 2004 behaviour, so use this live getter of PPUMASK rendering bits (pre PPU latch)
-        const rendering = {
-        get enabled() {
-        return (PPUMASK & 0x18) !== 0;
-        }
-        };
 
-        // 4 / 5 from blargg's rules:
-        // 5: visible 1–64, rendering *disabled* -> normal $2004 read
-        // 4: visible 1–64, rendering *enabled*  -> always $FF
-        if (visibleScanlines && ffDots) {
-          if (rendering.enabled) {
+        if (renderingEnabled && visibleScanline) {
+          if (dot >= 1 && dot <= 64) {
+            // Rule 4: forced $FF
             result = 0xFF;
-          } else {
-            // result already = v (regular read)
-           // 5: Reads from $2004 during PPU cycles 1 to 64 of a visible scanline (with rendering disabled) should do a regular read of $2004.
+          } else if (dot >= 65 && dot <= 256) {
+            // Rule 8: normal OAM read from the *current* OAM address
+            // (address is changing every other PPU cycle)
+            /*
+            console.debug(
+              `[RULE 8] dot=${dot} scanline=${scanline} OAMADDR=${oamAddr
+                .toString(16)
+                .padStart(2, "0")} value=0x${v.toString(16).padStart(2, "0")}`
+            );
+            */
+            // result already = v
+          } else if (dot >= 257 && dot <= 320) {
+            // Rule 9: forced $FF
+            result = 0xFF;
           }
+          // dots 321–340: simple read (v)
         }
 
-        // Latch to PPU open bus and refresh decay
         openBus.PPU = result & 0xFF;
         openBus.ppuDecayTimer = 1789772;
 
-        console.debug("0b" + result.toString(2).padStart(8, "0"));
+        //console.debug("0b" + result.toString(2).padStart(8, "0"));
         return result;
       }
 
@@ -485,7 +480,17 @@ const PPU_WRITE_GATE_CYCLES = 29658;
 function checkWriteOffset(address, value) {
   const addr = address & 0xFFFF;
   value &= 0xFF;
-  bpCheckWrite(addr, value);
+  if (Breakpoints.enabled) bpCheckWrite(addr, value);
+
+/*
+  if (addr === 0x2004 && (currentScanline === 261) && currentDot >= 315) {
+  console.log(
+    `DBG $2004 prerender near dot321: DOT=${currentDot} ` +
+    `MASKnow=${(PPUMASK & 0xFF).toString(16)} ` +
+    `MASKe=${(PPUMASK_effective & 0xFF).toString(16)}`
+  );
+}
+*/
 
   const busBefore = openBus.CPU & 0xFF;
   const codeNow = _codeNow();
@@ -498,8 +503,8 @@ function checkWriteOffset(address, value) {
 
     // for reset flag behaviour
     const gateThis =
-    (reg === 0x2000 || // PPUCTRL
-    reg === 0x2001 || // PPUMASK
+    (//reg === 0x2000 || // PPUCTRL
+    //reg === 0x2001 || // PPUMASK
     reg === 0x2002 || // PPUSTATUS
     reg === 0x2003 || // OAMADDR
     //reg === 0x2004 || // OAMDATA
@@ -534,32 +539,26 @@ function checkWriteOffset(address, value) {
       }
 
       // PPUMASK
-      // Toggling rendering takes effect approximately 3-4 dots after the write. This delay is required by Battletoads to avoid a crash.
-      // https://www.nesdev.org/wiki/PPU_registers#Rendering_control
       case 0x2001: {
-          PPUMASK = value & 0xFF;
+        const newMask = value & 0xFF;
 
-          const newRenderBits = PPUMASK & 0x18;
-          const oldRenderBits = PPUMASK_effective & 0x18;
+        // CPU-visible mask updates immediately
+        PPUMASK = newMask;
 
-          if (newRenderBits !== oldRenderBits) {
-              const delayDots = 3;
+        // Only rendering bits are delayed (bits 3–4)
+        const oldRender = PPUMASK_effective & 0x18;
+        const newRender = newMask & 0x18;
 
-              let dot = currentDot + delayDots;
-              let scanline = currentScanline;
+        if (oldRender !== newRender) {
+          const LATCH_DELAY_DOTS = 3;      // ~3 PPU dots
+          const now = ppuCycles | 0;
 
-              if (dot >= 341) {
-                  dot -= 341;
-                  scanline = (scanline + 1) % 262;
-              }
+          ppumaskPending = true;
+          ppumaskPendingValue = newMask;   // latch full byte
+          ppumaskApplyAtPpuCycles = (now + LATCH_DELAY_DOTS) | 0;
+        }
 
-              ppumaskPending = true;
-              ppumaskPendingValue = newRenderBits;
-              ppumaskApplyDot = dot;
-              ppumaskApplyScanline = scanline;
-          }
-
-          break;
+        break;
       }
 
       // OAMADDR
@@ -567,34 +566,23 @@ function checkWriteOffset(address, value) {
 
       // OAMDATA
       case 0x2004: {
-        const visibleScanline = currentScanline >= 0 && currentScanline <= 239;
-        const ffDots           = currentDot >= 1 && currentDot <= 64;
-
-        const slot = OAMADDR & 0xFF;
+        const slotBefore = OAMADDR & 0xFF;
         const v = value & 0xFF;
 
-        // Writes during rendering on a visible scanline:
-        // 6: increment by 4
-        // 7: don't write to OAM
-        // A: increment by 4, then AND with $FC
-        if (visibleScanline && renderingEnabled && ffDots) {
-          OAMADDR = ((OAMADDR + 4) & 0xFF) & 0xFC;
-          //OAM[slot] = v;
-          // console.debug("2004 write during rendering: sl", currentScanline, "dot", currentDot, "-> OAMADDR", OAMADDR.toString(16));
-          break;
+        const isVisible   = currentScanline >= 0 && currentScanline <= 239;
+        const isPreRender = currentScanline === 261;
+
+        // === PASS TEST 6/7/A RULES ===
+        // Only block when rendering is enabled AND on render lines.
+        if (renderingEnabled && (isVisible || isPreRender)) {
+          // MUST clear low 2 bits (Test A requirement)
+          OAMADDR = ((OAMADDR + 4) & 0xFC) & 0xFF;
+          break; // do NOT write OAM
         }
 
-        // Normal behaviour (vblank, forced blank, or rendering disabled)
-        OAM[slot] = v;
+        // Normal behavior when rendering disabled OR not in render lines:
+        OAM[slotBefore] = v;
         OAMADDR = (OAMADDR + 1) & 0xFF;
-
-        if (debug.oamDma) {
-          if (v !== 0xFF) {
-            console.log(
-              `2004 write: OAM[${slot.toString(16).padStart(2,'0')}] = ${v.toString(16).padStart(2,'0')}`
-            );
-          }
-        }
         break;
       }
 

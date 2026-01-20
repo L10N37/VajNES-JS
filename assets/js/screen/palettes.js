@@ -2,6 +2,7 @@
 // - nesClassic (hardware‑approximation / neutral)
 // - fceuxDefault (FCEUX default palette)
 // - smc2005 (mildly saturated "Nintendo Power" style)
+// - all FBX palette files were converted into HTML RGBA values (...this might seem a little obvious :P)
 
 window.PALETTES = {
     nesClassic: {
@@ -104,17 +105,14 @@ window.PALETTES = {
     0x04: "#590D61", 0x05: "#5E0A1F", 0x06: "#551100", 0x07: "#3D2700",
     0x08: "#233E00", 0x09: "#004B00", 0x0A: "#004E00", 0x0B: "#00461F",
     0x0C: "#00395C", 0x0D: "#000000", 0x0E: "#000000", 0x0F: "#000000",
-
     0x10: "#B2B2B2", 0x11: "#1A53D1", 0x12: "#4835EE", 0x13: "#7123EC",
     0x14: "#9A1EB7", 0x15: "#A51E62", 0x16: "#9D3705", 0x17: "#825400",
     0x18: "#607100", 0x19: "#298400", 0x1A: "#038B00", 0x1B: "#008240",
     0x1C: "#017690", 0x1D: "#000000", 0x1E: "#000000", 0x1F: "#000000",
-
     0x20: "#FFFFFF", 0x21: "#63ADFD", 0x22: "#908AFE", 0x23: "#B977FC",
     0x24: "#E771FE", 0x25: "#F76FC9", 0x26: "#F5836A", 0x27: "#DD9C29",
     0x28: "#BDB807", 0x29: "#84D107", 0x2A: "#5BDC3B", 0x2B: "#48D77D",
     0x2C: "#4BCDCD", 0x2D: "#555555", 0x2E: "#000000", 0x2F: "#000000",
-
     0x30: "#FFFFFF", 0x31: "#C4E3FE", 0x32: "#D7D5FE", 0x33: "#E6CDFE",
     0x34: "#F9CAFE", 0x35: "#FEC9F0", 0x36: "#FED1C7", 0x37: "#F7DCAC",
     0x38: "#E8E89C", 0x39: "#D1F29D", 0x3A: "#BFF4B1", 0x3B: "#B7F5CD",
@@ -274,7 +272,6 @@ fbxOriginalHardware: {
 
 };
 
-  
   window.currentPaletteName = "nesClassic";
   window.currentPalette = window.PALETTES[window.currentPaletteName];
   

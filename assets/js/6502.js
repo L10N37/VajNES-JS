@@ -126,7 +126,34 @@ function resetCPU() {
   doNotSetVblank = 0;
   cpuStallFlag = 0;
   chr8kModeFlag = 0;
+
+  ppumaskPrev = 0;
+  PPUMASK_effective = 0;
+  renderingEnabled = false;
+  renderingPrev = false;
+
+  ppumaskPending = false;
+  ppumaskPendingValue = 0;
+  ppumaskApplyAtPpuCycles = 0;
+
+  secOAMAddr = 0;
+  oamCorruptPending = false;
+  oamCorruptSeedRow = 0;
+
+  spriteOnlyPrimePending = false;
+
+  openBus.PPU = 0;
+  openBus.ppuDecayTimer = 0;
+
+  shiftRegister = 0;
+  shiftCount = 0;
+  mmc1Control = 0x0C;
+  mmc1CHR0 = 0;
+  mmc1CHR1 = 0;
+  mmc1PRG = 0;
+  prgRamEnable = true;
 }
+
 // # add mapper variables for resetting in reset function
 resetButton.onclick = resetCPU;
 
@@ -146,30 +173,6 @@ function opCodeTest(){
 }
 
 function addCycles(x) {
-
-  // Visible scanlines only -> OAM address reset logic
-  // Fixes a few sprite evaluation emulation bugs
-  const isVisibleOrPre =
-    (currentScanline >= 0 && currentScanline <= 239) ||
-    currentScanline === 261;
-
-  if (renderingEnabled && isVisibleOrPre &&
-      currentDot >= 257 && currentDot <= 320) {
-    OAMADDR = 0;
-  }
-
-  // delay rendering from time of write by a few dots
-  if (ppumaskPending &&
-    currentScanline === ppumaskApplyScanline &&
-    currentDot >= ppumaskApplyDot) {
-
-    // Clear old render bits & apply new ones
-    PPUMASK_effective = (PPUMASK_effective & ~0x18) | ppumaskPendingValue;
-
-    ppumaskPending = false;
-    renderingEnabled = true;
-}
-
 
   cpuCycles += x;
   ppuCycles += 3 * x;

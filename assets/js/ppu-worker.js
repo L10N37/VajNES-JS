@@ -749,6 +749,7 @@ function ppuTick() {
   }
   renderingPrev = renNow2;
 
+  // Odd-frame skip
   if (PPUclock.oddFrame && renNow2 &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
     PPUclock.scanline = 0;
@@ -758,7 +759,35 @@ function ppuTick() {
     return;
   }
 
+  // Per-dot behaviour
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
+
+  // --- Sprite evaluation OAMADDR behaviour (PPU-timed) ---
+  // Implements:
+  //  - Rule 8: during dots 65–256 of visible scanlines, reads from $2004
+  //    use the "current" OAM address which changes every other PPU cycle.
+  //  - OAMADDR reset: during dots 257–320 of visible + pre-render scanlines,
+  //    OAMADDR is reset to 0.
+  if (renNow2) {
+    const sl = PPUclock.scanline | 0;
+    const d  = PPUclock.dot | 0;
+
+    const visible   = (sl >= 0 && sl <= 239);
+    const preRender = (sl === 261);
+    const visOrPre  = visible || preRender;
+
+    // Approximate sprite evaluation: walk OAM every other dot
+    if (visible && d >= 65 && d <= 256) {
+      if ((d & 1) === 0) {
+        OAMADDR = (OAMADDR + 1) & 0xFF;
+      }
+    }
+
+    // Reset OAMADDR during 257–320 on visible and pre-render lines
+    if (visOrPre && d >= 257 && d <= 320) {
+      OAMADDR = 0;
+    }
+  }
 
   if (PPUclock.scanline === 260 && PPUclock.dot === 340) PPUclock.frame++;
 
@@ -778,11 +807,20 @@ function startPPULoop() {
     while (!cpuStallFlag) {}
 
     for (let ticks = 0; ticks < 3; ticks++) {
-      currentFrame = PPUclock.frame
+      currentFrame    = PPUclock.frame;
       currentScanline = PPUclock.scanline;
-      currentDot = PPUclock.dot;
+      currentDot      = PPUclock.dot;
 
       ppuTick();
+
+      // ---- PPUMASK delayed latch (cycle-based, never misses) ----
+      if (ppumaskPending && ((ppuCycles | 0) >= (ppumaskApplyAtPpuCycles | 0))) {
+        PPUMASK_effective = (ppumaskPendingValue & 0xFF);
+        ppumaskPending = false;
+
+        renderingEnabled = ((PPUMASK_effective & 0x18) !== 0);
+      }
+
       PPUclock.dot++;
     }
 

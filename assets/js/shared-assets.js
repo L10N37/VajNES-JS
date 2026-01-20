@@ -1,3 +1,4 @@
+// ======================= shared-assets.js =======================
 (() => {
   console.debug("[main] shared-assets.js loaded (NO ATOMICS)");
 
@@ -35,6 +36,16 @@
 
   SHARED.SAB_VRAM_ADDR = new SharedArrayBuffer(Uint16Array.BYTES_PER_ELEMENT);
   SHARED.VRAM_ADDR     = new Uint16Array(SHARED.SAB_VRAM_ADDR);
+
+  // ---- PPUMASK latch timing (SAB) ----
+  // Int32 layout:
+  // [0] ppumaskPending (0/1)
+  // [1] ppumaskPendingValue (low 8 bits used)
+  // [2] ppumaskApplyAtPpuCycles (absolute ppuCycles threshold)
+  // [3] reserved
+  SHARED.SAB_PPUMASK_TIMING = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 4);
+  SHARED.PPUMASK_TIMING     = new Int32Array(SHARED.SAB_PPUMASK_TIMING);
+  for (let i = 0; i < SHARED.PPUMASK_TIMING.length; i++) SHARED.PPUMASK_TIMING[i] = 0;
 
   // Space for all CHR banks (each iNES CHR bank = 8 KB)
   const CHR_BANK_BYTES  = 0x2000; // 8 KB per bank
@@ -85,11 +96,12 @@
   const make8  = v => (v & 0xFF);
   const make16 = v => (v & 0xFFFF);
 
-  // Event bit masks (same as your old packing)
-  const EVT_NMI_SUPPRESS   = 0b00000001;
-  const EVT_DONT_SET_VBL   = 0b00000100;
-  const EVT_CPU_STALL      = 0b00001000;
-  const EVT_CHR_8K_MODE    = 0b00100000;
+  // Event bit masks
+  const EVT_NMI_SUPPRESS      = 0b00000001;
+  const EVT_DONT_SET_VBL      = 0b00000100;
+  const EVT_CPU_STALL         = 0b00001000;
+  const EVT_RENDERING_ENABLED = 0b00010000;
+  const EVT_CHR_8K_MODE       = 0b00100000;
 
   function evtGet(mask) {
     return (SHARED.EVENTS[0] & mask) !== 0;
@@ -116,7 +128,9 @@
     t_hi:      { get: () => SHARED.PPU_REGS[10] | 0, set: v => { SHARED.PPU_REGS[10] = make8(v); },  configurable: true },
     fineX:     { get: () => SHARED.PPU_REGS[11] | 0, set: v => { SHARED.PPU_REGS[11] = make8(v); },  configurable: true },
 
-    // (12 unused in your mapping)
+    // slot 12 used: effective PPUMASK (latched)
+    PPUMASK_effective: { get: () => SHARED.PPU_REGS[12] | 0, set: v => { SHARED.PPU_REGS[12] = make8(v); }, configurable: true },
+
     VRAM_DATA: { get: () => SHARED.PPU_REGS[13] | 0, set: v => { SHARED.PPU_REGS[13] = make8(v); },  configurable: true },
 
     BG_ntByte: { get: () => SHARED.PPU_REGS[14] | 0, set: v => { SHARED.PPU_REGS[14] = make8(v); },  configurable: true },
@@ -142,13 +156,31 @@
 
     // scanline / dot / frame
     currentScanline: { get: () => SHARED.SYNC[2] | 0, set: v => { SHARED.SYNC[2] = (v|0); }, configurable: true },
-    currentDot: { get: () => SHARED.SYNC[3] | 0, set: v => { SHARED.SYNC[3] = (v|0); }, configurable: true },
-    currentFrame: { get: () => SHARED.SYNC[4] | 0, set: v => { SHARED.SYNC[4] = (v|0); }, configurable: true },
+    currentDot:      { get: () => SHARED.SYNC[3] | 0, set: v => { SHARED.SYNC[3] = (v|0); }, configurable: true },
+    currentFrame:    { get: () => SHARED.SYNC[4] | 0, set: v => { SHARED.SYNC[4] = (v|0); }, configurable: true },
+
+    // ---- ppumask latch timing (Int32 SAB) ----
+    ppumaskPending: {
+      get: () => ((SHARED.PPUMASK_TIMING[0] | 0) !== 0),
+      set: v  => { SHARED.PPUMASK_TIMING[0] = v ? 1 : 0; },
+      configurable: true
+    },
+    ppumaskPendingValue: {
+      get: () => (SHARED.PPUMASK_TIMING[1] | 0),
+      set: v  => { SHARED.PPUMASK_TIMING[1] = (v | 0); },
+      configurable: true
+    },
+    ppumaskApplyAtPpuCycles: {
+      get: () => (SHARED.PPUMASK_TIMING[2] | 0),
+      set: v  => { SHARED.PPUMASK_TIMING[2] = (v | 0); },
+      configurable: true
+    },
 
     // packed event flags (Int32)
     nmiSuppression: { get: () => evtGet(EVT_NMI_SUPPRESS), set: v => evtSet(EVT_NMI_SUPPRESS, !!v), configurable: true },
     doNotSetVblank: { get: () => evtGet(EVT_DONT_SET_VBL), set: v => evtSet(EVT_DONT_SET_VBL, !!v), configurable: true },
     cpuStallFlag:   { get: () => evtGet(EVT_CPU_STALL),    set: v => evtSet(EVT_CPU_STALL, !!v),    configurable: true },
+    renderingEnabled:{get: () => evtGet(EVT_RENDERING_ENABLED), set: v => evtSet(EVT_RENDERING_ENABLED, !!v), configurable: true },
     chr8kModeFlag:  { get: () => evtGet(EVT_CHR_8K_MODE),  set: v => evtSet(EVT_CHR_8K_MODE, !!v),  configurable: true },
   });
 
@@ -180,6 +212,8 @@
     SAB_PPU_REGS: SHARED.SAB_PPU_REGS,
     SAB_VRAM_ADDR: SHARED.SAB_VRAM_ADDR,
     SAB_SYNC: SHARED.SAB_SYNC,
+
+    SAB_PPUMASK_TIMING: SHARED.SAB_PPUMASK_TIMING,
 
     SAB_ASSETS: {
       CHR_ROM:     SHARED.SAB_CHR,
