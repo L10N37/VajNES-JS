@@ -1,3 +1,4 @@
+// use renderingNow flag where possible and replace all instances
 importScripts('/assets/js/ppu-worker-setup.js');
 console.debug('[PPU Worker init]');
 
@@ -285,6 +286,7 @@ function sampleSpritePixel(x) {
 }
 
 // ---- Background helpers ----
+// this never runs
 function reloadBGShifters(startOfScanline = false) {
   if (startOfScanline) {
     background.bgShiftLo = (background.tileLo & 0xFF) << 8;

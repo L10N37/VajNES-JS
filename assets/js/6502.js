@@ -110,7 +110,6 @@ function resetCPU() {
 
   PPU_FRAME_FLAGS = 0;
 
-  mapperNumber = 0;
   CHR_BANK_LO = 0;
   CHR_BANK_HI = 0;
 
@@ -140,8 +139,6 @@ function resetCPU() {
   oamCorruptPending = false;
   oamCorruptSeedRow = 0;
 
-  spriteOnlyPrimePending = false;
-
   openBus.PPU = 0;
   openBus.ppuDecayTimer = 0;
 
@@ -155,6 +152,8 @@ function resetCPU() {
 }
 
 // # add mapper variables for resetting in reset function
+// actually we can get a script down the track to scrap every variable in existence and reset them all / move the function to a separate file
+// it will scrape worker local vars but that shouldn't matter, NO NOT RESET MAPPER NUMBER VARIABLE
 resetButton.onclick = resetCPU;
 
 ////////////////////////// CPU Functions //////////////////////////

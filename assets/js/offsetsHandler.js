@@ -55,7 +55,7 @@ const BUSLOG = {
 };
 
 function buslogPush(kind, pc, addr, busB, busA, raw, out, codeNow) {
-  if (!debug.debugOpenBusT4Trace) return;
+  if (!debug.openBusT4Trace) return;
   const e = {
     kind,
     pc: pc & 0xFFFF,
@@ -72,7 +72,7 @@ function buslogPush(kind, pc, addr, busB, busA, raw, out, codeNow) {
 }
 
 function buslogDump(title, lastN=64) {
-  if (!debug.debugOpenBusT4Trace) return;
+  if (!debug.OpenBusT4Trace) return;
   const count = Math.min(BUSLOG.n, lastN|0);
   console.log(`[OPENBUS BUSLOG] ${title} count=${count}`);
   const start = (BUSLOG.i - count + BUSLOG.max) % BUSLOG.max;
@@ -90,7 +90,7 @@ function buslogDump(title, lastN=64) {
 // prints immediately when bus becomes $82
 let _watch82Once = false;
 function watchBus82(pc, addr, busB, busA, raw, out, codeNow) {
-  if (!debug.debugOpenBusT4Trace) return;
+  if (!debug.openBusT4Trace) return;
   if (_watch82Once) return;
 
   const bA = busA & 0xFF;
@@ -126,7 +126,7 @@ function t4Reset() {
 }
 
 function t4Push(kind, pc, addr, busB, raw, out, busA, codeNow) {
-  if (!debug.debugOpenBusT4Trace) return;
+  if (!debug.openBusT4Trace) return;
   if (!T4.active) return;
   if (T4.events.length >= T4.max) return;
   T4.events.push({
@@ -142,7 +142,7 @@ function t4Push(kind, pc, addr, busB, raw, out, busA, codeNow) {
 }
 
 function t4Dump(reason) {
-  if (!debug.debugOpenBusT4Trace) return;
+  if (!debug.openBusT4Trace) return;
 
   const curPC = _pc();
   const curCode = _codeNow();
@@ -612,7 +612,7 @@ function checkWriteOffset(address, value) {
         if (writeToggle === 0) { t_hi = value & 0x3F; writeToggle = 1; }
         else { t_lo = value & 0xFF; VRAM_ADDR = (((t_hi << 8) | t_lo) & 0x3FFF); writeToggle = 0; }
         globalThis.writeToggle = writeToggle;
-        break;P
+        break;
         
       // PPUDATA
       case 0x2007: {
