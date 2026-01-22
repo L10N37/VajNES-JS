@@ -531,9 +531,31 @@ function checkWriteOffset(address, value) {
         const wasEN = (PPUCTRL & 0x80) !== 0;
         PPUCTRL = value;
 
+        // --- IMPORTANT PART ---
+        // Bits 0–1 of $2000 are nametable select.
+        // They map to bits 10–11 of t, which are bits 2–3 of t_hi.
+        //
+        // t_hi bit mapping:
+        //   bit0 -> t8  (coarse Y)
+        //   bit1 -> t9  (coarse Y)
+        //   bit2 -> t10 (nametable bit 0)
+        //   bit3 -> t11 (nametable bit 1)
+        //   bit4 -> t12 (fine Y bit 0)
+        //   bit5 -> t13 (fine Y bit 1)
+        //   bit6 -> t14 (fine Y bit 2)
+        //   bit7 -> unused/0
+        //
+        // So: clear bits 2–3, then OR in new nametable bits.
+        t_hi = (t_hi & 0b11110011) | ((value & 0b00000011) << 2);
+        // ----------------------
+
+        function setNmiEdge() {
+          PPU_FRAME_FLAGS |= 0b00000100;
+        }
+
         const nowEN = (value & 0x80) !== 0;
         if (!wasEN && nowEN && (PPUSTATUS & 0x80)) {
-          PPU_FRAME_FLAGS |= 0b00000100;
+          setNmiEdge();
         }
         break;
       }
@@ -609,8 +631,16 @@ function checkWriteOffset(address, value) {
 
       // PPUADDR
       case 0x2006:
-        if (writeToggle === 0) { t_hi = value & 0x3F; writeToggle = 1; }
-        else { t_lo = value & 0xFF; VRAM_ADDR = (((t_hi << 8) | t_lo) & 0x3FFF); writeToggle = 0; }
+        if (writeToggle === 0) {
+          // high byte of t (bits 8–14)
+          t_hi = value & 0x3F;      // keep it 0b0yyyyNNY
+          writeToggle = 1;
+        } else {
+          // low byte of t (bits 0–7)
+          t_lo = value & 0xFF;
+          VRAM_ADDR = (((t_hi << 8) | t_lo) & 0x3FFF);
+          writeToggle = 0;
+        }
         globalThis.writeToggle = writeToggle;
         break;
         
