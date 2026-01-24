@@ -686,6 +686,7 @@ function checkWriteOffset(address, value) {
 
   } else if (addr === 0x4017) {
     APUregister.FRAME_CNT = value;
+    return openBus.CPU;
 
   } else if (addr < 0x4020) {
     apuWrite(addr, value);
@@ -842,19 +843,32 @@ function joypadWrite(address, value) {
 }
 
 function joypadRead(address) {
+  let state, poll;
+
   if (address === 0x4016) {
-    const strobe = joypadStrobe & 1;
-    const bit = strobe ? (pollController1() & 1) : (joypad1State & 1);
-    if (!strobe) joypad1State = ((joypad1State >> 1) | 0x80) & 0xFF;
-    return bit & 1;
+    state = joypad1State;
+    poll  = pollController1;
+  } else if (address === 0x4017) {
+    state = joypad2State;
+    poll  = pollController2;
+  } else {
+    return 0; // Not a joypad port
   }
 
-  if (address === 0x4017) {
-    const strobe = joypadStrobe & 1;
-    const bit = strobe ? (pollController2() & 1) : (joypad2State & 1);
-    if (!strobe) joypad2State = ((joypad2State >> 1) | 0x80) & 0xFF;
-    return bit & 1;
+  const strobe = joypadStrobe & 1;
+
+  // Bit coming from the controller shift register
+  const bit = strobe ? (poll() & 1) : (state & 1);
+
+  // Shift only when strobe = 0
+  if (!strobe) {
+    if (address === 0x4016) {
+      joypad1State = ((state >> 1) | 0x80) & 0xFF;
+    } else {
+      joypad2State = ((state >> 1) | 0x80) & 0xFF;
+    }
   }
 
-  return 0;
+  // Return full byte. Bit0 = controller, Bit6 = 1, others = 0.
+  return (bit & 1) | 0x40;
 }
