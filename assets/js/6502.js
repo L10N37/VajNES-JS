@@ -46,15 +46,17 @@ let CPUregisters = {
 let P_VARIABLES = ['C', 'Z', 'I', 'D', 'V', 'N'];
 
 function resetCPU() {
+
+  // reset shared PPU / mapper / timing state
+  resetSharedState();
+
+  // reset MMC1 mapper state
+  resetMMC1();
+
   // clear Vblank and NMI edge on reset
   clearNmiEdge();
   nmiPending = false; // clear nmi timing latch
 
-  cpuCycles = 0; // clear cpu cycles
-  ppuCycles = 0; // clear ppu cycles
-
-  PPUSTATUS = 0; // clear PPUSTATUS register, contains vblank VBL flag
-  VRAM_DATA = 0x00;
   writeToggle = 0;
 
   systemMemory.fill(0x00); // may not happen on a real system, lets clear junk from RAM though
@@ -67,7 +69,7 @@ function resetCPU() {
   CPUregisters.P = {
     C: 0,    // Carry
     Z: 0,    // Zero
-    I: 1,    // Interrupt Disable, set this to disable straight away or IRQ's fire at ROM boot
+    I: 1,    // Interrupt Disable
     D: 0,    // Decimal Mode
     V: 0,    // Overflow
     N: 0     // Negative
@@ -78,8 +80,7 @@ function resetCPU() {
   const hi = checkReadOffset(0xFFFD);
   CPUregisters.PC = lo | (hi << 8);
 
-  // burn 7 cycles straight away (PPU 21 ticks in),
-  // don't pass the function 7 cycles at once - logic was hardcoded to 3 PPU ticks per addCycles function call
+  // burn 7 cycles straight away (PPU 21 ticks in)
   for (let index = 0; index < 7; index++) {
     addCycles(1);
   }
@@ -87,51 +88,10 @@ function resetCPU() {
   console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
   console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
 
-  // PPU / shared
-  PPUCTRL = 0;
-  PPUMASK = 0;
-  PPUSTATUS = 0;
-  OAMADDR = 0;
-  OAMDATA = 0;
-  SCROLL_X = 0;
-  SCROLL_Y = 0;
-  ADDR_HIGH = 0;
-  ADDR_LOW = 0;
-  t_lo = 0;
-  t_hi = 0;
-  fineX = 0;
-
-  BG_ntByte = 0;
-  BG_atByte = 0;
-  BG_tileLo = 0;
-  BG_tileHi = 0;
-
-  PPU_FRAME_FLAGS = 0;
-
-  CHR_BANK_LO = 0;
-  CHR_BANK_HI = 0;
-
-  MIRRORING_MODE = 0;
-
-  VRAM_ADDR = 0;
-
-  currentScanline = 0;
-  currentDot = 0;
-  currentFrame = 0;
-
-  nmiSuppression = 0;
-  doNotSetVblank = 0;
-  cpuStallFlag = 0;
-  chr8kModeFlag = 0;
+  // ---- remaining CPU/PPU misc state NOT covered by resetSharedState/resetMMC1 ----
 
   ppumaskPrev = 0;
-  PPUMASK_effective = 0;
-  renderingEnabled = false;
   renderingPrev = false;
-
-  ppumaskPending = false;
-  ppumaskPendingValue = 0;
-  ppumaskApplyAtPpuCycles = 0;
 
   secOAMAddr = 0;
   oamCorruptPending = false;
@@ -139,17 +99,8 @@ function resetCPU() {
 
   openBus.PPU = 0;
   openBus.ppuDecayTimer = 0;
-
-  shiftRegister = 0;
-  shiftCount = 0;
-  mmc1Control = 0x0C;
-  mmc1CHR0 = 0;
-  mmc1CHR1 = 0;
-  mmc1PRG = 0;
-  prgRamEnable = true;
 }
 
-// # add mapper variables for resetting in reset function
 // actually we can get a script down the track to scrap every variable in existence and reset them all / move the function to a separate file
 // it will scrape worker local vars but that shouldn't matter, NO NOT RESET MAPPER NUMBER VARIABLE
 resetButton.onclick = resetCPU;

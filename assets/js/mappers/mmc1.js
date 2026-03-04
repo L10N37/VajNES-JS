@@ -326,3 +326,29 @@ function mmc1Init(prg, chr) {
 
   if (mmc1Debugging) console.debug("[MMC1] Initialized");
 }
+
+// --------------------------------------------------
+// Reset MMC1 mapper state
+// --------------------------------------------------
+function resetMMC1() {
+
+  // Clear PRG banks (do not reallocate)
+  PRG_BANK_LO.fill(0);
+  PRG_BANK_HI.fill(0);
+
+  // Serial shift register
+  shiftRegister = 0;
+  shiftCount = 0;
+
+  // MMC1 registers
+  mmc1Control = 0x0C;   // default after reset
+  mmc1CHR0 = 0;
+  mmc1CHR1 = 0;
+  mmc1PRG = 0;
+
+  // PRG RAM enabled by default
+  prgRamEnable = true;
+
+  // Debugging flag
+  mmc1Debugging = false;
+}

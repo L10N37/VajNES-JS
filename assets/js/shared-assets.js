@@ -101,3 +101,84 @@
   let cpuStallFlag = false;
   let renderingEnabled = false;
   let chr8kModeFlag = false;
+
+// --------------------------------------------------
+// Reset all shared state to power-on defaults
+// --------------------------------------------------
+function resetSharedState() {
+
+  // Clear framebuffers
+  paletteIndexFrame.fill(0);
+  rgbaFrame.fill(0);
+
+  // -----------------------------
+  // PPU registers
+  // -----------------------------
+  PPUCTRL = 0;
+  PPUMASK = 0;
+  PPUSTATUS = 0;
+  OAMADDR = 0;
+  OAMDATA = 0;
+
+  SCROLL_X = 0;
+  SCROLL_Y = 0;
+
+  ADDR_HIGH = 0;
+  ADDR_LOW  = 0;
+
+  t_lo  = 0;
+  t_hi  = 0;
+  fineX = 0;
+
+  PPUMASK_effective = 0;
+  VRAM_DATA = 0;
+
+  BG_ntByte = 0;
+  BG_atByte = 0;
+  BG_tileLo = 0;
+  BG_tileHi = 0;
+
+  PPU_FRAME_FLAGS = 0;
+
+  // -----------------------------
+  // Mapper / cartridge state
+  // -----------------------------
+  mapperNumber = 0;
+  CHR_BANK_LO = 0;
+  CHR_BANK_HI = 0;
+  MIRRORING_MODE = 0;
+
+  // -----------------------------
+  // VRAM address register
+  // -----------------------------
+  VRAM_ADDR = 0;
+
+  // -----------------------------
+  // Clock counters
+  // -----------------------------
+  cpuCycles = 0;
+  ppuCycles = 0;
+
+  // -----------------------------
+  // PPU timing
+  // -----------------------------
+  currentScanline = 0;
+  currentDot = 0;
+  currentFrame = 0;
+
+  // -----------------------------
+  // PPUMASK delayed timing
+  // -----------------------------
+  ppumaskPending = false;
+  ppumaskPendingValue = 0;
+  ppumaskApplyAtPpuCycles = 0;
+
+  // -----------------------------
+  // Event flags
+  // -----------------------------
+  nmiSuppression = false;
+  doNotSetVblank = false;
+  cpuStallFlag = false;
+  renderingEnabled = false;
+  chr8kModeFlag = false;
+}
