@@ -7,10 +7,6 @@ let perFrameStep = false;
 let nmiPending = null;
 let irqPending = 0;
 
-// NTSC Resolution
-const NES_W = 256;
-const NES_H = 240;
-
 let code = 0x00; // current opcode now global for CPU openbus logic
 
 function clearNmiEdge(){

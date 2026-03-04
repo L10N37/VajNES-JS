@@ -1,6 +1,3 @@
-// use renderingNow flag where possible and replace all instances
-importScripts('/assets/js/ppu-worker-setup.js');
-console.debug('[PPU Worker init]');
 
 // ---- Shared indices ----
 const SYNC_SCANLINE = 2;
@@ -14,9 +11,6 @@ const CLEAR_SPRITE0_HIT     = () => { PPUSTATUS &= ~0x40; };
 const SET_SPRITE0_HIT       = () => { PPUSTATUS |=  0x40; };
 const CLEAR_SPRITE_OVERFLOW = () => { PPUSTATUS &= ~0x20; };
 const SET_SPRITE_OVERFLOW   = () => { PPUSTATUS |=  0x20; };
-
-// ---- Geometry ----
-const NES_W = 256, NES_H = 240;
 
 // ---- PPUMASK bits ----
 const MASK_GREYSCALE      = 0x01;
@@ -562,6 +556,11 @@ function preRenderScanline(dot) {
 
   if (dot === 340) {
     if (!ppuInitDone) ppuInitDone = true;
+
+  /*    render frame    */
+  // console technically produces odds, then even lines one PPU cycle later
+  // not worth doing (previously did try it, unrequired logic) 
+  blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
   }
 }
 
@@ -805,8 +804,6 @@ function ppuTick() {
 
 // ---- Main PPU Loop ----
 function startPPULoop() {
-  while (1) {
-    while (!cpuStallFlag) {}
 
     for (let ticks = 0; ticks < 3; ticks++) {
       currentFrame    = PPUclock.frame;
@@ -825,7 +822,4 @@ function startPPULoop() {
 
       PPUclock.dot++;
     }
-
-    cpuStallFlag = false;
   }
-}

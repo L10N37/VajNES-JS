@@ -57,9 +57,7 @@ function resetCPU() {
   VRAM_DATA = 0x00;
   writeToggle = 0;
 
-  SHARED.VRAM.fill(0x00);  // doesn't happen on a real system, lets clear junk from VRAM though
   systemMemory.fill(0x00); // may not happen on a real system, lets clear junk from RAM though
-  OAM.fill(0xFF);
 
   // clear CPU regs
   CPUregisters.A = 0x00;
@@ -185,18 +183,12 @@ function addCycles(x) {
     openBus.ppuDecayTimer = 1789772;
   }
 
-  cpuStallFlag = true;
-  while (cpuStallFlag) {
-  }
-
-  // console technically produces odds, then even lines one PPU cycle later
-  // not worth doing (previously did try it, unrequired logic)
-  const NTSC_cpu_cycles_per_frame = 29780;
-  if (cpuCycles % NTSC_cpu_cycles_per_frame === 0) { 
-  blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
+  startPPULoop();
+  
   if (perFrameStep) pause();
-  }
+
 }
+
 /*
   NES Mappers That Use IRQs (Interrupt Requests):
 

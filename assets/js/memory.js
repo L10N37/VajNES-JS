@@ -1,5 +1,5 @@
 // 2KB Internal WRAM only ($0000–$07FF)
-let systemMemory = new Uint8Array(0x800);
+let systemMemory = new Uint8Array(2 * 1024);
 systemMemory.fill(0x00);
 
 // PRG-RAM (for battery-backed saves)
@@ -9,5 +9,13 @@ prgRam.fill(0x00);
 // PRG-ROM (32KB banked window, always $8000–$FFFF)
 let prgRom = new Uint8Array (32 * 1024);
 prgRom.fill(0x00);
-//prgRom[0x00] = 0x02; // magic test suite byte, might have to change it to implement KIL (pointless?!)
+
+// PPU / memory
+let VRAM        = new Uint8Array(2 * 1024);   // 2KB internal nametable RAM
+let OAM         = new Uint8Array(256);        // 256 bytes sprite OAM
+let PALETTE_RAM = new Uint8Array(32);         // 32 bytes ($3F00-$3F1F)
+
+// CHR ROM/RAM
+// Most common: 8KB CHR (1 bank). Some carts use 16KB or more via mappers.
+let CHR_ROM     = new Uint8Array(8 * 1024);
 
