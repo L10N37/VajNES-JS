@@ -46,6 +46,24 @@ const nextLine = {
 // ---- Sprite pipeline ----
 const SPR_MAX = 8;
 
+function presentFrame() {
+  blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
+
+  // count this presented frame
+  fpsCounter++;
+
+  // start the 1-second timer ONCE
+  if (!fpsTimerStarted) {
+    fpsTimerStarted = true;
+
+    setInterval(() => {
+      fps = fpsCounter;       // frames in the last second
+      fpsCounter = 0;         // reset for next second
+      fpsOverlay.textContent = `FPS: ${fps}`;
+    }, 1000);
+  }
+}
+
 function makeSpriteBuf() {
   return {
     count: 0,
@@ -556,11 +574,6 @@ function preRenderScanline(dot) {
 
   if (dot === 340) {
     if (!ppuInitDone) ppuInitDone = true;
-
-  /*    render frame    */
-  // console technically produces odds, then even lines one PPU cycle later
-  // not worth doing (previously did try it, unrequired logic) 
-  blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
   }
 }
 

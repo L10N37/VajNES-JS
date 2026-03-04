@@ -13,11 +13,16 @@
   let paletteIndexFrame = new Uint8Array(256 * 240);          // 1 byte per pixel (palette index)
   let rgbaFrame         = new Uint8ClampedArray(256 * 240 * 4); // RGBA8888 (4 bytes per pixel)
 
+  // fps display variables
+  let fps = 0;
+  let fpsCounter = 0;
+  let fpsTimerStarted = false;
+
   // -----------------------------
   // PPU registers (simple bytes)
   // -----------------------------
 
-  let PPUCTRL = 0;
+  let PPUCTRL = 0
   let PPUMASK = 0;
   let PPUSTATUS = 0;
   let OAMADDR = 0;

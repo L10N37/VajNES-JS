@@ -11,6 +11,12 @@
 // RF fuzz stays CPU-generated RGBA (your "real snow" look) and uploads while
 // waiting for the first real frame.
 //
+// FPS NOTE (IMPORTANT):
+// - We are NOT using SHARED anymore.
+// - FPS is computed from how many times blitNESFramePaletteIndex() is called.
+// - Timer starts on the first presented real frame after FPS overlay is enabled.
+// - No setInterval drift; uses performance.now() deltas.
+//
 // ----------------------------------------------------------------------------
 // RF TUNING KNOBS (EDIT THESE FIRST)
 // ----------------------------------------------------------------------------
@@ -49,6 +55,7 @@ const TEST_IMAGE_STATE = { enabled: false, img: null };
 
 const BASE_W = 256;
 const BASE_H = 240;
+
 let scaleFactor = Number(localStorage.getItem('scaleFactor') || 2);
 
 // --- Pixel Aspect options ----------------------------------------------------
@@ -108,6 +115,24 @@ let _rfPixels = 0;
 // For draw viewport (canvas is scaled via CSS, but we draw to its backing size)
 let _srcW = BASE_W;
 let _srcH = BASE_H;
+
+// --- FPS overlay (counts blit calls) ----------------------------------------
+const fpsOverlay = document.createElement("div");
+fpsOverlay.id = "fps-overlay";
+fpsOverlay.style.position = "absolute";
+fpsOverlay.style.top = "5px";
+fpsOverlay.style.right = "10px";
+fpsOverlay.style.color = "#0f0";
+fpsOverlay.style.fontFamily = "monospace";
+fpsOverlay.style.fontSize = "14px";
+fpsOverlay.style.background = "rgba(0,0,0,0.5)";
+fpsOverlay.style.padding = "2px 6px";
+fpsOverlay.style.borderRadius = "4px";
+fpsOverlay.style.display = "none";
+
+if (systemScreen) systemScreen.appendChild(fpsOverlay);
+
+let _fpsEnabled = false;
 
 function _glCompile(type, src) {
   const s = GL.createShader(type);
@@ -263,7 +288,7 @@ function initWebGL() {
   GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
   GL.texParameteri(GL.TEXTURE_2D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
 
-  // allocate palette (filled by _uploadPaletteTex())
+  // allocate palette (filled by _uploadPaletteTexIfDirty())
   const zeroPal = new Uint8Array(64 * 3);
   GL.texImage2D(GL.TEXTURE_2D, 0, GL.RGB, 64, 1, 0, GL.RGB, GL.UNSIGNED_BYTE, zeroPal);
 
@@ -328,8 +353,7 @@ function _glPresentRFFuzz() {
   GL.useProgram(_progRGBA);
   _glBindQuadAttribs(_aPosRGBA, _aUVRGBA);
 
-  // fuzz texture on unit 2 (we bind it but tell sampler 0 to avoid extra uniforms? no — just use unit 0 here)
-  // Keep it simple: bind fuzz on unit 0 for this program.
+  // bind fuzz on unit 0 for this program
   GL.activeTexture(GL.TEXTURE0);
   GL.bindTexture(GL.TEXTURE_2D, _texRFFuzz);
   GL.uniform1i(_uRgbTex, 0);
@@ -343,8 +367,6 @@ function _uploadIndexFrame(indexUint8Array, w, h) {
   if (!_glReady) return;
 
   if ((w|0) !== BASE_W || (h|0) !== BASE_H) {
-    // if you ever support non-256x240, handle resize here
-    // for now, keep strict for speed / simplicity
     w = BASE_W; h = BASE_H;
   }
 
@@ -486,7 +508,9 @@ if (screenButton) {
   if (grilleScreen)   grilleScreen.style.display = 'block';
   if (blackScreen)    blackScreen.style.display = 'block';
   if (scanlineScreen) scanlineScreen.style.display = 'block';
-  NoSignalAudio.setEnabled(true);
+  if (typeof NoSignalAudio !== 'undefined' && NoSignalAudio && typeof NoSignalAudio.setEnabled === 'function') {
+    NoSignalAudio.setEnabled(true);
+  }
 
   screenButton.addEventListener('click', () => {
     screenVisible = !screenVisible;
@@ -495,21 +519,11 @@ if (screenButton) {
     if (grilleScreen)   grilleScreen.style.display = screenVisible ? 'block' : 'none';
     if (blackScreen)    blackScreen.style.display = screenVisible ? 'block' : 'none';
     if (scanlineScreen) scanlineScreen.style.display = screenVisible ? 'block' : 'none';
-    NoSignalAudio.setEnabled(screenVisible);
+    if (typeof NoSignalAudio !== 'undefined' && NoSignalAudio && typeof NoSignalAudio.setEnabled === 'function') {
+      NoSignalAudio.setEnabled(screenVisible);
+    }
   });
 }
-
-// --- FPS mark (no Atomics here) ---------------------------------------------
-let _fpsLastFrame = -1;
-function _fpsMarkIfNewFrame() {
-  if (typeof SHARED === 'undefined' || !SHARED || !SHARED.SYNC) return;
-  const f = (SHARED.SYNC[4] | 0);
-  if (f !== _fpsLastFrame) {
-    _fpsLastFrame = f;
-    registerFrameUpdate();
-  }
-}
-window._fpsMarkIfNewFrame = _fpsMarkIfNewFrame;
 
 // ---------------------------------------------------------------------------
 // RF fuzz while nothing is rendered (CPU-generated noise like your 2D example)
@@ -570,8 +584,8 @@ function _generateRfNoiseU32(w, h, timeSec) {
   const band = new Float32Array(h);
   if (bandStr > 0) {
     for (let y = 0; y < h; y++) {
-      const t = (y / h) * Math.PI * 2 * bandFreq;
-      band[y] = 1.0 - bandStr * 0.5 + bandStr * (0.5 + 0.5 * Math.sin(t));
+      const tt = (y / h) * Math.PI * 2 * bandFreq;
+      band[y] = 1.0 - bandStr * 0.5 + bandStr * (0.5 + 0.5 * Math.sin(tt));
     }
   } else {
     for (let y = 0; y < h; y++) band[y] = 1.0;
@@ -634,12 +648,9 @@ function blitNESFrameRGBA(srcRGBA, w = BASE_W, h = BASE_H) {
 function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE_H) {
   if (!indexUint8Array || indexUint8Array.length !== width * height) return;
 
-  _fpsMarkIfNewFrame();
-
   if (!_firstRealFrameSeen) { stopAnimation(); _firstRealFrameSeen = true; }
   if (!_glReady) return;
 
-  // Upload palette (only when dirty / changed)
   // If palette becomes available later, rebuild once.
   if (!_palEverNonFallback && typeof window !== 'undefined' && window.currentPalette) {
     _rebuildPaletteRGB();
@@ -652,8 +663,6 @@ function blitNESFramePaletteIndex(indexUint8Array, width = BASE_W, height = BASE
 
   window._lastIndexFrame = indexUint8Array;
   window._lastIndexSize  = { w: width, h: height };
-
-  registerFrameUpdate();
 }
 
 window.blitNESFrameRGBA = blitNESFrameRGBA;
@@ -843,47 +852,24 @@ document.addEventListener('keydown', (ev) => {
 // run / pause shortcut key on r
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'r' && ev.key !== 'R') return;
-  if (!cpuRunning) run();
-  else pause();
+  if (typeof cpuRunning !== 'undefined' && typeof run === 'function' && typeof pause === 'function') {
+    if (!cpuRunning) run();
+    else pause();
+  }
 });
 
-// --- FPS overlay -------------------------------------------------------------
-const fpsOverlay = document.createElement("div");
-fpsOverlay.id = "fps-overlay";
-fpsOverlay.style.position = "absolute";
-fpsOverlay.style.top = "5px";
-fpsOverlay.style.right = "10px";
-fpsOverlay.style.color = "#0f0";
-fpsOverlay.style.fontFamily = "monospace";
-fpsOverlay.style.fontSize = "14px";
-fpsOverlay.style.background = "rgba(0,0,0,0.5)";
-fpsOverlay.style.padding = "2px 6px";
-fpsOverlay.style.borderRadius = "4px";
-fpsOverlay.style.display = "none";
-fpsOverlay.textContent = "FPS: 0";
-if (systemScreen) systemScreen.appendChild(fpsOverlay);
-
-let frameCount = 0;
-let fps = 0;
-
-setInterval(() => {
-  fps = frameCount;
-  frameCount = 0;
-  if (fpsOverlay.style.display !== "none") fpsOverlay.textContent = `FPS: ${fps}`;
-}, 1000);
-
-function registerFrameUpdate() { frameCount++; }
-window.registerFrameUpdate = registerFrameUpdate;
-
+// FPS toggle option (li:nth-child(5))
 const fpsOption = systemScreen && systemScreen.querySelector(".optionsBar li:nth-child(5)");
 if (fpsOption) {
   fpsOption.addEventListener("click", () => {
-    if (fpsOverlay.style.display === "none") {
-      fpsOverlay.style.display = "block";
-      fpsOverlay.textContent = "FPS: 0";
-    } else {
-      fpsOverlay.style.display = "none";
-    }
+    _fpsEnabled = !_fpsEnabled;
+    fpsOverlay.style.display = _fpsEnabled ? "block" : "none";
+
+    // reset timing so it starts on first frame after enabling
+    _fpsStarted = false;
+    _fpsFrames = 0;
+    _fpsValue = 0;
+    fpsOverlay.textContent = "FPS: 0";
   });
 }
 

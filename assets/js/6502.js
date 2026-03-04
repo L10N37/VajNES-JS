@@ -136,7 +136,13 @@ function addCycles(x) {
 
   startPPULoop();
   
+  // console technically produces odds, then even lines one PPU cycle later
+  // not worth doing (previously did try it, unrequired logic)
+  const NTSC_cpu_cycles_per_frame = 29780;
+  if (cpuCycles % NTSC_cpu_cycles_per_frame === 0) { 
+  presentFrame();
   if (perFrameStep) pause();
+  }
 
 }
 
