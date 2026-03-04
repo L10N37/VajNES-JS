@@ -18,242 +18,11 @@ breakPending = false;
 let writeToggle = 0;
 globalThis.writeToggle = writeToggle;
 
-// now set in SAB with a spare bit, same alias - set on ppu worker after the delay
 // Toggling rendering takes effect approximately 3-4 dots after the write. This delay is required by Battletoads to avoid a crash.
 // would be smashing through test suites if i hadn't gone multicore, oof, cbf with a major refactor so some struggles with chunk by chunk on different cores
 // https://www.nesdev.org/wiki/PPU_registers#Rendering_control
-//renderingEnabled = false;
 
-const OB_DONE = {
-  T1:false, T2:false, T3:false, T4:false,
-  T5:false, T6:false, T7:false, T8:false, T9:false
-};
-
-function _ob2(x){ return (x & 0xFF).toString(16).padStart(2, "0"); }
-function _ob4(x){ return (x & 0xFFFF).toString(16).padStart(4, "0"); }
-function _pc(){ return (CPUregisters && typeof CPUregisters.PC === "number") ? (CPUregisters.PC & 0xFFFF) : 0xFFFF; }
 function _codeNow(){ return (typeof code === "number") ? (code & 0xFF) : 0xFF; }
-
-function obResult(testId, pass, msg) {
-  if (!debug.openBusTests) return;
-  if (OB_DONE[testId]) return;
-  OB_DONE[testId] = true;
-
-  const style = pass
-    ? "color:#00ff66;background:#052612;font-weight:bold;padding:2px 6px;border-radius:4px;"
-    : "color:#ff3b3b;background:#2a0000;font-weight:bold;padding:2px 6px;border-radius:4px;";
-
-  console.log(`%c[OPENBUS ${testId} ${pass ? "PASS" : "FAIL"}] %c${msg}`, style, "color:inherit;background:inherit;");
-}
-
-// ----------------- bus driver ring buffer -----------------
-const BUSLOG = {
-  buf: new Array(256),
-  i: 0,
-  n: 0,
-  max: 256
-};
-
-function buslogPush(kind, pc, addr, busB, busA, raw, out, codeNow) {
-  if (!debug.openBusT4Trace) return;
-  const e = {
-    kind,
-    pc: pc & 0xFFFF,
-    addr: addr & 0xFFFF,
-    busB: busB & 0xFF,
-    busA: busA & 0xFF,
-    raw: raw & 0xFF,
-    out: out & 0xFF,
-    codeNow: codeNow & 0xFF
-  };
-  BUSLOG.buf[BUSLOG.i] = e;
-  BUSLOG.i = (BUSLOG.i + 1) % BUSLOG.max;
-  if (BUSLOG.n < BUSLOG.max) BUSLOG.n++;
-}
-
-function buslogDump(title, lastN=64) {
-  if (!debug.OpenBusT4Trace) return;
-  const count = Math.min(BUSLOG.n, lastN|0);
-  console.log(`[OPENBUS BUSLOG] ${title} count=${count}`);
-  const start = (BUSLOG.i - count + BUSLOG.max) % BUSLOG.max;
-  for (let k = 0; k < count; k++) {
-    const idx = (start + k) % BUSLOG.max;
-    const e = BUSLOG.buf[idx];
-    if (!e) continue;
-    console.log(
-      `[BUS] #${k} kind=${e.kind} pc=$${_ob4(e.pc)} addr=$${_ob4(e.addr)} ` +
-      `codeNow=$${_ob2(e.codeNow)} busB=$${_ob2(e.busB)} raw=$${_ob2(e.raw)} out=$${_ob2(e.out)} busA=$${_ob2(e.busA)}`
-    );
-  }
-}
-
-// prints immediately when bus becomes $82
-let _watch82Once = false;
-function watchBus82(pc, addr, busB, busA, raw, out, codeNow) {
-  if (!debug.openBusT4Trace) return;
-  if (_watch82Once) return;
-
-  const bA = busA & 0xFF;
-  const bB = busB & 0xFF;
-
-  if (bA !== 0x82) return;
-  if (bB === 0x82) return;
-
-  _watch82Once = true;
-  console.log(
-    `[OPENBUS WATCH] bus became $82 pc=$${_ob4(pc)} addr=$${_ob4(addr)} codeNow=$${_ob2(codeNow)} ` +
-    `busB=$${_ob2(busB)} raw=$${_ob2(raw)} out=$${_ob2(out)} busA=$${_ob2(busA)}`
-  );
-  buslogDump("recent history before/at bus->82", 96);
-}
-
-// ----------------- T4 trace -----------------
-const T4 = {
-  active:false,
-  entryPc:0,
-  entryBus:0,
-  wrote60:false,
-  events:[],
-  max:512
-};
-
-function t4Reset() {
-  T4.active = false;
-  T4.entryPc = 0;
-  T4.entryBus = 0;
-  T4.wrote60 = false;
-  T4.events.length = 0;
-}
-
-function t4Push(kind, pc, addr, busB, raw, out, busA, codeNow) {
-  if (!debug.openBusT4Trace) return;
-  if (!T4.active) return;
-  if (T4.events.length >= T4.max) return;
-  T4.events.push({
-    kind,
-    pc: pc & 0xFFFF,
-    addr: addr & 0xFFFF,
-    busB: busB & 0xFF,
-    raw: raw & 0xFF,
-    out: out & 0xFF,
-    busA: busA & 0xFF,
-    codeNow: codeNow & 0xFF
-  });
-}
-
-function t4Dump(reason) {
-  if (!debug.openBusT4Trace) return;
-
-  const curPC = _pc();
-  const curCode = _codeNow();
-  const curBus = openBus.CPU & 0xFF;
-
-  console.log(
-    `[OPENBUS T4 TRACE] reason=${reason} events=${T4.events.length} ` +
-    `nowPC=$${_ob4(curPC)} nowCode=$${_ob2(curCode)} nowBus=$${_ob2(curBus)} ` +
-    `entryPc=$${_ob4(T4.entryPc)} entryBus=$${_ob2(T4.entryBus)} wrote60=${T4.wrote60?1:0}`
-  );
-
-  for (let i = 0; i < T4.events.length; i++) {
-    const e = T4.events[i];
-    const tag = (e.kind === "RD") ? "T4_RD" : "T4_WR";
-    if (e.kind === "RD") {
-      console.log(
-        `[${tag}] #${i} pc=$${_ob4(e.pc)} addr=$${_ob4(e.addr)} codeNow=$${_ob2(e.codeNow)} ` +
-        `busB=$${_ob2(e.busB)} raw=$${_ob2(e.raw)} out=$${_ob2(e.out)} busA=$${_ob2(e.busA)}`
-      );
-    } else {
-      console.log(
-        `[${tag}] #${i} pc=$${_ob4(e.pc)} addr=$${_ob4(e.addr)} codeNow=$${_ob2(e.codeNow)} ` +
-        `busB=$${_ob2(e.busB)} val=$${_ob2(e.raw)} busA=$${_ob2(e.busA)}`
-      );
-    }
-  }
-
-  buslogDump("recent history at T4 end", 128);
-}
-
-// ----------------- OpenBus test checks -----------------
-function obCheckRead(addr, raw, out, busBefore, busAfter) {
-  if (!debug.openBusTests) return;
-
-  const pc = _pc();
-  const codeNow = _codeNow();
-
-  if (!OB_DONE.T1 && (addr === 0x5000 || addr === 0x4654)) {
-    const pass = (out & 0xFF) !== 0x00;
-    obResult("T1", pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$${_ob4(addr)} out=$${_ob2(out)} (expected != $00)`);
-  }
-
-  if (!OB_DONE.T2 && (addr === 0x5501 || addr === 0x4020 || addr === 0x5FFF)) {
-    const expect = (addr >>> 8) & 0xFF;
-    const pass = (out & 0xFF) === expect;
-    obResult("T2", pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$${_ob4(addr)} out=$${_ob2(out)} expectHi=$${_ob2(expect)}`);
-  }
-
-  if (!OB_DONE.T3 && addr === 0x5108) {
-    const expect = 0x50;
-    const pass = (out & 0xFF) === expect;
-    obResult("T3", pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$${_ob4(addr)} out=$${_ob2(out)} expect=$${_ob2(expect)} busBefore=$${_ob2(busBefore)}`);
-  }
-
-  if ((addr === 0x4016 || addr === 0x4017) && (!OB_DONE.T6 || !OB_DONE.T9)) {
-    const pass = ((out & 0xFE) === (busBefore & 0xFE));
-    const which = !OB_DONE.T6 ? "T6" : "T9";
-    obResult(which, pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$${_ob4(addr)} busBefore=$${_ob2(busBefore)} out=$${_ob2(out)} (expected upper bits from bus)`);
-  }
-
-  if (!OB_DONE.T7 && addr === 0x4015) {
-    const pass = (busAfter & 0xFF) === (busBefore & 0xFF);
-    obResult("T7", pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$4015 busBefore=$${_ob2(busBefore)} busAfter=$${_ob2(busAfter)} (expected unchanged)`);
-  }
-
-  const inT4 = (pc >= 0x5600 && pc < 0x6000);
-  const isFetch = ((addr & 0xFFFF) === (pc & 0xFFFF));
-
-  if (!OB_DONE.T4 && inT4 && !T4.active) {
-    T4.active = true;
-    T4.entryPc = pc & 0xFFFF;
-    T4.entryBus = busBefore & 0xFF;
-    T4.wrote60 = false;
-    buslogDump(`dump at T4 entry entryBus=$${_ob2(T4.entryBus)}`, 96);
-  }
-
-  if (T4.active && isFetch) {
-    t4Push("RD", pc, addr, busBefore, raw, out, busAfter, codeNow);
-  }
-
-  if (!OB_DONE.T4 && T4.active && !inT4) {
-    const pass = T4.wrote60 === true;
-    if (!pass) {
-      obResult("T4", false, `entryPc=$${_ob4(T4.entryPc)} entryBus=$${_ob2(T4.entryBus)} missing write($0056)=$60`);
-      t4Dump("missing_write_0056_60");
-    } else {
-      obResult("T4", true, `entryPc=$${_ob4(T4.entryPc)} entryBus=$${_ob2(T4.entryBus)} saw write($0056)=$60`);
-    }
-    t4Reset();
-  }
-}
-
-function obCheckWrite(addr, value, busBefore, busAfter) {
-  if (!debug.openBusTests) return;
-
-  const pc = _pc();
-  const codeNow = _codeNow();
-
-  if (T4.active) {
-    t4Push("WR", pc, addr, busBefore, value & 0xFF, value & 0xFF, busAfter, codeNow);
-  }
-
-  if (T4.active && (addr & 0xFFFF) === 0x0056 && (value & 0xFF) === 0x60) {
-    T4.wrote60 = true;
-  }
-
-  if (!OB_DONE.T8 && (addr & 0xFFFF) === 0x4015) {
-    const pass = (busAfter & 0xFF) === (value & 0xFF);
-    obResult("T8", pass, `pc=$${_ob4(pc)} code=$${_ob2(codeNow)} addr=$4015 value=$${_ob2(value)} busAfter=$${_ob2(busAfter)} (expected busAfter==value)`);
-  }
-}
 
 // ----------------- PPU helpers -----------------
 function chrRead(addr14) { return CHR_ROM[addr14 & 0x1FFF] & 0xFF; }
@@ -465,12 +234,7 @@ function checkReadOffset(address) {
   }
 
   const out = cpuOpenBusFinalise(addr, raw, codeNow, false) & 0xFF;
-  const busAfter = openBus.CPU & 0xFF;
 
-  buslogPush("RD", _pc(), addr, busBefore, busAfter, raw, out, codeNow);
-  watchBus82(_pc(), addr, busBefore, busAfter, raw, out, codeNow);
-
-  obCheckRead(addr, raw, out, busBefore, busAfter);
   return out;
 }
 
@@ -515,12 +279,7 @@ function checkWriteOffset(address, value) {
 
     if (gateThis && (cpuCycles < PPU_WRITE_GATE_CYCLES)) {
       cpuOpenBusFinalise(addr, value, codeNow, true);
-      const busAfterGate = openBus.CPU & 0xFF;
 
-      buslogPush("WR", _pc(), addr, busBefore, busAfterGate, value, value, codeNow);
-      watchBus82(_pc(), addr, busBefore, busAfterGate, value, value, codeNow);
-
-      obCheckWrite(addr, value, busBefore, busAfterGate);
       return;
     }
 
@@ -703,12 +462,6 @@ function checkWriteOffset(address, value) {
   }
 
   cpuOpenBusFinalise(addr, value, codeNow, true);
-  const busAfter = openBus.CPU & 0xFF;
-
-  buslogPush("WR", _pc(), addr, busBefore, busAfter, value, value, codeNow);
-  watchBus82(_pc(), addr, busBefore, busAfter, value, value, codeNow);
-
-  obCheckWrite(addr, value, busBefore, busAfter);
 }
 
 // ----------------- CPU RAM helpers -----------------
