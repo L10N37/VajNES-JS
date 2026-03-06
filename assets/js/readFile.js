@@ -5,7 +5,7 @@ let headerVersion = 1;
 function readFile(input, auto = false) {
   if (!auto) {
     const file = input.files[0];
-    if (!file || file.name.split('.').pop().toLowerCase() !== 'nes') {
+    if (!file || !file.name.toLowerCase().endsWith('.nes')) {
       console.error('Invalid file type. Please select a NES ROM file.');
       return;
     }
