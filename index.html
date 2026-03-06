@@ -32,27 +32,26 @@
 </head>
 <body>
   <header>
-    <div class="windows-bar">
-      <div class="file-dropdown">
-        <button class="dropbtn">File</button>
-        <div class="dropdown-content" id="file-upload-button">
-          <input class='fileMenuItems' type="file" onchange="readFile(this)">
-          <button class ='fileMenuItems' id="header-button">ROM Header Information</button>
-        </div>
+  <div class="windows-bar">
+    <div class="file-dropdown">
+      <button class="dropbtn">File</button>
+      <div class="dropdown-content" id="file-upload-button">
+        <input class="fileMenuItems" type="file" accept=".nes,application/octet-stream" onchange="readFile(this)">
+        <button class="fileMenuItems" id="header-button">ROM Header Information</button>
       </div>
-      <div>
-        <button class="dropbtn" id="clickedDisplay">Display</button>
-        <button class="dropbtn" id="clickedScreen"> Screen</button>
-        <button class="dropbtn" id="clickedTileView">Tile View</button>
-        <button class="dropbtn" id="dumpState">Dump</button>
-        <button class="dropbtn" id="open-disasm">DisAsm</button>
-        <button class="dropbtn" id="SRAM">SRAM</button>
-        <button class="dropbtn" id="saveState">States</button>
-        <button class="dropbtn" id="resetButton">Reset</button>
-      </div>
-
     </div>
-  </header>
+    <div>
+      <button class="dropbtn" id="clickedDisplay">Display</button>
+      <button class="dropbtn" id="clickedScreen"> Screen</button>
+      <button class="dropbtn" id="clickedTileView">Tile View</button>
+      <button class="dropbtn" id="dumpState">Dump</button>
+      <button class="dropbtn" id="open-disasm">DisAsm</button>
+      <button class="dropbtn" id="SRAM">SRAM</button>
+      <button class="dropbtn" id="saveState">States</button>
+      <button class="dropbtn" id="resetButton">Reset</button>
+    </div>
+  </div>
+</header>
 
   <!-- Tile Viewer Modal -->
   <div id="tileModal" class="TileViewModal" aria-hidden="true">
