@@ -27,7 +27,7 @@ Started in **2023** during a coding boot-camp and still actively evolving.
 - NMI timing **fails** here  
 - Passes the **older Blarg test**
 
-![Accuracy Test Results](https://drive.google.com/file/d/1hR9m3FRLQjUi159YZxEnxHxAWR4ViId4/view?usp=sharing)
+![Accuracy Test Results](https://drive.google.com/uc?export=view&id=1hR9m3FRLQjUi159YZxEnxHxAWR4ViId4)
 
 ---
 
