@@ -1,13 +1,3 @@
-/*
-
- ____  _           _       ____  ____  _   _ 
-|  _ \(_) ___ ___ | |__   |  _ \|  _ \| | | |
-| |_) | |/ __/ _ \| '_ \  | |_) | |_) | | | |
-|  _ <| | (_| (_) | | | | |  __/|  __/| |_| |
-|_| \_\_|\___\___/|_| |_| |_|   |_|    \___/ 
-
-
-*/
 
 // ---- Shared indices ----
 const SYNC_SCANLINE = 2;
@@ -33,7 +23,7 @@ let ppuInitDone = false;
 let nmiAtVblankEnd = false;
 
 // "rendering" = either BG or SPR enabled
-const renderingNow  = () => ((PPUMASK & 0x18) !== 0);
+const renderingNow  = () => ((PPUMASK & 0b000011000) !== 0);
 const bgEnabledNow  = () => ((PPUMASK & MASK_BG_ENABLE) !== 0);
 const sprEnabledNow = () => ((PPUMASK & MASK_SPR_ENABLE) !== 0);
 
@@ -264,6 +254,7 @@ function evalSpritesForScanline(target, scanline) {
 }
 
 function spriteShiftersTick() {
+
   for (let i = 0; i < spritesCur.count; i++) {
     if (spritesCur.xcnt[i] > 0) {
       spritesCur.xcnt[i] = (spritesCur.xcnt[i] - 1) & 0xFF;
@@ -271,7 +262,7 @@ function spriteShiftersTick() {
       spritesCur.lo[i] = ((spritesCur.lo[i] << 1) & 0xFF);
       spritesCur.hi[i] = ((spritesCur.hi[i] << 1) & 0xFF);
     }
-  }
+  } 
 }
 
 function sampleSpritePixel(x) {
@@ -580,6 +571,10 @@ function preRenderScanline(dot) {
     }
   }
 
+  if (dot === 339) {
+    spriteXForceZeroNextFrame = !renderingNow();
+  }
+
   if (dot === 340) {
     if (!ppuInitDone) ppuInitDone = true;
   }
@@ -636,7 +631,16 @@ function visibleScanline(dot) {
       background.atShiftHi = (background.atShiftHi << 1) & 0xFFFF;
     }
 
-    if (ren) spriteShiftersTick();
+    if (ren && !spriteXForceZeroNextFrame) {
+      spriteShiftersTick();
+    }
+    // Stale BG Shift register rule
+    else{
+      for (let i = 0; i < spritesCur.count; i++) {
+        spritesCur.xcnt[i] = 0;
+      }
+      spriteXForceZeroNextFrame = false;
+    }
   }
 
   if (ren && inFetch) {
@@ -668,7 +672,7 @@ function visibleScanline(dot) {
         background.tileHi = ppuBusRead(base) & 0xFF;
         BG_tileHi = background.tileHi;
 
-        if (dot === 328) {
+       if (dot === 328) {
           nextLine.t0.lo = background.tileLo;
           nextLine.t0.hi = background.tileHi;
           nextLine.t0.at = background.atByte & 0x03;
@@ -774,12 +778,12 @@ function ppuTick() {
   // Odd-frame skip
   if (PPUclock.oddFrame && renNow2 &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
-    PPUclock.scanline = 0;
-    PPUclock.dot = -1;
-    PPUclock.oddFrame = false;
-    nmiAtVblankEnd = false;
-    return;
-  }
+      PPUclock.scanline = 0;
+      PPUclock.dot = -1;
+      PPUclock.oddFrame = false;
+      nmiAtVblankEnd = false;
+      return;
+    }
 
   // Per-dot behaviour
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
