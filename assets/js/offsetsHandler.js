@@ -125,13 +125,6 @@ function checkReadOffset(address) {
           } else if (dot >= 65 && dot <= 256) {
             // Rule 8: normal OAM read from the *current* OAM address
             // (address is changing every other PPU cycle)
-            /*
-            console.debug(
-              `[RULE 8] dot=${dot} scanline=${scanline} OAMADDR=${oamAddr
-                .toString(16)
-                .padStart(2, "0")} value=0x${v.toString(16).padStart(2, "0")}`
-            );
-            */
             // result already = v
           } else if (dot >= 257 && dot <= 320) {
             // Rule 9: forced $FF

@@ -1,4 +1,3 @@
-let MIRRORING = null;
 let prgRamBattery = false;
 let headerVersion = 1;
 

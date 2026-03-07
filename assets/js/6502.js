@@ -1,29 +1,26 @@
-/* 
-first WIP version used a flat contiguous 64KB array for EVERYTHING, for mirroring we actually wrote to memory at
-all offsets, if writing to a mirror we ran code that then wrote to the base and all mirrors
+/*
 
-for reads, we could read any mirror and it always contained the same data as the base
-even with the UI needlessly being refreshed between every step, chewing through quite a few opcodes a second.
 
-after more research, apparently using separate arrays for VRAM, WRAM, PRG-ROM etc was a better approach, and just using 
-address folding so any reads/ writes to mirrors would just fold back down to the base address was just 'a better way'
+ ____    ______   ____     _____   __  __                          
+/\  _`\ /\__  _\ /\  _`\  /\  __`\/\ \/\ \                         
+\ \ \L\ \/_/\ \/ \ \ \/\_\\ \ \/\ \ \ \_\ \                        
+ \ \ ,  /  \ \ \  \ \ \/_/_\ \ \ \ \ \  _  \                       
+  \ \ \\ \  \_\ \__\ \ \L\ \\ \ \_\ \ \ \ \ \                      
+   \ \_\ \_\/\_____\\ \____/ \ \_____\ \_\ \_\                     
+    \/_/\/ /\/_____/ \/___/   \/_____/\/_/\/_/                     
+                                                                   
+                                                                   
+  ____  ______     __      ___         ____     ____    __  __     
+ /'___\/\  ___\  /'__`\  /'___`\      /\  _`\  /\  _`\ /\ \/\ \    
+/\ \__/\ \ \__/ /\ \/\ \/\_\ /\ \     \ \ \/\_\\ \ \L\ \ \ \ \ \   
+\ \  _``\ \___``\ \ \ \ \/_/// /__     \ \ \/_/_\ \ ,__/\ \ \ \ \  
+ \ \ \L\ \/\ \L\ \ \ \_\ \ // /_\ \     \ \ \L\ \\ \ \/  \ \ \_\ \ 
+  \ \____/\ \____/\ \____//\______/      \ \____/ \ \_\   \ \_____\
+   \/___/  \/___/  \/___/ \/_____/        \/___/   \/_/    \/_____/
 
-After a complete refactor it averaged 2/3 seconds per opcode and sometimes up to 4/5 for the illegal opcodes, and when 
-running continuously would cause a browser crash. It seems I 'deoptimised' the app by trying to be more 'true' to hardware 
-and simplifying things made some aspects somewhat more complicated.
 
-the information here from the opcodes object now gets used to create flattened metadata arrays to speed things up and
-optimise it to the point that this can become a functional, full speed browser based emulator.
 
-anyway, it would have had to be optimised into look up tables either way, but it would have being WAYYYYYYYYYY faster doing
-things the original way. Even with all the UI and debug stuff shaved off, the old code chewed through far more opcodes per
-second.
-
-honestly, if you want to make an emulator, and actually make progress, use a flat memory model. DO NOT GO THIS ROUTE.
-headaches, hours and hours of wasted time trying to align reads and writes that naturally line up with a flat memory model!
 */
-
-//to do: remove all prgRom references, along with -0x8000, use checkReadOffset - done
 
 let CPUregisters = {
   A: 0x00,
@@ -49,9 +46,6 @@ function resetCPU() {
 
   // reset shared PPU / mapper / timing state
   resetSharedState();
-
-  // reset MMC1 mapper state
-  resetMMC1();
 
   // clear Vblank and NMI edge on reset
   clearNmiEdge();
@@ -79,6 +73,7 @@ function resetCPU() {
   const lo = checkReadOffset(0xFFFC);
   const hi = checkReadOffset(0xFFFD);
   CPUregisters.PC = lo | (hi << 8);
+  let resetVector = CPUregisters.PC; // Store the reset vector for debugging in a separate variable
 
   // burn 7 cycles straight away (PPU 21 ticks in)
   for (let index = 0; index < 7; index++) {

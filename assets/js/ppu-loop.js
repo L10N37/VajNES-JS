@@ -1,3 +1,13 @@
+/*
+
+ ____  _           _       ____  ____  _   _ 
+|  _ \(_) ___ ___ | |__   |  _ \|  _ \| | | |
+| |_) | |/ __/ _ \| '_ \  | |_) | |_) | | | |
+|  _ <| | (_| (_) | | | | |  __/|  __/| |_| |
+|_| \_\_|\___\___/|_| |_| |_|   |_|    \___/ 
+
+
+*/
 
 // ---- Shared indices ----
 const SYNC_SCANLINE = 2;
@@ -108,8 +118,6 @@ function reverseByte(b) {
   return b & 0xFF;
 }
 
-// ---- Nametable mapping (uses SAB MIRRORING_MODE) ----
-// MIRRORING_MODE: 0=VERT, 1=HORZ, 4=FOUR
 function mapNametableAddr(addr2000_2FFF) {
   const a      = (addr2000_2FFF - 0x2000) & 0x0FFF; // 0..0xFFF
   const table  = (a >> 10) & 3;                    // 0..3
@@ -117,18 +125,18 @@ function mapNametableAddr(addr2000_2FFF) {
 
   let phys = 0;
 
-  switch (MIRRORING_MODE | 0) {
-    case 0: { // vertical: [0,1,0,1]
+  switch (MIRRORING) {
+    case 'vertical': { // vertical: [0,1,0,1]
       const nt = (table & 1);
       phys = (nt << 10) | offset;
       break;
     }
-    case 1: { // horizontal: [0,0,1,1]
+    case 'horizontal': { // horizontal: [0,0,1,1]
       const nt = (table >> 1);
       phys = (nt << 10) | offset;
       break;
     }
-    case 4: { // four-screen: [0,1,2,3] (requires 4KB VRAM)
+    case 'four': { // four-screen: [0,1,2,3] (requires 4KB VRAM)
       phys = (table << 10) | offset;
       break;
     }

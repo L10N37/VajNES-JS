@@ -83,17 +83,6 @@ function _mainLoopRAF(now) {
   requestAnimationFrame(_mainLoopRAF);
 }
 
-// peek-only PRG read (does not touch openBus.CPU / does not call checkReadOffset)
-function peekPRG(addr){
-  addr &= 0xFFFF;
-  if (addr < 0x8000) return 0x00;
-  if (typeof mmc1CpuRead === "function" && typeof mapperNumber === "number" && mapperNumber === 1) {
-    // assumes mmc1CpuRead is pure on reads; if not, replace with direct PRG ROM indexing
-    return mmc1CpuRead(addr) & 0xFF;
-  }
-  return prgRom[addr - 0x8000] & 0xFF;
-}
-
 window.step = function () {
   debug.logging = false;
   NoSignalAudio.setEnabled(false);
@@ -153,9 +142,8 @@ window.step = function () {
   // Only take NMI if it's pending *and not suppressed this vblank*
   if (nmiPending) {
     if (debug.videoTiming) {
-      const s = SHARED.SYNC;
       console.debug(
-        `%c[NMI handler entered] cpu=${cpuCycles} ppu=${ppuCycles} frame=${(s[4]|0)} sl=${(s[2]|0)} dot=${(s[3]|0)}`,
+        `%c[NMI handler entered] cpu=${cpuCycles} ppu=${ppuCycles} frame=${(currentFrame)} sl=${(currentScanline)} dot=${(currentDot)}`,
         "color:white;background:red;font-weight:bold;font-size:14px;"
       );
     }

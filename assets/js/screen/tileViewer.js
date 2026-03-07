@@ -26,11 +26,11 @@ document.addEventListener('DOMContentLoaded', () => {
   openBtn.addEventListener('click', () => {
     modal.style.display = 'flex';
     try {
-      if (!SHARED.CHR_ROM || !(SHARED.CHR_ROM instanceof Uint8Array) || SHARED.CHR_ROM.length === 0)
+      if (CHR_ROM || !(CHR_ROM instanceof Uint8Array) || CHR_ROM.length === 0)
         throw new Error("CHR ROM is missing or empty.");
 
-      const bgData  = SHARED.CHR_ROM.subarray(0x0000, 0x1000); // first 4KB
-      const sprData = SHARED.CHR_ROM.subarray(0x1000, 0x2000); // second 4KB
+      const bgData  = CHR_ROM.subarray(0x0000, 0x1000); // first 4KB
+      const sprData = CHR_ROM.subarray(0x1000, 0x2000); // second 4KB
       currentSource.bgCanvas = bgData;
       currentSource.fgCanvas = sprData;
 

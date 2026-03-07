@@ -60,9 +60,7 @@
   let CHR_BANK_LO  = 0;
   let CHR_BANK_HI  = 0;
 
-  // 0 = VERT, 1 = HORZ, 4 = FOUR
-  let MIRRORING_MODE = 0;
-
+  let MIRRORING = null;
 
   // -----------------------------
   // VRAM address register
@@ -144,14 +142,6 @@ function resetSharedState() {
   BG_tileHi = 0;
 
   PPU_FRAME_FLAGS = 0;
-
-  // -----------------------------
-  // Mapper / cartridge state
-  // -----------------------------
-  mapperNumber = 0;
-  CHR_BANK_LO = 0;
-  CHR_BANK_HI = 0;
-  MIRRORING_MODE = 0;
 
   // -----------------------------
   // VRAM address register
