@@ -15,17 +15,9 @@ Started in **2023** during a coding boot-camp and still actively evolving.
   *(Broken by the disassembler code taking precedence — not yet fixed)*
 
 ### General State
-- **Buggy as of now**
-- **Mach Rider** seems playable
-- **Kung Fu** also playable
-- Other **Mapper 0** games load with glitches
+- **Mapper 0** games should load and play fine
+- **Mapper 1** games should load and play fine
 - Expect unknown bugs
-
----
-
-## 🗺️ Mapper Support
-- **WIP MMC1 support**
-  - *The Legend of Zelda* loads to the **intro screen**
 
 ---
 
@@ -35,7 +27,7 @@ Started in **2023** during a coding boot-camp and still actively evolving.
 - NMI timing **fails** here  
 - Passes the **older Blarg test**
 
-![Accuracy Test Results](https://drive.google.com/uc?id=15ISSq-_7imfwp82HW2acy9QNE_I858JA)
+![Accuracy Test Results](https://drive.google.com/file/d/1hR9m3FRLQjUi159YZxEnxHxAWR4ViId4/view?usp=sharing)
 
 ---
 
