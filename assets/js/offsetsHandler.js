@@ -4,7 +4,6 @@ let debug = {
   logging: false,
   videoTiming: false,
   openBusTests: false,
-  openBusT4Trace: false
 };
 
 let openBus = {
@@ -51,9 +50,6 @@ function paletteIndex(addr14) {
 // ----------------- CPU read dispatch -----------------
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
-  if (Breakpoints.enabled) bpCheckRead(addr);
-
-  const busBefore = openBus.CPU & 0xFF;
   const codeNow = _codeNow();
 
   let raw = 0x00;
@@ -237,19 +233,7 @@ const PPU_WRITE_GATE_CYCLES = 29658;
 function checkWriteOffset(address, value) {
   const addr = address & 0xFFFF;
   value &= 0xFF;
-  if (Breakpoints.enabled) bpCheckWrite(addr, value);
 
-/*
-  if (addr === 0x2004 && (currentScanline === 261) && currentDot >= 315) {
-  console.log(
-    `DBG $2004 prerender near dot321: DOT=${currentDot} ` +
-    `MASKnow=${(PPUMASK & 0xFF).toString(16)} ` +
-    `MASKe=${(PPUMASK_effective & 0xFF).toString(16)}`
-  );
-}
-*/
-
-  const busBefore = openBus.CPU & 0xFF;
   const codeNow = _codeNow();
 
   if (addr < 0x2000) {

@@ -78,4 +78,3 @@ function dumpChrWindow(start=0x0200, end=0x07F0) {
   const slice = Array.from(CHR_ROM.slice(start, end));
   console.table(slice.map((v,i)=>({addr:(start+i).toString(16).padStart(4,'0'),val:v.toString(16).padStart(2,'0')})));
 }
-
