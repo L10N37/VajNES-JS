@@ -8,6 +8,8 @@ let nmiPending = null;
 let irqPending = 0;
 
 let code = 0x00; // current opcode now global for CPU openbus logic
+let operand1 = "--";
+let operand2 = "--";
 
 function clearNmiEdge(){
   PPU_FRAME_FLAGS &= ~0b00000100;
@@ -96,8 +98,14 @@ window.step = function () {
   }
 
   code = checkReadOffset(CPUregisters.PC);
-  operand1 = CPUregisters.PC + 1;
-  operand2 = CPUregisters.PC + 2;
+
+  if (CPUregisters.PC >= 0x8000) {
+
+    operand1 = prgRom[((CPUregisters.PC + 1) & 0xFFFF) - 0x8000];
+    operand2 = prgRom[((CPUregisters.PC + 2) & 0xFFFF) - 0x8000];
+
+  }
+
   if (OPCODES[code].pc === 1) operand2 = "na";
 
   const op = OPCODES[code];
