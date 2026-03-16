@@ -19,3 +19,21 @@ let PALETTE_RAM = new Uint8Array(32);         // 32 bytes ($3F00-$3F1F)
 // Most common: 8KB CHR (1 bank). Some carts use 16KB or more via mappers.
 let CHR_ROM     = new Uint8Array(8 * 1024);
 
+// ======================================
+// Full cartridge ROM storage (bank source)
+// Used by large mappers like MMC3
+// ======================================
+
+// Entire PRG ROM from cartridge
+let FULL_PRG_ROM = new Uint8Array(0);
+
+// Entire CHR ROM from cartridge (can be many banks)
+let FULL_CHR_ROM = new Uint8Array(0);
+
+// helpers for mapper logic
+let FULL_PRG_ROM_SIZE = 0;
+let FULL_CHR_ROM_SIZE = 0;
+
+// Bank counts (for mapper calculations)
+let FULL_PRG_BANKS_16K = 0;
+let FULL_CHR_BANKS_8K  = 0;

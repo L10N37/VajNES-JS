@@ -49,7 +49,7 @@ function resetCPU() {
 
   // clear Vblank and NMI edge on reset
   clearNmiEdge();
-  nmiPending = false; // clear nmi timing latch
+  nmiPending = 0; // clear nmi timing latch
 
   writeToggle = 0;
 
@@ -106,14 +106,6 @@ resetButton.onclick = resetCPU;
 // https://www.masswerk.at/6502/6502_instruction_set.html
 // https://www.pagetable.com/c64ref/6502/?tab=2#LDA 
 // https://www.nesdev.org/obelisk-6502-guide/addressessing.html
-
-function opCodeTest(){
-  showTestModal();
-    console.debug(
-    "%c🟢 TEST MODAL TRIGGERED by OPCODE 0x02 🟢",
-    "background: yellow; color: black; font-weight: bold; font-size: 20px; padding: 6px 12px; border: 2px solid black;"
-  );
-}
 
 function addCycles(x) {
 

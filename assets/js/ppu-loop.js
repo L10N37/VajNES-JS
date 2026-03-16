@@ -442,44 +442,76 @@ function copyVert() {
 }
 
 // ---- PPU bus read ----
-function ppuBusRead(addr) {
+function ppuBusRead(addr)
+{
   addr &= 0x3FFF;
 
-  if (addr < 0x2000) {
+  // ------------------------------------------------
+  // CHR ROM / CHR RAM
+  // ------------------------------------------------
+
+    if (addr < 0x2000)
+    {
+
     addr &= 0x1FFF;
 
-    if (mapperNumber === 1) {
-      if (chr8kModeFlag) {
+    if (mapperNumber === 4)
+    {
+    //mmc3ObserveA12(addr, false);
+    }
+
+    // MMC3
+    if (mapperNumber === 4)
+    {
+      return mapper4_chr_read(addr);
+    }
+
+    // MMC1
+    if (mapperNumber === 1)
+    {
+      if (chr8kModeFlag)
+      {
         const index = addr & 0x1FFF;
         return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
       }
 
-      if (addr < 0x1000) {
+      if (addr < 0x1000)
+      {
         const index = (CHR_BANK_LO << 12) + addr;
         return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
-      } else {
+      }
+      else
+      {
         const index = (CHR_BANK_HI << 12) + (addr - 0x1000);
         return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
       }
     }
 
+    // Mapper 0 / default
     return CHR_ROM[addr] & 0xFF;
   }
 
-  // Nametables $2000-$3EFF ($3000-$3EFF mirrors to $2000-$2EFF)
-  if (addr < 0x3F00) {
-    let a = addr & 0x0FFF;          // 0..0xFFF
-    if (a >= 0x1000) a -= 0x1000;   // safety
-    if (a >= 0x0F00) a -= 0x1000;   // $3000-$3EFF -> $2000-$2EFF
+  // ------------------------------------------------
+  // Nametable $2000-$3EFF
+  // ------------------------------------------------
 
-    const mapped = mapNametableAddr(0x2000 | a);
+  if (addr < 0x3F00) {
+    const a = 0x2000 | (addr & 0x0FFF);
+    const mapped = mapNametableAddr(a);
     return VRAM[mapped] & 0xFF;
   }
 
+  // ------------------------------------------------
   // Palette $3F00-$3FFF
-  if (addr < 0x4000) {
+  // ------------------------------------------------
+
+  if (addr < 0x4000)
+  {
     let p = addr & 0x1F;
-    if ((p & 0x13) === 0x10) p &= ~0x10;
+
+    if ((p & 0x13) === 0x10)
+      p &= ~0x10;
+
     return PALETTE_RAM[p] & 0x3F;
   }
 

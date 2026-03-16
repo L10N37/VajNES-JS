@@ -54,6 +54,21 @@ function mapper(nesHeader) {
     }
 
     // ==========================================================
+    // Mapper 4: MMC3 (TxROM family)
+    // ==========================================================
+    case 4: {
+      console.debug("[Mapper4] Initializing MMC3");
+
+      // CHR type: if no CHR banks, it's CHR RAM
+      chrIsRAM = (chrSize === 0);
+
+      // Load ups of MMC3 games are handled directly in readFile
+
+      resetCPU();
+      break;
+    }
+
+    // ==========================================================
     // Unsupported mappers
     // ==========================================================
     default:

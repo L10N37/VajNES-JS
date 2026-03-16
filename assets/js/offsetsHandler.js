@@ -23,9 +23,6 @@ globalThis.writeToggle = writeToggle;
 
 function _codeNow(){ return (typeof code === "number") ? (code & 0xFF) : 0xFF; }
 
-// ----------------- PPU helpers -----------------
-function chrRead(addr14) { return CHR_ROM[addr14 & 0x1FFF] & 0xFF; }
-
 function mapNT(addr14) {
   const v   = (addr14 - 0x2000) & 0x0FFF;
   const off = v & 0x03FF;
@@ -54,137 +51,132 @@ function checkReadOffset(address) {
 
   let raw = 0x00;
 
+  // MMC3 PRG read
+  if (mapperNumber === 4 && addr >= 0x8000) {
+    return mapper4_prg_read(addr);
+  }
+
   if (addr < 0x2000) {
+
     raw = cpuRead(addr) & 0xFF;
 
   } else if (addr < 0x4000) {
-    const reg = 0x2000 + (addr & 0x7);
+
+    const reg = 0x2000 + (addr & 7);
 
     switch (reg) {
+
       case 0x2002: {
 
-        if (currentScanline === 241 && currentDot === 0) {
-          doNotSetVblank = true;
-          nmiSuppression = true;
-          nmiPending = 0;
-          clearNmiEdge();
-          if (debug.videoTiming) {
-            console.debug(`%c[NMI/VBL cancelled] frame=${currentFrame} cpu=${cpuCycles} ppu=${ppuCycles} sl=${currentScanline} dot=${currentDot}`, "color:black;background:cyan;font-weight:bold;");
+          if (currentScanline === 241 && currentDot === 0) {
+              doNotSetVblank = true;
+              nmiSuppression = true;
+              nmiPending = 0;
+              clearNmiEdge();
           }
-        }
 
-        if (currentScanline === 241 && (currentDot === 1 || currentDot === 2)) {
-          if (debug.videoTiming) {
-            console.debug(
-              `%c[VBL clear path] frame=${currentFrame} cpu=${cpuCycles} ppu=${ppuCycles} sl=${currentScanline} dot=${currentDot} ` +
-              `vblank=${(PPUSTATUS & 0x80) ? 1 : 0} nmiEdge=${(doesNmiEdgeExist())}`,
-              "color:black;background:cyan;font-weight:bold;"
-            );
+          if (currentScanline === 241 && (currentDot === 1 || currentDot === 2)) {
+              clearNmiEdge();
+              nmiPending = 0;
+              nmiSuppression = true;
           }
-          clearNmiEdge();
-          nmiPending = 0;
-          nmiSuppression = true;
-        }
 
-        const obBefore = openBus.PPU & 0xFF;
-        const stat     = PPUSTATUS & 0xFF;
-        raw = ((stat & 0xE0) | (obBefore & 0x1F)) & 0xFF;
+          const obBefore = openBus.PPU & 0xFF;
+          const stat = PPUSTATUS & 0xE0;
 
-        PPUSTATUS &= ~0x80;
+          raw = (stat | (obBefore & 0x1F)) & 0xFF;
 
-        writeToggle = 0;
-        globalThis.writeToggle = writeToggle;
+          PPUSTATUS &= ~0x80;
 
-        openBus.PPU = raw;
-        break;
+          writeToggle = 0;
+          globalThis.writeToggle = writeToggle;
+
+          openBus.PPU = raw;
+          break;
       }
 
       // OAMDATA
       case 0x2004: {
-        const oamAddr = OAMADDR & 0xFF;
 
+        const oamAddr = OAMADDR & 0xFF;
         let v = OAM[oamAddr] & 0xFF;
 
-        // Rule 3: attribute byte read masks bits 2..4
         if ((oamAddr & 3) === 2) v &= 0xE3;
 
-        const scanline = currentScanline | 0;
-        const dot = currentDot | 0;
-        const visibleScanline = (scanline >= 0 && scanline <= 239);
-
+        const visible = currentScanline >= 0 && currentScanline <= 239;
         let result = v;
 
-        if (renderingEnabled && visibleScanline) {
-          if (dot >= 1 && dot <= 64) {
-            // Rule 4: forced $FF
-            result = 0xFF;
-          } else if (dot >= 65 && dot <= 256) {
-            // Rule 8: normal OAM read from the *current* OAM address
-            // (address is changing every other PPU cycle)
-            // result already = v
-          } else if (dot >= 257 && dot <= 320) {
-            // Rule 9: forced $FF
-            result = 0xFF;
-          }
-          // dots 321–340: simple read (v)
+        if (renderingEnabled && visible) {
+          if (currentDot >= 1 && currentDot <= 64) result = 0xFF;
+          else if (currentDot >= 257 && currentDot <= 320) result = 0xFF;
         }
 
         openBus.PPU = result & 0xFF;
         openBus.ppuDecayTimer = 1789772;
 
-        //console.debug("0b" + result.toString(2).padStart(8, "0"));
         return result;
       }
 
       case 0x2007: {
+
         const vv = VRAM_ADDR & 0x3FFF;
         const bufBefore = VRAM_DATA & 0xFF;
+
         let ret = 0x00;
 
         if (vv < 0x3F00) {
+
           ret = bufBefore;
 
-          let newVal = 0x00;
-          if (vv < 0x2000) {
-            let chrAddr;
-            if (mapperNumber === 1) {
-              if (chrIsRAM) chrAddr = vv & (CHR_ROM.length - 1);
-              else {
-                const bankOffset = ((vv < 0x1000 ? CHR_BANK_LO : CHR_BANK_HI) << 12);
-                chrAddr = (bankOffset + (vv & 0x0FFF)) & (CHR_ROM.length - 1);
-              }
-            } else {
-              chrAddr = vv & (CHR_ROM.length - 1);
-            }
-            newVal = CHR_ROM[chrAddr] & 0xFF;
-            VRAM_DATA = newVal;
-          } else {
-            const ntAddr = mapNT(vv) & 0x07FF;
-            newVal = VRAM[ntAddr] & 0xFF;
-            VRAM_DATA = newVal;
-          }
-        } else {
-          const p = paletteIndex(vv);
-          const palVal = PALETTE_RAM[p] & 0x3F;
-          ret = (openBus.PPU & 0xC0) | palVal;
+          let newVal = 0;
 
-          const ntMirror = vv & 0x2FFF;
-          if (ntMirror < 0x2000) {
-            let chrAddr;
-            if (mapperNumber === 1) {
-              if (chrIsRAM) chrAddr = ntMirror & (CHR_ROM.length - 1);
+          if (vv < 0x2000) {
+
+            if (mapperNumber === 4) {
+              newVal = mapper4_chr_read(vv) & 0xFF;
+
+            } else if (mapperNumber === 1) {
+
+              let chrAddr;
+
+              if (chrIsRAM)
+                chrAddr = vv & (CHR_ROM.length - 1);
               else {
-                const bankOffset = ((ntMirror < 0x1000 ? CHR_BANK_LO : CHR_BANK_HI) << 12);
-                chrAddr = (bankOffset + (ntMirror & 0x0FFF)) & (CHR_ROM.length - 1);
+                const bankOffset =
+                  ((vv < 0x1000 ? CHR_BANK_LO : CHR_BANK_HI) << 12);
+                chrAddr =
+                  (bankOffset + (vv & 0x0FFF)) &
+                  (CHR_ROM.length - 1);
               }
+
+              newVal = CHR_ROM[chrAddr] & 0xFF;
+
             } else {
-              chrAddr = ntMirror & (CHR_ROM.length - 1);
+
+              newVal =
+                CHR_ROM[vv & (CHR_ROM.length - 1)] & 0xFF;
             }
-            VRAM_DATA = CHR_ROM[chrAddr] & 0xFF;
+
+            VRAM_DATA = newVal;
+
           } else {
-            const ntAddr = mapNT(ntMirror) & 0x07FF;
+
+            const ntAddr = mapNT(vv) & 0x07FF;
             VRAM_DATA = VRAM[ntAddr] & 0xFF;
           }
+        } else {
+
+          const p = paletteIndex(vv);
+          const palVal = PALETTE_RAM[p] & 0x3F;
+
+          // Return palette data immediately
+          ret = (openBus.PPU & 0xC0) | palVal;
+
+          // Reload VRAM buffer from nametable mirror ($2F00-$2FFF)
+          const ntMirror = vv & 0x2FFF;
+
+          const ntAddr = mapNT(ntMirror) & 0x07FF;
+          VRAM_DATA = VRAM[ntAddr] & 0xFF;
         }
 
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
@@ -201,6 +193,7 @@ function checkReadOffset(address) {
     }
 
   } else if (addr < 0x4020) {
+
     if (addr === 0x4016 || addr === 0x4017) {
       const bit = joypadRead(addr) & 1;
       raw = ((openBus.CPU & 0xFE) | bit) & 0xFF;
@@ -209,20 +202,26 @@ function checkReadOffset(address) {
     }
 
   } else if (addr < 0x6000) {
+
     raw = openBus.CPU & 0xFF;
 
   } else if (addr < 0x8000) {
-    raw = (mapperNumber === 1)
-      ? (mmc1CpuRead(addr) & 0xFF)
-      : (prgRam[addr - 0x6000] & 0xFF);
+
+    raw =
+      mapperNumber === 1
+        ? mmc1CpuRead(addr) & 0xFF
+        : prgRam[addr - 0x6000] & 0xFF;
 
   } else {
-    raw = (mapperNumber === 1)
-      ? (mmc1CpuRead(addr) & 0xFF)
-      : (mapperReadPRG(addr) & 0xFF);
+
+    raw =
+      mapperNumber === 1
+        ? mmc1CpuRead(addr) & 0xFF
+        : mapperReadPRG(addr) & 0xFF;
   }
 
-  const out = cpuOpenBusFinalise(addr, raw, codeNow, false) & 0xFF;
+  const out =
+    cpuOpenBusFinalise(addr, raw, codeNow, false) & 0xFF;
 
   return out;
 }
@@ -235,6 +234,27 @@ function checkWriteOffset(address, value) {
   value &= 0xFF;
 
   const codeNow = _codeNow();
+
+  if (mapperNumber === 4 && addr >= 0x8000)
+  {
+      switch (addr & 0xE001)
+      {
+          case 0x8000: mapper4_write_8000(value); break;
+          case 0x8001: mapper4_write_8001(value); break;
+
+          case 0xA000: mapper4_write_A000(value); break;
+          case 0xA001: mapper4_write_A001(value); break;
+
+          case 0xC000: mapper4_write_C000(value); break;
+          case 0xC001: mapper4_write_C001(value); break;
+
+          case 0xE000: mapper4_write_E000(value); break;
+          case 0xE001: mapper4_write_E001(value); break;
+      }
+
+      cpuOpenBusFinalise(addr,value,codeNow,true);
+      return;
+  }
 
   if (addr < 0x2000) {
     cpuWrite(addr, value);
@@ -367,19 +387,56 @@ function checkWriteOffset(address, value) {
 
       // PPUADDR
       case 0x2006:
-        if (writeToggle === 0) {
-          // high byte of t (bits 8–14)
-          t_hi = value & 0x3F;      // keep it 0b0yyyyNNY
+
+      if (writeToggle === 0)
+      {
+          t_hi = value & 0x3F;
           writeToggle = 1;
-        } else {
-          // low byte of t (bits 0–7)
+      }
+      else
+      {
           t_lo = value & 0xFF;
-          VRAM_ADDR = (((t_hi << 8) | t_lo) & 0x3FFF);
+
+          VRAM_ADDR = ((t_hi << 8) | t_lo) & 0x3FFF;
+          const A12_IS_HIGH = (VRAM_ADDR & 0x1000) !== 0;
+
+      if (mapperNumber === 4)
+      {
+          
+          if (mmc3_irq.reload)  // a reload takes priority over an IRQ firing? so even if we decced our latch value to zero, if reload is set, reload
+          {
+              mmc3_irq.scanlineCounter = mmc3_irq.latch;
+              mmc3_irq.reload = false;
+          }
+
+          if (!A12_IS_HIGH)
+          {
+              mmc3_irq.a12LowCount++; // A12 is low, so increment counter
+              console.log(mmc3_irq.a12LowCount);
+          }
+
+          if (A12_IS_HIGH && mmc3_irq.a12LowCount >= 3) // A12 was low before going high (rising edge detection) for at least 9 (3*3) PPU cycles
+          {
+              mmc3_irq.scanlineCounter--; // so dec our scanline counter
+          }
+
+          if (mmc3_irq.scanlineCounter === 0 && mmc3_irq.enabled) // and if we dec to zero / didn't reload counter with latch value
+          {
+              irqPending = 1; // then we set the irq up to fire with our latch for timing, mmc3 doesn't touch P.I reg
+              console.log("mmc3 set irq");
+          }
+
+          if (A12_IS_HIGH) // fall through, if A12 was high and bypassed our cycle filter,  or stays high (also bypassing) just reset our A12 low count
+          {
+              mmc3_irq.a12LowCount = 0;
+          }
+      }
+
           writeToggle = 0;
-        }
-        globalThis.writeToggle = writeToggle;
-        break;
-        
+      }
+
+    globalThis.writeToggle = writeToggle;
+    break;
       // PPUDATA
       case 0x2007: {
         const v = VRAM_ADDR & 0x3FFF;

@@ -11,216 +11,588 @@
 
 */
 
-/*
-============================================================
-                     MMC3 (MAPPER 4)
-                IMPLEMENTATION OUTLINE
-============================================================
-
-1. MEMORY MAP
-------------------------------------------------------------
-PRG:
-- 8 KB fixed at $E000–$FFFF (last PRG bank)
-- 8 KB switchable at $A000–$BFFF
-- 8 KB switchable at $8000–$9FFF
-- 8 KB switchable or fixed at $C000–$DFFF depending on PRG mode
-
-1) Declare the 4 PRG slots, address wrap accordingly and make sure the slots are all filled with
-appropriate data at rom launch.
-
-CHR:
-- 2 × 2 KB switchable banks
-- 4 × 1 KB switchable banks
-- CHR mode bit flips which set appears at $0000–0FFF vs $1000–1FFF
-
-2) Declare the 6 switchable banks, add the logic for the CHR mode that places the correct character set
-at the 2 address ranges above.
-
-------------------------------------------------------------
-2. REGISTERS ($8000–$FFFF)
-------------------------------------------------------------
-
-$8000 — Bank Select
-  7  bit  0
-  CPRM MRRR
-  C = CHR mode (swap CHR halves)
-  P = PRG mode (swap PRG fixed/switchable)
-  RRR = bank register select (0–7)
-
- 3) Add the bank select byte, declare it, add appropriate masking for bit checking / logic
-
-                Bit 7 = C
-
-                Bit 6 = P
-
-                Bit 5 = R (unused)
-
-                Bit 4 = M (unused)
-
-                Bits 3–0 = RRRR (bank register select, but only 0–7 are valid)
-
-Bank register targets:
-  0 = 2 KB CHR @ $0000
-  1 = 2 KB CHR @ $0800
-  2 = 1 KB CHR @ $1000
-  3 = 1 KB CHR @ $1400
-  4 = 1 KB CHR @ $1800
-  5 = 1 KB CHR @ $1C00
-  6 = 8 KB PRG slot A ($8000 or $C000 depending on PRG mode)
-  7 = 8 KB PRG slot B ($A000 or $8000 depending on PRG mode)
-
-  Writes to $8000 select which of the 8 internal bank registers you are about to modify, and then $8001 writes the value into that register.
-
-$8000:
-👉 “Which slot do I want to update?”
-And $8001:
-👉 “What bank number do I put into that slot?”
-
-1. CPU writes to $8000
-
-This stores an 8-bit value into the mapper's internal “bank select register.”
-
-Bits 0–2 tell the mapper which internal slot (0–7) will be updated next.
-
-Bits 6–7 immediately change PRG/CHR mode.
-
-So after writing $8000, the mapper knows:
-
-✔ Which slot is selected
-✔ CHR mode bit
-✔ PRG mode bit
-
-4) 4) Add the logic for the above, an $8000 address write to our declared byte happens, apparently we don't need to read this
-register, just write it. 
-
-this sets our selected slot, CHR mode bit and PRG mode bit.
-
-same for $8001, game ROM juse writes the bit, no read back, just write. Set the bank into the slot in this reg.
-
-Slots 0–5 = CHR banks
-Slots 6–7 = PRG banks
+// because I decided not to copy banks into the 'viewable' window and pull it directly from the source
+// this kinda renders the GUI useless for this mapper at this stage
 
 
-$8001 — Bank Data
-  - Writes actual bank number into selected register.
+// -----------------------------------------------------
+// MMC3 debug control
+// -----------------------------------------------------
 
-  5) this is outlined above
+const MMC3_DEBUG = {
+    prgReadCount: 0,
+    chrReadCount: 0,
+    maxReadLogs: 256,
+    readLogLimitHit: false
+};
 
-$A000 — Mirroring
-  0 = Vertical
-  1 = Horizontal
-  (ignored on fixed-mirror boards)
+// -----------------------------------------------------
+// MMC3 internal state
+// -----------------------------------------------------
 
-  6) This is already kinda taken care, so we just check our write to $A000, we can use a bool i guess. 
-  if it writes 0, set our vertical mirrorring, else set horizontal.
+let MMC3 = {
 
-$A001 — PRG RAM Control
-  - Enable/disable WRAM
-  - Write-protect flag
+    control: {
+        prgMode: "PRG_SWAP_8000",     // PRG banking mode
+        chrMode: "CHR_NORMAL",        // CHR inversion mode
+        selectedRegister: null,       // register selected by $8000 write
+        prgRamEnabled: false,         // PRG-RAM enable flag from $A001
+        prgRamWriteProtect: false     // PRG-RAM write protect flag from $A001
+    },
 
-  7) This is actually the SRAM for save games, enable or disable. Because all the other bits are ignored, we can use
-  a bool instead of a masked out byte. (I think)
+    registers: {
 
-  by setting it to 1, we are protecting writes to our SRAM which could corrupt our save game files
-  This sounds weird, i guess its a fail safe, as why would we ever write to the region unless saving a game.
-  ...anyway 
+        CHR_BANK_0: 0,
+        CHR_BANK_1: 2,
+        CHR_BANK_2: 4,
+        CHR_BANK_3: 5,
+        CHR_BANK_4: 6,
+        CHR_BANK_5: 7,
 
-  7)
-IRQ Registers:
-  $C000 = IRQ reload value
-  $C001 = IRQ reload trigger (force reload on next A12 rise)
-  $E000 = IRQ disable + acknowledge (clear IRQ)
-  $E001 = IRQ enable
+        PRG_BANK_0: 0,
+        PRG_BANK_1: 1
+    }
 
-  8) well this is self explanatory i guess. Add the logic so the interrupt request stuff happens on writes to these regs.
-  They are write only, so after the write, we have the according handlers run the logic.
+};
 
-------------------------------------------------------------
-3. IRQ COUNTER LOGIC (CRITICAL PART)
-------------------------------------------------------------
-MMC3 IRQ counts rising edges on PPU A12.
 
-Rules:
-- Counter clocks ONLY on a 0→1 rising edge of PPU A12.
-- A12 must stay low ~8 PPU cycles before rising to avoid false triggers.
-- If counter == 0 on clock → reload from $C000 and IRQ fires on next clock.
-- Else → counter--;
+// -----------------------------------------------------
+// MMC3 $A000 write
+// Nametable mirroring control
+//
+// Bit 0
+// 0 = vertical
+// 1 = horizontal
+//
+// Ignored if cartridge uses four-screen mirroring
+// -----------------------------------------------------
 
-Reload control:
-- Writing $C001 causes the next valid A12 rise to force a reload.
-- $E000 disables IRQ and clears pending flag.
-- $E001 enables IRQ.
+function mapper4_write_A000(value)
+{
+    const mirrorBit = value & 1;
 
-IRQ fires to CPU when:
-- Counter hits 0
-- IRQ is enabled
-- Rendering is active (not during vblank or forced blank)
+    // Do not override four-screen boards
+    if (MIRRORING !== "four")
+    {
+        MIRRORING = mirrorBit ? "horizontal" : "vertical";
+    }
 
-9) I never like the ~around abouts symbol, but what ever. Theres a counter we need to declare, if its equal to 0, we do the IRQ 
-reload value from step 8 with the $C000 write, so being equal to zero triggers the $C000 write.
+}
 
-look into this properly after the other steps.
 
-------------------------------------------------------------
-4. PRG BANKING
-------------------------------------------------------------
-PRG mode = bit 6 of $8000.
+// -----------------------------------------------------
+// MMC3 $A001 write
+// PRG-RAM enable / write protection
+//
+// Bit 7 = PRG-RAM enable
+// Bit 6 = write protect
+// -----------------------------------------------------
 
-Mode 0:
-  $8000-$9FFF = bank 6 (switchable)
-  $A000-$BFFF = bank 7 (switchable)
-  $C000-$DFFF = second-last PRG bank (fixed)
-  $E000-$FFFF = last PRG bank (fixed)
+function mapper4_write_A001(value)
+{
+    const ramEnable = (value >> 7) & 1;
+    const writeProtect = (value >> 6) & 1;
 
-Mode 1 (inverted):
-  $C000-$DFFF = bank 6 (switchable)
-  $A000-$BFFF = bank 7 (switchable)
-  $8000-$9FFF = second-last PRG bank (fixed)
-  $E000-$FFFF = last PRG bank (fixed)
+    // these -can- be used to gate off SRAM writes in offsetsHandler
+    MMC3.control.prgRamEnabled = !!ramEnable;
+    MMC3.control.prgRamWriteProtect = !!writeProtect;
 
-  10) get a more throrough understanding of this when we get to this step.
+}
 
-------------------------------------------------------------
-5. CHR BANKING
-------------------------------------------------------------
-CHR mode = bit 7 of $8000.
 
-Mode 0:
-  2 KB @ $0000 = reg 0
-  2 KB @ $0800 = reg 1
-  1 KB @ $1000 = reg 2
-  1 KB @ $1400 = reg 3
-  1 KB @ $1800 = reg 4
-  1 KB @ $1C00 = reg 5
+// -----------------------------------------------------
+// MMC3 $8000 write
+// Bank select register
+//
+// Bit layout
+//
+// 7  CHR A12 inversion
+// 6  PRG banking mode
+// 5-3 unused
+// 2-0 register select
+// -----------------------------------------------------
 
-Mode 1 (swap regions):
-  1 KB @ $0000 = reg 2
-  1 KB @ $0400 = reg 3
-  1 KB @ $0800 = reg 4
-  1 KB @ $0C00 = reg 5
-  2 KB @ $1000 = reg 0
-  2 KB @ $1800 = reg 1
+function mapper4_write_8000(value)
+{
+    const registerSelect = value & 0x07;
+    const prgModeBit = (value >> 6) & 1;
+    const chrModeBit = (value >> 7) & 1;
 
-  11) get a more thorough understanding of this when we get to this step.
+    // Decode PRG banking mode
+    MMC3.control.prgMode = prgModeBit ? "PRG_SWAP_C000" : "PRG_SWAP_8000";
 
-------------------------------------------------------------
-6. SUMMARY OF WHAT YOU MUST IMPLEMENT
-------------------------------------------------------------
-- 8 bank registers (0–7)
-- PRG mode swap logic
-- CHR mode swap logic
-- Mirroring write handler
-- WRAM enable/write-protect logic
-- A12 rising edge detection with ~8 PPU cycle debounce
-- IRQ countdown with reload on 0
-- IRQ enable/disable and acknowledgement
-- Proper bank mapping for PRG and CHR after any register write
+    // Decode CHR inversion mode
+    MMC3.control.chrMode = chrModeBit ? "CHR_INVERTED" : "CHR_NORMAL";
 
-============================================================
-End of MMC3 mapper outline
-============================================================
+    // Select register that $8001 will modify
+    switch (registerSelect)
+    {
+        case 0: MMC3.control.selectedRegister = "CHR_BANK_0"; break;
+        case 1: MMC3.control.selectedRegister = "CHR_BANK_1"; break;
+        case 2: MMC3.control.selectedRegister = "CHR_BANK_2"; break;
+        case 3: MMC3.control.selectedRegister = "CHR_BANK_3"; break;
+        case 4: MMC3.control.selectedRegister = "CHR_BANK_4"; break;
+        case 5: MMC3.control.selectedRegister = "CHR_BANK_5"; break;
 
-12) we need to reroute all appropriate addresses passed to offsetHandler.js across to custom mmc3 handlers, dependant
-on mapper being set to '4' on mapper 4 ROM load, same as what i did with mmc1.
+        case 6: MMC3.control.selectedRegister = "PRG_BANK_0"; break;
+        case 7: MMC3.control.selectedRegister = "PRG_BANK_1"; break;
+    }
 
-*/
+}
+
+
+// -----------------------------------------------------
+// MMC3 $8001 write
+// Bank data register
+// -----------------------------------------------------
+
+function mapper4_write_8001(value)
+{
+    const target = MMC3.control.selectedRegister;
+    if (!target) return;
+
+    if (target === "CHR_BANK_0" || target === "CHR_BANK_1")
+        value &= 0xFE;
+
+    if (target === "PRG_BANK_0" || target === "PRG_BANK_1")
+        MMC3.registers[target] = value & 0x3F;
+    else
+        MMC3.registers[target] = value;
+
+}
+
+// -----------------------------------------------------
+// MMC3 PRG read handler
+//
+// Handles CPU reads $8000-$FFFF
+// Returns data directly from FULL_PRG_ROM
+// -----------------------------------------------------
+
+function mapper4_prg_read(address)
+{
+    const bankSize  = 8 * 1024; // 8KB
+    const bankCount = FULL_PRG_ROM_SIZE / bankSize;
+
+    const lastBank   = bankCount - 1;
+    const secondLast = bankCount - 2;
+
+    const bank0 = MMC3.registers.PRG_BANK_0 & (bankCount - 1);
+    const bank1 = MMC3.registers.PRG_BANK_1 & (bankCount - 1);
+
+    let bank;
+    let offset;
+
+    if (address < 0xA000)
+    {
+        bank = (MMC3.control.prgMode === "PRG_SWAP_8000")
+            ? bank0
+            : secondLast;
+
+        offset = address - 0x8000;
+    }
+    else if (address < 0xC000)
+    {
+        bank = bank1;
+        offset = address - 0xA000;
+    }
+    else if (address < 0xE000)
+    {
+        bank = (MMC3.control.prgMode === "PRG_SWAP_8000")
+            ? secondLast
+            : bank0;
+
+        offset = address - 0xC000;
+    }
+    else
+    {
+        bank = lastBank;
+        offset = address - 0xE000;
+    }
+
+    const romIndex = (bank * bankSize) + offset;
+
+    if (romIndex < 0 || romIndex >= FULL_PRG_ROM.length)
+    {
+        console.error(
+            `[MMC3][PRG-READ OOB] cpu=$${address.toString(16).padStart(4, '0')} ` +
+            `bank=${bank} offset=$${offset.toString(16).padStart(4, '0')} ` +
+            `romIndex=$${romIndex.toString(16)} length=$${FULL_PRG_ROM.length.toString(16)}`
+        );
+        return 0xFF;
+    }
+
+    return FULL_PRG_ROM[romIndex] & 0xFF;
+}
+
+// -----------------------------------------------------
+// MMC3 CHR read handler
+//
+// Handles PPU reads $0000-$1FFF
+// Returns data directly from FULL_CHR_ROM
+// -----------------------------------------------------
+
+function mapper4_chr_read(address)
+{
+    const bankSize = 0x0400; // 1KB
+    const chrBankCount = FULL_CHR_ROM_SIZE / bankSize;
+
+    let bank;
+    let offset;
+
+    address &= 0x1FFF;
+
+    if (MMC3.control.chrMode === "CHR_NORMAL")
+    {
+        // $0000-$07FF -> R0/R0+1 (2KB)
+        if (address < 0x0800)
+        {
+            const base = MMC3.registers.CHR_BANK_0 & 0xFE;
+            bank = base + ((address >> 10) & 1);
+            offset = address & 0x03FF;
+        }
+
+        // $0800-$0FFF -> R1/R1+1 (2KB)
+        else if (address < 0x1000)
+        {
+            const base = MMC3.registers.CHR_BANK_1 & 0xFE;
+            bank = base + (((address - 0x0800) >> 10) & 1);
+            offset = address & 0x03FF;
+        }
+
+        // $1000-$13FF -> R2
+        else if (address < 0x1400)
+        {
+            bank = MMC3.registers.CHR_BANK_2;
+            offset = address & 0x03FF;
+        }
+
+        // $1400-$17FF -> R3
+        else if (address < 0x1800)
+        {
+            bank = MMC3.registers.CHR_BANK_3;
+            offset = address & 0x03FF;
+        }
+
+        // $1800-$1BFF -> R4
+        else if (address < 0x1C00)
+        {
+            bank = MMC3.registers.CHR_BANK_4;
+            offset = address & 0x03FF;
+        }
+
+        // $1C00-$1FFF -> R5
+        else
+        {
+            bank = MMC3.registers.CHR_BANK_5;
+            offset = address & 0x03FF;
+        }
+    }
+    else
+    {
+        // $0000-$03FF -> R2
+        if (address < 0x0400)
+        {
+            bank = MMC3.registers.CHR_BANK_2;
+            offset = address & 0x03FF;
+        }
+
+        // $0400-$07FF -> R3
+        else if (address < 0x0800)
+        {
+            bank = MMC3.registers.CHR_BANK_3;
+            offset = address & 0x03FF;
+        }
+
+        // $0800-$0BFF -> R4
+        else if (address < 0x0C00)
+        {
+            bank = MMC3.registers.CHR_BANK_4;
+            offset = address & 0x03FF;
+        }
+
+        // $0C00-$0FFF -> R5
+        else if (address < 0x1000)
+        {
+            bank = MMC3.registers.CHR_BANK_5;
+            offset = address & 0x03FF;
+        }
+
+        // $1000-$17FF -> R0/R0+1 (2KB)
+        else if (address < 0x1800)
+        {
+            const base = MMC3.registers.CHR_BANK_0 & 0xFE;
+            bank = base + (((address - 0x1000) >> 10) & 1);
+            offset = address & 0x03FF;
+        }
+
+        // $1800-$1FFF -> R1/R1+1 (2KB)
+        else
+        {
+            const base = MMC3.registers.CHR_BANK_1 & 0xFE;
+            bank = base + (((address - 0x1800) >> 10) & 1);
+            offset = address & 0x03FF;
+        }
+    }
+
+    bank &= (chrBankCount - 1);
+
+    const romIndex = (bank * bankSize) + offset;
+    const result = FULL_CHR_ROM[romIndex] & 0xFF;
+
+    return result;
+}
+
+// ============================ //
+//   A12 EDGE DETECTOR          //
+// ============================ //
+const mmc3_irq = {
+
+  scanlineCounter: 0,     // Current IRQ counter value (decrements on valid A12 clocks)
+
+  reload: false,  // Set by $C001. When true, the next A12 clock loads counter = latch
+
+  enabled: false, // IRQ enable flag. Set by $E001, cleared by $E000
+
+  a12LowCount: 0,    // Counts how long A12 has stayed LOW (used for the >=8 PPU cycle filter)
+
+  latch: 0        // Value written by $C000. This is the value loaded into counter on reload
+
+};
+function mapper4_write_C001(value)
+{
+    mmc3_irq.reload = true;
+}
+
+function mapper4_write_C000(value)
+{
+    mmc3_irq.latch = value & 0xFF;
+}
+
+function mapper4_write_E000(value)
+{
+    mmc3_irq.enabled = false;
+
+}
+
+function mapper4_write_E001(value)
+{
+    mmc3_irq.enabled = true;
+
+}
+
+
+// debug, not tied in with an on click / button, just use console
+function openMMC3DebugModal()
+{
+    let modal = document.getElementById("mmc3DynamicDebugModal");
+    let timer = window.__mmc3DynamicDebugTimer || null;
+
+    if (!modal)
+    {
+        modal = document.createElement("div");
+        modal.id = "mmc3DynamicDebugModal";
+
+        Object.assign(modal.style,{
+            position:"fixed",
+            inset:"0",
+            background:"rgba(0,0,0,0.75)",
+            display:"flex",
+            alignItems:"center",
+            justifyContent:"center",
+            zIndex:"100000"
+        });
+
+        const panel = document.createElement("div");
+
+        Object.assign(panel.style,{
+            background:"#111",
+            color:"#0f0",
+            border:"2px solid #444",
+            padding:"16px",
+            width:"min(900px,95vw)",
+            maxHeight:"90vh",
+            font:"14px monospace",
+            boxSizing:"border-box"
+        });
+
+        const header = document.createElement("div");
+
+        Object.assign(header.style,{
+            display:"flex",
+            justifyContent:"space-between",
+            alignItems:"center",
+            marginBottom:"12px"
+        });
+
+        const title = document.createElement("div");
+        title.textContent = "MMC3 DEBUGGER";
+
+        const buttonRow = document.createElement("div");
+
+        const copyBtn = document.createElement("button");
+        copyBtn.textContent = "Copy";
+
+        const closeBtn = document.createElement("button");
+        closeBtn.textContent = "Close";
+
+        const ta = document.createElement("textarea");
+        ta.id = "mmc3DynamicDebugText";
+        ta.readOnly = true;
+
+        Object.assign(ta.style,{
+            width:"100%",
+            height:"60vh",
+            resize:"none",
+            background:"#000",
+            color:"#0f0",
+            border:"1px solid #333",
+            padding:"12px",
+            font:"14px monospace",
+            whiteSpace:"pre",
+            overflow:"auto",
+            boxSizing:"border-box"
+        });
+
+        copyBtn.onclick = async () => {
+            ta.select();
+            try{
+                await navigator.clipboard.writeText(ta.value);
+            }catch{
+                document.execCommand("copy");
+            }
+        };
+
+        function closeModal()
+        {
+            if(window.__mmc3DynamicDebugTimer)
+            {
+                clearInterval(window.__mmc3DynamicDebugTimer);
+                window.__mmc3DynamicDebugTimer = null;
+            }
+
+            modal.remove();
+            document.removeEventListener("keydown",escHandler);
+        }
+
+        function escHandler(e)
+        {
+            if(e.key === "Escape")
+                closeModal();
+        }
+
+        closeBtn.onclick = closeModal;
+
+        modal.onclick = (e)=>{
+            if(e.target === modal)
+                closeModal();
+        };
+
+        document.addEventListener("keydown",escHandler);
+
+        buttonRow.appendChild(copyBtn);
+        buttonRow.appendChild(closeBtn);
+
+        header.appendChild(title);
+        header.appendChild(buttonRow);
+
+        panel.appendChild(header);
+        panel.appendChild(ta);
+
+        modal.appendChild(panel);
+        document.body.appendChild(modal);
+    }
+
+    const ta = document.getElementById("mmc3DynamicDebugText");
+
+    function safeHex(v,width=2)
+    {
+        if(typeof v!=="number") return "unset";
+        return "$"+v.toString(16).toUpperCase().padStart(width,"0");
+    }
+
+    function render()
+    {
+        let out="";
+
+        if(mapperNumber!==4)
+        {
+            ta.value="MMC3 DEBUGGER\n\nGame is not mapper 4.";
+            return;
+        }
+
+        const c=MMC3.control;
+        const r=MMC3.registers;
+
+        let map=new Array(8);
+
+        if(c.chrMode==="CHR_NORMAL")
+        {
+            map=[
+
+                r.CHR_BANK_0,
+                r.CHR_BANK_0+1,
+                r.CHR_BANK_1,
+                r.CHR_BANK_1+1,
+                r.CHR_BANK_2,
+                r.CHR_BANK_3,
+                r.CHR_BANK_4,
+                r.CHR_BANK_5
+            ];
+        }
+        else
+        {
+            map=[
+
+                r.CHR_BANK_2,
+                r.CHR_BANK_3,
+                r.CHR_BANK_4,
+                r.CHR_BANK_5,
+                r.CHR_BANK_0,
+                r.CHR_BANK_0+1,
+                r.CHR_BANK_1,
+                r.CHR_BANK_1+1
+            ];
+        }
+
+        const addr=[
+        "$0000-$03FF",
+        "$0400-$07FF",
+        "$0800-$0BFF",
+        "$0C00-$0FFF",
+        "$1000-$13FF",
+        "$1400-$17FF",
+        "$1800-$1BFF",
+        "$1C00-$1FFF"
+        ];
+
+        out+="MMC3 DEBUGGER\n";
+        out+="======================================\n";
+        out+=`CHR MODE : ${c.chrMode}\n`;
+        out+=`PRG MODE : ${c.prgMode}\n`;
+        out+=`SELECTED : ${c.selectedRegister}\n\n`;
+
+        out+="RAW REGISTERS\n";
+        out+="-----------------------------\n";
+        out+=`R0 : ${r.CHR_BANK_0} (${safeHex(r.CHR_BANK_0)})\n`;
+        out+=`R1 : ${r.CHR_BANK_1} (${safeHex(r.CHR_BANK_1)})\n`;
+        out+=`R2 : ${r.CHR_BANK_2} (${safeHex(r.CHR_BANK_2)})\n`;
+        out+=`R3 : ${r.CHR_BANK_3} (${safeHex(r.CHR_BANK_3)})\n`;
+        out+=`R4 : ${r.CHR_BANK_4} (${safeHex(r.CHR_BANK_4)})\n`;
+        out+=`R5 : ${r.CHR_BANK_5} (${safeHex(r.CHR_BANK_5)})\n`;
+
+        out+="\nPPU CHR MAP\n";
+        out+="-----------------------------\n";
+
+        for(let i=0;i<8;i++)
+            out+=`${addr[i]} -> bank ${map[i]}\n`;
+
+        ta.value=out;
+    }
+
+    render();
+
+    if(timer)
+        clearInterval(timer);
+
+    window.__mmc3DynamicDebugTimer=setInterval(render,200);
+}

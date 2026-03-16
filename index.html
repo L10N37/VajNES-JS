@@ -9,7 +9,6 @@
   <link rel="stylesheet" href="assets/css/style.css" />
   <link rel="stylesheet" href="assets/css/screen.css" />
   <link rel="stylesheet" href="assets/css/customise.css" />
-  <link rel="stylesheet" href="disasm/disasm.css">
 
     <!-- Fixes new firefox feature 'auto hiding scrollbars/ overlay scrollbars' -->
     <style>
@@ -45,7 +44,7 @@
       <button class="dropbtn" id="clickedScreen"> Screen</button>
       <button class="dropbtn" id="clickedTileView">Tile View</button>
       <button class="dropbtn" id="dumpState">Dump</button>
-      <button class="dropbtn" id="open-disasm">DisAsm</button>
+      <button class="dropbtn" id="openDisasm">DisAsm</button>
       <button class="dropbtn" id="SRAM">SRAM</button>
       <button class="dropbtn" id="saveState">States</button>
       <button class="dropbtn" id="resetButton">Reset</button>
@@ -99,7 +98,7 @@
       <button id="modal-ok-btn">OK</button>
     </div>
   </div>
-  
+    
   <main>
 
     
@@ -268,10 +267,11 @@
 <script src="assets/js/6502.js"></script>
 
 <script src="assets/js/mappers/mmc1.js"></script>
+<script src="assets/js/mappers/mmc3.js"></script>
 
 <script src="assets/js/readFile.js"></script>
 
-<script src="disasm/disasm.js"></script>
+<script src="assets/js/disasm.js"></script>
 
 <script src="assets/js/cpu-open-bus.js"></script>
 
@@ -312,9 +312,6 @@
 
 <script src="assets/js/cpu-loop.js"></script>
 <script src="assets/js/ppu-loop.js"></script>
-
-<!-- purely for disassembler, absolutely nailed the desired outcome/ aesthetics for the window, but can't drag out of DOM -->
-<script src="/disasm/winbox.bundle.min.js"></script>
 
 <!-- actual JS code, LAST to run after JS includes - loads last loaded ROM on page refresh/ site re-launch -->
 <script>

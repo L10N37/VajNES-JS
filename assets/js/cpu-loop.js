@@ -4,7 +4,7 @@ let cpuRunning = false;
 let disasmRunning = false;
 let perFrameStep = false;
 
-let nmiPending = null;
+let nmiPending = 0;
 let irqPending = 0;
 
 let code = 0x00; // current opcode now global for CPU openbus logic
@@ -143,7 +143,7 @@ window.step = function () {
     nmiPending = 0;
   }
 
-  if (irqPending === 1) {
+  if (irqPending) {
     serviceIRQ();
     irqPending = 0;
   }
@@ -154,7 +154,7 @@ window.step = function () {
 
   checkInterrupts();
   // set the flag here, check if NMI is due NEXT step
-  // this order is specifically coded to pass NMI control tests
+  // this order is specifically c oded to pass NMI control tests
   // i.e. do not call checkInterrupts prior to handling of interrupts
   //=================================================
 

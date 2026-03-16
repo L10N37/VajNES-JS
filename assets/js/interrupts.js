@@ -14,7 +14,7 @@ function serviceNMI(){
 const inVBlank = (currentScanline >= 241 && currentScanline <= 260);        // VBlank starts on scanline 241
   
   // temp logging , like most of it
-  if (nmiPending !== null && nmiPending !== currentFrame) {
+  if (nmiPending !== currentFrame) {
     console.debug(
       `[NMI DEBUG] ` +
       `currentFrame=${currentFrame} ` +
@@ -105,23 +105,13 @@ function serviceIRQ() {
 
     const pc = CPUregisters.PC & 0xFFFF;
 
-    // -------------------------
-    // IRQ Debugging output
-    // -------------------------
-    /*
-    console.debug("[IRQ] --- IRQ SERVICED ---");
-    console.debug(`[IRQ] Current PC: 0x${pc.toString(16).padStart(4,'0')}`);
-    console.debug(`[IRQ] Stack pointer before push: 0x${CPUregisters.S.toString(16).padStart(2,'0')}`);
-    console.debug(`[IRQ] Flags before push: N=${CPUregisters.P.N} V=${CPUregisters.P.V} D=${CPUregisters.P.D} I=${CPUregisters.P.I} Z=${CPUregisters.P.Z} C=${CPUregisters.P.C}`);
-    */
-   
     // Push PCH
-    checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), (pc >> 8) & 0xFF);
+    cpuWrite(0x0100 | (CPUregisters.S & 0xFF), (pc >> 8) & 0xFF);
     CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
     addCycles(1);
 
     // Push PCL
-    checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), pc & 0xFF);
+    cpuWrite(0x0100 | (CPUregisters.S & 0xFF), pc & 0xFF);
     CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
     addCycles(1);
 
@@ -135,7 +125,7 @@ function serviceIRQ() {
     p |= (CPUregisters.P.C & 1);
 
     // Push P
-    checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), p & 0xFF);
+    cpuWrite(0x0100 | (CPUregisters.S & 0xFF), p & 0xFF);
     CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
     addCycles(1);
 
@@ -143,28 +133,15 @@ function serviceIRQ() {
     CPUregisters.P.I = 1;
     addCycles(1);
 
-    // -------------------------
-    // Fetch IRQ vector (PRG ROM mapping)
-    // -------------------------
-    let lo, hi;
+    // Fetch IRQ vector
+    let lo = checkReadOffset(0xFFFE);
+    addCycles(1);
 
-        lo = checkReadOffset(0xFFFE);
-        addCycles(1); // vector fetch
-        hi = checkReadOffset(0xFFFF);
-        addCycles(1); // vector fetch
+    let hi = checkReadOffset(0xFFFF);
+    addCycles(1);
 
     // Set PC to IRQ vector
     CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
 
     addCycles(1);
-
-    // -------------------------
-    // IRQ Debugging output end
-    // -------------------------
-    /*
-    console.debug(`[IRQ] Vector memory: 0xFFFE=0x${lo.toString(16).padStart(2,'0')}, 0xFFFF=0x${hi.toString(16).padStart(2,'0')}`);
-    console.debug(`[IRQ] Target PC after vector fetch: 0x${CPUregisters.PC.toString(16).padStart(4,'0')}`);
-    console.debug(`[IRQ] Stack pointer after push: 0x${CPUregisters.S.toString(16).padStart(2,'0')}`);
-    console.debug("[IRQ] -------------------------\n");
-    */
 }
