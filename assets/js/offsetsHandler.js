@@ -21,8 +21,6 @@ globalThis.writeToggle = writeToggle;
 // would be smashing through test suites if i hadn't gone multicore, oof, cbf with a major refactor so some struggles with chunk by chunk on different cores
 // https://www.nesdev.org/wiki/PPU_registers#Rendering_control
 
-function _codeNow(){ return (typeof code === "number") ? (code & 0xFF) : 0xFF; }
-
 function mapNT(addr14) {
   const v   = (addr14 - 0x2000) & 0x0FFF;
   const off = v & 0x03FF;
@@ -47,7 +45,6 @@ function paletteIndex(addr14) {
 // ----------------- CPU read dispatch -----------------
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
-  const codeNow = _codeNow();
 
   let raw = 0x00;
 
@@ -221,7 +218,7 @@ function checkReadOffset(address) {
   }
 
   const out =
-    cpuOpenBusFinalise(addr, raw, codeNow, false) & 0xFF;
+    cpuOpenBusFinalise(addr, raw, code, false) & 0xFF;
 
   return out;
 }
@@ -232,10 +229,9 @@ const PPU_WRITE_GATE_CYCLES = 29658;
 function checkWriteOffset(address, value) {
   const addr = address & 0xFFFF;
   value &= 0xFF;
-
-  const codeNow = _codeNow();
-
-  if (mapperNumber === 4 && addr >= 0x8000)
+  
+  
+  if (mapperNumber === 4 && address >= 0x8000)
   {
       switch (addr & 0xE001)
       {
@@ -252,7 +248,7 @@ function checkWriteOffset(address, value) {
           case 0xE001: mapper4_write_E001(value); break;
       }
 
-      cpuOpenBusFinalise(addr,value,codeNow,true);
+      cpuOpenBusFinalise(addr,value,code,true);
       return;
   }
 
@@ -275,7 +271,7 @@ function checkWriteOffset(address, value) {
 
 
     if (gateThis && (cpuCycles < PPU_WRITE_GATE_CYCLES)) {
-      cpuOpenBusFinalise(addr, value, codeNow, true);
+      cpuOpenBusFinalise(addr, value, code, true);
 
       return;
     }
@@ -437,6 +433,7 @@ function checkWriteOffset(address, value) {
 
     globalThis.writeToggle = writeToggle;
     break;
+
       // PPUDATA
       case 0x2007: {
         const v = VRAM_ADDR & 0x3FFF;
@@ -495,7 +492,7 @@ function checkWriteOffset(address, value) {
     }
   }
 
-  cpuOpenBusFinalise(addr, value, codeNow, true);
+  cpuOpenBusFinalise(addr, value, code, true);
 }
 
 // ----------------- CPU RAM helpers -----------------

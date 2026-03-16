@@ -14,18 +14,6 @@
 // because I decided not to copy banks into the 'viewable' window and pull it directly from the source
 // this kinda renders the GUI useless for this mapper at this stage
 
-
-// -----------------------------------------------------
-// MMC3 debug control
-// -----------------------------------------------------
-
-const MMC3_DEBUG = {
-    prgReadCount: 0,
-    chrReadCount: 0,
-    maxReadLogs: 256,
-    readLogLimitHit: false
-};
-
 // -----------------------------------------------------
 // MMC3 internal state
 // -----------------------------------------------------
@@ -365,7 +353,9 @@ function mapper4_write_C001(value)
 
 function mapper4_write_C000(value)
 {
+    // this is never getting hit!
     mmc3_irq.latch = value & 0xFF;
+    console.log("latch:", mmc3_irq.latch);
 }
 
 function mapper4_write_E000(value)
