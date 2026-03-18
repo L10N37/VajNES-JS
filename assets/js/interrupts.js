@@ -1,5 +1,12 @@
 // ======== Interrupts ======== 
 // https://www.nesdev.org/wiki/CPU_interrupts
+
+// IRQ request sources
+const irqAssert = {
+  mmc3: false,
+  dmcDma: false
+};
+
 function serviceNMI(){
 
   clearNmiEdge();
@@ -102,7 +109,7 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
 }
 
 function serviceIRQ() {
-
+    
     const pc = CPUregisters.PC & 0xFFFF;
 
     // Push PCH

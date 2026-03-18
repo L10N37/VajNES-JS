@@ -351,6 +351,7 @@ function checkWriteOffset(address, value) {
         if (renderingEnabled && (isVisible || isPreRender)) {
           // MUST clear low 2 bits (Test A requirement)
           OAMADDR = ((OAMADDR + 4) & 0xFC) & 0xFF;
+          cpuOpenBusFinalise(addr, value, code, true);
           break; // do NOT write OAM
         }
 
@@ -394,39 +395,6 @@ function checkWriteOffset(address, value) {
           t_lo = value & 0xFF;
 
           VRAM_ADDR = ((t_hi << 8) | t_lo) & 0x3FFF;
-          const A12_IS_HIGH = (VRAM_ADDR & 0x1000) !== 0;
-
-      if (mapperNumber === 4)
-      {
-          
-          if (mmc3_irq.reload)  // a reload takes priority over an IRQ firing? so even if we decced our latch value to zero, if reload is set, reload
-          {
-              mmc3_irq.scanlineCounter = mmc3_irq.latch;
-              mmc3_irq.reload = false;
-          }
-
-          if (!A12_IS_HIGH)
-          {
-              mmc3_irq.a12LowCount++; // A12 is low, so increment counter
-              console.log(mmc3_irq.a12LowCount);
-          }
-
-          if (A12_IS_HIGH && mmc3_irq.a12LowCount >= 3) // A12 was low before going high (rising edge detection) for at least 9 (3*3) PPU cycles
-          {
-              mmc3_irq.scanlineCounter--; // so dec our scanline counter
-          }
-
-          if (mmc3_irq.scanlineCounter === 0 && mmc3_irq.enabled) // and if we dec to zero / didn't reload counter with latch value
-          {
-              irqPending = 1; // then we set the irq up to fire with our latch for timing, mmc3 doesn't touch P.I reg
-              console.log("mmc3 set irq");
-          }
-
-          if (A12_IS_HIGH) // fall through, if A12 was high and bypassed our cycle filter,  or stays high (also bypassing) just reset our A12 low count
-          {
-              mmc3_irq.a12LowCount = 0;
-          }
-      }
 
           writeToggle = 0;
       }
@@ -434,29 +402,45 @@ function checkWriteOffset(address, value) {
     globalThis.writeToggle = writeToggle;
     break;
 
-      // PPUDATA
-      case 0x2007: {
+    // PPUDATA
+    case 0x2007: {
         const v = VRAM_ADDR & 0x3FFF;
 
-        if (v < 0x2000) {
-          if (mapperNumber === 1) {
-            if (chrIsRAM) CHR_ROM[v & 0x1FFF] = value;
-            else mmc1ChrWrite(v & 0x1FFF, value);
-          } else if (chrIsRAM) {
-            CHR_ROM[v & 0x1FFF] = value;
-          }
-        } else if (v < 0x3F00) {
-          const ntAddr = mapNT(v) & 0x07FF;
-          VRAM[ntAddr] = value;
-        } else {
-          const p = paletteIndex(v);
-          PALETTE_RAM[p] = value & 0x3F;
+        if (v < 0x2000)
+        {
+            if (mapperNumber === 4)
+            {
+                if (chrIsRAM)
+                    mapper4_chr_write(v, value);
+            }
+            else if (mapperNumber === 1)
+            {
+                if (chrIsRAM)
+                    CHR_ROM[v & 0x1FFF] = value;
+                else
+                    mmc1ChrWrite(v & 0x1FFF, value);
+            }
+            else if (chrIsRAM)
+            {
+                CHR_ROM[v & 0x1FFF] = value;
+            }
+        }
+        else if (v < 0x3F00)
+        {
+            const ntAddr = mapNT(v) & 0x07FF;
+            VRAM[ntAddr] = value;
+        }
+        else
+        {
+            const p = paletteIndex(v);
+            PALETTE_RAM[p] = value & 0x3F;
         }
 
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
+
         break;
-      }
+    }
 
       default:
         break;
@@ -515,32 +499,69 @@ function mapperWritePRG(addr, value) {}
 // ----------------- APU -----------------
 function apuWrite(address, value) {
   switch (address) {
-    case 0x4000: APUregister.SQ1_VOL = value;    break;
-    case 0x4001: APUregister.SQ1_SWEEP = value;  break;
-    case 0x4002: APUregister.SQ1_LO = value;     break;
-    case 0x4003: APUregister.SQ1_HI = value;     break;
 
-    case 0x4004: APUregister.SQ2_VOL = value;    break;
-    case 0x4005: APUregister.SQ2_SWEEP = value;  break;
-    case 0x4006: APUregister.SQ2_LO = value;     break;
-    case 0x4007: APUregister.SQ2_HI = value;     break;
+    // ----------------- PULSE 1 -----------------
+    case 0x4000: APUregister.SQ1_VOL   = value; break;
+    case 0x4001: APUregister.SQ1_SWEEP = value; break;
+    case 0x4002: APUregister.SQ1_LO    = value; break;
+    case 0x4003: APUregister.SQ1_HI    = value; break;
 
+    // ----------------- PULSE 2 -----------------
+    case 0x4004: APUregister.SQ2_VOL   = value; break;
+    case 0x4005: APUregister.SQ2_SWEEP = value; break;
+    case 0x4006: APUregister.SQ2_LO    = value; break;
+    case 0x4007: APUregister.SQ2_HI    = value; break;
+
+    // ----------------- TRIANGLE -----------------
     case 0x4008: APUregister.TRI_LINEAR = value; break;
-    case 0x400A: APUregister.TRI_LO = value;     break;
-    case 0x400B: APUregister.TRI_HI = value;     break;
+    case 0x400A: APUregister.TRI_LO     = value; break;
+    case 0x400B: APUregister.TRI_HI     = value; break;
 
-    case 0x400C: APUregister.NOISE_VOL = value;  break;
-    case 0x400E: APUregister.NOISE_LO = value;   break;
-    case 0x400F: APUregister.NOISE_HI = value;   break;
+    // ----------------- NOISE -----------------
+    case 0x400C: APUregister.NOISE_VOL = value; break;
+    case 0x400E: APUregister.NOISE_LO  = value; break;
+    case 0x400F: APUregister.NOISE_HI  = value; break;
 
-    case 0x4010: APUregister.DMC_FREQ = value;   break;
-    case 0x4011: APUregister.DMC_RAW = value;    break;
-    case 0x4012: APUregister.DMC_START = value;  break;
-    case 0x4013: APUregister.DMC_LEN = value;    break;
+    // =================================================
+    // ===================== DMC ========================
+    // =================================================
 
-    case 0x4015: APUregister.SND_CHN = value;    break;
-    case 0x4017: APUregister.FRAME_CNT = value;  break;
+    // $4010 - control (IRQ, loop, rate)
+    case 0x4010:
+      console.log("4010 WRITE:", value.toString(16), "rateIndex:", value & 0x0F);
+      APUregister.DMC_FREQ = value;
+      dmcSetControlFrom4010(value);
+      break;
 
+    // $4011 - direct load (DAC)
+    case 0x4011:
+      APUregister.DMC_RAW = value;
+      break;
+
+    // $4012 - sample address
+    case 0x4012:
+      APUregister.DMC_START = value;
+      dmcSetSampleAddressFrom4012(value);
+      break;
+
+    // $4013 - sample length
+    case 0x4013:
+      APUregister.DMC_LEN = value;
+      dmcSetSampleLengthFrom4013(value);
+      break;
+
+    // $4015 - channel enable
+    case 0x4015:
+      APUregister.SND_CHN = value;
+      dmcWrite4015(value);
+      break;
+
+    // ----------------- FRAME COUNTER -----------------
+    case 0x4017:
+      APUregister.FRAME_CNT = value;
+      break;
+
+    // ----------------- DEFAULT -----------------
     default:
       break;
   }

@@ -330,44 +330,210 @@ function mapper4_chr_read(address)
     return result;
 }
 
+function mapper4_chr_write(address, value)
+{
+    if (!chrIsRAM) return; // CHR ROM ignores writes
+
+    const bankSize = 0x0400; // 1KB
+    const chrBankCount = FULL_CHR_ROM_SIZE / bankSize;
+
+    let bank;
+    let offset;
+
+    address &= 0x1FFF;
+    value &= 0xFF;
+
+    if (MMC3.control.chrMode === "CHR_NORMAL")
+    {
+        // $0000-$07FF -> R0/R0+1 (2KB)
+        if (address < 0x0800)
+        {
+            const base = MMC3.registers.CHR_BANK_0 & 0xFE;
+            bank = base + ((address >> 10) & 1);
+            offset = address & 0x03FF;
+        }
+
+        // $0800-$0FFF -> R1/R1+1 (2KB)
+        else if (address < 0x1000)
+        {
+            const base = MMC3.registers.CHR_BANK_1 & 0xFE;
+            bank = base + (((address - 0x0800) >> 10) & 1);
+            offset = address & 0x03FF;
+        }
+
+        // $1000-$13FF -> R2
+        else if (address < 0x1400)
+        {
+            bank = MMC3.registers.CHR_BANK_2;
+            offset = address & 0x03FF;
+        }
+
+        // $1400-$17FF -> R3
+        else if (address < 0x1800)
+        {
+            bank = MMC3.registers.CHR_BANK_3;
+            offset = address & 0x03FF;
+        }
+
+        // $1800-$1BFF -> R4
+        else if (address < 0x1C00)
+        {
+            bank = MMC3.registers.CHR_BANK_4;
+            offset = address & 0x03FF;
+        }
+
+        // $1C00-$1FFF -> R5
+        else
+        {
+            bank = MMC3.registers.CHR_BANK_5;
+            offset = address & 0x03FF;
+        }
+    }
+    else
+    {
+        // $0000-$03FF -> R2
+        if (address < 0x0400)
+        {
+            bank = MMC3.registers.CHR_BANK_2;
+            offset = address & 0x03FF;
+        }
+
+        // $0400-$07FF -> R3
+        else if (address < 0x0800)
+        {
+            bank = MMC3.registers.CHR_BANK_3;
+            offset = address & 0x03FF;
+        }
+
+        // $0800-$0BFF -> R4
+        else if (address < 0x0C00)
+        {
+            bank = MMC3.registers.CHR_BANK_4;
+            offset = address & 0x03FF;
+        }
+
+        // $0C00-$0FFF -> R5
+        else if (address < 0x1000)
+        {
+            bank = MMC3.registers.CHR_BANK_5;
+            offset = address & 0x03FF;
+        }
+
+        // $1000-$17FF -> R0/R0+1 (2KB)
+        else if (address < 0x1800)
+        {
+            const base = MMC3.registers.CHR_BANK_0 & 0xFE;
+            bank = base + (((address - 0x1000) >> 10) & 1);
+            offset = address & 0x03FF;
+        }
+
+        // $1800-$1FFF -> R1/R1+1 (2KB)
+        else
+        {
+            const base = MMC3.registers.CHR_BANK_1 & 0xFE;
+            bank = base + (((address - 0x1800) >> 10) & 1);
+            offset = address & 0x03FF;
+        }
+    }
+
+    bank &= (chrBankCount - 1);
+
+    const romIndex = (bank * bankSize) + offset;
+
+    if (romIndex >= 0 && romIndex < FULL_CHR_ROM.length)
+    {
+        FULL_CHR_ROM[romIndex] = value;
+    }
+}
+
 // ============================ //
 //   A12 EDGE DETECTOR          //
 // ============================ //
 const mmc3_irq = {
 
-  scanlineCounter: 0,     // Current IRQ counter value (decrements on valid A12 clocks)
+  scanlineCounter: 0,
+  latch: 0,
 
-  reload: false,  // Set by $C001. When true, the next A12 clock loads counter = latch
-
-  enabled: false, // IRQ enable flag. Set by $E001, cleared by $E000
-
-  a12LowCount: 0,    // Counts how long A12 has stayed LOW (used for the >=8 PPU cycle filter)
-
-  latch: 0        // Value written by $C000. This is the value loaded into counter on reload
+  reload: false,
+  prevA12: 0,
+  a12LowCount: 0 // for filter
 
 };
-function mapper4_write_C001(value)
-{
-    mmc3_irq.reload = true;
+
+
+// pre req's IRQ/NMI timing + overlap behavior
+function mmc3Irq(addr){
+
+    const A12_STATE = (addr >> 12) & 1;
+
+    // count how long A12 is LOW
+    if (!A12_STATE) {
+    mmc3_irq.a12LowCount++;
+    }
+
+    // detect rising edge with filter
+    if (!mmc3_irq.prevA12 && A12_STATE && mmc3_irq.a12LowCount >= 8) {
+
+    console.log("A12 rising edge detected - Last A12:", mmc3_irq.prevA12, "this A12:", A12_STATE, "vramAddr:", VRAM_ADDR.toString(16));
+
+    if (mmc3_irq.scanlineCounter === 0 || mmc3_irq.reload) {
+
+        mmc3_irq.scanlineCounter = mmc3_irq.latch;
+
+        console.log("mmc3 scanline counter reloaded:", mmc3_irq.scanlineCounter);
+
+        mmc3_irq.reload = false;
+
+    } else {
+
+        mmc3_irq.scanlineCounter--;
+
+        console.log("scanline counter dec'd:", mmc3_irq.scanlineCounter);
+
+    }
+
+    // IRQ fires when counter becomes 0
+    if (mmc3_irq.scanlineCounter === 0 && mmc3_irq.reload === false) {
+        console.log("MMC3 IRQ FIRED");
+        irqPending = 1; // or service straight away with serviceIRQ() ?
+    }
+    }
+
+    // reset filter if A12 is high
+    if (A12_STATE) {
+    mmc3_irq.a12LowCount = 0;
+    }
+
+    mmc3_irq.prevA12 = A12_STATE;
+
 }
+
+// http://kevtris.org/mappers/mmc3/index.html
 
 function mapper4_write_C000(value)
 {
-    // this is never getting hit!
     mmc3_irq.latch = value & 0xFF;
-    console.log("latch:", mmc3_irq.latch);
+    console.log("latch $C000:", mmc3_irq.latch);
+}
+
+function mapper4_write_C001(value)
+{
+    console.log("$C001 reg hit ,reload set to true, counter cleared")
+    mmc3_irq.reload = true;
+    mmc3_irq.scanlineCounter = 0;
 }
 
 function mapper4_write_E000(value)
 {
-    mmc3_irq.enabled = false;
-
+    CPUregisters.P.I = 1;
+    console.log("mmc3 irq enabled:", CPUregisters.P.I);
+    irqPending = 0;
 }
 
 function mapper4_write_E001(value)
 {
-    mmc3_irq.enabled = true;
-
+    CPUregisters.P.I = 0;
+    console.log("mmc3 irq enabled:", CPUregisters.P.I);
 }
 
 

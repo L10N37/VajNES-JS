@@ -49,7 +49,8 @@ function dmaMicroStep() {
   // ---- transfer ----
   if (DMA.phase === "get") {
     // READ cycle
-    DMA.tmp = checkReadOffset(DMA.addr) & 0xFF;
+    const raw = checkReadOffset(DMA.addr) & 0xFF;
+    DMA.tmp = cpuOpenBusFinalise(DMA.addr, raw, 0x00, false);
     DMA.phase = "put";
     addCycles(1);
     return 1;

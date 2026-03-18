@@ -444,6 +444,9 @@ function copyVert() {
 // ---- PPU bus read ----
 function ppuBusRead(addr)
 {
+
+ if (mapperNumber === 4) mmc3Irq(addr);
+
   addr &= 0x3FFF;
 
   // ------------------------------------------------
@@ -454,11 +457,6 @@ function ppuBusRead(addr)
     {
 
     addr &= 0x1FFF;
-
-    if (mapperNumber === 4)
-    {
-    //mmc3ObserveA12(addr, false);
-    }
 
     // MMC3
     if (mapperNumber === 4)

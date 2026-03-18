@@ -172,7 +172,7 @@ ppuCycles
 
 nmi edges need restoring (PPU_FRAME_FLAGS & 0b00000100)
 nmiPending needs restoring
-irqPending needs restoring
+mmc3_irq.enabled needs restoring
 cpuStallFlag
 VRAM
 OAM
@@ -506,7 +506,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // CPU/IRQ/NMI related
     chunks.push(buildSection("NMIF", num8((typeof PPU_FRAME_FLAGS !== "undefined" ? PPU_FRAME_FLAGS : 0) & 0xFF)));
     chunks.push(buildSection("NMIP", bool1(typeof nmiPending !== "undefined" ? nmiPending : false)));
-    chunks.push(buildSection("IRQP", bool1(typeof irqPending !== "undefined" ? irqPending : false)));
+    chunks.push(buildSection("IRQP", bool1(typeof mmc3_irq.enabled !== "undefined" ? mmc3_irq.enabled : false)));
     chunks.push(buildSection("STAL", num32LE((typeof cpuStallFlag !== "undefined" ? cpuStallFlag : 0) >>> 0)));
 
     chunks.push(buildSection("CPUB", num8((typeof openBus.CPU !== "undefined" ? openBus.CPU : 0) & 0xFF)));
@@ -626,7 +626,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         case "NMIF": PPU_FRAME_FLAGS = payload[0] & 0xFF; break;
         case "NMIP": nmiPending = !!(payload[0] & 1); break;
-        case "IRQP": irqPending = !!(payload[0] & 1); break;
+        case "IRQP": mmc3_irq.enabled = !!(payload[0] & 1); break;
         case "STAL": cpuStallFlag = bytesToU32LE(payload, 0) >>> 0; break;
 
         case "CPUB": openBus.CPU = payload[0] & 0xFF; break;

@@ -110,7 +110,13 @@ resetButton.onclick = resetCPU;
 function addCycles(x) {
 
   cpuCycles += x;
-  ppuCycles += 3 * x;
+  ppuCycles += 3 * x;  
+
+  clockDMC(); // clock per cycle
+
+  if (DMC.dmaRequest) {
+  dmcDoDMA();
+  }
 
   if (openBus.ppuDecayTimer > 0) {
     openBus.ppuDecayTimer--;
@@ -130,6 +136,7 @@ function addCycles(x) {
   presentFrame();
   if (perFrameStep) pause();
   }
+
 
 }
 

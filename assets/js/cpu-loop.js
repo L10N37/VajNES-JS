@@ -5,7 +5,8 @@ let disasmRunning = false;
 let perFrameStep = false;
 
 let nmiPending = 0;
-let irqPending = 0;
+let irqLine = "IDLE_HIGH";
+let irqLatch = false; // timing latch
 
 let code = 0x00; // current opcode now global for CPU openbus logic
 let operand1 = "--";
@@ -19,7 +20,7 @@ function doesNmiEdgeExist() {
     return (PPU_FRAME_FLAGS & 0b00000100) !== 0;
 }
 
-function checkInterrupts() {
+function checkNmi() {
   if (!doesNmiEdgeExist()) return;
 
   nmiPending = (currentFrame);
@@ -87,6 +88,11 @@ function _mainLoopRAF(now) {
 
 window.step = function () {
 
+  if (irqLatch) {
+  serviceIRQ();
+  irqAssert.dmcDma = irqAssert.mmc3 = false;
+  }
+
   debug.logging = false;
   NoSignalAudio.setEnabled(false);
   if (!cpuRunning) return 0;
@@ -122,6 +128,7 @@ window.step = function () {
   const before = cpuCycles;
 
   addCycles(1); // opcode fetch cycle
+  if ((irqAssert.dmcDma || irqAssert.mmc3) && !CPUregisters.P.I) irqLatch = true;
 
   disasm();
   op.func();
@@ -132,6 +139,7 @@ window.step = function () {
   //=================================================
   // ---- handle interrupts ----
   // Only take NMI if it's pending *and not suppressed this vblank*
+
   if (nmiPending) {
     if (debug.videoTiming) {
       console.debug(
@@ -143,16 +151,7 @@ window.step = function () {
     nmiPending = 0;
   }
 
-  if (irqPending) {
-    serviceIRQ();
-    irqPending = 0;
-  }
-  // just latch, service after next inst.
-  if (!CPUregisters.P.I) {
-    irqPending++;
-  }
-
-  checkInterrupts();
+  checkNmi();
   // set the flag here, check if NMI is due NEXT step
   // this order is specifically c oded to pass NMI control tests
   // i.e. do not call checkInterrupts prior to handling of interrupts
