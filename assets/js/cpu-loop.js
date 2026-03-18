@@ -5,9 +5,7 @@ let disasmRunning = false;
 let perFrameStep = false;
 
 let nmiPending = 0;
-let irqLine = "IDLE_HIGH";
 let irqLatch = false; // timing latch
-
 let code = 0x00; // current opcode now global for CPU openbus logic
 let operand1 = "--";
 let operand2 = "--";
@@ -88,18 +86,13 @@ function _mainLoopRAF(now) {
 
 window.step = function () {
 
-  if (irqLatch) {
-  serviceIRQ();
-  irqAssert.dmcDma = irqAssert.mmc3 = false;
-  }
-
   debug.logging = false;
   NoSignalAudio.setEnabled(false);
   if (!cpuRunning) return 0;
 
   // DMA first: returns 1 or 2 cycles per call (or 0 if finished)
   if (DMA.active) {
-    const used = dmaMicroStep();   // calls addCycles() internally
+    const used = dmaMicroStep();   // calls consumeCycle() internally
     return used | 0;
   }
 
@@ -124,14 +117,21 @@ window.step = function () {
     return 0;
   }
 
-  // Measure cycles consumed by this opcode (handlers call addCycles internally)
+  // Measure cycles consumed by this opcode (handlers call addCycle internally)
   const before = cpuCycles;
 
-  addCycles(1); // opcode fetch cycle
-  if ((irqAssert.dmcDma || irqAssert.mmc3) && !CPUregisters.P.I) irqLatch = true;
+  consumeCycle(); // opcode fetch cycle
 
   disasm();
   op.func();
+
+  if (irqLatch) {
+  serviceIRQ();
+  irqLatch = false;
+  irqAssert.RTI = false;
+  }
+
+  if ((irqAssert.dmcDma || irqAssert.mmc3 || irqAssert.RTI) && !CPUregisters.P.I) irqLatch = true;
 
   const after = cpuCycles;
   const used  = (after - before) | 0;

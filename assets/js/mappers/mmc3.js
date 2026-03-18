@@ -495,7 +495,7 @@ function mmc3Irq(addr){
     // IRQ fires when counter becomes 0
     if (mmc3_irq.scanlineCounter === 0 && mmc3_irq.reload === false) {
         console.log("MMC3 IRQ FIRED");
-        irqPending = 1; // or service straight away with serviceIRQ() ?
+        irqAssert.mmc3 = true;
     }
     }
 
@@ -527,7 +527,7 @@ function mapper4_write_E000(value)
 {
     CPUregisters.P.I = 1;
     console.log("mmc3 irq enabled:", CPUregisters.P.I);
-    irqPending = 0;
+    mmc3_irq.scanlineCounter = mmc3_irq.latch;
 }
 
 function mapper4_write_E001(value)
@@ -535,7 +535,6 @@ function mapper4_write_E001(value)
     CPUregisters.P.I = 0;
     console.log("mmc3 irq enabled:", CPUregisters.P.I);
 }
-
 
 // debug, not tied in with an on click / button, just use console
 function openMMC3DebugModal()

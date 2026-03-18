@@ -33,7 +33,7 @@ function dmaMicroStep() {
     let cycles = DMA.pad;
 
     for (let i = 0; i < cycles; i++) {
-      addCycles(1);
+      consumeCycle();
     }
 
     DMA.pad = 0;
@@ -52,7 +52,7 @@ function dmaMicroStep() {
     const raw = checkReadOffset(DMA.addr) & 0xFF;
     DMA.tmp = cpuOpenBusFinalise(DMA.addr, raw, 0x00, false);
     DMA.phase = "put";
-    addCycles(1);
+    consumeCycle();
     return 1;
   }
   
@@ -62,7 +62,7 @@ function dmaMicroStep() {
     DMA.addr = (DMA.addr + 1) & 0xFFFF;
     DMA.index = (DMA.index + 1) & 0xFFFF;
     DMA.phase = "get";
-    addCycles(1);
+    consumeCycle();
     //console.log( "  cpuCycles:", cpuCycles);
     return 1;
   }
