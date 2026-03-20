@@ -1,9 +1,9 @@
 
 let debug = {
   oamDma: false,
-  logging: false,
   videoTiming: false,
   openBusTests: false,
+  dmcDma: false
 };
 
 let openBus = {
@@ -528,7 +528,6 @@ function apuWrite(address, value) {
 
     // $4010 - control (IRQ, loop, rate)
     case 0x4010:
-      console.log("4010 WRITE:", value.toString(16), "rateIndex:", value & 0x0F);
       APUregister.DMC_FREQ = value;
       dmcSetControlFrom4010(value);
       break;

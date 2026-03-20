@@ -113,14 +113,6 @@ function consumeCycle() {
   cpuCycles += 1;
   ppuCycles += 3;
 
-  /*
-  5: An IRQ should run again after an RTI if the interrupt was not acknowledged and the 
-  I flag was not set when pushed to the stack.
-  */
-  if (code === 0x40 && !CPUregisters.P.I && (irqAssert.dmcDma || irqAssert.mmc3)) {
-    irqLatch = true;
-  }
-
   clockDMC(); // clock per cycle
 
   if (DMC.dmaRequest) {
@@ -674,7 +666,6 @@ function SEI_IMP() { // Set Interrupt Disable
   CPUregisters.P.I = 1;
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
-
 }
 
 function CLD_IMP() { // Clear Decimal
@@ -3157,10 +3148,6 @@ function RTI_IMP() {
   // C2: pre-increment S
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
   consumeCycle();
-
-  if (!CPUregisters.P.I) {
-  irqAssert.RTI = true;
-  }
 
   // C3: read P, apply (ignore B, force U)
   const pv = checkReadOffset(0x0100 | (CPUregisters.S & 0xFF)) & 0xFF;

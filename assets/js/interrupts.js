@@ -10,7 +10,7 @@ const irqAssert = {
 function serviceNMI(){
 
   clearNmiEdge();
-  if (debug.logging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
+  //if (debug.logging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
   
 // nmiPending (NMI timing latch) now contains the frame it was generated
 // if the frame doesn't match the current frame, don't fire the NMI, it was generated on vblank boundaries <- this guard not required
@@ -108,12 +108,27 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
  }
 }
 
-function serviceIRQ() {
+let irqBypassI = false;
+function irqTimingEngine(){
+  // check if any source has pulled the IRQ line low / active state
+  if (!Object.values(irqAssert).some(Boolean)) return;
+
+  // === Edge Cases ===
+  if (code === 0x58) return; // CLI, delay by 1 instruction
+  if (code === 0x78 || code === 0x58 || code === 0x28) return; // no handling logic in here for these
+
+  // fall through: general timing, service at the point this handler is called (post opcode handler)
+  serviceIRQ();
+}
+
+function serviceIRQ(bypass_interrupt_flag = false) {
+    // always call for the servicing of IRQ if the timing is right, but bail out if the interrupt flag is set
+    // dont bail out if we captured IRQ decision in advance (mid instruction prior to setting the interrupt flag in SEI, CLI, PLP)
+    if(CPUregisters.P.I && !bypass_interrupt_flag) return;
 
     console.log("IRQ SERVICED, source-", 
     "mmc3:",  irqAssert.mmc3, 
     "DMC:",   irqAssert.dmcDma,
-    "RTI:",   irqAssert.RTI
     );
     
     const pc = CPUregisters.PC & 0xFFFF;

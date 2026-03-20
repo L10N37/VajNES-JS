@@ -5,7 +5,6 @@ let disasmRunning = false;
 let perFrameStep = false;
 
 let nmiPending = 0;
-let irqLatch = false; // timing latch
 let code = 0x00; // current opcode now global for CPU openbus logic
 let operand1 = "--";
 let operand2 = "--";
@@ -86,7 +85,6 @@ function _mainLoopRAF(now) {
 
 window.step = function () {
 
-  debug.logging = false;
   NoSignalAudio.setEnabled(false);
   if (!cpuRunning) return 0;
 
@@ -105,7 +103,9 @@ window.step = function () {
 
   }
 
-  if (OPCODES[code].pc === 1) operand2 = "na";
+  const len = OPCODES[code].pc;
+  if (len < 3) operand2 = "na";
+  if (len < 2) operand1 = "na";
 
   const op = OPCODES[code];
 
@@ -117,21 +117,22 @@ window.step = function () {
     return 0;
   }
 
-  // Measure cycles consumed by this opcode (handlers call addCycle internally)
   const before = cpuCycles;
 
   consumeCycle(); // opcode fetch cycle
 
   disasm();
-  op.func();
 
-  if (irqLatch) {
-  serviceIRQ();
-  irqLatch = false;
-  irqAssert.RTI = false;
+  // 0x78 → SEI (set I after poll), 0x58 → CLI (clear I after poll), 0x28 → PLP (restore P after poll)
+  // these instructions will disable interrupts, but poll for IRQ mid instruction (here we have already fetched our opcode
+  // so we are 'mid-instruction), we capture the IRQ decision before they set the I flag
+  if (code === 0x78 || code === 0x58 || code === 0x28) {
+      if (!CPUregisters.P.I && Object.values(irqAssert).some(Boolean)) {
+          irqBypassI = true;
+      }
   }
 
-  if ((irqAssert.dmcDma || irqAssert.mmc3 || irqAssert.RTI) && !CPUregisters.P.I) irqLatch = true;
+  op.func(); // call opcode handler
 
   const after = cpuCycles;
   const used  = (after - before) | 0;
@@ -139,6 +140,14 @@ window.step = function () {
   //=================================================
   // ---- handle interrupts ----
   // Only take NMI if it's pending *and not suppressed this vblank*
+
+  // poll for interrupts after the current instruction finishes (unless SEI, CLI, PLP, we captured the decision in advance)
+
+  if (irqBypassI) {
+      serviceIRQ(irqBypassI);
+      irqBypassI = false;
+  }
+  irqTimingEngine();
 
   if (nmiPending) {
     if (debug.videoTiming) {
