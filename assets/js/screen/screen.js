@@ -852,11 +852,13 @@ document.addEventListener('keydown', (ev) => {
 // run / pause shortcut key on r
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'r' && ev.key !== 'R') return;
-  if (typeof cpuRunning !== 'undefined' && typeof run === 'function' && typeof pause === 'function') {
-    if (!cpuRunning) run();
+    if (!cpuRunning){
+      step.opcode = 'false';
+      run();
+    }
     else pause();
   }
-});
+);
 
 // FPS toggle option (li:nth-child(5))
 const fpsOption = systemScreen && systemScreen.querySelector(".optionsBar li:nth-child(5)");

@@ -195,7 +195,7 @@ function loadRom(romBytes) {
 
     chrIsRAM = true;
 
-    // Update PPU frame flag
+    // Update PPU frame flag # wot
     if (chrIsRAM) PPU_FRAME_FLAGS |= 0x80;
     else           PPU_FRAME_FLAGS &= 0x7F;
   }

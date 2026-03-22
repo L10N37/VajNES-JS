@@ -1,14 +1,19 @@
 "use strict";
 
-let disasmEnabled = false;
+let disasmRunning = false;
+
+const operand = {
+  1: 0x00,
+  2: 0x00,
+};
 
 openDisasm.onclick = () => {
-    disasmEnabled = !disasmEnabled;
-    window.alert(disasmEnabled ? "Disassembler enabled (console)" : "Disassembler disabled (console)");
+    disasmRunning = !disasmRunning;
+    window.alert(disasmRunning ? "Disassembler enabled (console)" : "Disassembler disabled (console)");
 };
 
 function disasm(){
-if (disasmEnabled) {
+if (disasmRunning) {
 
     const hex2 = v => (typeof v === "number")
         ? v.toString(16).toUpperCase().padStart(2, "0")
@@ -30,7 +35,7 @@ if (disasmEnabled) {
 
     console.log(
         `${hex4(CPUregisters.PC)}  ` +
-        `${hex2(code)} ${hex2(operand1)} ${hex2(operand2)}  ` +
+        `${hex2(code)} ${hex2(operand[1])} ${hex2(operand[2])}  ` +
         `${mnemonic.padEnd(12)}  ` +
         `A:${hex2(CPUregisters.A)} ` +
         `X:${hex2(CPUregisters.X)} ` +

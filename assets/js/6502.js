@@ -42,7 +42,6 @@ let CPUregisters = {
 // These are used to access P register by INDEX! used for debug table
 let P_VARIABLES = ['C', 'Z', 'I', 'D', 'V', 'N'];
 
-let irqPostRTI = 0x00;
 
 function resetCPU() {
 
@@ -108,6 +107,8 @@ resetButton.onclick = resetCPU;
 // https://www.masswerk.at/6502/6502_instruction_set.html
 // https://www.pagetable.com/c64ref/6502/?tab=2#LDA 
 // https://www.nesdev.org/obelisk-6502-guide/addressessing.html
+
+
 function consumeCycle() {
 
   cpuCycles += 1;
@@ -135,7 +136,7 @@ function consumeCycle() {
   const NTSC_cpu_cycles_per_frame = 29780;
   if (cpuCycles % NTSC_cpu_cycles_per_frame === 0) { 
   presentFrame();
-  if (perFrameStep) pause();
+  if (step.frame) pause();
   }
 
 

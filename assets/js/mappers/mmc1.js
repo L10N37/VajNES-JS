@@ -323,6 +323,7 @@ function mmc1Init(prg, chr) {
 
   if (!prgRam) prgRam = new Uint8Array(0x2000);
 
+  // #wot
   if (chrIsRAM) PPU_FRAME_FLAGS |= 0x80;
   else          PPU_FRAME_FLAGS &= 0x7F;
 

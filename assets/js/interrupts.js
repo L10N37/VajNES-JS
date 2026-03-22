@@ -1,11 +1,24 @@
 // ======== Interrupts ======== 
 // https://www.nesdev.org/wiki/CPU_interrupts
 
+// IRQ line, active low, idle high - we can track what requested the interrupt
 const irqAssert = {
   mmc3: false,
   dmcDma: false,
-  RTI: false
 };
+
+// for cycle accurate IRQ timing in relation to branches
+const irqBranch = {
+  takenNoPageCross: false,
+  takenPageCross: false,
+  notTaken: false,
+  cycleCounter: 0
+};
+
+// certain instructions (commented elsewhere) will or may set the interrupt flag
+// but on the same cycle poll for interrupts, if the irq line was low and the I flag was clear the cycle it gets set
+// we still proceed with an irq
+let irqBypassI = false;
 
 function serviceNMI(){
 
@@ -107,24 +120,36 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
   );
  }
 }
-
-let irqBypassI = false;
+// branch instruction IRQ timing next
+// have been up to fault B in interrupt flag latency, and back tracked, cannot figure out what changes between that test and 
+// the b flag test, b flag test will pass, then run interrupt latency test, fail with 9 / A / B and then go back to B flag
+// test and it fails with #3
 function irqTimingEngine(){
+
   // check if any source has pulled the IRQ line low / active state
   if (!Object.values(irqAssert).some(Boolean)) return;
+  const isBranchInstruction = ((code & 0x1F) === 0x10);
 
   // === Edge Cases ===
   if (code === 0x58) return; // CLI, delay by 1 instruction
   if (code === 0x78 || code === 0x58 || code === 0x28) return; // no handling logic in here for these
+  //if (isBranchInstruction) return;
+
 
   // fall through: general timing, service at the point this handler is called (post opcode handler)
   serviceIRQ();
 }
 
 function serviceIRQ(bypass_interrupt_flag = false) {
+      irqBranch.notTaken = false;
     // always call for the servicing of IRQ if the timing is right, but bail out if the interrupt flag is set
     // dont bail out if we captured IRQ decision in advance (mid instruction prior to setting the interrupt flag in SEI, CLI, PLP)
     if(CPUregisters.P.I && !bypass_interrupt_flag) return;
+     const isBranchInstruction = ((code & 0x1F) === 0x10);
+     if (isBranchInstruction) return;
+
+    console.log("opcode when IRQ serviced",code.toString(16));
+  
 
     console.log("IRQ SERVICED, source-", 
     "mmc3:",  irqAssert.mmc3, 
