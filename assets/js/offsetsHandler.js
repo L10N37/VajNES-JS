@@ -459,9 +459,8 @@ function checkWriteOffset(address, value) {
     joypadWrite(addr, value);
 
   } else if (addr === 0x4017) {
-    APUregister.FRAME_CNT = value;
-    return openBus.CPU;
-
+  apuWrite(addr, value);
+  
   } else if (addr < 0x4020) {
     apuWrite(addr, value);
 
@@ -526,39 +525,46 @@ function apuWrite(address, value) {
     // ===================== DMC ========================
     // =================================================
 
-    // $4010 - control (IRQ, loop, rate)
     case 0x4010:
       APUregister.DMC_FREQ = value;
       dmcSetControlFrom4010(value);
       break;
 
-    // $4011 - direct load (DAC)
     case 0x4011:
       APUregister.DMC_RAW = value;
       break;
 
-    // $4012 - sample address
     case 0x4012:
       APUregister.DMC_START = value;
       dmcSetSampleAddressFrom4012(value);
       break;
 
-    // $4013 - sample length
     case 0x4013:
       APUregister.DMC_LEN = value;
       dmcSetSampleLengthFrom4013(value);
       break;
 
-    // $4015 - channel enable
     case 0x4015:
       APUregister.SND_CHN = value;
       dmcWrite4015(value);
       break;
 
-    // ----------------- FRAME COUNTER -----------------
-    case 0x4017:
+    // =================================================
+    // ================= FRAME COUNTER ==================
+    // =================================================
+    case 0x4017: {
+
       APUregister.FRAME_CNT = value;
+
+      irqAssert.frame = false;
+      console.log ("frame value:", value)
+      
+      if (value === 0) {
+        irqAssert.frame = true;
+      }
+
       break;
+    }
 
     // ----------------- DEFAULT -----------------
     default:

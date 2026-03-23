@@ -113,11 +113,11 @@ function consumeCycle() {
 
   cpuCycles += 1;
   ppuCycles += 3;
-
-  clockDMC(); // clock per cycle
+  
+  clockDMC();
 
   if (DMC.dmaRequest) {
-  dmcDoDMA();
+    dmcDoDMA();
   }
 
   if (openBus.ppuDecayTimer > 0) {
@@ -130,7 +130,7 @@ function consumeCycle() {
   }
 
   startPPULoop();
-  
+
   // console technically produces odds, then even lines one PPU cycle later
   // not worth doing (previously did try it, unrequired logic)
   const NTSC_cpu_cycles_per_frame = 29780;
@@ -5521,48 +5521,53 @@ function SBX_IMM() {
 // --------- Branches (REL) — per-cycle ----------
 function BRANCH_REL() {
 
+  // --- Cycle 2: fetch offset + capture IRQ decision ---
   const offset = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-  consumeCycle();
+
+
+
+  consumeCycle(); // end of cycle 2
 
   const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
 
-  // select flag
+  // --- evaluate branch condition ---
   let flag;
 
   switch ((code >> 6) & 3) {
-
     case 0: flag = CPUregisters.P.N; break;
     case 1: flag = CPUregisters.P.V; break;
     case 2: flag = CPUregisters.P.C; break;
     case 3: flag = CPUregisters.P.Z; break;
-
   }
 
-  // invert logic for BPL/BVC/BCC/BNE
   const take = ((code & 0x20) === 0) ? (flag === 0) : (flag === 1);
 
+  // -------- NOT TAKEN (2 cycles total) --------
   if (!take) {
     CPUregisters.PC = nextPC;
     return;
   }
 
-  // dummy read
+  // -------- TAKEN --------
+
+  // --- Cycle 3 ---
   checkReadOffset(nextPC);
   consumeCycle();
 
   const rel = (offset & 0x80) ? offset - 0x100 : offset;
   const target = (nextPC + rel) & 0xFFFF;
 
-  // page cross dummy
-  if ((nextPC & 0xFF00) !== (target & 0xFF00)) {
-
-    checkReadOffset((nextPC & 0xFF00) | (target & 0x00FF));
-    consumeCycle();
-
+  // --- NO PAGE CROSS ---
+  if ((nextPC & 0xFF00) === (target & 0xFF00)) {
+    CPUregisters.PC = target;
+    return;
   }
 
-  CPUregisters.PC = target;
+  // --- PAGE CROSS (Cycle 4) ---
+  checkReadOffset((nextPC & 0xFF00) | (target & 0x00FF));
+  consumeCycle();
 
+  CPUregisters.PC = target;
 }
 
 // 0x02/0x12/… — KIL/JAM — CPU jam

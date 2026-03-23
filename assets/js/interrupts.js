@@ -2,18 +2,17 @@
 // https://www.nesdev.org/wiki/CPU_interrupts
 
 // IRQ line, active low, idle high - we can track what requested the interrupt
-const irqAssert = {
+irqAssert = {
   mmc3: false,
   dmcDma: false,
+  frame: false
 };
 
-// for cycle accurate IRQ timing in relation to branches
+// for cycle accurate IRQ timing in relation to branch instructions
 const irqBranch = {
-  takenNoPageCross: false,
-  takenPageCross: false,
-  notTaken: false,
-  cycleCounter: 0
+  pending: false // IRQ decision captured at poll
 };
+let irqServicedThisInstruction = false;
 
 // certain instructions (commented elsewhere) will or may set the interrupt flag
 // but on the same cycle poll for interrupts, if the irq line was low and the I flag was clear the cycle it gets set
@@ -128,25 +127,22 @@ function irqTimingEngine(){
 
   // check if any source has pulled the IRQ line low / active state
   if (!Object.values(irqAssert).some(Boolean)) return;
-  const isBranchInstruction = ((code & 0x1F) === 0x10);
+  //const isBranchInstruction = (code & 0x1F) === 0x10;
 
   // === Edge Cases ===
   if (code === 0x58) return; // CLI, delay by 1 instruction
   if (code === 0x78 || code === 0x58 || code === 0x28) return; // no handling logic in here for these
   //if (isBranchInstruction) return;
-
+  //console.log("irqTimingEngine fired", code.toString(16), "DMC:", irqAssert.dmcDma, "I:", CPUregisters.P.I);
 
   // fall through: general timing, service at the point this handler is called (post opcode handler)
   serviceIRQ();
 }
 
 function serviceIRQ(bypass_interrupt_flag = false) {
-      irqBranch.notTaken = false;
     // always call for the servicing of IRQ if the timing is right, but bail out if the interrupt flag is set
     // dont bail out if we captured IRQ decision in advance (mid instruction prior to setting the interrupt flag in SEI, CLI, PLP)
     if(CPUregisters.P.I && !bypass_interrupt_flag) return;
-     const isBranchInstruction = ((code & 0x1F) === 0x10);
-     if (isBranchInstruction) return;
 
     console.log("opcode when IRQ serviced",code.toString(16));
   
@@ -154,6 +150,7 @@ function serviceIRQ(bypass_interrupt_flag = false) {
     console.log("IRQ SERVICED, source-", 
     "mmc3:",  irqAssert.mmc3, 
     "DMC:",   irqAssert.dmcDma,
+    "Frame:", irqAssert.frame
     );
     
     const pc = CPUregisters.PC & 0xFFFF;

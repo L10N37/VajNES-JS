@@ -118,7 +118,7 @@ window.step = function () {
   const before = cpuCycles;
 
   consumeCycle(); // opcode fetch cycle
-
+  
   disasm();
 
   // 0x78 → SEI (set I after poll), 0x58 → CLI (clear I after poll), 0x28 → PLP (restore P after poll)
@@ -140,11 +140,12 @@ window.step = function () {
   // Only take NMI if it's pending *and not suppressed this vblank*
 
   // poll for interrupts after the current instruction finishes (unless SEI, CLI, PLP, we captured the decision in advance)
-  if (irqBypassI) {
-      serviceIRQ(irqBypassI);
+  if (irqBypassI || irqBranch.pending) {
+      serviceIRQ(true);
       irqBypassI = false;
+      irqBranch.pending = false;
   }
-  irqTimingEngine();
+  else irqTimingEngine();
 
   if (nmiPending) {
     if (debug.videoTiming) {
@@ -159,7 +160,7 @@ window.step = function () {
 
   checkNmi();
   // set the flag here, check if NMI is due NEXT step
-  // this order is specifically c oded to pass NMI control tests
+  // this order is specifically coded to pass NMI control tests
   // i.e. do not call checkInterrupts prior to handling of interrupts
   //=================================================
 

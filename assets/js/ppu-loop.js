@@ -874,7 +874,6 @@ function startPPULoop() {
 
         renderingEnabled = ((PPUMASK_effective & 0x18) !== 0);
       }
-
       PPUclock.dot++;
     }
   }
