@@ -111,15 +111,14 @@ resetButton.onclick = resetCPU;
 
 function consumeCycle() {
 
-  cpuCycles += 1;
-  ppuCycles += 3;
-  
+  cpuCycles++;
+
   clockDMC();
 
   if (DMC.dmaRequest) {
     dmcDoDMA();
   }
-
+    
   if (openBus.ppuDecayTimer > 0) {
     openBus.ppuDecayTimer--;
     if (openBus.ppuDecayTimer === 0) {
@@ -140,6 +139,62 @@ function consumeCycle() {
   }
 
 
+}
+
+// --------- Branches (REL) — per-cycle ----------
+function BRANCH_REL() {
+
+  // 🔥 -------- IRQ POLL (BEFORE CYCLE 2) --------
+  irqBranch.pending =
+    Object.values(irqAssert).some(Boolean) && !CPUregisters.P.I;
+
+  // -------- CYCLE 2 --------
+  const offset = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+
+  const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
+
+  let flag;
+
+  switch ((code >> 6) & 3) {
+    case 0: flag = CPUregisters.P.N; break;
+    case 1: flag = CPUregisters.P.V; break;
+    case 2: flag = CPUregisters.P.C; break;
+    case 3: flag = CPUregisters.P.Z; break;
+  }
+
+  const take = ((code & 0x20) === 0) ? (flag === 0) : (flag === 1);
+
+  consumeCycle(); // completes cycle 2
+
+  // -------- NOT TAKEN --------
+  if (!take) {
+    CPUregisters.PC = nextPC;
+    return;
+  }
+
+  // -------- CYCLE 3 --------
+  checkReadOffset(nextPC);
+  consumeCycle();
+
+  const rel = (offset & 0x80) ? offset - 0x100 : offset;
+  const target = (nextPC + rel) & 0xFFFF;
+
+  // -------- NO PAGE CROSS --------
+  if ((nextPC & 0xFF00) === (target & 0xFF00)) {
+
+    if (irqBranch.pending) irqBranch.delay = 1;
+
+    CPUregisters.PC = target;
+    return;
+  }
+
+  // -------- CYCLE 4 --------
+  checkReadOffset((nextPC & 0xFF00) | (target & 0x00FF));
+  consumeCycle();
+
+  if (irqBranch.pending) irqBranch.delay = 1;
+
+  CPUregisters.PC = target;
 }
 
 /*
@@ -5516,58 +5571,6 @@ function SBX_IMM() {
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
-}
-
-// --------- Branches (REL) — per-cycle ----------
-function BRANCH_REL() {
-
-  // --- Cycle 2: fetch offset + capture IRQ decision ---
-  const offset = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-
-
-
-  consumeCycle(); // end of cycle 2
-
-  const nextPC = (CPUregisters.PC + 2) & 0xFFFF;
-
-  // --- evaluate branch condition ---
-  let flag;
-
-  switch ((code >> 6) & 3) {
-    case 0: flag = CPUregisters.P.N; break;
-    case 1: flag = CPUregisters.P.V; break;
-    case 2: flag = CPUregisters.P.C; break;
-    case 3: flag = CPUregisters.P.Z; break;
-  }
-
-  const take = ((code & 0x20) === 0) ? (flag === 0) : (flag === 1);
-
-  // -------- NOT TAKEN (2 cycles total) --------
-  if (!take) {
-    CPUregisters.PC = nextPC;
-    return;
-  }
-
-  // -------- TAKEN --------
-
-  // --- Cycle 3 ---
-  checkReadOffset(nextPC);
-  consumeCycle();
-
-  const rel = (offset & 0x80) ? offset - 0x100 : offset;
-  const target = (nextPC + rel) & 0xFFFF;
-
-  // --- NO PAGE CROSS ---
-  if ((nextPC & 0xFF00) === (target & 0xFF00)) {
-    CPUregisters.PC = target;
-    return;
-  }
-
-  // --- PAGE CROSS (Cycle 4) ---
-  checkReadOffset((nextPC & 0xFF00) | (target & 0x00FF));
-  consumeCycle();
-
-  CPUregisters.PC = target;
 }
 
 // 0x02/0x12/… — KIL/JAM — CPU jam

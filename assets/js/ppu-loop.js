@@ -1,4 +1,3 @@
-
 // ---- Shared indices ----
 const SYNC_SCANLINE = 2;
 const SYNC_DOT      = 3;
@@ -28,23 +27,25 @@ const bgEnabledNow  = () => ((PPUMASK & MASK_BG_ENABLE) !== 0);
 const sprEnabledNow = () => ((PPUMASK & MASK_SPR_ENABLE) !== 0);
 
 // ---- Clock state ----
-const PPUclock = { dot: 0, scanline: 261, frame: 0, oddFrame: false };
+let PPUclock = { dot: 0, scanline: 261, frame: 0, oddFrame: false };
 
 // ---- Background pipeline ----
-const background = {
+let background = {
   bgShiftLo: 0, bgShiftHi: 0,
   atShiftLo: 0, atShiftHi: 0,
   ntByte: 0, atByte: 0, tileLo: 0, tileHi: 0,
 };
 
 // Prefetch latches for the *next* scanline (321–336)
-const nextLine = {
+let nextLine = {
   t0: { lo:0, hi:0, at:0 },
   t1: { lo:0, hi:0, at:0 },
 };
 
 // ---- Sprite pipeline ----
 const SPR_MAX = 8;
+
+let vFetch = 0;
 
 function presentFrame() {
   blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
@@ -409,7 +410,7 @@ function incCoarseX() {
   if (!renderingNow()) return;
   let v = VRAM_ADDR;
   if ((v & 0x001F) === 31) { v &= ~0x001F; v ^= 0x0400; }
-  else { v = (v + 1) & 0x7FFF; }
+  else { v = (v & ~0x001F) | ((v + 1) & 0x001F); }
   VRAM_ADDR = v;
 }
 
@@ -430,92 +431,54 @@ function incY() {
 }
 
 function copyHoriz() {
-  if (!renderingNow()) return;
-  const t = (t_hi << 8) | t_lo;
-  VRAM_ADDR = (VRAM_ADDR & ~0x041F) | (t & 0x041F);
+    if (!renderingNow()) return;
+    const t = (t_hi << 8) | t_lo;
+    VRAM_ADDR = (VRAM_ADDR & ~0x041F) | (t & 0x041F);
 }
 
 function copyVert() {
-  if (!renderingNow()) return;
-  const t = (t_hi << 8) | t_lo;
-  VRAM_ADDR = (VRAM_ADDR & ~0x7BE0) | (t & 0x7BE0);
+    if (!renderingNow()) return;
+    const t = (t_hi << 8) | t_lo;
+    VRAM_ADDR = (VRAM_ADDR & ~0x7FE0) | (t & 0x7FE0);
 }
 
 // ---- PPU bus read ----
-function ppuBusRead(addr)
-{
+function ppuBusRead(addr) {
+    addr &= 0x3FFF;
+    //if (mapperNumber === 4) mmc3Irq(addr);
 
- if (mapperNumber === 4) mmc3Irq(addr);
+    if (addr < 0x2000) {
+        if (mapperNumber === 4) return mapper4_chr_read(addr);
 
-  addr &= 0x3FFF;
+        if (mapperNumber === 1) {
+            if (chr8kModeFlag) {
+                const index = ((CHR_BANK_LO & ~0x01) << 12) + addr;
+                return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
+            }
+            if (addr < 0x1000) {
+                const index = (CHR_BANK_LO << 12) + addr;
+                return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
+            } else {
+                const index = (CHR_BANK_HI << 12) + (addr - 0x1000);
+                return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
+            }
+        }
 
-  // ------------------------------------------------
-  // CHR ROM / CHR RAM
-  // ------------------------------------------------
-
-    if (addr < 0x2000)
-    {
-
-    addr &= 0x1FFF;
-
-    // MMC3
-    if (mapperNumber === 4)
-    {
-      return mapper4_chr_read(addr);
+        // Mapper 0 — CHR ROM or CHR RAM
+        if (CHR_ROM.length > 0) return CHR_ROM[addr] & 0xFF;
+        return CHR_RAM ? (CHR_RAM[addr] & 0xFF) : 0xFF;
     }
 
-    // MMC1
-    if (mapperNumber === 1)
-    {
-      if (chr8kModeFlag)
-      {
-        const index = addr & 0x1FFF;
-        return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
-      }
-
-      if (addr < 0x1000)
-      {
-        const index = (CHR_BANK_LO << 12) + addr;
-        return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
-      }
-      else
-      {
-        const index = (CHR_BANK_HI << 12) + (addr - 0x1000);
-        return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
-      }
+    if (addr < 0x3F00) {
+        const mapped = mapNametableAddr(0x2000 | (addr & 0x0FFF));
+        return VRAM[mapped] & 0xFF;
     }
 
-    // Mapper 0 / default
-    return CHR_ROM[addr] & 0xFF;
-  }
-
-  // ------------------------------------------------
-  // Nametable $2000-$3EFF
-  // ------------------------------------------------
-
-  if (addr < 0x3F00) {
-    const a = 0x2000 | (addr & 0x0FFF);
-    const mapped = mapNametableAddr(a);
-    return VRAM[mapped] & 0xFF;
-  }
-
-  // ------------------------------------------------
-  // Palette $3F00-$3FFF
-  // ------------------------------------------------
-
-  if (addr < 0x4000)
-  {
+    // Palette
     let p = addr & 0x1F;
-
-    if ((p & 0x13) === 0x10)
-      p &= ~0x10;
-
+    if ((p & 0x13) === 0x10) p &= ~0x10;
     return PALETTE_RAM[p] & 0x3F;
-  }
-
-  return 0xFF;
 }
-
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
   const ren = renderingNow();
@@ -531,11 +494,9 @@ function preRenderScanline(dot) {
 
   if (dot === 1 && ppuInitDone) {
     CLEAR_VBLANK();
+
     nmiSuppression = false;
     doNotSetVblank = false;
-
-    CLEAR_SPRITE0_HIT();
-    CLEAR_SPRITE_OVERFLOW();
   }
 
   if (dot === 65) evalSpritesForScanline(spritesNext, 0);
@@ -556,9 +517,15 @@ function preRenderScanline(dot) {
     background.atShiftHi = (background.atShiftHi << 1) & 0xFFFF;
   }
 
-  if (ren && inFetch) {
-    const v = VRAM_ADDR;
-    switch (phase) {
+    if (ren && inFetch) {
+
+      if (phase === 1) {
+        vFetch = VRAM_ADDR;
+      }
+
+      const v = vFetch;
+
+      switch (phase) {
       case 1: {
         background.ntByte = ppuBusRead(0x2000 | (v & 0x0FFF));
         BG_ntByte = background.ntByte;
@@ -673,9 +640,15 @@ function visibleScanline(dot) {
     }
   }
 
-  if (ren && inFetch) {
-    const v = VRAM_ADDR;
-    switch (phase) {
+    if (ren && inFetch) {
+
+      if (phase === 1) {
+        vFetch = VRAM_ADDR;
+      }
+
+      const v = vFetch;
+
+      switch (phase) {
       case 1: {
         background.ntByte = ppuBusRead(0x2000 | (v & 0x0FFF));
         BG_ntByte = background.ntByte;
@@ -861,19 +834,25 @@ function ppuTick() {
 function startPPULoop() {
 
     for (let ticks = 0; ticks < 3; ticks++) {
-      currentFrame    = PPUclock.frame;
-      currentScanline = PPUclock.scanline;
-      currentDot      = PPUclock.dot;
+
+      // store pre dot advancing for $2002
+      current.dot = PPUclock.dot;
+      current.frame = PPUclock.frame;
+      current.scanline = PPUclock.scanline;
 
       ppuTick();
-
-      // ---- PPUMASK delayed latch (cycle-based, never misses) ----
-      if (ppumaskPending && ((ppuCycles | 0) >= (ppumaskApplyAtPpuCycles | 0))) {
-        PPUMASK_effective = (ppumaskPendingValue & 0xFF);
-        ppumaskPending = false;
-
-        renderingEnabled = ((PPUMASK_effective & 0x18) !== 0);
-      }
       PPUclock.dot++;
+
+      if (PPUclock.scanline === 260 && (PPUclock.dot === 339 || PPUclock.dot === 340)){
+      CLEAR_SPRITE0_HIT();
+      CLEAR_SPRITE_OVERFLOW();
+      }
+
+      if (PPUclock.scanline === 261 && (PPUclock.dot === 0)){
+      CLEAR_SPRITE0_HIT();
+      CLEAR_SPRITE_OVERFLOW();
+      }
+
+      ppuCycles++;
     }
-  }
+}

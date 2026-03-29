@@ -12,10 +12,16 @@ let openBus = {
     ppuDecayTimer: 0x00
 };
 
+// ppu pre tick advance state
+let current = {
+    dot: 0x00,
+    frame: 0x00,
+    scanline: 0x00
+};
+
 breakPending = false;
 
 let writeToggle = 0;
-globalThis.writeToggle = writeToggle;
 
 // Toggling rendering takes effect approximately 3-4 dots after the write. This delay is required by Battletoads to avoid a crash.
 // would be smashing through test suites if i hadn't gone multicore, oof, cbf with a major refactor so some struggles with chunk by chunk on different cores
@@ -65,28 +71,63 @@ function checkReadOffset(address) {
 
       case 0x2002: {
 
-          if (currentScanline === 241 && currentDot === 0) {
+        /*
+
+        This is hacky as - but worked well. For accuracy coin, NMI timing fails, all other tests on that page pass
+        Focus on Blargs ppu_vbl_nmi rom_singles
+
+        10 test roms -
+        
+        10_even_odd_timing:   fail
+        09-even_odd_frames:   pass
+        08_nmi_off_timing:    fail
+        07-nmi_on_timing:     pass
+        06-suppression:       pass
+        05-nmi_timing:        pass
+        04-nmi_control:       pass
+        03-vbl_clear_time:    pass
+        02-vbl_set_time:      pass
+        01-vbl_basics.nes:    pass
+
+        $2002 flag timing fails on accuracy coin. 
+        This is a strange one; revisit at a more mature stage
+
+        scanline.nes and scanline1.nes (not sure of the difference, if any) were patched up
+        I'm not sure what / when it got broken again but the 3rd area using $2005 / $ 2006 is broken again
+        and the text is not legible (again) - somehow when refactored to single core
+
+        To do -> git push for device change, I have an office setup again. yay.
+        Implement pre fetching of next opcode so we can see if the address is any address (like this) that causes
+        resets and reference that with the next 3 PPU ticks so we can get rid of this hacky BS boolean stuff 
+        thats in place for race conditions (who's first, CPU/ PPU ? / alignment changes), anything that coincides
+        on the same PPU/CPU cycle will then be easier to take care of. 
+
+        */
+
+          if (current.scanline=== 241 && current.dot === 0) {
               doNotSetVblank = true;
               nmiSuppression = true;
               nmiPending = 0;
               clearNmiEdge();
           }
 
-          if (currentScanline === 241 && (currentDot === 1 || currentDot === 2)) {
+          if (current.scanline === 241 && (current.dot === 1 || current.dot === 2)) {
               clearNmiEdge();
               nmiPending = 0;
               nmiSuppression = true;
+
           }
+          // $2002 flag test debug
+          if (current.scanline === 260 || PPUclock.scanline === 261) console.log (current.scanline, current.dot, PPUclock.scanline, PPUclock.dot);
 
           const obBefore = openBus.PPU & 0xFF;
           const stat = PPUSTATUS & 0xE0;
 
           raw = (stat | (obBefore & 0x1F)) & 0xFF;
 
-          PPUSTATUS &= ~0x80;
+          PPUSTATUS &= ~0b10000000;
 
           writeToggle = 0;
-          globalThis.writeToggle = writeToggle;
 
           openBus.PPU = raw;
           break;
@@ -100,12 +141,12 @@ function checkReadOffset(address) {
 
         if ((oamAddr & 3) === 2) v &= 0xE3;
 
-        const visible = currentScanline >= 0 && currentScanline <= 239;
+        const visible = current.scanline >= 0 && current.scanline <= 239;
         let result = v;
 
-        if (renderingEnabled && visible) {
-          if (currentDot >= 1 && currentDot <= 64) result = 0xFF;
-          else if (currentDot >= 257 && currentDot <= 320) result = 0xFF;
+        if (renderingNow() && visible) {
+          if (current.dot >= 1 && current.dot <= 64) result = 0xFF;
+          else if (current.dot >= 257 && current.dot <= 320) result = 0xFF;
         }
 
         openBus.PPU = result & 0xFF;
@@ -132,7 +173,7 @@ function checkReadOffset(address) {
             if (mapperNumber === 4) {
               newVal = mapper4_chr_read(vv) & 0xFF;
 
-            } else if (mapperNumber === 1) {
+            }else if (mapperNumber === 1) {
 
               let chrAddr;
 
@@ -147,7 +188,6 @@ function checkReadOffset(address) {
               }
 
               newVal = CHR_ROM[chrAddr] & 0xFF;
-
             } else {
 
               newVal =
@@ -164,7 +204,14 @@ function checkReadOffset(address) {
         } else {
 
           const p = paletteIndex(vv);
-          const palVal = PALETTE_RAM[p] & 0x3F;
+          let palVal = PALETTE_RAM[p] & 0x3F;
+
+          // Apply greyscale mask (PPUMASK bit 0)
+          if (PPUMASK & 0x01) {
+          palVal &= 0x30; // zero lower 4 bits
+          }
+
+          ret = (openBus.PPU & 0xC0) | palVal;
 
           // Return palette data immediately
           ret = (openBus.PPU & 0xC0) | palVal;
@@ -178,7 +225,7 @@ function checkReadOffset(address) {
 
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
-
+        
         raw = ret & 0xFF;
         openBus.PPU = raw;
         break;
@@ -319,19 +366,6 @@ function checkWriteOffset(address, value) {
         // CPU-visible mask updates immediately
         PPUMASK = newMask;
 
-        // Only rendering bits are delayed (bits 3–4)
-        const oldRender = PPUMASK_effective & 0x18;
-        const newRender = newMask & 0x18;
-
-        if (oldRender !== newRender) {
-          const LATCH_DELAY_DOTS = 3;      // ~3 PPU dots
-          const now = ppuCycles | 0;
-
-          ppumaskPending = true;
-          ppumaskPendingValue = newMask;   // latch full byte
-          ppumaskApplyAtPpuCycles = (now + LATCH_DELAY_DOTS) | 0;
-        }
-
         break;
       }
 
@@ -343,12 +377,12 @@ function checkWriteOffset(address, value) {
         const slotBefore = OAMADDR & 0xFF;
         const v = value & 0xFF;
 
-        const isVisible   = currentScanline >= 0 && currentScanline <= 239;
-        const isPreRender = currentScanline === 261;
+        const isVisible   = current.scanline >= 0 && current.scanline <= 239;
+        const isPreRender = current.scanline === 261;
 
         // === PASS TEST 6/7/A RULES ===
         // Only block when rendering is enabled AND on render lines.
-        if (renderingEnabled && (isVisible || isPreRender)) {
+        if (renderingNow() && (isVisible || isPreRender)) {
           // MUST clear low 2 bits (Test A requirement)
           OAMADDR = ((OAMADDR + 4) & 0xFC) & 0xFF;
           cpuOpenBusFinalise(addr, value, code, true);
@@ -360,94 +394,103 @@ function checkWriteOffset(address, value) {
         OAMADDR = (OAMADDR + 1) & 0xFF;
         break;
       }
+    
+  // PPUSCROLL
+  case 0x2005: {
+  let t = ((t_hi << 8) | t_lo) & 0x7FFF;
 
-      // PPUSCROLL
-      case 0x2005: {
-        let t = ((t_hi << 8) | t_lo) & 0x7FFF;
-        if (writeToggle === 0) {
-          SCROLL_X = value;
-          fineX = value & 0x07;
-          t = (t & ~0x001F) | ((value >>> 3) & 0x1F);
+  if (writeToggle === 0) {
+      SCROLL_X = value;
+      fineX = value & 0x07;
+
+      // coarse X (bits 0–4)
+      t = (t & ~0x001F) | ((value >> 3) & 0x1F);
+
+      writeToggle = 1;
+  } else {
+      SCROLL_Y = value;
+
+      // fine Y (bits 12–14), coarse Y (bits 5–9)
+      t = (t & ~0x73E0)
+        | ((value & 0x07) << 12)
+        | ((value & 0xF8) << 2);
+
+      writeToggle = 0;
+  }
+
+  t_hi = (t >> 8) & 0xFF;
+  t_lo = t & 0xFF;
+
+  break;
+  }
+
+  // PPUADDR
+  case 0x2006: {
+      let t = ((t_hi << 8) | t_lo) & 0x7FFF;
+
+      if (writeToggle === 0) {
+          // First write (high byte)
+          t = (t & 0x00FF) | ((value & 0x3F) << 8);
+
           writeToggle = 1;
-        } else {
-          SCROLL_Y = value;
-          t = (t & ~(0x7000 | 0x03E0))
-            | ((value & 0x07) << 12)
-            | (((value >>> 3) & 0x1F) << 5);
+      } else {
+          // Second write (low byte) — FIXED MASK
+          t = (t & 0xFF00) | value;
+          // Copy t → v
+          VRAM_ADDR = t & 0x3FFF;
+          mmc3Irq(VRAM_ADDR);
+
           writeToggle = 0;
-        }
-        t_hi = (t >>> 8) & 0xFF;
-        t_lo = t & 0xFF;
-        globalThis.writeToggle = writeToggle;
-        break;
       }
 
-      // PPUADDR
-      case 0x2006:
+      t_hi = (t >> 8) & 0xFF;
+      t_lo = t & 0xFF;
 
-      if (writeToggle === 0)
+      break;
+  }
+
+  // PPUDATA
+  case 0x2007: {
+      const v = VRAM_ADDR & 0x3FFF;
+
+      if (v < 0x2000)
       {
-          t_hi = value & 0x3F;
-          writeToggle = 1;
+          if (mapperNumber === 4)
+          {
+              if (chrIsRAM)
+                  mapper4_chr_write(v, value);
+          }
+          else if (mapperNumber === 1)
+          {
+              if (chrIsRAM)
+                  CHR_ROM[v & 0x1FFF] = value;
+              else
+                  mmc1ChrWrite(v & 0x1FFF, value);
+          }
+          else if (chrIsRAM)
+          {
+              CHR_ROM[v & 0x1FFF] = value;
+          }
+      }
+      else if (v < 0x3F00)
+      {
+          const ntAddr = mapNT(v) & 0x07FF;
+          VRAM[ntAddr] = value;
       }
       else
       {
-          t_lo = value & 0xFF;
-
-          VRAM_ADDR = ((t_hi << 8) | t_lo) & 0x3FFF;
-
-          writeToggle = 0;
+          const p = paletteIndex(v);
+          PALETTE_RAM[p] = value & 0x3F;
       }
 
-    globalThis.writeToggle = writeToggle;
-    break;
+      const inc = (PPUCTRL & 0x04) ? 32 : 1;
+      VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
 
-    // PPUDATA
-    case 0x2007: {
-        const v = VRAM_ADDR & 0x3FFF;
+      break;
+  }
 
-        if (v < 0x2000)
-        {
-            if (mapperNumber === 4)
-            {
-                if (chrIsRAM)
-                    mapper4_chr_write(v, value);
-            }
-            else if (mapperNumber === 1)
-            {
-                if (chrIsRAM)
-                    CHR_ROM[v & 0x1FFF] = value;
-                else
-                    mmc1ChrWrite(v & 0x1FFF, value);
-            }
-            else if (chrIsRAM)
-            {
-                CHR_ROM[v & 0x1FFF] = value;
-            }
-        }
-        else if (v < 0x3F00)
-        {
-            const ntAddr = mapNT(v) & 0x07FF;
-            VRAM[ntAddr] = value;
-        }
-        else
-        {
-            const p = paletteIndex(v);
-            PALETTE_RAM[p] = value & 0x3F;
-        }
-
-        const inc = (PPUCTRL & 0x04) ? 32 : 1;
-        VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
-
-        break;
-    }
-
-      default:
-        break;
-    }
-
-    openBus.PPU = value & 0xFF;
-
+  }
+  openBus.PPU = value & 0xFF;
   } 
   
   else if (addr === 0x4014) {
@@ -557,7 +600,6 @@ function apuWrite(address, value) {
       APUregister.FRAME_CNT = value;
 
       irqAssert.frame = false;
-      console.log ("frame value:", value)
       
       if (value === 0) {
         irqAssert.frame = true;

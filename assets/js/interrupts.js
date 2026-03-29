@@ -10,9 +10,9 @@ irqAssert = {
 
 // for cycle accurate IRQ timing in relation to branch instructions
 const irqBranch = {
-  pending: false // IRQ decision captured at poll
+  pending: false,   // latched IRQ decision
+  delay: 0          // cycles remaining before firing
 };
-let irqServicedThisInstruction = false;
 
 // certain instructions (commented elsewhere) will or may set the interrupt flag
 // but on the same cycle poll for interrupts, if the irq line was low and the I flag was clear the cycle it gets set
@@ -30,18 +30,18 @@ function serviceNMI(){
 // also exposed a frame counter bug, fixed.
 
 // you would think this would be a sensible guard, but it breaks passing tests in both accuracy coin and 'ppu_vbl_nmi.nes'
-const inVBlank = (currentScanline >= 241 && currentScanline <= 260);        // VBlank starts on scanline 241
+const inVBlank = (PPUclock.scanline >= 241 && PPUclock.scanline <= 260);        // VBlank starts on scanline 241
   
   // temp logging , like most of it
-  if (nmiPending !== currentFrame) {
+  if (nmiPending !== PPUclock.frame) {
     console.debug(
       `[NMI DEBUG] ` +
-      `currentFrame=${currentFrame} ` +
+      `PPUclock.frame=${PPUclock.frame} ` +
       `nmiLatchedFrame=${nmiPending} ` +
       `cpu=${cpuCycles} ` +
       `ppu=${ppuCycles} ` +
-      `sl=${currentScanline} ` +
-      `dot=${currentDot}`
+      `sl=${PPUclock.scanline} ` +
+      `dot=${PPUclock.dot}`
     );
   }
 
@@ -58,8 +58,8 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
 
 /*
 -> notty notty
-[NMI DEBUG] currentFrame=995 nmiLatchedFrame=994 cpu=29631760 ppu=88895280 sl=261 dot=4
-[NMI DEBUG] currentFrame=1011 nmiLatchedFrame=1010 cpu=30108251 ppu=90324753 sl=261 dot=5
+[NMI DEBUG] PPUclock.frame=995 nmiLatchedFrame=994 cpu=29631760 ppu=88895280 sl=261 dot=4
+[NMI DEBUG] PPUclock.frame=1011 nmiLatchedFrame=1010 cpu=30108251 ppu=90324753 sl=261 dot=5
 */
 
   /*
@@ -114,7 +114,7 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
 
   if (debug.videoTiming){
   console.debug(
-    `%c[NMI VECTOR LOADED → PC=$${CPUregisters.PC.toString(16).padStart(4,"0")}] cpu=${cpuCycles} ppu=${ppuCycles} frame=${currentFrame} sl=${currentScanline} dot=${currentDot}`,
+    `%c[NMI VECTOR LOADED → PC=$${CPUregisters.PC.toString(16).padStart(4,"0")}] cpu=${cpuCycles} ppu=${ppuCycles} frame=${PPUclock.frame} sl=${PPUclock.scanline} dot=${PPUclock.dot}`,
     "color:black;background:yellow;font-weight:bold;font-size:14px;"
   );
  }
@@ -122,18 +122,18 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
 // branch instruction IRQ timing next
 // have been up to fault B in interrupt flag latency, and back tracked, cannot figure out what changes between that test and 
 // the b flag test, b flag test will pass, then run interrupt latency test, fail with 9 / A / B and then go back to B flag
-// test and it fails with #3
+// test and it fails with #3 -> this was the $4017 frame counter IRQ assertion source
+// -> get back to IRQ stuff after other cycle sensitive tests pass, 
 function irqTimingEngine(){
 
   // check if any source has pulled the IRQ line low / active state
   if (!Object.values(irqAssert).some(Boolean)) return;
-  //const isBranchInstruction = (code & 0x1F) === 0x10;
 
   // === Edge Cases ===
   if (code === 0x58) return; // CLI, delay by 1 instruction
   if (code === 0x78 || code === 0x58 || code === 0x28) return; // no handling logic in here for these
-  //if (isBranchInstruction) return;
-  //console.log("irqTimingEngine fired", code.toString(16), "DMC:", irqAssert.dmcDma, "I:", CPUregisters.P.I);
+  const isBranchInstruction = (code & 0x1F) === 0x10;
+  if (isBranchInstruction) return;
 
   // fall through: general timing, service at the point this handler is called (post opcode handler)
   serviceIRQ();

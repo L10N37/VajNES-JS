@@ -22,11 +22,11 @@ function doesNmiEdgeExist() {
 function checkNmi() {
   if (!doesNmiEdgeExist()) return;
 
-  nmiPending = (currentFrame);
+  nmiPending = (PPUclock.frame);
 
   if (debug.videoTiming) {
     console.debug(
-      `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${currentFrame} sl=${currentScanline} dot=${currentDot}`,
+      `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${PPUclock.frame} sl=${PPUclock.scanline} dot=${PPUclock.dot}`,
       "color:black;background:lime;font-weight:bold;font-size:14px;"
     );
   }
@@ -140,17 +140,11 @@ window.step = function () {
   // Only take NMI if it's pending *and not suppressed this vblank*
 
   // poll for interrupts after the current instruction finishes (unless SEI, CLI, PLP, we captured the decision in advance)
-  if (irqBypassI || irqBranch.pending) {
-      serviceIRQ(true);
-      irqBypassI = false;
-      irqBranch.pending = false;
-  }
-  else irqTimingEngine();
 
   if (nmiPending) {
     if (debug.videoTiming) {
       console.debug(
-        `%c[NMI handler entered] cpu=${cpuCycles} ppu=${ppuCycles} frame=${(currentFrame)} sl=${(currentScanline)} dot=${(currentDot)}`,
+        `%c[NMI handler entered] cpu=${cpuCycles} ppu=${ppuCycles} frame=${(PPUclock.frame)} sl=${(PPUclock.scanline)} dot=${(PPUclock.dot)}`,
         "color:white;background:red;font-weight:bold;font-size:14px;"
       );
     }
@@ -163,6 +157,13 @@ window.step = function () {
   // this order is specifically coded to pass NMI control tests
   // i.e. do not call checkInterrupts prior to handling of interrupts
   //=================================================
+
+  if (irqBypassI) {
+      serviceIRQ(true);
+      irqBypassI = false;
+  }
+  else irqTimingEngine();
+  
 
   // step per opcode, if enabled, pause, this is the end of the opcode handler / cpu-loop
   if (step.opcode === 'stepMode' || step.opcode === 'firstPress') {

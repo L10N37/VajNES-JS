@@ -1,4 +1,4 @@
-// ======================= shared-assets.js =======================
+// legacy file name, needs to sorted
 
   // Space for all CHR banks (each iNES CHR bank = 8 KB)
   const CHR_BANK_BYTES  = 0x2000; // 8 KB per bank
@@ -38,9 +38,6 @@
   let t_hi  = 0;
   let fineX = 0;
 
-  // latched mask
-  let PPUMASK_effective = 0;
-
   let VRAM_DATA = 0;
 
   // background fetch pipeline
@@ -75,25 +72,6 @@
 
   let cpuCycles = 0;
   let ppuCycles = 0;
-
-
-  // -----------------------------
-  // PPU timing
-  // -----------------------------
-
-  let currentScanline = 0;
-  let currentDot      = 0;
-  let currentFrame    = 0;
-
-
-  // -----------------------------
-  // PPUMASK delayed timing
-  // -----------------------------
-
-  let ppumaskPending = false;
-  let ppumaskPendingValue = 0;
-  let ppumaskApplyAtPpuCycles = 0;
-
 
   // -----------------------------
   // Event flags
@@ -133,7 +111,6 @@ function resetSharedState() {
   t_hi  = 0;
   fineX = 0;
 
-  PPUMASK_effective = 0;
   VRAM_DATA = 0;
 
   BG_ntByte = 0;
@@ -157,23 +134,19 @@ function resetSharedState() {
   // -----------------------------
   // PPU timing
   // -----------------------------
-  currentScanline = 0;
-  currentDot = 0;
-  currentFrame = 0;
-
-  // -----------------------------
-  // PPUMASK delayed timing
-  // -----------------------------
-  ppumaskPending = false;
-  ppumaskPendingValue = 0;
-  ppumaskApplyAtPpuCycles = 0;
+  PPUclock = { dot: 0, scanline: 261, frame: 0, oddFrame: false };
 
   // -----------------------------
   // Event flags
   // -----------------------------
   nmiSuppression = false;
   doNotSetVblank = false;
-  cpuStallFlag = false;
-  renderingEnabled = false;
   chr8kModeFlag = false;
+
+  background = {
+  bgShiftLo: 0, bgShiftHi: 0,
+  atShiftLo: 0, atShiftHi: 0,
+  ntByte: 0, atByte: 0, tileLo: 0, tileHi: 0,
+};
+
 }
