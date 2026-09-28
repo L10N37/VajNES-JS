@@ -244,7 +244,7 @@ function checkReadOffset(address) {
     raw =
       mapperNumber === 1
         ? mmc1CpuRead(addr) & 0xFF
-        : mapperNumber===4 && !MMC3.control.prgRamEnabled
+        : (mapperNumber===7 || (mapperNumber===4 && !MMC3.control.prgRamEnabled))
           ? openBus.CPU & 255 : prgRam[addr - 0x6000] & 0xFF;
 
   } else {
@@ -502,7 +502,7 @@ function checkWriteOffset(address, value) {
 
   } else if (addr < 0x8000) {
     if (mapperNumber === 1) mmc1CpuWrite(addr, value);
-    else if(addr>=0x6000 && (mapperNumber!==4 ||
+    else if(addr>=0x6000 && mapperNumber!==7 && (mapperNumber!==4 ||
       (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)))
       prgRam[addr - 0x6000] = value & 0xFF;
 
@@ -529,8 +529,8 @@ function cpuWrite(addr, value) {
 }
 
 // ----------------- mapper PRG -----------------
-function mapperReadPRG(addr) { return mapperNumber===2 ? uxromRead(addr) : prgRom[addr - 0x8000]; }
-function mapperWritePRG(addr, value) { if(mapperNumber===2) uxromWrite(addr,value); }
+function mapperReadPRG(addr) { return mapperNumber===7 ? axromRead(addr) : mapperNumber===2 ? uxromRead(addr) : prgRom[addr - 0x8000]; }
+function mapperWritePRG(addr, value) { if(mapperNumber===7) axromWrite(addr,value); else if(mapperNumber===2) uxromWrite(addr,value); }
 
 // ----------------- APU -----------------
 function apuWrite(address, value) {

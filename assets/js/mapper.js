@@ -40,6 +40,12 @@ function mapper(nesHeader) {
     // ==========================================================
     // Mapper 1: MMC1 (SxROM family)
     // ==========================================================
+    case 7: {
+      axromInit(nesHeader);
+      resetCPU();
+      break;
+    }
+
     case 2: {
       uxromInit(nesHeader);
       resetCPU();

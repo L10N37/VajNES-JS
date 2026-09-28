@@ -88,7 +88,7 @@ function loadRom(romBytes) {
     throw new Error('NES 2.0 extended ROM sizes are not supported yet');
   const incomingMapper = (nesHeader[6] >> 4) | (nesHeader[7] & 0xF0) |
     (isNES2 ? (nesHeader[8] & 15) << 8 : 0);
-  if (![0,1,2,4,155].includes(incomingMapper))
+  if (![0,1,2,4,7,155].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
   const required = 16 + ((nesHeader[6] & 4) ? 512 : 0) + nesHeader[4]*0x4000 + nesHeader[5]*0x2000;
   if (!nesHeader[4] || romBytes.length < required) throw new Error('Truncated cartridge ROM');
@@ -96,6 +96,10 @@ function loadRom(romBytes) {
   if (incomingMapper===2 && (nesHeader[5]!==0 || ![2,4,8,16].includes(nesHeader[4]) ||
       (isNES2 && (nesHeader[8]>>4)>2)))
     throw new Error('Unsupported UxROM board: expected 32–256 KiB PRG and 8 KiB CHR RAM');
+
+  if (incomingMapper===7 && (nesHeader[5]!==0 || ![2,4,8,16].includes(nesHeader[4]) ||
+      (isNES2 && (nesHeader[8]>>4)>2)))
+    throw new Error('Unsupported AxROM board: expected 32–256 KiB PRG, 8 KiB CHR RAM and submapper 0–2');
 
   // Header fields
   const prgBanks = nesHeader[4];  // PRG banks (16KB units)

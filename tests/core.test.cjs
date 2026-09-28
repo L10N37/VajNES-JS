@@ -153,3 +153,41 @@ test('MMC3 rejects short/repeated A12 pulses and ignores activity on other mappe
  e.evaluate('mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000);ppuCycles+=100;mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),3);
  const nrom=emulator();nrom.evaluate('mapper4_write_E001();ppuCycles+=100;mmc3Irq(0x1000)');assert.equal(nrom.evaluate('irqAssert.mmc3'),false);
 });
+test('AxROM maps all 32 KiB including vectors; ignores upper register bits',()=>{
+ const bytes=rom(7,16,0);const e=emulator(bytes);
+ for(let bank=0;bank<8;bank++){
+  e.evaluate(`checkWriteOffset(0xffff,${bank|0xe8})`);
+  assert.equal(e.evaluate('checkReadOffset(0x8000)'),bank*2);
+  assert.equal(e.evaluate('checkReadOffset(0xc000)'),bank*2+1);
+ }
+ assert.equal(e.evaluate('checkReadOffset(0xfffd)'),0x80);
+ const small=emulator(rom(7,4,0));small.evaluate('checkWriteOffset(0x8000,7)');assert.equal(small.evaluate('checkReadOffset(0x8000)'),2);
+});
+test('AxROM one-screen switching preserves both CIRAM pages across CPU/renderer access',()=>{
+ const e=emulator(rom(7,2,0,1));e.evaluate('cpuCycles=40000;VRAM_ADDR=0x2405;checkWriteOffset(0x2007,0x35);checkWriteOffset(0x8000,0x10);VRAM_ADDR=0x2c05;checkWriteOffset(0x2007,0x72)');
+ assert.deepEqual(e.evaluate('[0x2005,0x2405,0x2805,0x2c05].map(ppuBusRead)'),[0x72,0x72,0x72,0x72]);
+ e.evaluate('checkWriteOffset(0x9000,0);VRAM_ADDR=0x2805;checkReadOffset(0x2007)');assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x35);
+ assert.deepEqual(e.evaluate('[0x2005,0x2405,0x2805,0x2c05].map(ppuBusRead)'),[0x35,0x35,0x35,0x35]);
+});
+test('AxROM CHR RAM stays unbanked and has no cartridge PRG RAM',()=>{
+ const e=emulator(rom(7,4,0));e.evaluate('cpuCycles=40000;VRAM_ADDR=0x1234;checkWriteOffset(0x2007,0xa5);checkWriteOffset(0x8000,0x11)');assert.equal(e.evaluate('ppuBusRead(0x1234)'),0xa5);
+ e.evaluate('prgRam[0]=0x99;checkWriteOffset(0x6000,0x31);openBus.CPU=0x56');assert.equal(e.evaluate('checkReadOffset(0x6000)'),0x56);assert.equal(e.evaluate('prgRam[0]'),0x99);
+});
+test('AxROM legacy/no-conflict and explicit AND-conflict board variants',()=>{
+ for(const sub of [null,0,1,2]){
+  const bytes=rom(7,8,0,0,sub);bytes[16]=0x12;const e=emulator(bytes);
+  e.evaluate('checkWriteOffset(0x8000,0x13)');assert.equal(e.evaluate('axromBank'),sub===2?2:3);assert.equal(e.evaluate('MIRRORING'),'single1');
+ }
+ const bytes=rom(7,8,0,0,2);bytes[16]=1;const e=emulator(bytes);e.evaluate('checkWriteOffset(0x8000,0x11)');assert.equal(e.evaluate('axromBank'),1);assert.equal(e.evaluate('MIRRORING'),'single0');
+});
+test('AxROM bank write changes the very next opcode fetch',()=>{
+ const bytes=rom(7,4,0);bytes.set([0xa9,1,0x8d,0,0x80],16);bytes.set([0xa9,0x5a,0x85,0x20,0x4c,9,0x80],16+0x8000+5);bytes[16+0x7ffc]=0;bytes[16+0x7ffd]=0x80;
+ const e=emulator(bytes);e.run(100);assert.equal(e.evaluate('systemMemory[0x20]'),0x5a);assert.equal(e.evaluate('axromBank'),1);
+});
+test('AxROM rejects unsupported images before replacing a running cartridge',()=>{
+ const e=emulator(rom(7,4,0));e.evaluate('checkWriteOffset(0x8000,0x11)');
+ for(const bytes of [rom(7,2,1),rom(7,3,0),rom(7,32,0),rom(7,2,0,0,3)])assert.throws(()=>e.load(bytes),/Unsupported AxROM/);
+ assert.equal(e.evaluate('axromBank'),1);assert.equal(e.evaluate('MIRRORING'),'single1');
+ e.load(rom(7,2,0));assert.equal(e.evaluate('axromBank'),0);assert.equal(e.evaluate('MIRRORING'),'single0');
+ const previous=emulator(rom(4));previous.evaluate('irqAssert.mmc3=true');previous.load(rom(7,2,0));assert.equal(previous.evaluate('irqAssert.mmc3'),false);
+});

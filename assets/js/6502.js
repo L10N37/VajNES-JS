@@ -49,6 +49,7 @@ function resetCPU() {
   resetSharedState();
   apuResetTiming();
   resetDMC();
+  irqAssert.mmc3=false; // A newly loaded non-MMC3 cartridge has no MMC3 IRQ source.
   if(mapperNumber===4)mmc3Reset();
   joypadStrobe=joypadStrobeOutput=joypad1State=joypad2State=0;
   DMA.active=false;

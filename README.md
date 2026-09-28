@@ -18,6 +18,7 @@ Started in **2023** during a coding boot-camp and still actively evolving.
 ### General State
 - **Mapper 0** games should load and play fine
 - **Mapper 1** games should load and play fine
+- **Mapper 7 (AxROM/AOROM)** is supported on this development branch; Battletoads gameplay testing is pending
 - Expect unknown bugs
 
 ---

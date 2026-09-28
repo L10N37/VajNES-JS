@@ -26,7 +26,7 @@ semantics. It still reports failure 2 under the selected Sharp behaviour, and th
 regression gate verifies that outcome. This is **15/16 actual passes**, not 16/16.
 Reports include the untouched ROM hashes, status codes and diagnostic text.
 
-All **38** core/audio/RF unit tests pass. Browser checks confirmed nonzero RF
+All **44** core/audio/RF unit tests pass. Browser checks confirmed nonzero RF
 noise after a gesture, RF silence while running a ROM, and WASM/AudioWorklet PCM
 output with no page errors. Game audio has also been reported working by the
 user. Commercial MMC3 game compatibility still needs user playtesting.
@@ -76,6 +76,33 @@ The five DRAW entries are excluded; skipped and unfinished tests are not passes.
 This measures the specified test ROM, not complete NES compatibility or browser
 performance. Mapper tests use synthetic cartridges; commercial-game playtesting
 is still needed. The ROM is fetched from upstream and is not redistributed here.
+
+## Mapper 7: AxROM (AMROM / ANROM / AOROM)
+
+The development branch now accepts standard iNES mapper 7 cartridges, including
+the mapper used by Battletoads. Support includes:
+
+- 32 KiB PRG switching over the entire `$8000–$FFFF` window, including vectors.
+- Bit 4 selects either CIRAM page for all four nametables without erasing either
+  page. CPU `$2007` accesses and rendering use the same wiring.
+- 8 KiB unbanked CHR RAM. No cartridge PRG RAM; `$6000–$7FFF` reads are open bus.
+- Legacy iNES and NES 2.0 submapper 0/1 have no bus conflicts. Submapper 2 resolves
+  writes with the pre-switch ROM byte, affecting both bank and mirroring bits.
+- Deterministic bank 0 / lower CIRAM page on cartridge load. Ordinary CPU reset
+  retains the mapper latch, as on the discrete board.
+
+This stage supports 32, 64, 128 and 256 KiB PRG images with CHR RAM. Unsupported
+sizes, CHR ROM and unknown submappers are rejected before replacing the loaded
+cartridge. The nonstandard 512 KiB Battletoads expansion is not supported.
+
+Six new regression tests cover bank/vector reads, instruction execution across
+a bank write, nametable preservation, CHR RAM, open bus, bus conflicts and loader
+validation. A synthetic AxROM cartridge also executes the bank transition in
+Chromium with audio/RF handling active. Battletoads gameplay has **not** been
+verified here; mapper support alone does not establish its CPU/PPU timing accuracy.
+
+Reference: https://www.nesdev.org/wiki/AxROM and
+https://www.nesdev.org/wiki/NES_2.0_submappers#002,_003,_007:_UxROM,_CNROM,_AxROM.
 
 ## MMC3, video timing and RF update
 
