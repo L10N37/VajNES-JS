@@ -149,11 +149,11 @@ function loadRom(romBytes) {
     FULL_PRG_ROM = romBytes.slice(prgStart, prgStart + prgSize);
 
     // Entire CHR ROM
-    FULL_CHR_ROM = romBytes.slice(chrStart, chrStart + chrSize);
+    FULL_CHR_ROM = chrSize ? romBytes.slice(chrStart, chrStart + chrSize) : new Uint8Array(0x2000);
 
     // Store metadata
     FULL_PRG_ROM_SIZE = prgSize;
-    FULL_CHR_ROM_SIZE = chrSize;
+    FULL_CHR_ROM_SIZE = FULL_CHR_ROM.length;
 
     FULL_PRG_BANKS_16K = prgBanks;
     FULL_CHR_BANKS_8K  = chrBanks;

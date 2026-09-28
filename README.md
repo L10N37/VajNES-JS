@@ -1,8 +1,8 @@
-> **Accuracy development build:** See [test instructions, measured results and remaining work](docs/ACCURACY-DEVELOPMENT.md). This branch is experimental; 106/144 AccuracyCoin tests pass, and experimental C++/WebAssembly audio is available via **Enable audio**.
+> **Accuracy development build:** See [test instructions, measured results and remaining work](docs/ACCURACY-DEVELOPMENT.md). This branch is experimental; 107/144 AccuracyCoin tests pass, and experimental C++/WebAssembly audio is available via **Enable audio**.
 
 # VajNES-JS
 
-**VajNES-JS** is a work-in-progress NES emulator written in **pure vanilla JavaScript**.  
+**VajNES-JS** is a work-in-progress NES emulator written in **vanilla JavaScript**, with a **C++/WebAssembly audio renderer** on this development branch.
 Started in **2023** during a coding boot-camp and still actively evolving.
 
 **249 commits** so far — a *real* README was long overdue 😄
@@ -12,7 +12,6 @@ Started in **2023** during a coding boot-camp and still actively evolving.
 ## ⚠️ Current Status
 
 ### Broken
-- RF static audio on some browsers  
 - Adjustable background images / GIFs  
   *(Broken by the disassembler code taking precedence — not yet fixed)*
 

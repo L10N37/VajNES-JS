@@ -20,6 +20,7 @@ const MASK_SPR_ENABLE     = 0x10;
 
 let ppuInitDone = false;
 let nmiAtVblankEnd = false;
+let oddSkipRendering = false;
 
 // "rendering" = either BG or SPR enabled
 const renderingNow  = () => ((PPUMASK & 0b000011000) !== 0);
@@ -74,6 +75,7 @@ function makeSpriteBuf() {
     lo:   new Uint8Array(SPR_MAX),
     hi:   new Uint8Array(SPR_MAX),
     idx:  new Uint8Array(SPR_MAX),
+    address: new Uint16Array(SPR_MAX),
     sprite0ListIndex: 0xFF,
   };
 }
@@ -142,7 +144,7 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
 }
 
 // ---- Sprite fetch ----
-function fetchSpritePatternBytes(tileIndex, attr, rowInSprite) {
+function spritePatternAddress(tileIndex, attr, rowInSprite) {
   const flipH = (attr & 0x40) !== 0;
   const flipV = (attr & 0x80) !== 0;
   const is8x16 = (PPUCTRL & SPRITE_SIZE_16) !== 0;
@@ -165,6 +167,11 @@ function fetchSpritePatternBytes(tileIndex, attr, rowInSprite) {
     addrHi = baseAddr + 8;
   }
 
+  return addrLo;
+}
+function fetchSpritePatternBytes(tileIndex, attr, rowInSprite) {
+  const addrLo=spritePatternAddress(tileIndex,attr,rowInSprite),addrHi=addrLo+8;
+  const flipH=(attr&0x40)!==0;
   let lo = ppuBusRead(addrLo) & 0xFF;
   let hi = ppuBusRead(addrHi) & 0xFF;
 
@@ -204,8 +211,9 @@ function evalSpritesForScanline(target, scanline) {
 
     if (target.count < SPR_MAX) {
       const i = target.count++;
-      const pat = fetchSpritePatternBytes(tile, attr, row);
+      const pat = mapperNumber===4?{lo:0,hi:0}:fetchSpritePatternBytes(tile, attr, row);
 
+      target.address[i] = spritePatternAddress(tile,attr,row);
       target.attr[i] = attr;
       target.xcnt[i] = x;
       target.lo[i]   = pat.lo & 0xFF;
@@ -711,8 +719,43 @@ scanlineLUT[241] = vblankStartScanline;
 for (let i = 242; i <= 260; i++) scanlineLUT[i] = vblankIdleScanline;
 scanlineLUT[261] = preRenderScanline;
 
+// Drive the external address pins on fetch address phases. Palette lookups and
+// bulk sprite evaluation are internal renderer work and must not clock A12.
+function mmc3PPUBusTick() {
+  const d=PPUclock.dot+1,sl=PPUclock.scanline;
+  if(!renderingNow() || (sl>239 && sl!==261)){mmc3Irq(VRAM_ADDR);return;}
+  // The two trailing nametable accesses start at dots 337 and 339.
+  // They do not inherit the pattern-fetch address-phase offset.
+  if(PPUclock.dot>=336){
+    if(PPUclock.dot===337 || PPUclock.dot===339)mmc3Irq(0x2000|(VRAM_ADDR&0xfff));
+    return;
+  }
+  if(!(d&1) || d===0)return;
+  if(d>=257 && d<=320) {
+    const slot=(d-257)>>3,phase=(d-257)&7;
+    if(phase<4)mmc3Irq(0x2000|(VRAM_ADDR&0xfff));
+    else {
+      const address=slot<spritesNext.count?spritesNext.address[slot]:
+        spritePatternAddress(255,255,0);
+      const fetchAddress=address+(phase===6?8:0);
+      mmc3Irq(fetchAddress);
+      if(slot<spritesNext.count) {
+        let data=ppuBusRead(fetchAddress);
+        if(spritesNext.attr[slot]&0x40)data=reverseByte(data);
+        if(phase===4)spritesNext.lo[slot]=data;else spritesNext.hi[slot]=data;
+      }
+    }
+  } else if(d<=256 || d>=321) {
+    const phase=(d-1)&7;
+    if(d>=337 || phase<4)mmc3Irq(0x2000|(VRAM_ADDR&0xfff));
+    else mmc3Irq((PPUCTRL&16?0x1000:0)+(background.ntByte<<4)+
+      ((VRAM_ADDR>>12)&7)+(phase===6?8:0));
+  }
+}
+
 // ---- Tick ----
 function ppuTick() {
+  if(mapperNumber===4)mmc3PPUBusTick();
   const maskNow = PPUMASK & 0xFF;
   const renNow  = (maskNow & 0x18) !== 0;
   const renPrev = ((ppumaskPrev & 0x18) !== 0);
@@ -734,8 +777,10 @@ function ppuTick() {
   }
   renderingPrev = renNow2;
 
+  // Rendering is sampled before the final fetch, not at the skipped dot.
+  if(PPUclock.scanline===261 && PPUclock.dot===338)oddSkipRendering=renNow2;
   // Odd-frame skip
-  if (PPUclock.oddFrame && renNow2 &&
+  if (PPUclock.oddFrame && oddSkipRendering &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
       PPUclock.scanline = 0;
       PPUclock.dot = -1;

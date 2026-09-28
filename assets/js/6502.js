@@ -49,6 +49,7 @@ function resetCPU() {
   resetSharedState();
   apuResetTiming();
   resetDMC();
+  if(mapperNumber===4)mmc3Reset();
   joypadStrobe=joypadStrobeOutput=joypad1State=joypad2State=0;
   DMA.active=false;
 
@@ -56,6 +57,7 @@ function resetCPU() {
   clearNmiEdge();
   nmiPending = 0; // clear nmi timing latch
   irqPollCurrent=irqPollPrevious=false;
+  nmiPollCurrent=nmiPollPrevious=nmiSignalSeen=false;
 
   writeToggle = 0;
 
@@ -118,6 +120,10 @@ function consumeCycle() {
 
   cpuCycles++;
   apuClock();
+  nmiPollPrevious=nmiPollCurrent;
+  const nmiSignal=doesNmiEdgeExist();
+  if(nmiSignal && !nmiSignalSeen)nmiPollCurrent=true;
+  nmiSignalSeen=nmiSignal;
   irqPollPrevious=irqPollCurrent;
   irqPollCurrent=(irqAssert.frame || irqAssert.mmc3 || irqAssert.dmcDma) && !CPUregisters.P.I;
   clockJoypadStrobe();

@@ -24,7 +24,7 @@ let MMC3 = {
         prgMode: "PRG_SWAP_8000",     // PRG banking mode
         chrMode: "CHR_NORMAL",        // CHR inversion mode
         selectedRegister: null,       // register selected by $8000 write
-        prgRamEnabled: false,         // PRG-RAM enable flag from $A001
+        prgRamEnabled: true,          // Deterministic power-on choice; $A001 overrides
         prgRamWriteProtect: false     // PRG-RAM write protect flag from $A001
     },
 
@@ -449,108 +449,38 @@ function mapper4_chr_write(address, value)
 // ============================ //
 //   A12 EDGE DETECTOR          //
 // ============================ //
-const mmc3_irq = {
-
-  scanlineCounter: 0,
-  latch: 0,
-
-  reload: false,
-  prevA12: 0,
-  a12LowCount: 0 // for filter
-
-};
-
-
-// pre req's IRQ/NMI timing + overlap behavior
-function mmc3Irq(addr){
-
-    const A12_STATE = (addr >> 12) & 1;
-
-    // count how long A12 is LOW
-    if (!A12_STATE) {
-    mmc3_irq.a12LowCount++;
-    }
-
-    // detect rising edge with filter
-    if (!mmc3_irq.prevA12 && A12_STATE && mmc3_irq.a12LowCount >= 8) {
-
-    console.log("A12 rising edge detected - Last A12:", mmc3_irq.prevA12, "this A12:", A12_STATE, "vramAddr:", VRAM_ADDR.toString(16));
-
-    if (mmc3_irq.scanlineCounter === 0 || mmc3_irq.reload) {
-
-        mmc3_irq.scanlineCounter = mmc3_irq.latch;
-
-        console.log("mmc3 scanline counter reloaded:", mmc3_irq.scanlineCounter);
-
-        mmc3_irq.reload = false;
-
-    } else {
-
-        /*
-        * The IRQ counter WILL NOT DECREMENT AT ALL unless bit 3 OR bit 4 of 2000h on the PPU are
-        set! If both of these bits are clear, the IRQ counter will not count no way no how!!!
-        If both are set, the counter decrements twice per frame on my MMC3, but it may act
-        erratically on your MMC3.  Don't count on this effect occuring.
-        */
-        if ((PPUMASK & 0b00001000) || (PPUMASK & 0b00010000)) {
-            mmc3_irq.scanlineCounter--;
-            console.log("scanline counter dec'd:", mmc3_irq.scanlineCounter);
-        }
-    }
-
-        // IRQ line asserted when counter becomes 0
-        if (mmc3_irq.scanlineCounter === 0) {
-            console.log("MMC3 IRQ ASSERTED");
-            irqAssert.mmc3 = true;
-        }
+// Sharp MMC3B/C behaviour. The IRQ output is a latch, separate from enable.
+const mmc3_irq = {scanlineCounter:0,latch:0,reload:false,enabled:false,
+  prevA12:0,lowSince:0};
+function mmc3Reset() {
+  Object.assign(MMC3.control,{prgMode:"PRG_SWAP_8000",chrMode:"CHR_NORMAL",
+    selectedRegister:"CHR_BANK_0",prgRamEnabled:true,prgRamWriteProtect:false});
+  Object.assign(MMC3.registers,{CHR_BANK_0:0,CHR_BANK_1:2,CHR_BANK_2:4,
+    CHR_BANK_3:5,CHR_BANK_4:6,CHR_BANK_5:7,PRG_BANK_0:0,PRG_BANK_1:1});
+  Object.assign(mmc3_irq,{scanlineCounter:0,latch:0,reload:false,enabled:false,
+    prevA12:0,lowSince:ppuCycles});
+  irqAssert.mmc3=false;
 }
-
-    // reset filter if A12 is high
-    if (A12_STATE) {
-    mmc3_irq.a12LowCount = 0;
-    }
-
-    mmc3_irq.prevA12 = A12_STATE;
-
+function mmc3Irq(addr) {
+  if(mapperNumber!==4)return;
+  const high=(addr>>>12)&1;
+  if(!high && mmc3_irq.prevA12)mmc3_irq.lowSince=ppuCycles;
+  // Approximate three M2 periods with nine PPU dots; short nametable
+  // pulses are rejected. Sub-cycle M2 phase differences remain unmodelled.
+  if(high && !mmc3_irq.prevA12 &&
+      ppuCycles-mmc3_irq.lowSince>=9) {
+    if(mmc3_irq.scanlineCounter===0 || mmc3_irq.reload)
+      mmc3_irq.scanlineCounter=mmc3_irq.latch;
+    else --mmc3_irq.scanlineCounter;
+    mmc3_irq.reload=false;
+    if(mmc3_irq.scanlineCounter===0 && mmc3_irq.enabled)irqAssert.mmc3=true;
+  }
+  mmc3_irq.prevA12=high;
 }
-
-// http://kevtris.org/mappers/mmc3/index.html
-
-function mapper4_write_C000(value)
-{
-    /*
-    Writing 00h to C000h will result in a SINGLE interrupt being generated on the next rising
-    edge of A12.  No more interrupts will be generated until C000h is changed to a non-zero
-    value.  The counter is still being reloaded, however, because writing a non-zero value to
-    C000h results in it firing an interrupt after the new count expires.
-   */
-    mmc3_irq.latch = value & 0xFF;
-    if (!value) irqAssert.mmc3 = true;
-    console.log("latch $C000:", mmc3_irq.latch);
-
-}
-
-function mapper4_write_C001()
-{
-    console.log("$C001 reg hit ,reload set to true, counter cleared")
-    mmc3_irq.reload = true;
-    mmc3_irq.scanlineCounter = 0;
-}
-
-function mapper4_write_E000()
-{
-    //CPUregisters.P.I = 1;
-    irqAssert.mmc3 = false;
-    console.log("mmc3 irq enabled:", CPUregisters.P.I);
-    //mmc3_irq.scanlineCounter = mmc3_irq.latch;
-}
-
-function mapper4_write_E001()
-{
-    //CPUregisters.P.I = 0;
-    irqAssert.mmc3 = true;
-    console.log("mmc3 irq enabled:", CPUregisters.P.I);
-}
+function mapper4_write_C000(value){mmc3_irq.latch=value&255;}
+function mapper4_write_C001(){mmc3_irq.reload=true;}
+function mapper4_write_E000(){mmc3_irq.enabled=false;irqAssert.mmc3=false;}
+function mapper4_write_E001(){mmc3_irq.enabled=true;}
 
 // debug, not tied in with an on click / button, just use console
 function openMMC3DebugModal()

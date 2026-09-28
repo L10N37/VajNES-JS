@@ -56,7 +56,8 @@ function checkReadOffset(address) {
 
   // MMC3 PRG read
   if (mapperNumber === 4 && addr >= 0x8000) {
-    return mapper4_prg_read(addr);
+    openBus.CPU=mapper4_prg_read(addr);
+    return openBus.CPU;
   }
 
   if (addr < 0x2000) {
@@ -213,6 +214,7 @@ function checkReadOffset(address) {
 
         const inc = (PPUCTRL & 0x04) ? 32 : 1;
         VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
+        if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
         
         raw = ret & 0xFF;
         openBus.PPU = raw;
@@ -242,7 +244,8 @@ function checkReadOffset(address) {
     raw =
       mapperNumber === 1
         ? mmc1CpuRead(addr) & 0xFF
-        : prgRam[addr - 0x6000] & 0xFF;
+        : mapperNumber===4 && !MMC3.control.prgRamEnabled
+          ? openBus.CPU & 255 : prgRam[addr - 0x6000] & 0xFF;
 
   } else {
 
@@ -341,6 +344,10 @@ function checkWriteOffset(address, value) {
         }
 
         const nowEN = (value & 0x80) !== 0;
+        // A short /NMI pulse at VBlank onset can disappear before the CPU's
+        // edge detector captures it. Later disables retain the captured edge.
+        if(wasEN && !nowEN && PPUclock.scanline===241 && PPUclock.dot<=3)
+          clearNmiEdge();
         if (!wasEN && nowEN && (PPUSTATUS & 0x80)) {
           setNmiEdge();
         }
@@ -470,6 +477,7 @@ function checkWriteOffset(address, value) {
 
       const inc = (PPUCTRL & 0x04) ? 32 : 1;
       VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
+        if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
 
       break;
   }
@@ -494,7 +502,9 @@ function checkWriteOffset(address, value) {
 
   } else if (addr < 0x8000) {
     if (mapperNumber === 1) mmc1CpuWrite(addr, value);
-    else prgRam[addr - 0x6000] = value & 0xFF;
+    else if(addr>=0x6000 && (mapperNumber!==4 ||
+      (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)))
+      prgRam[addr - 0x6000] = value & 0xFF;
 
   } else {
     // Mapper registers decode writes across the full $8000–$FFFF range.

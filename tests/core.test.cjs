@@ -119,3 +119,37 @@ test('SHY corrupts write address high on page crossing and uses five cycles',()=
  e.evaluate('CPUregisters.PC=0x8000;CPUregisters.X=1;CPUregisters.Y=3;cpuRunning=true');
  assert.equal(e.evaluate('window.step()'),5);assert.equal(e.evaluate('systemMemory[0x300]'),3);
 });
+test('MMC3 PRG mode swaps R6 and the fixed second-last bank; reads drive CPU bus',()=>{
+ const bytes=rom(4,8,1);for(let bank=0;bank<16;bank++)bytes.fill(bank,16+bank*8192,16+(bank+1)*8192);const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,6);checkWriteOffset(0x8001,3)');
+ assert.deepEqual(e.evaluate('[0x8000,0xa000,0xc000,0xe000].map(checkReadOffset)'),[3,1,14,15]);
+ e.evaluate('checkWriteOffset(0x9ffe,0x46)');assert.deepEqual(e.evaluate('[0x8000,0xc000,0xffff].map(checkReadOffset)'),[14,3,15]);assert.equal(e.evaluate('openBus.CPU'),15);
+});
+test('MMC3 CHR inversion maps all eight slots and CHR ROM ignores writes',()=>{
+ const bytes=rom(4,2,4);for(let bank=0;bank<32;bank++)bytes.fill(bank,16+32768+bank*1024,16+32768+(bank+1)*1024);const e=emulator(bytes);
+ e.evaluate('mapper4_write_8000(0);mapper4_write_8001(9);mapper4_write_8000(1);mapper4_write_8001(13)');
+ assert.deepEqual(e.evaluate('Array.from({length:8},(_,i)=>ppuBusRead(i*1024))'),[8,9,12,13,4,5,6,7]);
+ e.evaluate('mapper4_write_8000(0x80);mapper4_chr_write(0,99)');assert.deepEqual(e.evaluate('Array.from({length:8},(_,i)=>ppuBusRead(i*1024))'),[4,5,6,7,8,9,12,13]);
+});
+test('MMC3 allocates and banks CHR RAM',()=>{
+ const e=emulator(rom(4,2,0));assert.equal(e.evaluate('FULL_CHR_ROM.length'),8192);
+ e.evaluate('mapper4_write_8000(2);mapper4_write_8001(7);mapper4_chr_write(0x1000,0xa5);mapper4_write_8001(6)');assert.equal(e.evaluate('ppuBusRead(0x1000)'),0);
+ e.evaluate('mapper4_write_8001(7)');assert.equal(e.evaluate('ppuBusRead(0x1000)'),0xa5);
+});
+test('MMC3 PRG RAM enable and write protection are independent',()=>{
+ const e=emulator(rom(4));e.evaluate('mapper4_write_A001(0x80);checkWriteOffset(0x6000,42);mapper4_write_A001(0xc0);checkWriteOffset(0x6000,99)');assert.equal(e.evaluate('checkReadOffset(0x6000)'),42);
+ e.evaluate('mapper4_write_A001(0);openBus.CPU=0x57');assert.equal(e.evaluate('checkReadOffset(0x6000)'),0x57);
+ e.evaluate('mapper4_write_A001(0x80)');assert.equal(e.evaluate('checkReadOffset(0x6000)'),42);
+});
+test('MMC3 IRQ enable and zero latch do not assert until a filtered rising edge',()=>{
+ const e=emulator(rom(4));e.evaluate('mapper4_write_C000(0);mapper4_write_C001();mapper4_write_E001()');assert.equal(e.evaluate('irqAssert.mmc3'),false);
+ e.evaluate('ppuCycles+=9;mmc3Irq(0x1000)');assert.equal(e.evaluate('irqAssert.mmc3'),true);
+ e.evaluate('mapper4_write_E000();mapper4_write_C000(2);mapper4_write_C001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),2);assert.equal(e.evaluate('irqAssert.mmc3'),false);
+ e.evaluate('mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),1);
+ e.evaluate('mapper4_write_E001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');assert.equal(e.evaluate('irqAssert.mmc3'),true);
+});
+test('MMC3 rejects short/repeated A12 pulses and ignores activity on other mappers',()=>{
+ const e=emulator(rom(4));e.evaluate('mmc3Reset();mapper4_write_C000(3);mapper4_write_C001();for(let i=0;i<100;i++)mmc3Irq(0);mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),0);
+ e.evaluate('mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000);ppuCycles+=100;mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),3);
+ const nrom=emulator();nrom.evaluate('mapper4_write_E001();ppuCycles+=100;mmc3Irq(0x1000)');assert.equal(nrom.evaluate('irqAssert.mmc3'),false);
+});

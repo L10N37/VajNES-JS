@@ -8,6 +8,7 @@ let step = {
   opcodeWhenEnabled: 0
 };
 
+let nmiPollCurrent=false,nmiPollPrevious=false,nmiSignalSeen=false;
 let nmiPending = 0;
 let code = 0x00; // current opcode now global for CPU openbus logic
 
@@ -137,24 +138,12 @@ window.step = function () {
 
   // poll for interrupts after the current instruction finishes (unless SEI, CLI, PLP, we captured the decision in advance)
 
-  if (nmiPending) {
-    if (debug.videoTiming) {
-      console.debug(
-        `%c[NMI handler entered] cpu=${cpuCycles} ppu=${ppuCycles} frame=${(PPUclock.frame)} sl=${(PPUclock.scanline)} dot=${(PPUclock.dot)}`,
-        "color:white;background:red;font-weight:bold;font-size:14px;"
-      );
-    }
+  if(nmiPollPrevious) {
     serviceNMI();
-    nmiPending = 0;
-  }
+    nmiPollCurrent=nmiPollPrevious=false;
+    nmiPending=0;
+  } else irqTimingEngine();
 
-  checkNmi();
-  // set the flag here, check if NMI is due NEXT step
-  // this order is specifically coded to pass NMI control tests
-  // i.e. do not call checkInterrupts prior to handling of interrupts
-  //=================================================
-
-  irqTimingEngine();
 
   // step per opcode, if enabled, pause, this is the end of the opcode handler / cpu-loop
   if (step.opcode === 'stepMode' || step.opcode === 'firstPress') {

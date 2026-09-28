@@ -2,11 +2,11 @@
   "suiteFinished": true,
   "suiteCommit": "673ef550db296136d52229961e7d39366116882a",
   "romSha256": "4fe8c2bc9abc6f4d418da47b73f62cba89fcacd950fae763097a1681d650e839",
-  "cpuCycles": 108100043,
+  "cpuCycles": 108100035,
   "pc": 32991,
   "counts": {
-    "pass": 107,
-    "fail": 37
+    "pass": 106,
+    "fail": 38
   },
   "results": [
     {
@@ -1058,9 +1058,9 @@
       "group": "PPU VBlank Timing",
       "name": "NMI Timing",
       "address": 1107,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 6,
+      "status": "fail",
+      "code": 1
     },
     {
       "page": 18,

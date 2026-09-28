@@ -9,16 +9,27 @@ Base: `ed77b52c9cc93f2ec6c867ccc23157c6075c282e`.
 | --- | ---: | ---: | ---: |
 | Original main at the base commit | 99 | 45 | 0 |
 | Previous development stage | 104 | 40 | 0 |
-| This development stage | 106 | 38 | 0 |
+| Audio development stage | 106 | 38 | 0 |
+| MMC3/video/RF stage | 107 | 37 | 0 |
 
-All 104 previous passes are retained. Newly passing in this update: Frame Counter
-IRQ and Controller Strobing. The first stage added Length Counter, Length Table,
-Frame Counter 4-step, Frame Counter 5-step, and Controller Clocking.
-All 29 focused core/audio tests pass. The suite completed at 108,100,035 cycles
-and its own 144-test tally agreed with the runner. A Chromium smoke test loaded
-AccuracyCoin, enabled audio, delivered nonzero finite PCM through the actual
-AudioWorklet, and muted successfully with no page errors. Commercial-game
-listening and browser/device coverage remain pending.
+All 106 previous passes are retained. **NMI Timing** now passes AccuracyCoin.
+The earlier stages added seven passes over main. The current ROM completed at
+108100043 cycles, with its own 144-test tally agreeing with the runner.
+
+| Additional upstream suite | Before | Now |
+| --- | ---: | ---: |
+| `mmc3_test_2`: normal Sharp MMC3 tests 1–5 | 1/5 | 5/5 |
+| `ppu_vbl_nmi`: all ten single tests | 8/10 | 10/10 |
+
+`6-MMC3_alt` intentionally expects another chip's incompatible zero-reload IRQ
+semantics. It still reports failure 2 under the selected Sharp behaviour, and the
+regression gate verifies that outcome. This is **15/16 actual passes**, not 16/16.
+Reports include the untouched ROM hashes, status codes and diagnostic text.
+
+All **38** core/audio/RF unit tests pass. Browser checks confirmed nonzero RF
+noise after a gesture, RF silence while running a ROM, and WASM/AudioWorklet PCM
+output with no page errors. Game audio has also been reported working by the
+user. Commercial MMC3 game compatibility still needs user playtesting.
 
 ## Testing this build
 
@@ -40,7 +51,7 @@ There is no separate deployed GitHub Pages build for this branch.
 Requires Node.js 22 or newer; no npm packages.
 
 ```sh
-node --test tests/core.test.cjs tests/audio.test.cjs
+node --test tests/core.test.cjs tests/audio.test.cjs tests/rf-audio.test.cjs
 git clone https://github.com/100thCoin/AccuracyCoin.git ../AccuracyCoin
 git -C ../AccuracyCoin checkout 673ef550db296136d52229961e7d39366116882a
 node tests/accuracycoin.cjs ../AccuracyCoin/AccuracyCoin.nes accuracy-report.json
@@ -66,15 +77,45 @@ This measures the specified test ROM, not complete NES compatibility or browser
 performance. Mapper tests use synthetic cartridges; commercial-game playtesting
 is still needed. The ROM is fetched from upstream and is not redistributed here.
 
-## This update
+## MMC3, video timing and RF update
 
-- Separate frame status latch from the CPU IRQ line and sample IRQs per cycle.
-- Preserve the first IRQ poll across taken branches and page crossings.
-- Sample controller strobe on the APU clock phase.
-- Correct indexed unstable-store dummy reads, timing and crossing address masks;
-  their DMA interaction subtests still fail.
-- Restart exhausted DMC samples and implement the saturating output DAC.
-- Add the C++ renderer, WASM binary, browser controls and AudioWorklet transport.
+- MMC3 IRQ enable is separate from its pending output. `$E001` enables future
+  IRQs; `$E000` disables/acknowledges. Latch writes do not immediately assert.
+- A12 filtering uses elapsed PPU clocks (a nine-dot low interval), rather than
+  counting function calls. Rendering drives the external fetch-address sequence,
+  including empty sprite slots and trailing nametable reads. Internal palette
+  lookups and bulk sprite evaluation do not create false mapper clocks.
+- `$2006` writes and `$2007` increments also drive A12; counting works with
+  rendering disabled. Normal Sharp zero-reload IRQ behaviour is implemented.
+- MMC3 CHR RAM is allocated, banked and writable. PRG RAM enable/protection,
+  bank modes, CPU bus reads and mapper reset now have regression coverage.
+- MMC3 sprite patterns are read in their fetch slots, allowing bank changes
+  between sprite evaluation and fetch to affect the data actually drawn.
+- NMI capture/polling is CPU-cycle driven instead of deferred by a whole
+  instruction. Short onset pulses can be cancelled before capture, and rendering
+  is sampled ahead of the odd-frame skipped dot.
+- RF static resumes from pointer/keyboard gestures. Repeated CPU mute requests
+  schedule only one fade; old cleanup cannot stop a newly started source, and
+  reopening the display after game output does not introduce RF noise.
+
+The A12 low-time filter is a dot-level approximation; precise M2 phase-dependent
+edge cases, MMC3A/alternate zero-reload behaviour, MMC6 RAM, MC-ACC, TQROM and
+other board-specific variants are not implemented here. Passing these tests is
+not a claim that every MMC3 game or every mapper variant works.
+
+Reproduce the extra ROM suites (no ROM modification, up to 36 million cycles
+per ROM; the result protocol is read from cartridge RAM):
+
+```sh
+git clone https://github.com/christopherpow/nes-test-roms.git ../nes-test-roms
+git -C ../nes-test-roms checkout 95d8f621ae55cee0d09b91519a8989ae0e64753b
+node tests/blargg.cjs ../nes-test-roms blargg-report.json
+node --test tests/core.test.cjs tests/audio.test.cjs tests/rf-audio.test.cjs
+```
+
+RF noise requires a browser gesture; click or press a key while the no-signal
+screen is visible. It is stopped when emulation runs. Enable game audio with the
+separate **Enable audio** button as before.
 
 ## Earlier foundation
 
@@ -93,8 +134,7 @@ is still needed. The ROM is fetched from upstream and is not redistributed here.
   and serial-reset writes preserve control bits outside PRG mode.
 
 Mapper 2 currently supports 32–256 KiB power-of-two PRG sizes with 8 KiB CHR RAM.
-NES 2.0 extended ROM sizes are explicitly rejected. MMC1 board variants and MMC3
-IRQ behaviour still need further work. Do not read this as full mapper coverage.
+NES 2.0 extended ROM sizes are explicitly rejected. MMC1 and MMC3 board variants still need further work. Do not read this as full mapper coverage.
 
 ## C++ / WebAssembly audio
 
@@ -118,7 +158,7 @@ Build from `audio/apu.cpp` with Zig 0.14.1 or Clang with wasm32/lld support:
 ```sh
 ZIG=/path/to/zig sh audio/build.sh
 # Or: CLANGXX=clang++ sh audio/build.sh
-node --test tests/core.test.cjs tests/audio.test.cjs
+node --test tests/core.test.cjs tests/audio.test.cjs tests/rf-audio.test.cjs
 g++ -O3 -ffp-contract=off tests/native-audio.cpp -o /tmp/vajnes-native-audio
 node tests/native-wasm-parity.cjs /tmp/vajnes-native-audio
 ```

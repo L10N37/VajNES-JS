@@ -1,0 +1,133 @@
+{
+  "upstreamCommit": "95d8f621ae55cee0d09b91519a8989ae0e64753b",
+  "results": [
+    {
+      "rom": "mmc3_test_2/rom_singles/1-clocking.nes",
+      "sha256": "b06d8a97f0ca672be92c841d6af7d1e650696e86e9cc0cf6eeb90d67a6ab499b",
+      "status": 0,
+      "text": "\n1-clocking\n\nPassed\n",
+      "error": null,
+      "cycles": 800011
+    },
+    {
+      "rom": "mmc3_test_2/rom_singles/2-details.nes",
+      "sha256": "e7af16c764b119e60effb7b1cfeec3dd8e2e657041283693cdbbeedb4081f1e3",
+      "status": 0,
+      "text": "\n2-details\n\nPassed\n",
+      "error": null,
+      "cycles": 1000012
+    },
+    {
+      "rom": "mmc3_test_2/rom_singles/3-A12_clocking.nes",
+      "sha256": "b375f15b9f9d372c8084b9c50928be9e41a3ac48be831ce82d203c18891433ad",
+      "status": 0,
+      "text": "\n3-A12_clocking\n\nPassed\n",
+      "error": null,
+      "cycles": 800010
+    },
+    {
+      "rom": "mmc3_test_2/rom_singles/4-scanline_timing.nes",
+      "sha256": "14a220b9d1272acc7a820ab38e9762a7cdf2d54c65e753be87f23dfcaf1bb845",
+      "status": 0,
+      "text": "\n4-scanline_timing\n\nPassed\n",
+      "error": null,
+      "cycles": 9600046
+    },
+    {
+      "rom": "mmc3_test_2/rom_singles/5-MMC3.nes",
+      "sha256": "e0824123d60b83868dac1189b28250f8e10376a01be468a5a74aa59937cb32ca",
+      "status": 0,
+      "text": "\n5-MMC3\n\nPassed\n",
+      "error": null,
+      "cycles": 800012
+    },
+    {
+      "rom": "mmc3_test_2/rom_singles/6-MMC3_alt.nes",
+      "sha256": "56698b6918453d161a8d4e51f66e363d6966b054939c8176c53c401a6b55269b",
+      "status": 2,
+      "text": "\nIRQ shouldn't be set when reloading to 0 due to counter naturally reaching 0 previously\n\n6-MMC3_alt\n\nFailed #2\n",
+      "error": null,
+      "cycles": 1000011
+    },
+    {
+      "rom": "ppu_vbl_nmi/rom_singles/01-vbl_basics.nes",
+      "sha256": "06aea5af4edab4e3141c939cd5ac9936f8758203b25dcaf84ae1a09db49e024a",
+      "status": 0,
+      "text": "\n01-vbl_basics\n\nPassed\n",
+      "error": null,
+      "cycles": 4400034
+    },
+    {
+      "rom": "ppu_vbl_nmi/rom_singles/02-vbl_set_time.nes",
+      "sha256": "dd98856130078844e3aa4bd95a9be8ab501ea84c089f1d8ad49a1b20af4b3a80",
+      "status": 0,
+      "text": "T+ 1 2\n00 - V\n01 - V\n02 - V\n03 - V\n04 - -\n05 V -\n06 V -\n07 V -\n08 V -\n\n02-vbl_set_time\n\nPassed\n",
+      "error": null,
+      "cycles": 5400043
+    },
+    {
+      "rom": "ppu_vbl_nmi/rom_singles/03-vbl_clear_time.nes",
+      "sha256": "787fdaa4dd6c5b6df5f4308fb6d55b57e2c2f69bd5ecdf8ad5c69735db4fcc72",
+      "status": 0,
+      "text": "00 V\n01 V\n02 V\n03 V\n04 V\n05 V\n06 -\n07 -\n08 -\n\n03-vbl_clear_time\n\nPassed\n",
+      "error": null,
+      "cycles": 5200032
+    },
+    {
+      "rom": "ppu_vbl_nmi/rom_singles/04-nmi_control.nes",
+      "sha256": "84722c75b896c47c8642f83220230fe14f0a31e55e26ecb83c400e6a26d91b32",
+      "status": 0,
+      "text": "\n04-nmi_control\n\nPassed\n",
+      "error": null,
+      "cycles": 1200018
+    },
+    {
+      "rom": "ppu_vbl_nmi/rom_singles/05-nmi_timing.nes",
+      "sha256": "72e515d689d7404ae5779b8c9c4c7b3563a755a94bd44864516f1b03df044482",
+      "status": 0,
+      "text": "00 4\n01 4\n02 4\n03 3\n04 3\n05 3\n06 3\n07 3\n08 3\n09 2\n\n05-nmi_timing\n\nPassed\n",
+      "error": null,
+      "cycles": 6600039
+    },
+    {
+      "rom": "ppu_vbl_nmi/rom_singles/06-suppression.nes",
+      "sha256": "811dd5997bbf48c2e5687ab06845f17ea76b2be472786596c334137582cc72aa",
+      "status": 0,
+      "text": "00 - N\n01 - N\n02 - N\n03 - N\n04 - -\n05 V -\n06 V -\n07 V N\n08 V N\n09 V N\n\n06-suppression\n\nPassed\n",
+      "error": null,
+      "cycles": 6800061
+    },
+    {
+      "rom": "ppu_vbl_nmi/rom_singles/07-nmi_on_timing.nes",
+      "sha256": "1ed154363660b5775b112ae63ce9bb4e400ebde2afef4d0ac12fc433efda3702",
+      "status": 0,
+      "text": "00 N\n01 N\n02 N\n03 N\n04 N\n05 -\n06 -\n07 -\n08 -\n\n07-nmi_on_timing\n\nPassed\n",
+      "error": null,
+      "cycles": 6000046
+    },
+    {
+      "rom": "ppu_vbl_nmi/rom_singles/08-nmi_off_timing.nes",
+      "sha256": "1d2a4093091c8e58a7f99d6a3531bbc6346b52cfc59bcb17ca04c1f2376cf2fc",
+      "status": 0,
+      "text": "03 -\n04 -\n05 -\n06 -\n07 N\n08 N\n09 N\n0A N\n0B N\n0C N\n\n08-nmi_off_timing\n\nPassed\n",
+      "error": null,
+      "cycles": 6800040
+    },
+    {
+      "rom": "ppu_vbl_nmi/rom_singles/09-even_odd_frames.nes",
+      "sha256": "1ac04283021ddd9294cc74ee709c55e20a350dc4815c15a8a93b3654837e858d",
+      "status": 0,
+      "text": "00 01 01 02 \n09-even_odd_frames\n\nPassed\n",
+      "error": null,
+      "cycles": 2200025
+    },
+    {
+      "rom": "ppu_vbl_nmi/rom_singles/10-even_odd_timing.nes",
+      "sha256": "7217d2d172ce11ad45c4da40c2f22201cf0eb758bc2cd8dd39d2cf0a7d4ca83e",
+      "status": 0,
+      "text": "08 08 09 07 \n10-even_odd_timing\n\nPassed\n",
+      "error": null,
+      "cycles": 4400034
+    }
+  ]
+}

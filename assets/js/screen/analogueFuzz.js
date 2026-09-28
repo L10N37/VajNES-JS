@@ -74,38 +74,44 @@ const NoSignalAudio = (() => {
   function internalStop() {
     pendingOn = false;
     if (!enabled) return;
-
-    const now = ctx.currentTime;
+    // Detach ownership immediately: CPU steps can request off millions of times.
+    // An old fade callback must never stop a newly started source.
+    enabled = false;
+    const oldSource=noiseSrc,oldGain=noiseGain;
+    noiseSrc=noiseGain=null;
+    const now=ctx.currentTime;
     master.gain.cancelScheduledValues(now);
-    master.gain.setValueAtTime(master.gain.value, now);
-    master.gain.linearRampToValueAtTime(0.0, now + 0.10);
-
-    setTimeout(() => {
-      try { noiseSrc.stop(); } catch {}
-      try { noiseSrc.disconnect(); } catch {}
-      try { noiseGain.disconnect(); } catch {}
-      noiseSrc = noiseGain = null;
-      enabled = false;
-      if (master) master.gain.value = 0.06; // restore for next start
-    }, 120);
+    master.gain.setValueAtTime(master.gain.value,now);
+    master.gain.linearRampToValueAtTime(0,now+0.10);
+    try {oldSource.stop(now+0.12);} catch {}
+    setTimeout(()=>{
+      try {oldSource.disconnect();} catch {}
+      try {oldGain.disconnect();} catch {}
+    },130);
   }
+
+  async function initOnUserGesture() {
+    if(!pendingOn && !enabled)return;
+    ensureCtx();
+    try {await ctx.resume();} catch {return;}
+    if(pendingOn && ctx.state==='running')internalStart();
+  }
+  // Browsers require an actual gesture to resume a context. The previous public
+  // unlock method had no event listener, so RF noise stayed suspended forever.
+  document.addEventListener('pointerdown',initOnUserGesture,{capture:true});
+  document.addEventListener('keydown',initOnUserGesture,{capture:true});
 
   // Public API
   return {
     setEnabled(on) {
-      ensureCtx();
       if (on) {
+        ensureCtx();
         pendingOn = true;
         if (ctx.state === "running") internalStart(); // otherwise wait for gesture
       } else {
         internalStop();
       }
     },
-    // Call this once in response to a user click/keypress/touch
-    async initOnUserGesture() {
-      ensureCtx();
-      try { await ctx.resume(); } catch {}
-      if (pendingOn && ctx.state === "running") internalStart();
-    }
+    initOnUserGesture
   };
 })();

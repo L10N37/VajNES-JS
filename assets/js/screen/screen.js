@@ -520,7 +520,7 @@ if (screenButton) {
     if (blackScreen)    blackScreen.style.display = screenVisible ? 'block' : 'none';
     if (scanlineScreen) scanlineScreen.style.display = screenVisible ? 'block' : 'none';
     if (typeof NoSignalAudio !== 'undefined' && NoSignalAudio && typeof NoSignalAudio.setEnabled === 'function') {
-      NoSignalAudio.setEnabled(screenVisible);
+      NoSignalAudio.setEnabled(screenVisible && !_firstRealFrameSeen);
     }
   });
 }
