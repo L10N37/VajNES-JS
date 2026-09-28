@@ -48,6 +48,7 @@ const SPR_MAX = 8;
 let vFetch = 0;
 
 function presentFrame() {
+  if(typeof NESAudio!=="undefined") NESAudio.frame(cpuCycles);
   blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
 
   // count this presented frame

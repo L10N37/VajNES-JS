@@ -23,10 +23,11 @@ if(tests.length!==144) throw new Error('Test table mismatch');
 const e=createEmulator();e.load(new Uint8Array(rom));
 e.run(3000000);e.buttons(8);e.run(100000);e.buttons(0);
 let state;
-// Fixed, reproducible budget: no patching ROM, result bytes, or test selection.
+// Fixed maximum budget, with completion detection: no patching ROM, result bytes, or test selection.
 for(let i=0;i<100;i++) {
   e.run(3000000);state=e.state();
   if(i%10===9) console.error('Emulated cycles:',state.cpuCycles);
+  if(state.ram[0x35]===0 && state.ram[0x37]===144 && tests.every(t=>state.ram[t.address]!==0)) break;
 }
 const results=tests.map(t=>{
  const raw=state.ram[t.address];

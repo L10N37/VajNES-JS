@@ -525,6 +525,7 @@ function mapperWritePRG(addr, value) { if(mapperNumber===2) uxromWrite(addr,valu
 // ----------------- APU -----------------
 function apuWrite(address, value) {
   apuTimingWrite(address,value);
+  if(typeof NESAudio!=="undefined") NESAudio.write(cpuCycles,address,value);
   switch (address) {
 
     // ----------------- PULSE 1 -----------------
@@ -560,6 +561,7 @@ function apuWrite(address, value) {
 
     case 0x4011:
       APUregister.DMC_RAW = value;
+      DMC.outputLevel=value&127;
       break;
 
     case 0x4012:
@@ -601,6 +603,12 @@ function apuRead(address) {
 
 // ----------------- Joypad -----------------
 let joypadStrobe = 0;
+let joypadStrobeOutput = 0;
+function clockJoypadStrobe() {
+  if ((cpuCycles & 1) !== 0) return;
+  joypadStrobeOutput=joypadStrobe;
+  if(joypadStrobeOutput) {joypad1State=pollController1();joypad2State=pollController2();}
+}
 let joypad1Buttons = 0x00;
 let joypad2Buttons = 0x00;
 let joypad1State   = 0x00;
@@ -656,7 +664,7 @@ function joypadWrite(address, value) {
     const old = joypadStrobe & 1;
     const now = value & 1;
     joypadStrobe = now;
-    latchIfFallingEdge(old, now);
+    // $4016 output latch is sampled by the APU clock.
 
     if (typeof JoypadRegister === "object" && JoypadRegister) {
       JoypadRegister.JOYPAD1 = value;
@@ -685,7 +693,7 @@ function joypadRead(address) {
     return 0; // Not a joypad port
   }
 
-  const strobe = joypadStrobe & 1;
+  const strobe = joypadStrobeOutput & 1;
 
   // Bit coming from the controller shift register
   const bit = strobe ? (poll() & 1) : (state & 1);

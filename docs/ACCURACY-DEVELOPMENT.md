@@ -8,12 +8,17 @@ Base: `ed77b52c9cc93f2ec6c867ccc23157c6075c282e`.
 | Build | Pass | Fail | Skipped |
 | --- | ---: | ---: | ---: |
 | Original main at the base commit | 99 | 45 | 0 |
-| This development stage | 104 | 40 | 0 |
+| Previous development stage | 104 | 40 | 0 |
+| This development stage | 106 | 38 | 0 |
 
-All 99 original passes are retained. Newly passing: Length Counter, Length Table,
+All 104 previous passes are retained. Newly passing in this update: Frame Counter
+IRQ and Controller Strobing. The first stage added Length Counter, Length Table,
 Frame Counter 4-step, Frame Counter 5-step, and Controller Clocking.
-The 12 focused core regression tests also pass. The suite completed and its own
-144-test tally agreed with the runner. Browser/game playtesting is still pending.
+All 29 focused core/audio tests pass. The suite completed at 108,100,035 cycles
+and its own 144-test tally agreed with the runner. A Chromium smoke test loaded
+AccuracyCoin, enabled audio, delivered nonzero finite PCM through the actual
+AudioWorklet, and muted successfully with no page errors. Commercial-game
+listening and browser/device coverage remain pending.
 
 ## Testing this build
 
@@ -35,7 +40,7 @@ There is no separate deployed GitHub Pages build for this branch.
 Requires Node.js 22 or newer; no npm packages.
 
 ```sh
-node --test tests/core.test.cjs
+node --test tests/core.test.cjs tests/audio.test.cjs
 git clone https://github.com/100thCoin/AccuracyCoin.git ../AccuracyCoin
 git -C ../AccuracyCoin checkout 673ef550db296136d52229961e7d39366116882a
 node tests/accuracycoin.cjs ../AccuracyCoin/AccuracyCoin.nes accuracy-report.json
@@ -50,8 +55,8 @@ node tests/accuracycoin.cjs ../AccuracyCoin/AccuracyCoin.nes accuracy-report.jso
 
 The runner uses the production CPU/PPU/APU/mapper scripts. Only browser UI,
 frame presentation, event handlers, and timers are stubbed. It boots the original
-ROM, presses/releases Start through controller input, and runs a fixed 303.1
-million CPU-cycle budget. It does not patch ROM instructions, test selection,
+ROM, presses/releases Start through controller input, and runs up to a fixed 303.1
+million CPU-cycle budget, stopping once all 144 results are complete. It does not patch ROM instructions, test selection,
 result RAM, or emulated behaviour. The ROM SHA-256 is checked before reading its
 pinned test tables. Every result includes its original raw byte and error code.
 The suite's own completion/tally state must agree with the decoded results.
@@ -61,7 +66,17 @@ This measures the specified test ROM, not complete NES compatibility or browser
 performance. Mapper tests use synthetic cartridges; commercial-game playtesting
 is still needed. The ROM is fetched from upstream and is not redistributed here.
 
-## Implemented in this stage
+## This update
+
+- Separate frame status latch from the CPU IRQ line and sample IRQs per cycle.
+- Preserve the first IRQ poll across taken branches and page crossings.
+- Sample controller strobe on the APU clock phase.
+- Correct indexed unstable-store dummy reads, timing and crossing address masks;
+  their DMA interaction subtests still fail.
+- Restart exhausted DMC samples and implement the saturating output DAC.
+- Add the C++ renderer, WASM binary, browser controls and AudioWorklet transport.
+
+## Earlier foundation
 
 - Headless suite runner, before/after result files, and CI known-pass regression gate.
 - NTSC APU length counters, length table, 4/5-step sequencing, delayed frame-counter
@@ -81,22 +96,46 @@ Mapper 2 currently supports 32–256 KiB power-of-two PRG sizes with 8 KiB CHR R
 NES 2.0 extended ROM sizes are explicitly rejected. MMC1 board variants and MMC3
 IRQ behaviour still need further work. Do not read this as full mapper coverage.
 
-## Audio direction
+## C++ / WebAssembly audio
 
-The APU work here is timing/status groundwork, **not a finished audio engine**.
-No C++/WebAssembly audio module or AudioWorklet output has been added yet.
+Click **Enable audio** before loading/resetting the ROM, then run the emulator.
+Use the volume slider or **Mute audio**. Serve over localhost or HTTPS; opening
+`index.html` directly cannot load the module/worklet. The compiled WASM is checked
+in, so no compiler is needed to play. Enabling midway through a game seeds current
+registers, but cannot recover past envelope/oscillator phase; reset for comparison.
 
-The intended design is a C++ APU compiled to WebAssembly, with all CPU writes,
-reads, DMA requests, IRQ changes and sample generation synchronized to emulated
-CPU cycles. CPU-visible behaviour must stay on the emulator timeline; an
-AudioWorklet should consume buffered samples rather than clocking a second APU
-from wall time. This also avoids IRQ timing depending on audio device latency.
+The renderer implements both pulse channels (duty, envelopes, sweeps), triangle
+linear counter and held DAC, noise LFSR modes, and the DMC 7-bit output DAC. It
+uses nonlinear pulse/TND mixing, a 32-tap/256-phase windowed-sinc delta resampler,
+and approximations of the 90 Hz/440 Hz high-pass and 14 kHz low-pass filters.
+JS remains authoritative for CPU-visible length counters, frame sequencing,
+DMC fetches and interrupts; C++ receives emulated-cycle events. The AudioWorklet
+only consumes PCM. NTSC frame pacing carries instruction overshoot and includes
+interrupt service cycles. Audio output does not clock the emulator.
 
-Next audio work: pulse envelopes/sweeps, triangle linear counter, noise LFSR,
-DMC output/DMA arbitration, nonlinear mixing, band-limited resampling, analogue
-filtering, and AudioWorklet buffering. Native and WASM builds should run the same
-register-trace tests, followed by waveform/frequency and listening comparisons.
-C++ offers implementation/performance options; it does not itself ensure accuracy.
+Build from `audio/apu.cpp` with Zig 0.14.1 or Clang with wasm32/lld support:
+
+```sh
+ZIG=/path/to/zig sh audio/build.sh
+# Or: CLANGXX=clang++ sh audio/build.sh
+node --test tests/core.test.cjs tests/audio.test.cjs
+g++ -O3 -ffp-contract=off tests/native-audio.cpp -o /tmp/vajnes-native-audio
+node tests/native-wasm-parity.cjs /tmp/vajnes-native-audio
+```
+
+The mixed-channel trace matched all 23,998 native/WASM samples exactly on the
+tested build. Tests also cover 44.1/48 kHz pulse pitch/sample counts, envelopes,
+sweep negate, triangle gating, noise modes, DMC range, batching, worklet buffering,
+and unchanged CPU/PPU/APU execution with the renderer attached.
+
+This is experimental audio, not verified hardware-equivalent sound. DMC reader
+startup, disable/timer behaviour, get/put arbitration and bus retries remain
+inaccurate. A free-running/immediate-fetch attempt exposed an open-bus execution
+crash and was withheld; the established DMA timing remains. No PAL or expansion
+audio is implemented. Buffering can underrun on slow/background tabs; the browser
+smoke observed one underrun and one queue reset during startup/load. Hardware
+waveform comparison and listening tests are still needed. C++ alone does not
+ensure accuracy.
 
 ## Remaining accuracy work
 

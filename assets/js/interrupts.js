@@ -18,6 +18,7 @@ const irqBranch = {
 // but on the same cycle poll for interrupts, if the irq line was low and the I flag was clear the cycle it gets set
 // we still proceed with an irq
 let irqBypassI = false;
+let irqPollCurrent = false, irqPollPrevious = false;
 
 function serviceNMI(){
 
@@ -125,18 +126,8 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
 // test and it fails with #3 -> this was the $4017 frame counter IRQ assertion source
 // -> get back to IRQ stuff after other cycle sensitive tests pass, 
 function irqTimingEngine(){
-
-  // check if any source has pulled the IRQ line low / active state
-  if (!Object.values(irqAssert).some(Boolean)) return;
-
-  // === Edge Cases ===
-  if (code === 0x58) return; // CLI, delay by 1 instruction
-  if (code === 0x78 || code === 0x58 || code === 0x28) return; // no handling logic in here for these
-  const isBranchInstruction = (code & 0x1F) === 0x10;
-  if (isBranchInstruction) return;
-
-  // fall through: general timing, service at the point this handler is called (post opcode handler)
-  serviceIRQ();
+  // IRQ is sampled at the penultimate instruction cycle, including CLI/SEI/PLP.
+  if(irqPollPrevious) serviceIRQ(true);
 }
 
 function serviceIRQ(bypass_interrupt_flag = false) {

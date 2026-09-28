@@ -1,4 +1,5 @@
 const DMC = {
+  outputLevel: 0,
   irqEnabled: false,
   loop: false,
 
@@ -31,6 +32,9 @@ const DMC = {
   fetchCount: 0
 };
 
+const DMC_INITIAL_STATE = {...DMC};
+function resetDMC() {Object.assign(DMC,DMC_INITIAL_STATE);irqAssert.dmcDma=false;}
+
 function dmcRestartSample() {
   DMC.currentAddress = DMC.sampleAddress & 0xFFFF;
   DMC.bytesRemaining = DMC.sampleLength & 0xFFFF;
@@ -47,7 +51,6 @@ function dmcRestartSample() {
 
 function clockDMC() {
   if (!DMC.enabled) return;
-
   DMC.timer--;
 
   if (DMC.timer >= 0) return;
@@ -57,6 +60,9 @@ function clockDMC() {
 
   // ---- output unit ----
   if (!DMC.silence) {
+    if(DMC.shiftRegister&1) {if(DMC.outputLevel<=125)DMC.outputLevel+=2;}
+    else if(DMC.outputLevel>=2)DMC.outputLevel-=2;
+    if(typeof NESAudio!=="undefined") NESAudio.dmc(cpuCycles,DMC.outputLevel);
     DMC.shiftRegister >>= 1;
   }
 
@@ -191,6 +197,7 @@ function dmcSetControlFrom4010(value) {
   ];
 
   DMC.timerPeriod = DMC_RATE_TABLE[DMC.rateIndex];
+  // TODO: preserve divider phase when bus-aware DMC DMA is implemented.
   DMC.timer = DMC.timerPeriod - 1;
 
   if (debug.dmcDma) {
@@ -235,7 +242,6 @@ function dmcSetSampleLengthFrom4013(value) {
 function dmcWrite4015(value) {
   value &= 0xFF;
 
-  const wasEnabled = DMC.enabled;
   DMC.enabled = !!(value & 0x10);
 
   if (debug.dmcDma) {
@@ -255,7 +261,7 @@ function dmcWrite4015(value) {
     return;
   }
 
-  if (!wasEnabled && DMC.enabled) {
+  if (DMC.bytesRemaining === 0) {
 
     DMC.currentAddress = DMC.sampleAddress & 0xFFFF;
     DMC.bytesRemaining = DMC.sampleLength & 0xFFFF;
@@ -274,9 +280,3 @@ function dmcWrite4015(value) {
     }
   }
 }
-
-/*
-  DMC DAC output (delta counter ±2)
-  Then APU mixer integration
-)
-  */

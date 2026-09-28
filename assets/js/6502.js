@@ -48,10 +48,14 @@ function resetCPU() {
   // reset shared PPU / mapper / timing state
   resetSharedState();
   apuResetTiming();
+  resetDMC();
+  joypadStrobe=joypadStrobeOutput=joypad1State=joypad2State=0;
+  DMA.active=false;
 
   // clear Vblank and NMI edge on reset
   clearNmiEdge();
   nmiPending = 0; // clear nmi timing latch
+  irqPollCurrent=irqPollPrevious=false;
 
   writeToggle = 0;
 
@@ -114,6 +118,9 @@ function consumeCycle() {
 
   cpuCycles++;
   apuClock();
+  irqPollPrevious=irqPollCurrent;
+  irqPollCurrent=(irqAssert.frame || irqAssert.mmc3 || irqAssert.dmcDma) && !CPUregisters.P.I;
+  clockJoypadStrobe();
 
   clockDMC();
 
@@ -184,7 +191,7 @@ function BRANCH_REL() {
   // -------- NO PAGE CROSS --------
   if ((nextPC & 0xFF00) === (target & 0xFF00)) {
 
-    if (irqBranch.pending) irqBranch.delay = 1;
+    irqPollPrevious = irqBranch.pending;
 
     CPUregisters.PC = target;
     return;
@@ -194,7 +201,7 @@ function BRANCH_REL() {
   checkReadOffset((nextPC & 0xFF00) | (target & 0x00FF));
   consumeCycle();
 
-  if (irqBranch.pending) irqBranch.delay = 1;
+  irqPollPrevious = irqBranch.pending || irqPollPrevious;
 
   CPUregisters.PC = target;
 }
@@ -5371,25 +5378,20 @@ function XAA_IMM() {
 
 }
 
-function SHA_ABSY() {
-  // C1: opcode
-  // C2: lo
-  const lo = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-  consumeCycle();
-
-  // C3: hi
-  const hi = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
-  consumeCycle();
-
-  // C4: write (A & X & (high+1)) to EA
-  const base      = ((hi << 8) | lo) & 0xFFFF;
-  const address   = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
-  let value     = (CPUregisters.A & CPUregisters.X) & (((address >> 8) + 1) & 0xFF);
-  checkWriteOffset(address, value);
-  consumeCycle();
-  CPUregisters.PC = (CPUregisters.PC + 3) & 0xFFFF;
-
+// Unstable indexed stores use base high+1 for the data mask. On page
+// crossing the masked data replaces the address high byte (RP2A03 profile).
+function unstableStoreAbsolute(index,registerValue,setStack=false) {
+  const lo=checkReadOffset((CPUregisters.PC+1)&0xFFFF);consumeCycle();
+  const hi=checkReadOffset((CPUregisters.PC+2)&0xFFFF);consumeCycle();
+  const sum=lo+index,low=sum&255;
+  checkReadOffset((hi<<8)|low);consumeCycle();
+  if(setStack)CPUregisters.S=registerValue&255;
+  const value=registerValue&((hi+1)&255);
+  const high=sum>255?value:hi;
+  checkWriteOffset((high<<8)|low,value);consumeCycle();
+  CPUregisters.PC=(CPUregisters.PC+3)&0xFFFF;
 }
+function SHA_ABSY() {unstableStoreAbsolute(CPUregisters.Y,CPUregisters.A&CPUregisters.X);}
 
 // RP2A03G quirk profile (Variant A):
 // - Data written = (A & X) & (H_plus_1)
@@ -5497,93 +5499,12 @@ function DOP_IMM() {
 }
 
 // 0x9C — SHY (SAY) abs,X — 5 cycles, no page-penalty
-function SHY_ABSX() {
-  // C1: opcode
-  // C2: fetch low
-  const lo = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-  consumeCycle();
-  // C3: fetch high
-  const hi = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
-  consumeCycle();
+function SHY_ABSX() {unstableStoreAbsolute(CPUregisters.X,CPUregisters.Y);}
 
-  const x      = CPUregisters.X & 0xFF;
-  const effLo  = (lo + x) & 0xFF;               // buggy: no carry into high
-  const addr   = ((hi << 8) | effLo) & 0xFFFF;  // uses original high
-  const mask   = (hi + 1) & 0xFF;
-  let value  = CPUregisters.Y & mask;
+function SHX_ABSY() {unstableStoreAbsolute(CPUregisters.Y,CPUregisters.X);}
 
-  // C4: dummy read @EA
-  
-  checkReadOffset(addr);
-  
-  consumeCycle();
+function TAS_ABSY() {unstableStoreAbsolute(CPUregisters.Y,CPUregisters.A&CPUregisters.X,true);}
 
-  // C5: final write
-  checkWriteOffset(addr, value);
-  consumeCycle();
-  CPUregisters.PC = (CPUregisters.PC + 3) & 0xFFFF;
-
-}
-
-// 0x9E — SHX (SXA) abs,Y — 5 cycles, no page-penalty
-function SHX_ABSY() {
-  // C1: opcode
-  // C2: fetch low
-  const lo = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-  consumeCycle();
-  // C3: fetch high
-  const hi = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
-  consumeCycle();
-
-  const y      = CPUregisters.Y & 0xFF;
-  const effLo  = (lo + y) & 0xFF;               // buggy: no carry into high
-  const addr   = ((hi << 8) | effLo) & 0xFFFF;
-  const mask   = (hi + 1) & 0xFF;
-  let value  = CPUregisters.X & mask;
-
-  // C4: dummy read @EA
-  
-  checkReadOffset(addr);
-  
-  consumeCycle();
-
-  // C5: final write
-  checkWriteOffset(addr, value);
-  consumeCycle();
-  CPUregisters.PC = (CPUregisters.PC + 3) & 0xFFFF;
-
-}
-
-// 0x9B — TAS (SHS) abs,Y — 5 cycles, no page-penalty
-function TAS_ABSY() {
-  // C1: opcode
-  // C2: fetch low
-  const lo = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-  consumeCycle();
-  // C3: fetch high
-  const hi = checkReadOffset((CPUregisters.PC + 2) & 0xFFFF) & 0xFF;
-  consumeCycle();
-
-  const base   = ((hi << 8) | lo) & 0xFFFF;
-  const addr   = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
-  const tmp    = (CPUregisters.A & CPUregisters.X) & 0xFF;
-  CPUregisters.S = tmp;
-
-  // C4: dummy read @EA
-  
-  checkReadOffset(addr);
-  
-  consumeCycle();
-
-  // C5: final write (A&X&(high+1))
-  let value = tmp & (((addr >> 8) + 1) & 0xFF);
-  checkWriteOffset(addr, value);
-  consumeCycle();
-  CPUregisters.PC = (CPUregisters.PC + 3) & 0xFFFF;
-
-}
-
-// 0xCB — SBX #imm — 2 cycles
 function SBX_IMM() {
   // C1: opcode
   // C2: fetch imm and compute

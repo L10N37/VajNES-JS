@@ -61,36 +61,46 @@ const APU_LENGTH_TABLE = [10,254,20,2,40,4,80,6,160,8,60,10,14,12,26,14,
 const apuTiming = {
   cycle: 0, fiveStep: false, inhibitIRQ: false, resetDelay: 0,
   pendingFiveStep: false, enabled: 0, length: [0,0,0,0],
-  halt: [false,false,false,false], clearFrameIRQ: 0
+  halt: [false,false,false,false], clearFrameIRQ: 0, frameFlag: false
 };
 function apuResetTiming() {
   apuTiming.cycle=0; apuTiming.fiveStep=false; apuTiming.inhibitIRQ=false;
   apuTiming.resetDelay=0; apuTiming.pendingFiveStep=false;
   apuTiming.enabled=0; apuTiming.length.fill(0); apuTiming.halt.fill(false);
-  apuTiming.clearFrameIRQ=0;
+  apuTiming.clearFrameIRQ=0; apuTiming.frameFlag=false;
   irqAssert.frame=false;
+  if(typeof NESAudio!=="undefined") NESAudio.reset(cpuCycles);
+}
+function apuQuarterFrame() {
+  if(typeof NESAudio!=="undefined") NESAudio.quarter(cpuCycles);
 }
 function apuHalfFrame() {
   for(let i=0;i<4;i++) if(apuTiming.length[i] && !apuTiming.halt[i]) apuTiming.length[i]--;
+  if(typeof NESAudio!=="undefined") NESAudio.half(cpuCycles);
 }
 function apuClock() {
-  if(apuTiming.clearFrameIRQ && --apuTiming.clearFrameIRQ===0) irqAssert.frame=false;
+  if(apuTiming.clearFrameIRQ && --apuTiming.clearFrameIRQ===0) {irqAssert.frame=false;apuTiming.frameFlag=false;}
   if(apuTiming.resetDelay && --apuTiming.resetDelay===0) {
     apuTiming.cycle=0;
     apuTiming.fiveStep=apuTiming.pendingFiveStep;
-    if(apuTiming.fiveStep) apuHalfFrame();
+    if(apuTiming.fiveStep) {apuQuarterFrame();apuHalfFrame();}
     return;
   }
   const c=++apuTiming.cycle;
+  if(c===7457 || c===14913 || c===22371 || c===(apuTiming.fiveStep?37281:29829)) apuQuarterFrame();
   if(c===14913 || c===(apuTiming.fiveStep?37281:29829)) apuHalfFrame();
-  if(!apuTiming.fiveStep && c>=29828 && c<=29830 && !apuTiming.inhibitIRQ) irqAssert.frame=true;
+  // The readable latch pulses even with IRQ inhibition; the CPU line does not.
+  if(!apuTiming.fiveStep && c>=29828 && c<=29830) {
+    apuTiming.frameFlag=c<29830 || !apuTiming.inhibitIRQ;
+    if(c>=29829 && !apuTiming.inhibitIRQ) irqAssert.frame=true;
+  }
   if(c===(apuTiming.fiveStep?37282:29830)) apuTiming.cycle=0;
 }
 function apuTimingWrite(address,value) {
   if(address===0x4017) {
     apuTiming.pendingFiveStep=!!(value&0x80);
     apuTiming.inhibitIRQ=!!(value&0x40);
-    if(apuTiming.inhibitIRQ) irqAssert.frame=false;
+    if(apuTiming.inhibitIRQ) {irqAssert.frame=false;apuTiming.frameFlag=false;}
     // Writes occur before consumeCycle; include the write cycle in this delay.
     apuTiming.resetDelay=(cpuCycles&1)?4:3;
   } else if(address===0x4015) {
@@ -104,7 +114,7 @@ function apuTimingWrite(address,value) {
   }
 }
 function apuStatusRead() {
-  let result=(irqAssert.frame?0x40:0)|(irqAssert.dmcDma?0x80:0)|(DMC.bytesRemaining?0x10:0);
+  let result=(apuTiming.frameFlag?0x40:0)|(irqAssert.dmcDma?0x80:0)|(DMC.bytesRemaining?0x10:0);
   for(let i=0;i<4;i++) if(apuTiming.length[i]) result|=1<<i;
   // Frame IRQ acknowledgement is synchronized to the next APU get cycle.
   apuTiming.clearFrameIRQ=(cpuCycles&1)?2:1;

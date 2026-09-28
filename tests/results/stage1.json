@@ -2,11 +2,11 @@
   "suiteFinished": true,
   "suiteCommit": "673ef550db296136d52229961e7d39366116882a",
   "romSha256": "4fe8c2bc9abc6f4d418da47b73f62cba89fcacd950fae763097a1681d650e839",
-  "cpuCycles": 108100035,
+  "cpuCycles": 303100043,
   "pc": 32991,
   "counts": {
-    "pass": 106,
-    "fail": 38
+    "pass": 104,
+    "fail": 40
   },
   "results": [
     {
@@ -626,36 +626,36 @@
       "group": "Unofficial Instructions: SH*",
       "name": "$9F   SHA absolute,Y",
       "address": 1095,
-      "raw": 30,
+      "raw": 6,
       "status": "fail",
-      "code": 7
+      "code": 1
     },
     {
       "page": 10,
       "group": "Unofficial Instructions: SH*",
       "name": "$9B   SHS absolute,Y",
       "address": 1096,
-      "raw": 30,
+      "raw": 6,
       "status": "fail",
-      "code": 7
+      "code": 1
     },
     {
       "page": 10,
       "group": "Unofficial Instructions: SH*",
       "name": "$9C   SHY absolute,X",
       "address": 1097,
-      "raw": 30,
+      "raw": 6,
       "status": "fail",
-      "code": 7
+      "code": 1
     },
     {
       "page": 10,
       "group": "Unofficial Instructions: SH*",
       "name": "$9E   SHX absolute,Y",
       "address": 1098,
-      "raw": 30,
+      "raw": 6,
       "status": "fail",
-      "code": 7
+      "code": 1
     },
     {
       "page": 10,
@@ -878,9 +878,9 @@
       "group": "APU Tests",
       "name": "Frame Counter IRQ",
       "address": 1127,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 78,
+      "status": "fail",
+      "code": 19
     },
     {
       "page": 14,
@@ -905,9 +905,9 @@
       "group": "APU Tests",
       "name": "Delta Modulation Channel",
       "address": 1130,
-      "raw": 74,
+      "raw": 14,
       "status": "fail",
-      "code": 18
+      "code": 3
     },
     {
       "page": 14,
@@ -923,9 +923,9 @@
       "group": "APU Tests",
       "name": "Controller Strobing",
       "address": 1119,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 18,
+      "status": "fail",
+      "code": 4
     },
     {
       "page": 14,

@@ -1,4 +1,4 @@
-> **Accuracy development build:** See [test instructions, measured results and remaining work](docs/ACCURACY-DEVELOPMENT.md). This branch is experimental; it does not yet pass all AccuracyCoin tests or provide a finished audio engine.
+> **Accuracy development build:** See [test instructions, measured results and remaining work](docs/ACCURACY-DEVELOPMENT.md). This branch is experimental; 106/144 AccuracyCoin tests pass, and experimental C++/WebAssembly audio is available via **Enable audio**.
 
 # VajNES-JS
 

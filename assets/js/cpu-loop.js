@@ -32,10 +32,11 @@ function checkNmi() {
   }
 }
 
-const NTSC_CPU_CYCLES_PER_FRAME = 29780;
+const NTSC_CPU_CYCLES_PER_FRAME = 89341.5 / 3;
+let _frameCycleDebt = 0;
 
-// Lock to 60fps (exact), independent of monitor refresh rate (144Hz etc)
-const EMU_FPS   = 60;
+// NTSC cadence, independent of monitor refresh rate. Retain instruction overshoot.
+const EMU_FPS   = 1789772.7272727273 / NTSC_CPU_CYCLES_PER_FRAME;
 const FRAME_MS  = 1000 / EMU_FPS;
 
 // Prevent spiral-of-death if a tab stalls; run at most N frames per RAF tick.
@@ -47,13 +48,17 @@ let _accumMs = 0;
 function _runOneEmuFrame() {
   // Run CPU until we consume one full frame worth of CPU cycles.
   // (step() returns real cycles used, including DMA microsteps)
-  let frameCycles = 0;
+  let frameCycles = _frameCycleDebt;
 
   while (cpuRunning && frameCycles < NTSC_CPU_CYCLES_PER_FRAME) {
-    const used = window.step() | 0;
-    if (used <= 0) break; // paused/break/unknown opcode path
+    const wasDMA = DMA.active;
+    const result = window.step();
+    if(result == null) break;
+    const used = result | 0;
+    if (used <= 0) {if(wasDMA && cpuRunning) continue;break;}
     frameCycles += used;
   }
+  _frameCycleDebt = Math.max(0,frameCycles - NTSC_CPU_CYCLES_PER_FRAME);
 }
 
 function _mainLoopRAF(now) {
@@ -121,15 +126,6 @@ window.step = function () {
   
   disasm();
 
-  // 0x78 → SEI (set I after poll), 0x58 → CLI (clear I after poll), 0x28 → PLP (restore P after poll)
-  // these instructions will disable interrupts, but poll for IRQ mid instruction (here we have already fetched our opcode
-  // so we are 'mid-instruction), we capture the IRQ decision before they set the I flag
-  if (code === 0x78 || code === 0x58 || code === 0x28) {
-      if (!CPUregisters.P.I && Object.values(irqAssert).some(Boolean)) {
-          irqBypassI = true;
-      }
-  }
-
   op.func(); // call opcode handler
 
   const after = cpuCycles;
@@ -158,19 +154,14 @@ window.step = function () {
   // i.e. do not call checkInterrupts prior to handling of interrupts
   //=================================================
 
-  if (irqBypassI) {
-      serviceIRQ(true);
-      irqBypassI = false;
-  }
-  else irqTimingEngine();
-  
+  irqTimingEngine();
 
   // step per opcode, if enabled, pause, this is the end of the opcode handler / cpu-loop
   if (step.opcode === 'stepMode' || step.opcode === 'firstPress') {
   return;
   }
     
-  return used;
+  return (cpuCycles-before)|0;
 
 };
 
@@ -209,6 +200,7 @@ window.run = function () {
 };
 
 window.pause = function () {
+  if(typeof NESAudio!=="undefined") NESAudio.pause();
   cpuRunning = false;
   if (typeof updateDebugTables === 'function') {
     try { updateDebugTables(); } catch (_) {}

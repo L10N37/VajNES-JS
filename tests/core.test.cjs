@@ -89,3 +89,33 @@ test('indexed SLO performs the wrong-page dummy read without an extra cycle',()=
  assert.deepEqual(result.reads,[0x8000,0x8001,0x8002,0xbf00,0xc000]);
  assert.equal(result.cycles,7);
 });
+test('controller strobe output samples one APU phase, rejecting a short pulse on the other',()=>{
+ const e=emulator();
+ e.evaluate('joypad1State=255;cpuCycles=1;joypadWrite(0x4016,1);cpuCycles=2;clockJoypadStrobe();joypadWrite(0x4016,0);cpuCycles=4;clockJoypadStrobe()');
+ assert.equal(e.evaluate('joypad1State'),0);
+ e.evaluate('joypad1State=255;cpuCycles=2;joypadWrite(0x4016,1);cpuCycles=3;clockJoypadStrobe();joypadWrite(0x4016,0);cpuCycles=4;clockJoypadStrobe()');
+ assert.equal(e.evaluate('joypad1State'),255);
+});
+test('inhibited frame flag briefly sets without asserting CPU IRQ',()=>{
+ const e=emulator();e.evaluate('apuResetTiming();apuTiming.inhibitIRQ=true;apuTiming.cycle=29827;apuClock()');
+ assert.equal(e.evaluate('apuTiming.frameFlag'),true);assert.equal(e.evaluate('irqAssert.frame'),false);
+ e.evaluate('apuClock();apuClock()');assert.equal(e.evaluate('apuTiming.frameFlag'),false);
+});
+test('DMC enable restarts exhausted samples without restarting a running sample',()=>{
+ const e=emulator();
+ e.evaluate('apuWrite(0x4012,0);apuWrite(0x4013,1);apuWrite(0x4015,0x10)');
+ assert.equal(e.evaluate('DMC.bytesRemaining'),17);
+ e.evaluate('DMC.bytesRemaining=8;apuWrite(0x4015,0x10)');assert.equal(e.evaluate('DMC.bytesRemaining'),8);
+ e.evaluate('DMC.bytesRemaining=0;apuWrite(0x4015,0x10)');assert.equal(e.evaluate('DMC.bytesRemaining'),17);
+});
+test('DMC DAC steps saturate and disabling the reader retains DAC level',()=>{
+ const e=emulator();e.evaluate('DMC.enabled=true;DMC.silence=false;DMC.shiftRegister=1;DMC.outputLevel=126;DMC.timer=0;clockDMC()');
+ assert.equal(e.evaluate('DMC.outputLevel'),126);
+ e.evaluate('DMC.shiftRegister=0;DMC.outputLevel=1;DMC.timer=0;clockDMC()');assert.equal(e.evaluate('DMC.outputLevel'),1);
+ e.evaluate('DMC.sampleBufferFull=true;DMC.sampleBuffer=0xA5;apuWrite(0x4015,0)');assert.equal(e.evaluate('DMC.outputLevel'),1);
+});
+test('SHY corrupts write address high on page crossing and uses five cycles',()=>{
+ const bytes=rom();bytes.set([0x9c,0xff,0x12],16);const e=emulator(bytes);
+ e.evaluate('CPUregisters.PC=0x8000;CPUregisters.X=1;CPUregisters.Y=3;cpuRunning=true');
+ assert.equal(e.evaluate('window.step()'),5);assert.equal(e.evaluate('systemMemory[0x300]'),3);
+});

@@ -2,13 +2,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 // Run the unchanged browser core with only presentation/event APIs stubbed.
-function createEmulator() {
+function createEmulator(audio) {
   const files = ['shared-assets.js','mapper.js','memory.js','6502.js',
     'mappers/uxrom.js','mappers/mmc1.js','mappers/mmc3.js','readFile.js','disasm.js',
     'cpu-open-bus.js','dma/oam-dma.js','dma/dmc-dma.js','helpers.js',
     'interrupts.js','memoryMaps.js','offsetsHandler.js','APU.js','cpu-loop.js','ppu-loop.js'];
   const source = files.map(f => fs.readFileSync(path.join(root,'assets/js',f),'utf8')).join('\n;\n');
-  return new Function(`
+  return new Function('NESAudio', `
     const noop = () => {};
     const window = {addEventListener:noop, alert:message=>{throw new Error(message)}};
     const button = {replaceWith:noop, cloneNode:()=>button, addEventListener:noop};
@@ -40,6 +40,6 @@ function createEmulator() {
       state:()=>({cpuCycles,pc:CPUregisters.PC,frame:PPUclock.frame,ram:Array.from(systemMemory)}),
       evaluate:expression=>eval(expression)
     };
-  `)();
+  `)(audio);
 }
 module.exports = {createEmulator};
