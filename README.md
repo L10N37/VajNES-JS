@@ -1,4 +1,4 @@
-> **Accuracy development build:** See [test instructions, measured results and remaining work](docs/ACCURACY-DEVELOPMENT.md). This branch is experimental; 108/144 AccuracyCoin tests pass, and experimental C++/WebAssembly audio starts automatically at full volume after ROM load (a browser gesture may be required). Xbox controllers are supported via the browser Gamepad API.
+> **Accuracy development build:** See [test instructions, measured results and remaining work](docs/ACCURACY-DEVELOPMENT.md). This branch is experimental; 110/144 AccuracyCoin tests pass, and experimental C++/WebAssembly audio starts automatically at full volume after ROM load (a browser gesture may be required). Xbox controllers are supported via the browser Gamepad API.
 
 # VajNES-JS
 

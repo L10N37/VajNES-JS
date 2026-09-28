@@ -212,8 +212,7 @@ function checkReadOffset(address) {
           VRAM_DATA = VRAM[ntAddr] & 0xFF;
         }
 
-        const inc = (PPUCTRL & 0x04) ? 32 : 1;
-        VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
+        incrementPPUDataAddress();
         if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
         
         raw = ret & 0xFF;
@@ -475,8 +474,7 @@ function checkWriteOffset(address, value) {
           PALETTE_RAM[p] = value & 0x3F;
       }
 
-      const inc = (PPUCTRL & 0x04) ? 32 : 1;
-      VRAM_ADDR = (VRAM_ADDR + inc) & 0x3FFF;
+      incrementPPUDataAddress();
         if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
 
       break;

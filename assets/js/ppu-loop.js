@@ -75,7 +75,8 @@ function makeSpriteBuf() {
     lo:   new Uint8Array(SPR_MAX),
     hi:   new Uint8Array(SPR_MAX),
     idx:  new Uint8Array(SPR_MAX),
-    address: new Uint16Array(SPR_MAX),
+    tile: new Uint8Array(SPR_MAX),
+    row: new Uint8Array(SPR_MAX),
     sprite0ListIndex: 0xFF,
   };
 }
@@ -145,7 +146,6 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
 
 // ---- Sprite fetch ----
 function spritePatternAddress(tileIndex, attr, rowInSprite) {
-  const flipH = (attr & 0x40) !== 0;
   const flipV = (attr & 0x80) !== 0;
   const is8x16 = (PPUCTRL & SPRITE_SIZE_16) !== 0;
 
@@ -169,17 +169,6 @@ function spritePatternAddress(tileIndex, attr, rowInSprite) {
 
   return addrLo;
 }
-function fetchSpritePatternBytes(tileIndex, attr, rowInSprite) {
-  const addrLo=spritePatternAddress(tileIndex,attr,rowInSprite),addrHi=addrLo+8;
-  const flipH=(attr&0x40)!==0;
-  let lo = ppuBusRead(addrLo) & 0xFF;
-  let hi = ppuBusRead(addrHi) & 0xFF;
-
-  if (flipH) { lo = reverseByte(lo); hi = reverseByte(hi); }
-
-  return { lo, hi };
-}
-
 function evalSpritesForScanline(target, scanline) {
   target.count = 0;
   target.sprite0ListIndex = 0xFF;
@@ -211,13 +200,12 @@ function evalSpritesForScanline(target, scanline) {
 
     if (target.count < SPR_MAX) {
       const i = target.count++;
-      const pat = mapperNumber===4?{lo:0,hi:0}:fetchSpritePatternBytes(tile, attr, row);
-
-      target.address[i] = spritePatternAddress(tile,attr,row);
+      target.tile[i] = tile;
+      target.row[i] = row;
       target.attr[i] = attr;
       target.xcnt[i] = x;
-      target.lo[i]   = pat.lo & 0xFF;
-      target.hi[i]   = pat.hi & 0xFF;
+      target.lo[i]   = 0;
+      target.hi[i]   = 0;
       target.idx[i]  = baseAddr & 0xFF;
 
       if (m === 0) target.sprite0ListIndex = i & 0xFF;
@@ -382,6 +370,18 @@ function emitPixelHardwarePalette() {
 }
 
 // ---- Scroll / VRAM address ops ----
+// PPUDATA clocks both scrolling counters on rendering scanlines. The linear
+// increment setting only applies during blanking or when rendering is off.
+function incrementPPUDataAddress() {
+  const sl = PPUclock.scanline;
+  if (renderingNow() && (sl < 240 || sl === 261)) {
+    incCoarseX();
+    incY();
+  } else {
+    VRAM_ADDR = (VRAM_ADDR + ((PPUCTRL & 0x04) ? 32 : 1)) & 0x7FFF;
+  }
+}
+
 function incCoarseX() {
   if (!renderingNow()) return;
   let v = VRAM_ADDR;
@@ -719,10 +719,12 @@ scanlineLUT[241] = vblankStartScanline;
 for (let i = 242; i <= 260; i++) scanlineLUT[i] = vblankIdleScanline;
 scanlineLUT[261] = preRenderScanline;
 
-// Drive the external address pins on fetch address phases. Palette lookups and
+// Fetch sprite patterns at their bus phases, using the live sprite-size setting.
+// MMC3 observes the same addresses. Palette lookups and
 // bulk sprite evaluation are internal renderer work and must not clock A12.
-function mmc3PPUBusTick() {
+function renderingBusTick() {
   const d=PPUclock.dot+1,sl=PPUclock.scanline;
+  if(mapperNumber!==4 && (d<257 || d>320))return;
   if(!renderingNow() || (sl>239 && sl!==261)){mmc3Irq(VRAM_ADDR);return;}
   // The two trailing nametable accesses start at dots 337 and 339.
   // They do not inherit the pattern-fetch address-phase offset.
@@ -735,7 +737,8 @@ function mmc3PPUBusTick() {
     const slot=(d-257)>>3,phase=(d-257)&7;
     if(phase<4)mmc3Irq(0x2000|(VRAM_ADDR&0xfff));
     else {
-      const address=slot<spritesNext.count?spritesNext.address[slot]:
+      const address=slot<spritesNext.count?
+        spritePatternAddress(spritesNext.tile[slot],spritesNext.attr[slot],spritesNext.row[slot]):
         spritePatternAddress(255,255,0);
       const fetchAddress=address+(phase===6?8:0);
       mmc3Irq(fetchAddress);
@@ -755,7 +758,7 @@ function mmc3PPUBusTick() {
 
 // ---- Tick ----
 function ppuTick() {
-  if(mapperNumber===4)mmc3PPUBusTick();
+  renderingBusTick();
   const maskNow = PPUMASK & 0xFF;
   const renNow  = (maskNow & 0x18) !== 0;
   const renPrev = ((ppumaskPrev & 0x18) !== 0);

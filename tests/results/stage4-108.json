@@ -2,11 +2,11 @@
   "suiteFinished": true,
   "suiteCommit": "673ef550db296136d52229961e7d39366116882a",
   "romSha256": "4fe8c2bc9abc6f4d418da47b73f62cba89fcacd950fae763097a1681d650e839",
-  "cpuCycles": 117100043,
+  "cpuCycles": 117100046,
   "pc": 32991,
   "counts": {
-    "pass": 110,
-    "fail": 34
+    "pass": 108,
+    "fail": 36
   },
   "results": [
     {
@@ -1121,9 +1121,9 @@
       "group": "Sprite Evaluation",
       "name": "Suddenly Resize Sprite",
       "address": 1161,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 18,
+      "status": "fail",
+      "code": 4
     },
     {
       "page": 19,
@@ -1202,9 +1202,9 @@
       "group": "PPU Misc.",
       "name": "$2007 read w/ rendering",
       "address": 1162,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 10,
+      "status": "fail",
+      "code": 2
     },
     {
       "page": 20,

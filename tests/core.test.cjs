@@ -198,3 +198,21 @@ test('background shifter advances after pixel zero without duplicating it',()=>{
 test('loading each ROM requests automatic audio startup',()=>{
  let requests=0;const e=createEmulator({reset(){},unlock(){requests++;}});e.load(rom());e.load(rom(7,2,0));assert.equal(requests,2);
 });
+test('PPUDATA clocks both scroll counters during rendering, including wrap boundaries',()=>{
+ const e=emulator();e.evaluate('cpuCycles=40000');
+ for(const write of [false,true])for(const mask of [8,16])for(const ctrl of [0,4]){
+  for(const [sl,start,want] of [[0,0x2000,0x3001],[239,0x73bf,0xc00],[261,0x73ff,0x400],[240,0x2000,0x2000+(ctrl?32:1)],[241,0x7fff,ctrl?31:0]]){
+   e.evaluate(`PPUMASK=${mask};PPUCTRL=${ctrl};PPUclock.scanline=${sl};VRAM_ADDR=${start};${write?'checkWriteOffset(0x2007,0)':'checkReadOffset(0x2007)'}`);
+   assert.equal(e.evaluate('VRAM_ADDR'),want,`write=${write}, mask=${mask}, ctrl=${ctrl}, line=${sl}`);
+  }
+ }
+ e.evaluate('PPUMASK=0;PPUCTRL=4;PPUclock.scanline=0;VRAM_ADDR=0x2000;checkReadOffset(0x2007)');assert.equal(e.evaluate('VRAM_ADDR'),0x2020);
+});
+test('sprite patterns use CHR and size control at fetch time on NROM, MMC3 and AxROM',()=>{
+ for(const mapper of [0,4,7]){
+  const e=emulator(rom(mapper,2,0));
+  e.evaluate('PPUMASK=0x18;PPUCTRL=0x20;OAM.fill(255);OAM.set([0,2,0,0]);OAMADDR=0;evalSpritesForScanline(spritesNext,9);PPUCTRL=0;if(mapperNumber===4)mapper4_chr_write(0x20,0x81);else CHR_ROM[0x20]=0x81;PPUclock.scanline=8;PPUclock.dot=260;renderingBusTick()');
+  assert.equal(e.evaluate('spritesNext.lo[0]'),0x81,`mapper ${mapper}`);
+  e.evaluate('if(mapperNumber===4)mapper4_chr_write(0x28,0x42);else CHR_ROM[0x28]=0x42;PPUclock.dot=262;renderingBusTick()');assert.equal(e.evaluate('spritesNext.hi[0]'),0x42);
+ }
+});
