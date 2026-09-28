@@ -30,7 +30,7 @@ let prgRamEnable  = true;
 let mmc1Debugging = false;
 
 function safeBank(b, total) {
-  return Math.max(0, Math.min(b | 0, (total - 1) | 0));
+  return total > 0 ? (b >>> 0) % total : 0;
 }
 
 function updatePRGBanks() {
@@ -107,67 +107,7 @@ function mmc1ApplyControl() {
 
   chr8kModeFlag = ((mmc1Control >> 4) & 1) === 0;
 
-  if (typeof VRAM !== "undefined" && VRAM instanceof Uint8Array) {
-    const tmp0 = new Uint8Array(0x400);
-    const tmp1 = new Uint8Array(0x400);
-
-    for (let i = 0; i < 0x400; i++) {
-      tmp0[i] = VRAM[i + 0x000];
-      tmp1[i] = VRAM[i + 0x400];
-    }
-
-    switch (MIRRORING) {
-      case "vertical":
-        for (let i = 0; i < 0x400; i++) {
-          VRAM[i + 0x000] = tmp0[i];
-          VRAM[i + 0x400] = tmp1[i];
-        }
-        break;
-
-      case "horizontal":
-        for (let i = 0; i < 0x400; i++) {
-          const v = tmp0[i];
-          VRAM[i + 0x000] = v;
-          VRAM[i + 0x400] = v;
-        }
-        break;
-
-      case "single0":
-        for (let i = 0; i < 0x400; i++) {
-          const v = tmp0[i];
-          VRAM[i + 0x000] = v;
-          VRAM[i + 0x400] = v;
-        }
-        break;
-
-      case "single1":
-        for (let i = 0; i < 0x400; i++) {
-          const v = tmp1[i];
-          VRAM[i + 0x000] = v;
-          VRAM[i + 0x400] = v;
-        }
-        break;
-
-      default:
-        for (let i = 0; i < 0x800; i++) VRAM[i] = VRAM[i];
-        break;
-    }
-
-    if (mmc1Debugging) {
-      console.debug(`[MMC1] MIRRORING=${MIRRORING} (SAB-safe rewrite)`);
-
-      let str0 = "";
-      for (let i = 0; i < 16; i++)
-        str0 += VRAM[i].toString(16).padStart(2, "0") + " ";
-      console.debug(`VRAM[0x000–0x00F]=${str0.trim()}`);
-
-      let str1 = "";
-      for (let i = 0; i < 16; i++)
-        str1 += VRAM[0x400 + i].toString(16).padStart(2, "0") + " ";
-      console.debug(`VRAM[0x400–0x40F]=${str1.trim()}`);
-    }
-  }
-
+  // Mirroring changes address wiring, never the contents of physical CIRAM.
   updatePRGBanks();
   updateCHRBanks();
 }
@@ -176,7 +116,7 @@ function mmc1ShiftWrite(callback, value) {
   if (value & 0x80) {
     shiftRegister = 0;
     shiftCount = 0;
-    mmc1Control = 0x0C;
+    mmc1Control |= 0x0C;
     updatePRGBanks();
     updateCHRBanks();
     if (mmc1Debugging) console.debug(`[MMC1 RESET]`);
@@ -303,7 +243,7 @@ function mmc1ChrRead(addr14) {
 }
 
 function mmc1ChrWrite(addr14, value) {
-  const isChrRam = chrIsRAM || (CHR_ROM.length === 0x2000);
+  const isChrRam = chrIsRAM;
   if (!isChrRam) return;
 
   const bankLo = CHR_BANK_LO | 0;

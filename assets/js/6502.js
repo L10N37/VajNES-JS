@@ -47,6 +47,7 @@ function resetCPU() {
 
   // reset shared PPU / mapper / timing state
   resetSharedState();
+  apuResetTiming();
 
   // clear Vblank and NMI edge on reset
   clearNmiEdge();
@@ -112,6 +113,7 @@ resetButton.onclick = resetCPU;
 function consumeCycle() {
 
   cpuCycles++;
+  apuClock();
 
   clockDMC();
 
@@ -2478,6 +2480,8 @@ function ISC_ABSX() {
   // C4: EA = base + X
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C5: read old
@@ -4220,6 +4224,8 @@ function DCP_ABSX() {
 
   // C4: internal address calc (base+X)
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C5: read old
@@ -4260,6 +4266,8 @@ function DCP_ABSY() {
 
   // C4: internal address calc (base+Y)
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C5: read old
@@ -4341,6 +4349,8 @@ function DCP_INDY() {
   // C5: internal address calc (base+Y)
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C6: read old
@@ -4378,6 +4388,8 @@ function ISC_ABSY() {
   // C4: EA = base + Y
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C5: read old
@@ -4471,6 +4483,8 @@ function ISC_INDY() {
   // C5: EA = base + Y
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C6: read old
@@ -4573,6 +4587,8 @@ function SLO_ABSX() {
   // C4: EA = base+X
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C5: read old
@@ -4608,6 +4624,8 @@ function SLO_ABSY() {
   // C4: EA = base+Y
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C5: read old
@@ -4685,6 +4703,8 @@ function SLO_INDY() {
   // C5: EA = base+Y
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C6: read old
@@ -4886,6 +4906,8 @@ function RLA_ABSX() {
   // C4: EA = base+X
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C5: read old
@@ -4922,6 +4944,8 @@ function RLA_ABSY() {
   // C4: EA = base+Y
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C5: read old
@@ -5117,6 +5141,8 @@ function SRE_ABSX() {
   // C4: EA = base+X
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C5: read old
@@ -5152,6 +5178,8 @@ function SRE_ABSY() {
   // C4: EA = base+Y
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  // Indexed RMW always reads the uncorrected-page address before the real read.
+  checkReadOffset((base & 0xFF00) | (addr & 0x00FF));
   consumeCycle();
 
   // C5: read old

@@ -1,0 +1,32 @@
+name: Emulator accuracy regression
+on:
+  push:
+    branches: [accuracycoin-development]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  accuracy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Core regression tests
+        run: node --test tests/core.test.cjs
+      - name: Fetch pinned upstream AccuracyCoin
+        run: |
+          git init "$RUNNER_TEMP/accuracycoin"
+          git -C "$RUNNER_TEMP/accuracycoin" remote add origin https://github.com/100thCoin/AccuracyCoin.git
+          git -C "$RUNNER_TEMP/accuracycoin" fetch --depth 1 origin 673ef550db296136d52229961e7d39366116882a
+          git -C "$RUNNER_TEMP/accuracycoin" checkout --detach FETCH_HEAD
+      - name: Known-pass regression gate (not a 144/144 claim)
+        run: node tests/accuracycoin.cjs "$RUNNER_TEMP/accuracycoin/AccuracyCoin.nes" accuracy-report.json tests/results/current.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: accuracycoin-results
+          path: accuracy-report.json

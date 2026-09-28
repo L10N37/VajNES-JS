@@ -109,40 +109,7 @@ function reverseByte(b) {
   return b & 0xFF;
 }
 
-function mapNametableAddr(addr2000_2FFF) {
-  const a      = (addr2000_2FFF - 0x2000) & 0x0FFF; // 0..0xFFF
-  const table  = (a >> 10) & 3;                    // 0..3
-  const offset = a & 0x03FF;                       // 0..1023
-
-  let phys = 0;
-
-  switch (MIRRORING) {
-    case 'vertical': { // vertical: [0,1,0,1]
-      const nt = (table & 1);
-      phys = (nt << 10) | offset;
-      break;
-    }
-    case 'horizontal': { // horizontal: [0,0,1,1]
-      const nt = (table >> 1);
-      phys = (nt << 10) | offset;
-      break;
-    }
-    case 'four': { // four-screen: [0,1,2,3] (requires 4KB VRAM)
-      phys = (table << 10) | offset;
-      break;
-    }
-    default: { // fallback: treat as vertical
-      const nt = (table & 1);
-      phys = (nt << 10) | offset;
-      break;
-    }
-  }
-
-  // Safety clamp for 2KB VRAM builds (avoids out-of-range reads on FOUR)
-  if (VRAM.length === 0x800) return phys & 0x07FF;
-  if (VRAM.length === 0x1000) return phys & 0x0FFF;
-  return phys % VRAM.length;
-}
+function mapNametableAddr(addr) { return mapNT(addr); }
 
 // ---- OAM Corruption helpers ----
 function oamCorruptDoCopyRow(seedRow) {
@@ -450,19 +417,7 @@ function ppuBusRead(addr) {
     if (addr < 0x2000) {
         if (mapperNumber === 4) return mapper4_chr_read(addr);
 
-        if (mapperNumber === 1) {
-            if (chr8kModeFlag) {
-                const index = ((CHR_BANK_LO & ~0x01) << 12) + addr;
-                return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
-            }
-            if (addr < 0x1000) {
-                const index = (CHR_BANK_LO << 12) + addr;
-                return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
-            } else {
-                const index = (CHR_BANK_HI << 12) + (addr - 0x1000);
-                return (index < CHR_ROM.length) ? (CHR_ROM[index] & 0xFF) : 0xFF;
-            }
-        }
+        if (mapperNumber === 1) return mmc1ChrRead(addr);
 
         // Mapper 0 — CHR ROM or CHR RAM
         if (CHR_ROM.length > 0) return CHR_ROM[addr] & 0xFF;

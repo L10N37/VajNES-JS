@@ -81,6 +81,22 @@ function loadRom(romBytes) {
     return;
   }
 
+  // Reject unsupported/truncated images before mutating the running cartridge.
+  if (romBytes.length < 16) throw new Error('Truncated iNES header');
+  const isNES2 = (nesHeader[7] & 0x0C) === 0x08;
+  if (isNES2 && nesHeader[9] !== 0)
+    throw new Error('NES 2.0 extended ROM sizes are not supported yet');
+  const incomingMapper = (nesHeader[6] >> 4) | (nesHeader[7] & 0xF0) |
+    (isNES2 ? (nesHeader[8] & 15) << 8 : 0);
+  if (![0,1,2,4,155].includes(incomingMapper))
+    throw new Error(`Mapper ${incomingMapper} not yet implemented`);
+  const required = 16 + ((nesHeader[6] & 4) ? 512 : 0) + nesHeader[4]*0x4000 + nesHeader[5]*0x2000;
+  if (!nesHeader[4] || romBytes.length < required) throw new Error('Truncated cartridge ROM');
+  if (incomingMapper===0 && ![1,2].includes(nesHeader[4])) throw new Error('Invalid NROM PRG size');
+  if (incomingMapper===2 && (nesHeader[5]!==0 || ![2,4,8,16].includes(nesHeader[4]) ||
+      (isNES2 && (nesHeader[8]>>4)>2)))
+    throw new Error('Unsupported UxROM board: expected 32–256 KiB PRG and 8 KiB CHR RAM');
+
   // Header fields
   const prgBanks = nesHeader[4];  // PRG banks (16KB units)
   const chrBanks = nesHeader[5];  // CHR banks (8KB units)
@@ -157,6 +173,9 @@ function loadRom(romBytes) {
 
   // Determine nametable mirroring mode
   MIRRORING = fourScreen ? 'four' : (verticalFlag ? 'vertical' : 'horizontal');
+  VRAM = new Uint8Array(fourScreen ? 0x1000 : 0x800);
+  prgRam.fill(0);
+  if (hasTrainer) prgRam.set(romBytes.subarray(16,528),0x1000);
 
   // Header debug output
   console.debug(`[HEADER] Detected iNES v${headerVersion}`);
@@ -175,30 +194,10 @@ function loadRom(romBytes) {
   // PPU CHR memory load
   // ------------------------------------------------------------
 
-  if (chrSize > 0) {
-
-    // Copy CHR ROM into emulator CHR memory
-    const src = romBytes.subarray(chrStart, chrStart + chrSize);
-
-    for (let i = 0; i < chrSize; i++) {
-      CHR_ROM[i] = src[i];
-    }
-
-    chrIsRAM = false;
-
-  } else {
-
-    // Cartridge uses CHR RAM
-    for (let i = 0; i < 0x2000; i++) {
-      CHR_ROM[i] = 0x00;
-    }
-
-    chrIsRAM = true;
-
-    // Update PPU frame flag # wot
-    if (chrIsRAM) PPU_FRAME_FLAGS |= 0x80;
-    else           PPU_FRAME_FLAGS &= 0x7F;
-  }
+  // Allocate the entire CHR image; writing beyond the old 8 KiB typed array
+  // silently dropped every later MMC1 bank.
+  CHR_ROM = chrSize ? romBytes.slice(chrStart,chrStart+chrSize) : new Uint8Array(0x2000);
+  chrIsRAM = chrSize === 0;
 
   // ------------------------------------------------------------
   // Debug output

@@ -175,19 +175,7 @@ function checkReadOffset(address) {
 
             }else if (mapperNumber === 1) {
 
-              let chrAddr;
-
-              if (chrIsRAM)
-                chrAddr = vv & (CHR_ROM.length - 1);
-              else {
-                const bankOffset =
-                  ((vv < 0x1000 ? CHR_BANK_LO : CHR_BANK_HI) << 12);
-                chrAddr =
-                  (bankOffset + (vv & 0x0FFF)) &
-                  (CHR_ROM.length - 1);
-              }
-
-              newVal = CHR_ROM[chrAddr] & 0xFF;
+              newVal = mmc1ChrRead(vv);
             } else {
 
               newVal =
@@ -198,7 +186,7 @@ function checkReadOffset(address) {
 
           } else {
 
-            const ntAddr = mapNT(vv) & 0x07FF;
+            const ntAddr = mapNT(vv);
             VRAM_DATA = VRAM[ntAddr] & 0xFF;
           }
         } else {
@@ -219,7 +207,7 @@ function checkReadOffset(address) {
           // Reload VRAM buffer from nametable mirror ($2F00-$2FFF)
           const ntMirror = vv & 0x2FFF;
 
-          const ntAddr = mapNT(ntMirror) & 0x07FF;
+          const ntAddr = mapNT(ntMirror);
           VRAM_DATA = VRAM[ntAddr] & 0xFF;
         }
 
@@ -462,10 +450,7 @@ function checkWriteOffset(address, value) {
           }
           else if (mapperNumber === 1)
           {
-              if (chrIsRAM)
-                  CHR_ROM[v & 0x1FFF] = value;
-              else
-                  mmc1ChrWrite(v & 0x1FFF, value);
+              mmc1ChrWrite(v & 0x1FFF, value);
           }
           else if (chrIsRAM)
           {
@@ -474,7 +459,7 @@ function checkWriteOffset(address, value) {
       }
       else if (v < 0x3F00)
       {
-          const ntAddr = mapNT(v) & 0x07FF;
+          const ntAddr = mapNT(v);
           VRAM[ntAddr] = value;
       }
       else
@@ -512,10 +497,9 @@ function checkWriteOffset(address, value) {
     else prgRam[addr - 0x6000] = value & 0xFF;
 
   } else {
-    if (addr < 0xFFFA) {
-      if (mapperNumber === 1) mmc1CpuWrite(addr, value);
-      else mapperWritePRG(addr, value);
-    }
+    // Mapper registers decode writes across the full $8000–$FFFF range.
+    if (mapperNumber === 1) mmc1CpuWrite(addr, value);
+    else mapperWritePRG(addr, value);
   }
 
   cpuOpenBusFinalise(addr, value, code, true);
@@ -535,11 +519,12 @@ function cpuWrite(addr, value) {
 }
 
 // ----------------- mapper PRG -----------------
-function mapperReadPRG(addr) { return prgRom[addr - 0x8000]; }
-function mapperWritePRG(addr, value) {}
+function mapperReadPRG(addr) { return mapperNumber===2 ? uxromRead(addr) : prgRom[addr - 0x8000]; }
+function mapperWritePRG(addr, value) { if(mapperNumber===2) uxromWrite(addr,value); }
 
 // ----------------- APU -----------------
 function apuWrite(address, value) {
+  apuTimingWrite(address,value);
   switch (address) {
 
     // ----------------- PULSE 1 -----------------
@@ -598,13 +583,6 @@ function apuWrite(address, value) {
     case 0x4017: {
 
       APUregister.FRAME_CNT = value;
-
-      irqAssert.frame = false;
-      
-      if (value === 0) {
-        irqAssert.frame = true;
-      }
-
       break;
     }
 
@@ -616,7 +594,7 @@ function apuWrite(address, value) {
 
 function apuRead(address) {
   switch (address) {
-    case 0x4015: return APUregister.SND_CHN & 0xFF;
+    case 0x4015: return apuStatusRead();
     default:     return openBus.CPU & 0xFF;
   }
 }

@@ -123,7 +123,7 @@ function dmcDoDMA() {
   const addr = DMC.currentAddress & 0xFFFF;
 
   const busBefore = openBus.CPU;
-  const value = cpuRead(addr) & 0xFF;
+  const value = checkReadOffset(addr) & 0xFF;
   const busAfter = openBus.CPU;
 
   DMC.sampleBuffer = value;

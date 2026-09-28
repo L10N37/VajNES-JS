@@ -1,0 +1,1308 @@
+{
+  "suiteCommit": "673ef550db296136d52229961e7d39366116882a",
+  "romSha256": "4fe8c2bc9abc6f4d418da47b73f62cba89fcacd950fae763097a1681d650e839",
+  "cpuCycles": 303100041,
+  "pc": 32991,
+  "counts": {
+    "pass": 99,
+    "fail": 45
+  },
+  "results": [
+    {
+      "page": 1,
+      "group": "CPU Behavior",
+      "name": "ROM is not writable",
+      "address": 1029,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 1,
+      "group": "CPU Behavior",
+      "name": "RAM Mirroring",
+      "address": 1027,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 1,
+      "group": "CPU Behavior",
+      "name": "PC Wraparound",
+      "address": 1101,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 1,
+      "group": "CPU Behavior",
+      "name": "The Decimal Flag",
+      "address": 1140,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 1,
+      "group": "CPU Behavior",
+      "name": "The B Flag",
+      "address": 1141,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 1,
+      "group": "CPU Behavior",
+      "name": "Dummy read cycles",
+      "address": 1030,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 1,
+      "group": "CPU Behavior",
+      "name": "Dummy write cycles",
+      "address": 1031,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 1,
+      "group": "CPU Behavior",
+      "name": "Open Bus",
+      "address": 1032,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 1,
+      "group": "CPU Behavior",
+      "name": "All NOP instructions",
+      "address": 1149,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 2,
+      "group": "Addressing mode wraparound",
+      "name": "Absolute Indexed",
+      "address": 1134,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 2,
+      "group": "Addressing mode wraparound",
+      "name": "Zero Page Indexed",
+      "address": 1135,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 2,
+      "group": "Addressing mode wraparound",
+      "name": "Indirect",
+      "address": 1136,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 2,
+      "group": "Addressing mode wraparound",
+      "name": "Indirect, X",
+      "address": 1137,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 2,
+      "group": "Addressing mode wraparound",
+      "name": "Indirect, Y",
+      "address": 1138,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 2,
+      "group": "Addressing mode wraparound",
+      "name": "Relative",
+      "address": 1139,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 3,
+      "group": "Unofficial Instructions: SLO",
+      "name": "$03   SLO indirect,X",
+      "address": 1033,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 3,
+      "group": "Unofficial Instructions: SLO",
+      "name": "$07   SLO zeropage",
+      "address": 1034,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 3,
+      "group": "Unofficial Instructions: SLO",
+      "name": "$0F   SLO absolute",
+      "address": 1035,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 3,
+      "group": "Unofficial Instructions: SLO",
+      "name": "$13   SLO indirect,Y",
+      "address": 1036,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 3,
+      "group": "Unofficial Instructions: SLO",
+      "name": "$17   SLO zeropage,X",
+      "address": 1037,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 3,
+      "group": "Unofficial Instructions: SLO",
+      "name": "$1B   SLO absolute,Y",
+      "address": 1038,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 3,
+      "group": "Unofficial Instructions: SLO",
+      "name": "$1F   SLO absolute,X",
+      "address": 1039,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 4,
+      "group": "Unofficial Instructions: RLA",
+      "name": "$23   RLA indirect,X",
+      "address": 1049,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 4,
+      "group": "Unofficial Instructions: RLA",
+      "name": "$27   RLA zeropage",
+      "address": 1050,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 4,
+      "group": "Unofficial Instructions: RLA",
+      "name": "$2F   RLA absolute",
+      "address": 1051,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 4,
+      "group": "Unofficial Instructions: RLA",
+      "name": "$33   RLA indirect,Y",
+      "address": 1052,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 4,
+      "group": "Unofficial Instructions: RLA",
+      "name": "$37   RLA zeropage,X",
+      "address": 1053,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 4,
+      "group": "Unofficial Instructions: RLA",
+      "name": "$3B   RLA absolute,Y",
+      "address": 1054,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 4,
+      "group": "Unofficial Instructions: RLA",
+      "name": "$3F   RLA absolute,X",
+      "address": 1055,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 5,
+      "group": "Unofficial Instructions: SRE",
+      "name": "$43   SRE indirect,X",
+      "address": 1056,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 5,
+      "group": "Unofficial Instructions: SRE",
+      "name": "$47   SRE zeropage",
+      "address": 1151,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 5,
+      "group": "Unofficial Instructions: SRE",
+      "name": "$4F   SRE absolute",
+      "address": 1058,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 5,
+      "group": "Unofficial Instructions: SRE",
+      "name": "$53   SRE indirect,Y",
+      "address": 1059,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 5,
+      "group": "Unofficial Instructions: SRE",
+      "name": "$57   SRE zeropage,X",
+      "address": 1060,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 5,
+      "group": "Unofficial Instructions: SRE",
+      "name": "$5B   SRE absolute,Y",
+      "address": 1061,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 5,
+      "group": "Unofficial Instructions: SRE",
+      "name": "$5F   SRE absolute,X",
+      "address": 1062,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 6,
+      "group": "Unofficial Instructions: RRA",
+      "name": "$63   RRA indirect,X",
+      "address": 1063,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 6,
+      "group": "Unofficial Instructions: RRA",
+      "name": "$67   RRA zeropage",
+      "address": 1064,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 6,
+      "group": "Unofficial Instructions: RRA",
+      "name": "$6F   RRA absolute",
+      "address": 1065,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 6,
+      "group": "Unofficial Instructions: RRA",
+      "name": "$73   RRA indirect,Y",
+      "address": 1066,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 6,
+      "group": "Unofficial Instructions: RRA",
+      "name": "$77   RRA zeropage,X",
+      "address": 1067,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 6,
+      "group": "Unofficial Instructions: RRA",
+      "name": "$7B   RRA absolute,Y",
+      "address": 1068,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 6,
+      "group": "Unofficial Instructions: RRA",
+      "name": "$7F   RRA absolute,X",
+      "address": 1069,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 7,
+      "group": "Unofficial Instructions: *AX",
+      "name": "$83   SAX indirect,X",
+      "address": 1070,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 7,
+      "group": "Unofficial Instructions: *AX",
+      "name": "$87   SAX zeropage",
+      "address": 1071,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 7,
+      "group": "Unofficial Instructions: *AX",
+      "name": "$8F   SAX absolute",
+      "address": 1072,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 7,
+      "group": "Unofficial Instructions: *AX",
+      "name": "$97   SAX zeropage,Y",
+      "address": 1073,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 7,
+      "group": "Unofficial Instructions: *AX",
+      "name": "$A3   LAX indirect,X",
+      "address": 1074,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 7,
+      "group": "Unofficial Instructions: *AX",
+      "name": "$A7   LAX zeropage",
+      "address": 1075,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 7,
+      "group": "Unofficial Instructions: *AX",
+      "name": "$AF   LAX absolute",
+      "address": 1076,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 7,
+      "group": "Unofficial Instructions: *AX",
+      "name": "$B3   LAX indirect,Y",
+      "address": 1077,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 7,
+      "group": "Unofficial Instructions: *AX",
+      "name": "$B7   LAX zeropage,Y",
+      "address": 1078,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 7,
+      "group": "Unofficial Instructions: *AX",
+      "name": "$BF   LAX absolute,Y",
+      "address": 1079,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 8,
+      "group": "Unofficial Instructions: DCP",
+      "name": "$C3   DCP indirect,X",
+      "address": 1080,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 8,
+      "group": "Unofficial Instructions: DCP",
+      "name": "$C7   DCP zeropage",
+      "address": 1081,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 8,
+      "group": "Unofficial Instructions: DCP",
+      "name": "$CF   DCP absolute",
+      "address": 1082,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 8,
+      "group": "Unofficial Instructions: DCP",
+      "name": "$D3   DCP indirect,Y",
+      "address": 1083,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 8,
+      "group": "Unofficial Instructions: DCP",
+      "name": "$D7   DCP zeropage,X",
+      "address": 1084,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 8,
+      "group": "Unofficial Instructions: DCP",
+      "name": "$DB   DCP absolute,Y",
+      "address": 1085,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 8,
+      "group": "Unofficial Instructions: DCP",
+      "name": "$DF   DCP absolute,X",
+      "address": 1086,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 9,
+      "group": "Unofficial Instructions: ISC",
+      "name": "$E3   ISC indirect,X",
+      "address": 1087,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 9,
+      "group": "Unofficial Instructions: ISC",
+      "name": "$E7   ISC zeropage",
+      "address": 1088,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 9,
+      "group": "Unofficial Instructions: ISC",
+      "name": "$EF   ISC absolute",
+      "address": 1089,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 9,
+      "group": "Unofficial Instructions: ISC",
+      "name": "$F3   ISC indirect,Y",
+      "address": 1090,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 9,
+      "group": "Unofficial Instructions: ISC",
+      "name": "$F7   ISC zeropage,X",
+      "address": 1091,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 9,
+      "group": "Unofficial Instructions: ISC",
+      "name": "$FB   ISC absolute,Y",
+      "address": 1092,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 9,
+      "group": "Unofficial Instructions: ISC",
+      "name": "$FF   ISC absolute,X",
+      "address": 1093,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 10,
+      "group": "Unofficial Instructions: SH*",
+      "name": "$93   SHA indirect,Y",
+      "address": 1094,
+      "raw": 30,
+      "status": "fail",
+      "code": 7
+    },
+    {
+      "page": 10,
+      "group": "Unofficial Instructions: SH*",
+      "name": "$9F   SHA absolute,Y",
+      "address": 1095,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 10,
+      "group": "Unofficial Instructions: SH*",
+      "name": "$9B   SHS absolute,Y",
+      "address": 1096,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 10,
+      "group": "Unofficial Instructions: SH*",
+      "name": "$9C   SHY absolute,X",
+      "address": 1097,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 10,
+      "group": "Unofficial Instructions: SH*",
+      "name": "$9E   SHX absolute,Y",
+      "address": 1098,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 10,
+      "group": "Unofficial Instructions: SH*",
+      "name": "$BB   LAE absolute,Y",
+      "address": 1099,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 11,
+      "group": "Unofficial Immediates",
+      "name": "$0B   ANC Immediate",
+      "address": 1040,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 11,
+      "group": "Unofficial Immediates",
+      "name": "$2B   ANC Immediate",
+      "address": 1041,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 11,
+      "group": "Unofficial Immediates",
+      "name": "$4B   ASR Immediate",
+      "address": 1042,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 11,
+      "group": "Unofficial Immediates",
+      "name": "$6B   ARR Immediate",
+      "address": 1043,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 11,
+      "group": "Unofficial Immediates",
+      "name": "$8B   ANE Immediate",
+      "address": 1044,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 11,
+      "group": "Unofficial Immediates",
+      "name": "$AB   LXA Immediate",
+      "address": 1045,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 11,
+      "group": "Unofficial Immediates",
+      "name": "$CB   AXS Immediate",
+      "address": 1046,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 11,
+      "group": "Unofficial Immediates",
+      "name": "$EB   SBC Immediate",
+      "address": 1047,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 12,
+      "group": "CPU Interrupts",
+      "name": "Interrupt flag latency",
+      "address": 1121,
+      "raw": 38,
+      "status": "fail",
+      "code": 9
+    },
+    {
+      "page": 12,
+      "group": "CPU Interrupts",
+      "name": "NMI Overlap BRK",
+      "address": 1122,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 12,
+      "group": "CPU Interrupts",
+      "name": "NMI Overlap IRQ",
+      "address": 1123,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 13,
+      "group": "APU Registers and DMA tests",
+      "name": "DMA + Open Bus",
+      "address": 1132,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 13,
+      "group": "APU Registers and DMA tests",
+      "name": "DMA + $2002 Read",
+      "address": 1160,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 13,
+      "group": "APU Registers and DMA tests",
+      "name": "DMA + $2007 Read",
+      "address": 1100,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 13,
+      "group": "APU Registers and DMA tests",
+      "name": "DMA + $2007 Write",
+      "address": 1103,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 13,
+      "group": "APU Registers and DMA tests",
+      "name": "DMA + $4015 Read",
+      "address": 1117,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 13,
+      "group": "APU Registers and DMA tests",
+      "name": "DMA + $4016 Read",
+      "address": 1118,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 13,
+      "group": "APU Registers and DMA tests",
+      "name": "DMC DMA Bus Conflicts",
+      "address": 1131,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 13,
+      "group": "APU Registers and DMA tests",
+      "name": "DMC DMA + OAM DMA",
+      "address": 1143,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 13,
+      "group": "APU Registers and DMA tests",
+      "name": "Explicit DMA Abort",
+      "address": 1145,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 13,
+      "group": "APU Registers and DMA tests",
+      "name": "Implicit DMA Abort",
+      "address": 1144,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 14,
+      "group": "APU Tests",
+      "name": "Length Counter",
+      "address": 1125,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 14,
+      "group": "APU Tests",
+      "name": "Length Table",
+      "address": 1126,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 14,
+      "group": "APU Tests",
+      "name": "Frame Counter IRQ",
+      "address": 1127,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 14,
+      "group": "APU Tests",
+      "name": "Frame Counter 4-step",
+      "address": 1128,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 14,
+      "group": "APU Tests",
+      "name": "Frame Counter 5-step",
+      "address": 1129,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 14,
+      "group": "APU Tests",
+      "name": "Delta Modulation Channel",
+      "address": 1130,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 14,
+      "group": "APU Tests",
+      "name": "APU Register Activation",
+      "address": 1116,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 14,
+      "group": "APU Tests",
+      "name": "Controller Strobing",
+      "address": 1119,
+      "raw": 18,
+      "status": "fail",
+      "code": 4
+    },
+    {
+      "page": 14,
+      "group": "APU Tests",
+      "name": "Controller Clocking",
+      "address": 1146,
+      "raw": 26,
+      "status": "fail",
+      "code": 6
+    },
+    {
+      "page": 15,
+      "group": "CPU Behavior 2",
+      "name": "Instruction Timing",
+      "address": 1120,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 15,
+      "group": "CPU Behavior 2",
+      "name": "Implied Dummy Reads",
+      "address": 1133,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 15,
+      "group": "CPU Behavior 2",
+      "name": "Branch Dummy Reads",
+      "address": 1163,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 15,
+      "group": "CPU Behavior 2",
+      "name": "JSR Edge Cases",
+      "address": 1148,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 15,
+      "group": "CPU Behavior 2",
+      "name": "Internal Data Bus",
+      "address": 1168,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 17,
+      "group": "PPU Behavior",
+      "name": "CHR ROM is not writable",
+      "address": 1157,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 17,
+      "group": "PPU Behavior",
+      "name": "PPU Register Mirroring",
+      "address": 1028,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 17,
+      "group": "PPU Behavior",
+      "name": "PPU Register Open Bus",
+      "address": 1102,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 17,
+      "group": "PPU Behavior",
+      "name": "PPU Read Buffer",
+      "address": 1142,
+      "raw": 65,
+      "status": "pass",
+      "code": 16
+    },
+    {
+      "page": 17,
+      "group": "PPU Behavior",
+      "name": "Palette RAM Quirks",
+      "address": 1150,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 18,
+      "group": "PPU VBlank Timing",
+      "name": "VBlank beginning",
+      "address": 1104,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 18,
+      "group": "PPU VBlank Timing",
+      "name": "VBlank end",
+      "address": 1105,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 18,
+      "group": "PPU VBlank Timing",
+      "name": "NMI Control",
+      "address": 1106,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 18,
+      "group": "PPU VBlank Timing",
+      "name": "NMI Timing",
+      "address": 1107,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 18,
+      "group": "PPU VBlank Timing",
+      "name": "NMI Suppression",
+      "address": 1108,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 18,
+      "group": "PPU VBlank Timing",
+      "name": "NMI at VBlank end",
+      "address": 1109,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 18,
+      "group": "PPU VBlank Timing",
+      "name": "NMI disabled at VBlank",
+      "address": 1110,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 19,
+      "group": "Sprite Evaluation",
+      "name": "Sprite overflow behavior",
+      "address": 1113,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 19,
+      "group": "Sprite Evaluation",
+      "name": "Sprite 0 Hit behavior",
+      "address": 1111,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 19,
+      "group": "Sprite Evaluation",
+      "name": "$2002 flag timing",
+      "address": 1165,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 19,
+      "group": "Sprite Evaluation",
+      "name": "Suddenly Resize Sprite",
+      "address": 1161,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 19,
+      "group": "Sprite Evaluation",
+      "name": "Misaligned OAM DMA",
+      "address": 1172,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 19,
+      "group": "Sprite Evaluation",
+      "name": "Arbitrary Sprite zero",
+      "address": 1112,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 19,
+      "group": "Sprite Evaluation",
+      "name": "Misaligned OAM behavior",
+      "address": 1114,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 19,
+      "group": "Sprite Evaluation",
+      "name": "OAM Corruption",
+      "address": 1147,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 20,
+      "group": "PPU Misc.",
+      "name": "t Register Quirks",
+      "address": 1154,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 20,
+      "group": "PPU Misc.",
+      "name": "Address $2004 behavior",
+      "address": 1115,
+      "raw": 65,
+      "status": "pass",
+      "code": 16
+    },
+    {
+      "page": 20,
+      "group": "PPU Misc.",
+      "name": "INC $4014",
+      "address": 1152,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 20,
+      "group": "PPU Misc.",
+      "name": "Rendering Flag Behavior",
+      "address": 1158,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 20,
+      "group": "PPU Misc.",
+      "name": "$2007 read w/ rendering",
+      "address": 1162,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 20,
+      "group": "PPU Misc.",
+      "name": "$2004 Stress Test",
+      "address": 1164,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 20,
+      "group": "PPU Misc.",
+      "name": "$2007 Stress Test",
+      "address": 1166,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 21,
+      "group": "Advanced Background Evaluation",
+      "name": "Attributes As Tiles",
+      "address": 1153,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 21,
+      "group": "Advanced Background Evaluation",
+      "name": "Stale BG Shift Registers",
+      "address": 1155,
+      "raw": 1,
+      "status": "pass",
+      "code": 0
+    },
+    {
+      "page": 21,
+      "group": "Advanced Background Evaluation",
+      "name": "BG Serial In",
+      "address": 1159,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 21,
+      "group": "Advanced Background Evaluation",
+      "name": "ALE + Read",
+      "address": 1169,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 21,
+      "group": "Advanced Background Evaluation",
+      "name": "Hybrid Addresses",
+      "address": 1170,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 22,
+      "group": "Advanced Sprite Evaluation",
+      "name": "Sprites On Scanline 0",
+      "address": 1156,
+      "raw": 10,
+      "status": "fail",
+      "code": 2
+    },
+    {
+      "page": 22,
+      "group": "Advanced Sprite Evaluation",
+      "name": "Stale Sprite Shift Regs",
+      "address": 1167,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 22,
+      "group": "Advanced Sprite Evaluation",
+      "name": "Frozen OAM2 Increment",
+      "address": 1171,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    },
+    {
+      "page": 22,
+      "group": "Advanced Sprite Evaluation",
+      "name": "Misaligned OAM2 Address",
+      "address": 1173,
+      "raw": 6,
+      "status": "fail",
+      "code": 1
+    }
+  ]
+}

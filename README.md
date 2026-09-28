@@ -1,3 +1,5 @@
+> **Accuracy development build:** See [test instructions, measured results and remaining work](docs/ACCURACY-DEVELOPMENT.md). This branch is experimental; it does not yet pass all AccuracyCoin tests or provide a finished audio engine.
+
 # VajNES-JS
 
 **VajNES-JS** is a work-in-progress NES emulator written in **pure vanilla JavaScript**.  
