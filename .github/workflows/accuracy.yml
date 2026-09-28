@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: '22'
       - name: Core regression tests
-        run: node --test tests/core.test.cjs tests/audio.test.cjs tests/rf-audio.test.cjs
+        run: node --test tests/*.test.cjs
       - name: Build audio source and check native/WASM parity
         run: |
           sudo apt-get update

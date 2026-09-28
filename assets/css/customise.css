@@ -49,3 +49,10 @@ html {
   .modal label{
     font-weight: bolder;
   }
+/* Keep toolbar controls on one baseline and never wrap a button label. */
+header { height:auto; min-height:40px; }
+.windows-bar { min-height:40px; height:auto; gap:8px; flex-wrap:wrap; padding:4px 10px; box-sizing:border-box; }
+.windows-bar > div:not(.file-dropdown) { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.windows-bar button:not(:last-child) { margin-right:0; }
+.windows-bar .dropbtn { width:auto; min-width:92px; padding:3px 12px; box-sizing:border-box; white-space:nowrap; font:18px/24px sans-serif; text-align:center; }
+.windows-bar .gamepad-menu { flex:none; }

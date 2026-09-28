@@ -585,7 +585,7 @@ function visibleScanline(dot) {
   if (dot >= 1 && dot <= 256) {
     emitPixelHardwarePalette();
 
-    if (ren && dot >= 2 && dot <= 256) {
+    if (ren && dot >= 1 && dot <= 256) {
       background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
       background.bgShiftHi = (background.bgShiftHi << 1) & 0xFFFF;
       background.atShiftLo = (background.atShiftLo << 1) & 0xFFFF;

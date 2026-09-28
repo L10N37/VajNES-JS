@@ -48,8 +48,15 @@
       <button class="dropbtn" id="SRAM">SRAM</button>
       <button class="dropbtn" id="saveState">States</button>
       <button class="dropbtn" id="resetButton">Reset</button>
-      <button class="dropbtn" id="audio-toggle" type="button">Enable audio</button>
-      <label style="color:white; padding:0 8px">Volume <input id="audio-volume" type="range" min="0" max="1" step="0.01" value="0.6" aria-label="Audio volume" style="width:80px"></label>
+      <details class="gamepad-menu">
+        <summary class="dropbtn">Controller</summary>
+        <div class="gamepad-help">
+          <p id="gamepad-status" role="status">Pair in your system Bluetooth settings, then press a controller button.</p>
+          <p>Xbox A / Y → NES A<br>B / X → NES B<br>View → Select · Menu → Start<br>D-pad or left stick → Move</p>
+          <p>First controller: player 1. Second: player 2. Keyboard still works.</p>
+          <p>Sound starts at full volume after a click or keypress. Use system volume to adjust.</p>
+        </div>
+      </details>
     </div>
   </div>
 </header>
@@ -296,6 +303,7 @@
 <script src="assets/js/APU.js"></script>
 <script src="assets/js/audio/browser-audio.js"></script>
 <script src="assets/js/controller.js"></script>
+<script src="assets/js/gamepads.js"></script>
 
 <script src="assets/js/screen/analogueFuzz.js"></script>
 

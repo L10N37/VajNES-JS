@@ -191,3 +191,10 @@ test('AxROM rejects unsupported images before replacing a running cartridge',()=
  e.load(rom(7,2,0));assert.equal(e.evaluate('axromBank'),0);assert.equal(e.evaluate('MIRRORING'),'single0');
  const previous=emulator(rom(4));previous.evaluate('irqAssert.mmc3=true');previous.load(rom(7,2,0));assert.equal(previous.evaluate('irqAssert.mmc3'),false);
 });
+test('background shifter advances after pixel zero without duplicating it',()=>{
+ const e=emulator();e.evaluate('spriteXForceZeroNextFrame=false;PPUMASK=0x0a;fineX=0;PPUclock.scanline=0;PPUclock.dot=1;nextLine.t0={lo:0x80,hi:0,at:0};nextLine.t1={lo:0,hi:0,at:0};PALETTE_RAM[0]=0;PALETTE_RAM[1]=0x21;visibleScanline(1);PPUclock.dot=2;visibleScanline(2)');
+ assert.deepEqual(e.evaluate('Array.from(paletteIndexFrame.slice(0,2))'),[0x21,0]);
+});
+test('loading each ROM requests automatic audio startup',()=>{
+ let requests=0;const e=createEmulator({reset(){},unlock(){requests++;}});e.load(rom());e.load(rom(7,2,0));assert.equal(requests,2);
+});

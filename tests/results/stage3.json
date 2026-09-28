@@ -2,11 +2,11 @@
   "suiteFinished": true,
   "suiteCommit": "673ef550db296136d52229961e7d39366116882a",
   "romSha256": "4fe8c2bc9abc6f4d418da47b73f62cba89fcacd950fae763097a1681d650e839",
-  "cpuCycles": 117100046,
+  "cpuCycles": 108100043,
   "pc": 32991,
   "counts": {
-    "pass": 108,
-    "fail": 36
+    "pass": 107,
+    "fail": 37
   },
   "results": [
     {
@@ -1121,18 +1121,18 @@
       "group": "Sprite Evaluation",
       "name": "Suddenly Resize Sprite",
       "address": 1161,
-      "raw": 18,
+      "raw": 6,
       "status": "fail",
-      "code": 4
+      "code": 1
     },
     {
       "page": 19,
       "group": "Sprite Evaluation",
       "name": "Misaligned OAM DMA",
       "address": 1172,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 6,
+      "status": "fail",
+      "code": 1
     },
     {
       "page": 19,
@@ -1202,9 +1202,9 @@
       "group": "PPU Misc.",
       "name": "$2007 read w/ rendering",
       "address": 1162,
-      "raw": 10,
+      "raw": 6,
       "status": "fail",
-      "code": 2
+      "code": 1
     },
     {
       "page": 20,
@@ -1256,18 +1256,18 @@
       "group": "Advanced Background Evaluation",
       "name": "ALE + Read",
       "address": 1169,
-      "raw": 10,
+      "raw": 6,
       "status": "fail",
-      "code": 2
+      "code": 1
     },
     {
       "page": 21,
       "group": "Advanced Background Evaluation",
       "name": "Hybrid Addresses",
       "address": 1170,
-      "raw": 10,
+      "raw": 6,
       "status": "fail",
-      "code": 2
+      "code": 1
     },
     {
       "page": 22,
@@ -1283,27 +1283,27 @@
       "group": "Advanced Sprite Evaluation",
       "name": "Stale Sprite Shift Regs",
       "address": 1167,
-      "raw": 14,
+      "raw": 6,
       "status": "fail",
-      "code": 3
+      "code": 1
     },
     {
       "page": 22,
       "group": "Advanced Sprite Evaluation",
       "name": "Frozen OAM2 Increment",
       "address": 1171,
-      "raw": 10,
+      "raw": 6,
       "status": "fail",
-      "code": 2
+      "code": 1
     },
     {
       "page": 22,
       "group": "Advanced Sprite Evaluation",
       "name": "Misaligned OAM2 Address",
       "address": 1173,
-      "raw": 14,
+      "raw": 6,
       "status": "fail",
-      "code": 3
+      "code": 1
     }
   ]
 }

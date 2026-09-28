@@ -223,6 +223,7 @@ function loadRom(romBytes) {
 
   // Initialize mapper logic
   mapper(nesHeader);
+  if(typeof NESAudio!=="undefined")NESAudio.unlock();
 
   // Refresh debug tables
   updateDebugTables();

@@ -59,7 +59,7 @@ module.exports={audio,drain};
 test('cycle-driven WASM rendering leaves CPU, PPU and APU execution unchanged',()=>{
  const {createEmulator}=require('./headless.cjs');const wasm=audio();let last=0,samples=0,emulator;
  const sync=c=>{wasm.audio_advance(c-last);last=c;};const lengths=()=>wasm.audio_lengths(emulator.evaluate('apuTiming.length.reduce((m,n,i)=>m|(n?1<<i:0),0)'));
- const renderer={reset(c){wasm.audio_reset(48000);last=c;},write(c,a,v){sync(c);lengths();wasm.audio_write(a,v);},quarter(c){sync(c);wasm.audio_quarter();},half(c){sync(c);lengths();wasm.audio_half();},dmc(c,v){sync(c);wasm.audio_dmc(v);},frame(c){sync(c);while(wasm.audio_available()){assert(Number.isFinite(wasm.audio_pop()));samples++;}},pause(){}};
+ const renderer={unlock(){},reset(c){wasm.audio_reset(48000);last=c;},write(c,a,v){sync(c);lengths();wasm.audio_write(a,v);},quarter(c){sync(c);wasm.audio_quarter();},half(c){sync(c);lengths();wasm.audio_half();},dmc(c,v){sync(c);wasm.audio_dmc(v);},frame(c){sync(c);while(wasm.audio_available()){assert(Number.isFinite(wasm.audio_pop()));samples++;}},pause(){}};
  const rom=new Uint8Array(16+32768+8192);rom.set([78,69,83,26,2,1]);rom.set([0xea,0x4c,0,0x80],16);rom[16+32768-3]=0x80;
  emulator=createEmulator(renderer);const silent=createEmulator();emulator.load(rom);silent.load(rom);
  for(const e of [emulator,silent]){e.evaluate('apuWrite(0x4015,15);apuWrite(0x4000,0xbf);apuWrite(0x4002,253);apuWrite(0x4003,8);apuWrite(0x4011,64)');e.run(300000);}

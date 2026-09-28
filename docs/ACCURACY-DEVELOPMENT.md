@@ -11,10 +11,12 @@ Base: `ed77b52c9cc93f2ec6c867ccc23157c6075c282e`.
 | Previous development stage | 104 | 40 | 0 |
 | Audio development stage | 106 | 38 | 0 |
 | MMC3/video/RF stage | 107 | 37 | 0 |
+| Controller/audio/pixel-alignment stage | 108 | 36 | 0 |
 
-All 106 previous passes are retained. **NMI Timing** now passes AccuracyCoin.
-The earlier stages added seven passes over main. The current ROM completed at
-108100043 cycles, with its own 144-test tally agreeing with the runner.
+All 107 previous passes are retained. **Misaligned OAM DMA** now passes after
+correcting a one-pixel background-shifter alignment error. **NMI Timing** was
+added in the previous stage. The current ROM completed at
+117100046 cycles, with its own 144-test tally agreeing with the runner.
 
 | Additional upstream suite | Before | Now |
 | --- | ---: | ---: |
@@ -26,7 +28,7 @@ semantics. It still reports failure 2 under the selected Sharp behaviour, and th
 regression gate verifies that outcome. This is **15/16 actual passes**, not 16/16.
 Reports include the untouched ROM hashes, status codes and diagnostic text.
 
-All **44** core/audio/RF unit tests pass. Browser checks confirmed nonzero RF
+All **52** core/audio/controller/RF unit tests pass. Browser checks confirmed nonzero RF
 noise after a gesture, RF silence while running a ROM, and WASM/AudioWorklet PCM
 output with no page errors. Game audio has also been reported working by the
 user. Commercial MMC3 game compatibility still needs user playtesting.
@@ -51,7 +53,7 @@ There is no separate deployed GitHub Pages build for this branch.
 Requires Node.js 22 or newer; no npm packages.
 
 ```sh
-node --test tests/core.test.cjs tests/audio.test.cjs tests/rf-audio.test.cjs
+node --test tests/*.test.cjs
 git clone https://github.com/100thCoin/AccuracyCoin.git ../AccuracyCoin
 git -C ../AccuracyCoin checkout 673ef550db296136d52229961e7d39366116882a
 node tests/accuracycoin.cjs ../AccuracyCoin/AccuracyCoin.nes accuracy-report.json
@@ -76,6 +78,46 @@ The five DRAW entries are excluded; skipped and unfinished tests are not passes.
 This measures the specified test ROM, not complete NES compatibility or browser
 performance. Mapper tests use synthetic cartridges; commercial-game playtesting
 is still needed. The ROM is fetched from upstream and is not redistributed here.
+
+## Xbox / Bluetooth controllers and toolbar
+
+Pair the controller in Fedora KDE's Bluetooth settings (or connect by USB).
+With the emulator tab focused, press a controller button. The **Controller** menu
+shows detection/player assignment and controls:
+
+| Xbox control | NES input |
+| --- | --- |
+| A or Y | A |
+| B or X | B |
+| View | Select |
+| Menu | Start |
+| D-pad or left stick | Directions |
+
+The first standard-mapped pad is player 1 and the second is player 2. Slots stay
+stable when a controller disconnects. A 35% stick deadzone filters drift;
+contradictory pad directions are neutralized. Keyboard remains available,
+including alongside controller input. Blur/hidden tabs release cached inputs.
+Controller state is polled once per animation frame rather than on emulated CPU
+cycles, preserving controller-port strobe timing.
+
+This uses `navigator.getGamepads()`, not browser Bluetooth pairing. OS pairing
+must be completed first. Localhost or HTTPS is required. Controllers without a
+browser-standard mapping are reported explicitly instead of guessing button
+indices; try another browser or USB if needed. Physical Xbox/Bluetooth hardware
+has not been tested in this environment. Simulated standard-controller browser
+checks verified input through `$4016`, keyboard mixing and disconnect handling.
+
+The audio button/slider have been removed and toolbar controls now align without
+wrapping their labels. Browser checks verified automatic gain-1 game audio and
+RF silence during emulation. Six controller/audio lifecycle tests were added,
+along with ROM-load audio and pixel-zero-shifter regression checks.
+
+## Background pixel alignment
+
+The background shifter now advances after visible pixel zero. Previously the
+first pixel was sampled twice, offsetting background/sprite overlap by one pixel.
+Besides the newly passing Misaligned OAM DMA test, several advanced PPU tests
+now reach later subtests; they are still counted as failures until fully passed.
 
 ## Mapper 7: AxROM (AMROM / ANROM / AOROM)
 
@@ -137,12 +179,11 @@ per ROM; the result protocol is read from cartridge RAM):
 git clone https://github.com/christopherpow/nes-test-roms.git ../nes-test-roms
 git -C ../nes-test-roms checkout 95d8f621ae55cee0d09b91519a8989ae0e64753b
 node tests/blargg.cjs ../nes-test-roms blargg-report.json
-node --test tests/core.test.cjs tests/audio.test.cjs tests/rf-audio.test.cjs
+node --test tests/*.test.cjs
 ```
 
 RF noise requires a browser gesture; click or press a key while the no-signal
-screen is visible. It is stopped when emulation runs. Enable game audio with the
-separate **Enable audio** button as before.
+screen is visible. It is stopped when emulation runs. Game audio now starts automatically.
 
 ## Earlier foundation
 
@@ -165,11 +206,17 @@ NES 2.0 extended ROM sizes are explicitly rejected. MMC1 and MMC3 board variants
 
 ## C++ / WebAssembly audio
 
-Click **Enable audio** before loading/resetting the ROM, then run the emulator.
-Use the volume slider or **Mute audio**. Serve over localhost or HTTPS; opening
-`index.html` directly cannot load the module/worklet. The compiled WASM is checked
-in, so no compiler is needed to play. Enabling midway through a game seeds current
-registers, but cannot recover past envelope/oscillator phase; reset for comparison.
+Loading a ROM requests audio automatically at full application volume (gain 1).
+There is no enable/mute button or volume slider. Use the system/browser volume
+controls. Browser autoplay restrictions still apply: a click or keypress unlocks
+sound if loading from cache or a gamepad alone did not. Subsequent gestures do
+not reset the sound engine or restart playing notes. Failed module loads retry
+on the next gesture.
+
+Serve over localhost or HTTPS; opening `index.html` directly cannot load the
+module/worklet. The compiled WASM is checked in, so no compiler is needed to play.
+If audio starts midway through a game, it seeds current registers but cannot
+recover past envelope/oscillator phase; reset the ROM for comparisons.
 
 The renderer implements both pulse channels (duty, envelopes, sweeps), triangle
 linear counter and held DAC, noise LFSR modes, and the DMC 7-bit output DAC. It
@@ -185,7 +232,7 @@ Build from `audio/apu.cpp` with Zig 0.14.1 or Clang with wasm32/lld support:
 ```sh
 ZIG=/path/to/zig sh audio/build.sh
 # Or: CLANGXX=clang++ sh audio/build.sh
-node --test tests/core.test.cjs tests/audio.test.cjs tests/rf-audio.test.cjs
+node --test tests/*.test.cjs
 g++ -O3 -ffp-contract=off tests/native-audio.cpp -o /tmp/vajnes-native-audio
 node tests/native-wasm-parity.cjs /tmp/vajnes-native-audio
 ```
