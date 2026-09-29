@@ -292,3 +292,12 @@ PPUDATA scrolling reference: https://www.nesdev.org/wiki/PPU_scrolling#%242007_(
 Interrupt timing reference: https://www.nesdev.org/wiki/CPU_interrupts
 
 DMC DMA reference: https://www.nesdev.org/wiki/DMA
+
+## Console diagnostics
+
+Browser console logging is disabled by default, including previously unguarded
+IRQ, NMI, PPUSTATUS, loader and renderer messages. The debug code remains in place.
+To enable diagnostics temporarily, run `globalThis.NES_DEBUG_LOGGING = true` in
+the browser console; the existing subsystem flags still control detailed traces.
+Reloading the page restores the quiet default. The browser console itself is not
+replaced or patched.

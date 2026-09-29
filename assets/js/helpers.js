@@ -64,17 +64,17 @@ function resetSystem(){resetCPU(), ppuResetCounters();}
 
 function logChrRom(chrArray, bytesPerLine = 16) {
   const total = chrArray.length;
-  console.debug(`--- CHR_ROM Dump (${total} bytes) ---`);
+  globalThis.NES_DEBUG_LOGGING && console.debug(`--- CHR_ROM Dump (${total} bytes) ---`);
   for (let i = 0; i < total; i += bytesPerLine) {
     let line = i.toString(16).padStart(4, '0') + ': ';
     for (let j = 0; j < bytesPerLine && i + j < total; j++) {
       line += chrArray[i + j].toString(16).padStart(2, '0') + ' ';
     }
-    console.debug(line.trim());
+    globalThis.NES_DEBUG_LOGGING && console.debug(line.trim());
   }
 }
 
 function dumpChrWindow(start=0x0200, end=0x07F0) {
   const slice = Array.from(CHR_ROM.slice(start, end));
-  console.table(slice.map((v,i)=>({addr:(start+i).toString(16).padStart(4,'0'),val:v.toString(16).padStart(2,'0')})));
+  globalThis.NES_DEBUG_LOGGING && console.table(slice.map((v,i)=>({addr:(start+i).toString(16).padStart(4,'0'),val:v.toString(16).padStart(2,'0')})));
 }

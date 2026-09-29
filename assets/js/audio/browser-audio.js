@@ -48,10 +48,10 @@ const NESAudio = (()=>{
           node.connect(gain).connect(context.destination);
           seed(cpuCycles);
         }
-      })().catch(error=>console.error('NES audio failed; next gesture will retry:',error))
+      })().catch(error=>globalThis.NES_DEBUG_LOGGING && console.error('NES audio failed; next gesture will retry:',error))
         .finally(()=>{starting=null;});
       return starting;
-    } catch(error) {console.error('NES audio unavailable:',error);}
+    } catch(error) {globalThis.NES_DEBUG_LOGGING && console.error('NES audio unavailable:',error);}
   }
   function frame(cycle) {
     if(!wasm)return;sync(cycle);

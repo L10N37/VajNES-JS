@@ -1,3 +1,7 @@
+// Master switch for browser console diagnostics. Individual debug flags still apply.
+// Enable temporarily with: globalThis.NES_DEBUG_LOGGING = true
+globalThis.NES_DEBUG_LOGGING = false;
+
 // legacy file name, needs to sorted
 
   // Space for all CHR banks (each iNES CHR bank = 8 KB)

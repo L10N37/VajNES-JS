@@ -154,8 +154,8 @@
     H.clearMainCanvas();      // clean slate
 
     if (kind === 'image') { H.setExclusive(img);   H.drawTestImage();  return; }
-    if (kind === 'rgba')  { H.setExclusive(rgba);  try { testRGBAAnim?.(); } catch(e){ console.error(e);} return; }
-    if (kind === 'index') { H.setExclusive(index); try { testIndexAnim?.(); } catch(e){ console.error(e);} return; }
+    if (kind === 'rgba')  { H.setExclusive(rgba);  try { testRGBAAnim?.(); } catch(e){ globalThis.NES_DEBUG_LOGGING && console.error(e);} return; }
+    if (kind === 'index') { H.setExclusive(index); try { testIndexAnim?.(); } catch(e){ globalThis.NES_DEBUG_LOGGING && console.error(e);} return; }
 
     H.setExclusive(null);
     H.resumeIfNoneSelected();

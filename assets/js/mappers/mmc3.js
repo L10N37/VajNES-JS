@@ -201,7 +201,7 @@ function mapper4_prg_read(address)
 
     if (romIndex < 0 || romIndex >= FULL_PRG_ROM.length)
     {
-        console.error(
+        globalThis.NES_DEBUG_LOGGING && console.error(
             `[MMC3][PRG-READ OOB] cpu=$${address.toString(16).padStart(4, '0')} ` +
             `bank=${bank} offset=$${offset.toString(16).padStart(4, '0')} ` +
             `romIndex=$${romIndex.toString(16)} length=$${FULL_PRG_ROM.length.toString(16)}`

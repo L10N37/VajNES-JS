@@ -279,9 +279,9 @@ fbxOriginalHardware: {
     if (window.PALETTES[name]) {
       window.currentPaletteName = name;
       window.currentPalette = window.PALETTES[name];
-      console.debug(`[Palette] using '${name}'`);
+      globalThis.NES_DEBUG_LOGGING && console.debug(`[Palette] using '${name}'`);
     } else {
-      console.warn(`[Palette] Unknown palette name '${name}'`);
+      globalThis.NES_DEBUG_LOGGING && console.warn(`[Palette] Unknown palette name '${name}'`);
     }
 
     // for instant frame redraw with new palette selection (if game paused etc.)
@@ -302,7 +302,7 @@ fbxOriginalHardware: {
     radio.addEventListener('change', (e) => {
       const selectedPalette = e.target.value;
       setCurrentPalette(selectedPalette);
-      console.debug(`[TileViewer] Selected palette: ${selectedPalette}`);
+      globalThis.NES_DEBUG_LOGGING && console.debug(`[TileViewer] Selected palette: ${selectedPalette}`);
   
       if (window.lastCHRData) {
         drawTilesToCanvas(window.lastCHRData, "bgCanvas");

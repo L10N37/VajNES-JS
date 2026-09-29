@@ -26,7 +26,7 @@ function checkNmi() {
   nmiPending = (PPUclock.frame);
 
   if (debug.videoTiming) {
-    console.debug(
+    globalThis.NES_DEBUG_LOGGING && console.debug(
       `%c[NMI ARMED] cpu=${cpuCycles} ppu=${ppuCycles} frame=${PPUclock.frame} sl=${PPUclock.scanline} dot=${PPUclock.dot}`,
       "color:black;background:lime;font-weight:bold;font-size:14px;"
     );
@@ -115,8 +115,8 @@ window.step = function () {
 
   if (!op || !op.func) {
     const codeHex = (code == null) ? "??" : code.toString(16).toUpperCase().padStart(2, "0");
-    console.warn(`Unknown opcode 0x${codeHex}`);
-    console.warn(`at PC=$${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
+    globalThis.NES_DEBUG_LOGGING && console.warn(`Unknown opcode 0x${codeHex}`);
+    globalThis.NES_DEBUG_LOGGING && console.warn(`at PC=$${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
     pause();
     return 0;
   }
@@ -160,13 +160,13 @@ function handleStepToggle() {
 
   if (step.opcode === 'stepMode') {
     run();
-    console.log("stepMode:", code.toString(16));
+    globalThis.NES_DEBUG_LOGGING && console.log("stepMode:", code.toString(16));
     cpuRunning = false;
   }
 
   if (step.opcode === 'false') {
     step.opcode = 'stepMode';
-    console.log("stepMode:", code.toString(16));
+    globalThis.NES_DEBUG_LOGGING && console.log("stepMode:", code.toString(16));
     cpuRunning = false;
   }
 

@@ -14,7 +14,7 @@ function readFile(input, auto = false) {
 
     // Validate extension
     if (!file || !file.name.toLowerCase().endsWith('.nes')) {
-      console.error('Invalid file type. Please select a NES ROM file.');
+      globalThis.NES_DEBUG_LOGGING && console.error('Invalid file type. Please select a NES ROM file.');
       return;
     }
 
@@ -49,7 +49,7 @@ function readFile(input, auto = false) {
     };
 
     reader.onerror = function () {
-      console.debug(reader.error);
+      globalThis.NES_DEBUG_LOGGING && console.debug(reader.error);
     };
 
   } else {
@@ -58,7 +58,7 @@ function readFile(input, auto = false) {
     const saved = localStorage.getItem('lastRomData');
 
     if (!saved) {
-      console.debug('[AutoLoad] No ROM cached, skipping autoload.');
+      globalThis.NES_DEBUG_LOGGING && console.debug('[AutoLoad] No ROM cached, skipping autoload.');
       return;
     }
 
@@ -77,7 +77,7 @@ function loadRom(romBytes) {
     romBytes[0] !== 0x4E || romBytes[1] !== 0x45 ||
     romBytes[2] !== 0x53 || romBytes[3] !== 0x1A
   ) {
-    console.warn('ROM file does not contain a valid NES header.');
+    globalThis.NES_DEBUG_LOGGING && console.warn('ROM file does not contain a valid NES header.');
     return;
   }
 
@@ -162,8 +162,8 @@ function loadRom(romBytes) {
     FULL_PRG_BANKS_16K = prgBanks;
     FULL_CHR_BANKS_8K  = chrBanks;
 
-    console.debug(`[Mapper4] Full PRG ROM stored (${FULL_PRG_ROM_SIZE} bytes)`);
-    console.debug(`[Mapper4] Full CHR ROM stored (${FULL_CHR_ROM_SIZE} bytes)`);
+    globalThis.NES_DEBUG_LOGGING && console.debug(`[Mapper4] Full PRG ROM stored (${FULL_PRG_ROM_SIZE} bytes)`);
+    globalThis.NES_DEBUG_LOGGING && console.debug(`[Mapper4] Full CHR ROM stored (${FULL_CHR_ROM_SIZE} bytes)`);
   }
 
   // ------------------------------------------------------------
@@ -182,10 +182,10 @@ function loadRom(romBytes) {
   if (hasTrainer) prgRam.set(romBytes.subarray(16,528),0x1000);
 
   // Header debug output
-  console.debug(`[HEADER] Detected iNES v${headerVersion}`);
-  console.debug(`[HEADER] PRG banks: ${prgBanks} (${prgSize} bytes), CHR banks: ${chrBanks} (${chrSize} bytes)`);
-  console.debug(`[HEADER] Mapper: ${mapperNumber}, Mirroring: ${MIRRORING}`);
-  console.debug(`[HEADER] Battery-Backed PRG-RAM: ${prgRamBattery}`);
+  globalThis.NES_DEBUG_LOGGING && console.debug(`[HEADER] Detected iNES v${headerVersion}`);
+  globalThis.NES_DEBUG_LOGGING && console.debug(`[HEADER] PRG banks: ${prgBanks} (${prgSize} bytes), CHR banks: ${chrBanks} (${chrSize} bytes)`);
+  globalThis.NES_DEBUG_LOGGING && console.debug(`[HEADER] Mapper: ${mapperNumber}, Mirroring: ${MIRRORING}`);
+  globalThis.NES_DEBUG_LOGGING && console.debug(`[HEADER] Battery-Backed PRG-RAM: ${prgRamBattery}`);
 
   // ------------------------------------------------------------
   // CPU-visible PRG window ($8000-$FFFF)
@@ -207,9 +207,9 @@ function loadRom(romBytes) {
   // Debug output
   // ------------------------------------------------------------
 
-  console.debug(`[Loader] CHR is ${chrIsRAM ? 'RAM' : 'ROM'}; size=${CHR_ROM.length} bytes`);
+  globalThis.NES_DEBUG_LOGGING && console.debug(`[Loader] CHR is ${chrIsRAM ? 'RAM' : 'ROM'}; size=${CHR_ROM.length} bytes`);
 
-  console.debug(
+  globalThis.NES_DEBUG_LOGGING && console.debug(
     `[Loader] First 16 CHR bytes: ${
       Array.from(CHR_ROM.subarray(0, 16))
         .map(v => v.toString(16).padStart(2, '0'))
@@ -217,9 +217,9 @@ function loadRom(romBytes) {
     }`
   );
 
-  console.debug(`[Loader] Loaded PRG-ROM: ${prgRom.length} bytes`);
-  console.debug(`[Loader] CHR is ${chrIsRAM ? 'RAM' : 'ROM'}; size=${CHR_ROM.byteLength} bytes`);
-  console.debug(`[Loader] PRG-RAM is ${prgRamBattery ? 'battery-backed' : 'volatile'}`);
+  globalThis.NES_DEBUG_LOGGING && console.debug(`[Loader] Loaded PRG-ROM: ${prgRom.length} bytes`);
+  globalThis.NES_DEBUG_LOGGING && console.debug(`[Loader] CHR is ${chrIsRAM ? 'RAM' : 'ROM'}; size=${CHR_ROM.byteLength} bytes`);
+  globalThis.NES_DEBUG_LOGGING && console.debug(`[Loader] PRG-RAM is ${prgRamBattery ? 'battery-backed' : 'volatile'}`);
 
   // Initialize mapper logic
   mapper(nesHeader);

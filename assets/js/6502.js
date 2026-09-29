@@ -89,8 +89,8 @@ function resetCPU() {
     consumeCycle();
   }
 
-  console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
-  console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
+  globalThis.NES_DEBUG_LOGGING && console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
+  globalThis.NES_DEBUG_LOGGING && console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
 
   // ---- remaining CPU/PPU misc state NOT covered by resetSharedState/resetMMC1 ----
 

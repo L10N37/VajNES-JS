@@ -33,7 +33,7 @@ if (disasmRunning) {
         `${CPUregisters.P.Z ? "Z" : "z"}` +
         `${CPUregisters.P.C ? "C" : "c"}`;
 
-    console.log(
+    globalThis.NES_DEBUG_LOGGING && console.log(
         `${hex4(CPUregisters.PC)}  ` +
         `${hex2(code)} ${hex2(operand[1])} ${hex2(operand[2])}  ` +
         `${mnemonic.padEnd(12)}  ` +

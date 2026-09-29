@@ -139,7 +139,7 @@ function _glCompile(type, src) {
   GL.shaderSource(s, src);
   GL.compileShader(s);
   if (!GL.getShaderParameter(s, GL.COMPILE_STATUS)) {
-    console.error("[webgl] shader error:", GL.getShaderInfoLog(s));
+    globalThis.NES_DEBUG_LOGGING && console.error("[webgl] shader error:", GL.getShaderInfoLog(s));
     GL.deleteShader(s);
     return null;
   }
@@ -160,7 +160,7 @@ function _glLink(vsSrc, fsSrc) {
   GL.deleteShader(fs);
 
   if (!GL.getProgramParameter(p, GL.LINK_STATUS)) {
-    console.error("[webgl] link error:", GL.getProgramInfoLog(p));
+    globalThis.NES_DEBUG_LOGGING && console.error("[webgl] link error:", GL.getProgramInfoLog(p));
     GL.deleteProgram(p);
     return null;
   }
@@ -183,7 +183,7 @@ function initWebGL() {
   });
 
   if (!GL) {
-    console.warn("[webgl] WebGL unavailable");
+    globalThis.NES_DEBUG_LOGGING && console.warn("[webgl] WebGL unavailable");
     _glReady = false;
     return false;
   }
@@ -315,7 +315,7 @@ function initWebGL() {
   _srcH = BASE_H;
 
   _glReady = true;
-  console.debug("[webgl] ready (GPU palette lookup enabled)");
+  globalThis.NES_DEBUG_LOGGING && console.debug("[webgl] ready (GPU palette lookup enabled)");
   return true;
 }
 

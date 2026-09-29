@@ -46,8 +46,8 @@ openBtn.addEventListener('click', () => {
     attachHoverInfo("fgCanvas", sprData);
 
   } catch (err) {
-    console.error("[TileViewer] ERROR:", err.message);
-    console.debug(err);
+    globalThis.NES_DEBUG_LOGGING && console.error("[TileViewer] ERROR:", err.message);
+    globalThis.NES_DEBUG_LOGGING && console.debug(err);
   }
 });
 

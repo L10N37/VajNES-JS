@@ -23,7 +23,7 @@ let irqPollCurrent = false, irqPollPrevious = false;
 function serviceNMI(){
 
   clearNmiEdge();
-  //if (debug.logging) console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
+  //if (debug.logging) globalThis.NES_DEBUG_LOGGING && console.debug("%cNMI fired", "color:white;background:red;font-weight:bold;padding:2px 6px;border-radius:3px");
   
 // nmiPending (NMI timing latch) now contains the frame it was generated
 // if the frame doesn't match the current frame, don't fire the NMI, it was generated on vblank boundaries <- this guard not required
@@ -35,7 +35,7 @@ const inVBlank = (PPUclock.scanline >= 241 && PPUclock.scanline <= 260);        
   
   // temp logging , like most of it
   if (nmiPending !== PPUclock.frame) {
-    console.debug(
+    globalThis.NES_DEBUG_LOGGING && console.debug(
       `[NMI DEBUG] ` +
       `PPUclock.frame=${PPUclock.frame} ` +
       `nmiLatchedFrame=${nmiPending} ` +
@@ -114,7 +114,7 @@ Vblank Clear: ppuTicks=8308807 frame=92 Δ=89342 PASS [exp 89342] (even+no rende
   consumeCycle();
 
   if (debug.videoTiming){
-  console.debug(
+  globalThis.NES_DEBUG_LOGGING && console.debug(
     `%c[NMI VECTOR LOADED → PC=$${CPUregisters.PC.toString(16).padStart(4,"0")}] cpu=${cpuCycles} ppu=${ppuCycles} frame=${PPUclock.frame} sl=${PPUclock.scanline} dot=${PPUclock.dot}`,
     "color:black;background:yellow;font-weight:bold;font-size:14px;"
   );
@@ -135,10 +135,10 @@ function serviceIRQ(bypass_interrupt_flag = false) {
     // dont bail out if we captured IRQ decision in advance (mid instruction prior to setting the interrupt flag in SEI, CLI, PLP)
     if(CPUregisters.P.I && !bypass_interrupt_flag) return;
 
-    console.log("opcode when IRQ serviced",code.toString(16));
+    globalThis.NES_DEBUG_LOGGING && console.log("opcode when IRQ serviced",code.toString(16));
   
 
-    console.log("IRQ SERVICED, source-", 
+    globalThis.NES_DEBUG_LOGGING && console.log("IRQ SERVICED, source-",
     "mmc3:",  irqAssert.mmc3, 
     "DMC:",   irqAssert.dmcDma,
     "Frame:", irqAssert.frame

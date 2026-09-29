@@ -63,7 +63,7 @@ function dmaMicroStep() {
     DMA.index = (DMA.index + 1) & 0xFFFF;
     DMA.phase = "get";
     consumeCycle();
-    //console.log( "  cpuCycles:", cpuCycles);
+    //globalThis.NES_DEBUG_LOGGING && console.log( "  cpuCycles:", cpuCycles);
     return 1;
   }
 }

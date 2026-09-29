@@ -45,21 +45,21 @@ function updatePRGBanks() {
       PRG_BANK_LO[i] = prgRom[(bank * 0x4000) + i];
       PRG_BANK_HI[i] = prgRom[(next * 0x4000) + i];
     }
-    if (mmc1Debugging) console.debug(`[MMC1] PRG=32KB mode, banks ${bank}/${next}`);
+    if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1] PRG=32KB mode, banks ${bank}/${next}`);
   } else if (prgMode === 2) {
     const bank = mmc1PRG % totalBanks;
     for (let i = 0; i < 0x4000; i++) {
       PRG_BANK_LO[i] = prgRom[i];
       PRG_BANK_HI[i] = prgRom[(bank * 0x4000) + i];
     }
-    if (mmc1Debugging) console.debug(`[MMC1] PRG=16KB fix first=0, switch $C000=${bank}`);
+    if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1] PRG=16KB fix first=0, switch $C000=${bank}`);
   } else if (prgMode === 3) {
     const bank = mmc1PRG % totalBanks;
     for (let i = 0; i < 0x4000; i++) {
       PRG_BANK_LO[i] = prgRom[(bank * 0x4000) + i];
       PRG_BANK_HI[i] = prgRom[(lastBank * 0x4000) + i];
     }
-    if (mmc1Debugging) console.debug(`[MMC1] PRG=16KB switch $8000=${bank}, fix last=${lastBank}`);
+    if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1] PRG=16KB switch $8000=${bank}, fix last=${lastBank}`);
   }
 }
 
@@ -70,7 +70,7 @@ function updateCHRBanks() {
   if (totalBanks <= 0) {
     CHR_BANK_LO = 0;
     CHR_BANK_HI = 0;
-    if (mmc1Debugging) console.debug(`[MMC1] CHR: no banks`);
+    if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1] CHR: no banks`);
     return;
   }
 
@@ -79,17 +79,17 @@ function updateCHRBanks() {
     const next = safeBank(bank + 1, totalBanks);
     CHR_BANK_LO = bank;
     CHR_BANK_HI = next;
-    if (mmc1Debugging) console.debug(`[MMC1] CHR=8KB pair banks ${bank}/${next}`);
+    if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1] CHR=8KB pair banks ${bank}/${next}`);
   } else {
     const bank0 = safeBank(mmc1CHR0, totalBanks);
     const bank1 = safeBank(mmc1CHR1, totalBanks);
     CHR_BANK_LO = bank0;
     CHR_BANK_HI = bank1;
-    if (mmc1Debugging) console.debug(`[MMC1] CHR=4KB banks ${bank0}/${bank1}`);
+    if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1] CHR=4KB banks ${bank0}/${bank1}`);
   }
 
   if (mmc1Debugging) {
-    console.debug(
+    globalThis.NES_DEBUG_LOGGING && console.debug(
       `[MMC1 CHR-BANKS] mode=${chrMode ? "4KB" : "8KB"} ` +
       `CHR0=${mmc1CHR0} CHR1=${mmc1CHR1} ` +
       `LO=${CHR_BANK_LO} HI=${CHR_BANK_HI} totalBanks=${totalBanks}`
@@ -119,7 +119,7 @@ function mmc1ShiftWrite(callback, value) {
     mmc1Control |= 0x0C;
     updatePRGBanks();
     updateCHRBanks();
-    if (mmc1Debugging) console.debug(`[MMC1 RESET]`);
+    if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1 RESET]`);
     return;
   }
 
@@ -129,7 +129,7 @@ function mmc1ShiftWrite(callback, value) {
 
   if (shiftCount === 5) {
     if (mmc1Debugging) {
-      console.debug(
+      globalThis.NES_DEBUG_LOGGING && console.debug(
         `[MMC1 LATCHED] reg=${callback.name} val=$${(shiftRegister & SHIFT_MASK)
           .toString(16)
           .padStart(2, "0")}`
@@ -145,7 +145,7 @@ function mmc1ShiftWrite(callback, value) {
 function mmc1WriteControl(addr, value) {
   mmc1ShiftWrite((val) => {
     mmc1Control = val & 0x1F;
-    if (mmc1Debugging) console.debug(`[MMC1 LATCH] CONTROL=$${val.toString(16)}`);
+    if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1 LATCH] CONTROL=$${val.toString(16)}`);
     mmc1ApplyControl();
   }, value);
 }
@@ -153,7 +153,7 @@ function mmc1WriteControl(addr, value) {
 function mmc1WriteCHR0(addr, value) {
   mmc1ShiftWrite((val) => {
     mmc1CHR0 = val & 0x1F;
-    if (mmc1Debugging) console.debug(`[MMC1 LATCH] CHR0=$${val.toString(16)}`);
+    if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1 LATCH] CHR0=$${val.toString(16)}`);
     updateCHRBanks();
   }, value);
 }
@@ -161,7 +161,7 @@ function mmc1WriteCHR0(addr, value) {
 function mmc1WriteCHR1(addr, value) {
   mmc1ShiftWrite((val) => {
     mmc1CHR1 = val & 0x1F;
-    if (mmc1Debugging) console.debug(`[MMC1 LATCH] CHR1=$${val.toString(16)}`);
+    if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1 LATCH] CHR1=$${val.toString(16)}`);
     updateCHRBanks();
   }, value);
 }
@@ -172,7 +172,7 @@ function mmc1WritePRG(addr, value) {
     prgRamEnable = ((mmc1PRG & 0x10) === 0);
 
     if (mmc1Debugging) {
-      console.debug(`[MMC1 LATCH] PRG=$${val.toString(16)} | SRAM ${prgRamEnable ? "ENABLED" : "DISABLED"}`);
+      globalThis.NES_DEBUG_LOGGING && console.debug(`[MMC1 LATCH] PRG=$${val.toString(16)} | SRAM ${prgRamEnable ? "ENABLED" : "DISABLED"}`);
     }
 
     updatePRGBanks();
@@ -186,7 +186,7 @@ function mmc1CpuWrite(addr, value) {
     if (addr >= 0x6000 && prgRamEnable) {
       prgRam[addr - 0x6000] = value;
       if (mmc1Debugging) {
-        console.debug(
+        globalThis.NES_DEBUG_LOGGING && console.debug(
           `[MMC1 PRG-RAM] $${addr.toString(16)} <= $${value.toString(16).padStart(2, "0")}`
         );
       }
@@ -201,7 +201,7 @@ function mmc1CpuWrite(addr, value) {
     else if (addr < 0xE000) region = "CHR1";
     else region = "PRG";
 
-    console.debug(
+    globalThis.NES_DEBUG_LOGGING && console.debug(
       `[MMC1 SHIFTWRITE] $${addr.toString(16).padStart(4, "0")} = $${value
         .toString(16)
         .padStart(2, "0")} → ${region}`
@@ -281,5 +281,5 @@ function mmc1Init(prg, chr) {
   updatePRGBanks();
   updateCHRBanks();
 
-  if (mmc1Debugging) console.debug("[MMC1] Initialized");
+  if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug("[MMC1] Initialized");
 }

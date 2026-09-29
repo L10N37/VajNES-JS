@@ -42,7 +42,7 @@ function dmcRestartSample() {
   DMC.bytesRemaining = DMC.sampleLength & 0xFFFF;
 
   if (debug.dmcDma) {
-    console.log(
+    globalThis.NES_DEBUG_LOGGING && console.log(
       "[DMC] restart",
       "addr=$" + DMC.currentAddress.toString(16).toUpperCase(),
       "len=", DMC.bytesRemaining,
@@ -72,7 +72,7 @@ function clockDMC() {
 
   // ---- debug (optional, still gated) ----
   if (debug.dmcDma) {
-    console.log(
+    globalThis.NES_DEBUG_LOGGING && console.log(
       "[DMC] bit clock",
       "cpuCycles=", cpuCycles,
       "bitsRemaining=", DMC.bitsRemaining,
@@ -91,14 +91,14 @@ function clockDMC() {
       DMC.silence = false;
 
       if (debug.dmcDma) {
-        console.log("[DMC] shift reload from buffer");
+        globalThis.NES_DEBUG_LOGGING && console.log("[DMC] shift reload from buffer");
       }
 
     } else {
       DMC.silence = true;
 
       if (debug.dmcDma) {
-        console.log("[DMC] SILENCE (no sample buffer)");
+        globalThis.NES_DEBUG_LOGGING && console.log("[DMC] SILENCE (no sample buffer)");
       }
     }
 
@@ -109,7 +109,7 @@ function clockDMC() {
       DMC.dmaAt = cpuCycles + (cpuCycles & 1);
 
       if (debug.dmcDma) {
-        console.log(
+        globalThis.NES_DEBUG_LOGGING && console.log(
           "[DMC] DMA REQUEST",
           "cpuCycles=", cpuCycles,
           "addr=$" + DMC.currentAddress.toString(16).toUpperCase()
@@ -150,7 +150,7 @@ function dmcDoDMA(haltedAddress = CPUregisters.PC) {
   DMC.fetchCount++;
 
   if (debug.dmcDma) {
-    console.log(
+    globalThis.NES_DEBUG_LOGGING && console.log(
       "[DMC] DMA FETCH",
       "count=", DMC.fetchCount,
       "cpuCycles=", cpuCycles,
@@ -176,7 +176,7 @@ function dmcDoDMA(haltedAddress = CPUregisters.PC) {
     if (DMC.loop) {
 
       if (debug.dmcDma) {
-        console.log("[DMC] sample ended -> loop restart");
+        globalThis.NES_DEBUG_LOGGING && console.log("[DMC] sample ended -> loop restart");
       }
 
       dmcRestartSample();
@@ -187,7 +187,7 @@ function dmcDoDMA(haltedAddress = CPUregisters.PC) {
         irqAssert.dmcDma = true;
 
         if (debug.dmcDma) {
-          console.log("[DMC] sample ended -> IRQ ACTIVE_LOW");
+          globalThis.NES_DEBUG_LOGGING && console.log("[DMC] sample ended -> IRQ ACTIVE_LOW");
         }
       }
     }
@@ -214,7 +214,7 @@ function dmcSetControlFrom4010(value) {
   // The rate write changes the next divider reload, not its current phase.
 
   if (debug.dmcDma) {
-    console.log(
+    globalThis.NES_DEBUG_LOGGING && console.log(
       "[DMC] 4010 write",
       "rateIndex=", DMC.rateIndex,
       "timerPeriod=", DMC.timerPeriod
@@ -232,7 +232,7 @@ function dmcSetSampleAddressFrom4012(value) {
   DMC.sampleAddress = (0xC000 + (value << 6)) & 0xFFFF;
 
   if (debug.dmcDma) {
-    console.log(
+    globalThis.NES_DEBUG_LOGGING && console.log(
       "[DMC] 4012 write",
       "sampleAddress=$" + DMC.sampleAddress.toString(16).toUpperCase()
     );
@@ -245,7 +245,7 @@ function dmcSetSampleLengthFrom4013(value) {
   DMC.sampleLength = ((value << 4) + 1) & 0xFFFF;
 
   if (debug.dmcDma) {
-    console.log(
+    globalThis.NES_DEBUG_LOGGING && console.log(
       "[DMC] 4013 write",
       "sampleLength=", DMC.sampleLength
     );
@@ -258,7 +258,7 @@ function dmcWrite4015(value) {
   DMC.enabled = !!(value & 0x10);
 
   if (debug.dmcDma) {
-    console.log(
+    globalThis.NES_DEBUG_LOGGING && console.log(
       "[DMC] 4015 write",
       "enabled=", DMC.enabled,
       "bytesRemaining=", DMC.bytesRemaining
@@ -283,7 +283,7 @@ function dmcWrite4015(value) {
     }
 
     if (debug.dmcDma) {
-      console.log(
+      globalThis.NES_DEBUG_LOGGING && console.log(
         "[DMC] enabled -> prepare sample",
         "addr=$" + DMC.currentAddress.toString(16).toUpperCase(),
         "len=", DMC.bytesRemaining

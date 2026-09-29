@@ -21,11 +21,11 @@ function mapper(nesHeader) {
         // 16KB PRG: mirror into both halves
         flatPrg.set(prgRom.slice(0, 0x4000), 0x0000); // $8000
         flatPrg.set(prgRom.slice(0, 0x4000), 0x4000); // $C000
-        console.debug("[Mapper0] Mirrored 16KB PRG into 32KB region ($8000-$FFFF)");
+        globalThis.NES_DEBUG_LOGGING && console.debug("[Mapper0] Mirrored 16KB PRG into 32KB region ($8000-$FFFF)");
       } else if (prgBanks === 2) {
         // 32KB PRG: straight copy
         flatPrg.set(prgRom.slice(0, 0x8000), 0x0000);
-        console.debug("[Mapper0] Loaded 32KB PRG as is ($8000-$FFFF)");
+        globalThis.NES_DEBUG_LOGGING && console.debug("[Mapper0] Loaded 32KB PRG as is ($8000-$FFFF)");
       } else {
         throw new Error(`[Mapper0] Unexpected PRG-ROM bank count: ${prgBanks}`);
       }
@@ -53,7 +53,7 @@ function mapper(nesHeader) {
     }
 
     case 1: {
-      console.debug("[Mapper1] Initializing MMC1");
+      globalThis.NES_DEBUG_LOGGING && console.debug("[Mapper1] Initializing MMC1");
 
       // CHR type: if no CHR banks, it's CHR RAM
       chrIsRAM = (chrSize === 0);
@@ -69,7 +69,7 @@ function mapper(nesHeader) {
     // Mapper 4: MMC3 (TxROM family)
     // ==========================================================
     case 4: {
-      console.debug("[Mapper4] Initializing MMC3");
+      globalThis.NES_DEBUG_LOGGING && console.debug("[Mapper4] Initializing MMC3");
 
       // CHR type: if no CHR banks, it's CHR RAM
       chrIsRAM = (chrSize === 0);

@@ -9,7 +9,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // -----------------------------
   const SRAM = document.getElementById("SRAM");
   if (!SRAM) {
-    console.error("[SRAM] Button with id='SRAM' not found");
+    globalThis.NES_DEBUG_LOGGING && console.error("[SRAM] Button with id='SRAM' not found");
     return;
   }
 
@@ -130,7 +130,7 @@ document.addEventListener("DOMContentLoaded", () => {
         prgRam.fill(0, bytes.length);
       }
 
-      console.debug("[SRAM] Loaded", bytes.length, "bytes");
+      globalThis.NES_DEBUG_LOGGING && console.debug("[SRAM] Loaded", bytes.length, "bytes");
     });
 
     document.body.appendChild(input);
@@ -214,7 +214,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // -----------------------------
   const saveStateBtn = document.getElementById("saveState");
   if (!saveStateBtn) {
-    console.error("[SaveState] Button with id='saveState' not found");
+    globalThis.NES_DEBUG_LOGGING && console.error("[SaveState] Button with id='saveState' not found");
     return;
   }
 
@@ -756,11 +756,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const ok = applyStateBytes(bytes);
       if (!ok) {
-        console.warn("[SaveState] Load failed");
+        globalThis.NES_DEBUG_LOGGING && console.warn("[SaveState] Load failed");
         return;
       }
 
-      console.debug("[SaveState] Loaded", bytes.length, "bytes");
+      globalThis.NES_DEBUG_LOGGING && console.debug("[SaveState] Loaded", bytes.length, "bytes");
 
       // Optional: if your emulator needs a one-tick "loadState" flag, set it here
       // loadState = true;

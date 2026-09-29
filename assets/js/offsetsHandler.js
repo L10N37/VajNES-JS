@@ -120,7 +120,7 @@ function checkReadOffset(address) {
 
           }
           // $2002 flag test debug
-          if (current.scanline === 260 || PPUclock.scanline === 261) console.log (current.scanline, current.dot, PPUclock.scanline, PPUclock.dot);
+          if (current.scanline === 260 || PPUclock.scanline === 261) globalThis.NES_DEBUG_LOGGING && console.log(current.scanline, current.dot, PPUclock.scanline, PPUclock.dot);
 
           const obBefore = openBus.PPU & 0xFF;
           const stat = PPUSTATUS & 0xE0;
