@@ -2,11 +2,11 @@
   "suiteFinished": true,
   "suiteCommit": "673ef550db296136d52229961e7d39366116882a",
   "romSha256": "4fe8c2bc9abc6f4d418da47b73f62cba89fcacd950fae763097a1681d650e839",
-  "cpuCycles": 120100046,
+  "cpuCycles": 120100044,
   "pc": 32991,
   "counts": {
-    "pass": 129,
-    "fail": 15
+    "pass": 122,
+    "fail": 22
   },
   "results": [
     {
@@ -617,45 +617,45 @@
       "group": "Unofficial Instructions: SH*",
       "name": "$93   SHA indirect,Y",
       "address": 1094,
-      "raw": 5,
-      "status": "pass",
-      "code": 1
+      "raw": 30,
+      "status": "fail",
+      "code": 7
     },
     {
       "page": 10,
       "group": "Unofficial Instructions: SH*",
       "name": "$9F   SHA absolute,Y",
       "address": 1095,
-      "raw": 5,
-      "status": "pass",
-      "code": 1
+      "raw": 30,
+      "status": "fail",
+      "code": 7
     },
     {
       "page": 10,
       "group": "Unofficial Instructions: SH*",
       "name": "$9B   SHS absolute,Y",
       "address": 1096,
-      "raw": 5,
-      "status": "pass",
-      "code": 1
+      "raw": 30,
+      "status": "fail",
+      "code": 7
     },
     {
       "page": 10,
       "group": "Unofficial Instructions: SH*",
       "name": "$9C   SHY absolute,X",
       "address": 1097,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 30,
+      "status": "fail",
+      "code": 7
     },
     {
       "page": 10,
       "group": "Unofficial Instructions: SH*",
       "name": "$9E   SHX absolute,Y",
       "address": 1098,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 30,
+      "status": "fail",
+      "code": 7
     },
     {
       "page": 10,
@@ -824,9 +824,9 @@
       "group": "APU Registers and DMA tests",
       "name": "DMC DMA Bus Conflicts",
       "address": 1131,
-      "raw": 15,
-      "status": "pass",
-      "code": 3
+      "raw": 10,
+      "status": "fail",
+      "code": 2
     },
     {
       "page": 13,
@@ -977,9 +977,9 @@
       "group": "CPU Behavior 2",
       "name": "Internal Data Bus",
       "address": 1168,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 10,
+      "status": "fail",
+      "code": 2
     },
     {
       "page": 17,

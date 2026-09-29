@@ -3,6 +3,9 @@
 Work lives on `accuracycoin-development`. Main is not changed or merged.
 Base: `ed77b52c9cc93f2ec6c867ccc23157c6075c282e`.
 
+Development priority: get every AccuracyCoin test passing before adding any more
+mappers. Existing mapper regression checks continue throughout accuracy work.
+
 ## Measured result
 
 | Build | Pass | Fail | Skipped |
@@ -15,28 +18,26 @@ Base: `ed77b52c9cc93f2ec6c867ccc23157c6075c282e`.
 | PPUDATA/sprite-fetch stage | 110 | 34 | 0 |
 | Interrupt takeover stage | 112 | 32 | 0 |
 | CPU bus/DMC timing stage | 122 | 22 | 0 |
+| Internal bus/unstable-store stage | 129 | 15 | 0 |
 
-All 112 previous passes are retained. Ten new passes:
+All 122 previous passes are retained. Seven new passes:
 
-- Interrupt flag latency
-- DMA + Open Bus
-- DMA + $2002 Read
-- DMA + $2007 Read and Write
-- DMA + $4015 Read
-- DMA + $4016 Read
-- Instruction Timing
-- Implied Dummy Reads
-- INC $4014
+- Internal Data Bus
+- SHA indirect,Y ($93)
+- SHA absolute,Y ($9F)
+- SHS absolute,Y ($9B)
+- SHY absolute,X ($9C)
+- SHX absolute,Y ($9E)
+- DMC DMA Bus Conflicts
 
-DMC requests now halt on CPU reads, retry the halted read, and align sample fetches
-to the APU get phase. The output divider keeps running while sample reads are
-disabled; rate changes preserve its phase, and disabling the channel retains
-buffered audio. CPU stack and implied instructions now perform their dummy bus
-reads. Floating expansion reads use the actual bus value, including DMA data.
-The independent instruction suite also exposed five undocumented opcode timing
-errors (RLA $23/$33/$37, LAX $B3, LAS $BB), now corrected.
+The CPU internal data latch is now separate from the external bus. DMA can change
+the external bus without contaminating bit 5 of APU status reads; status reads
+also leave the external bus unchanged. Unstable stores suppress their high-byte
+mask if DMA halts their final dummy read. DMC sample reads now decode APU status
+and controller registers using the sample's low address bits when the halted CPU
+address enables the internal register block.
 
-The ROM completed at 120100044 cycles, with its own 144-test tally agreeing
+The ROM completed at 120100046 cycles, with its own 144-test tally agreeing
 with the runner. No tests were skipped.
 
 | Additional upstream suite | Before | Now |
@@ -51,7 +52,7 @@ semantics. It still reports failure 2 under the selected Sharp behaviour, and th
 regression gate verifies that outcome. This is **22/23 actual passes** across the expanded suite.
 Reports include the untouched ROM hashes, status codes and diagnostic text.
 
-All **62** core/audio/controller/RF unit tests pass. Browser checks confirmed nonzero RF
+All **65** core/audio/controller/RF unit tests pass. Browser checks confirmed nonzero RF
 noise after a gesture, RF silence while running a ROM, and WASM/AudioWorklet PCM
 output with no page errors. Game audio has also been reported working by the
 user. Commercial MMC3 game compatibility still needs user playtesting.
@@ -267,8 +268,8 @@ and unchanged CPU/PPU/APU execution with the renderer attached.
 
 This is experimental audio, not verified hardware-equivalent sound. DMC startup,
 buffer retention, free-running timer, read retries and ordinary get/put timing
-are improved. DMA abort races, simultaneous OAM/DMC arbitration and internal APU
-bus conflicts still fail tests and need further work. No PAL or expansion
+are improved. DMA abort races, simultaneous OAM/DMC arbitration and OAM-driven APU
+register activation still fail tests and need further work. No PAL or expansion
 audio is implemented. Buffering can underrun on slow/background tabs; the browser
 smoke observed one underrun and one queue reset during startup/load. Hardware
 waveform comparison and listening tests are still needed. C++ alone does not
@@ -277,8 +278,7 @@ ensure accuracy.
 ## Remaining accuracy work
 
 Use `tests/results/current.json` for the exact failures and error codes. Priorities:
-DMC/OAM DMA arbitration, abort races and internal APU bus conflicts,
-unstable store opcodes, PPU register races, sprite/OAM evaluation and background
+DMC/OAM DMA arbitration, abort races and OAM-driven APU register activation, PPU register races, sprite/OAM evaluation and background
 fetch bus behaviour. AccuracyCoin alone cannot validate audio fidelity.
 
 References: https://github.com/100thCoin/AccuracyCoin,

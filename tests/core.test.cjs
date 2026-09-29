@@ -310,3 +310,37 @@ test('implied instructions read the next address; stack pulls include both dummy
  const trace=e.evaluate('(()=>{systemMemory[0x1fe]=0x81;const read=checkReadOffset,reads=[];checkReadOffset=a=>{reads.push(a);return read(a)};cpuRunning=true;const cycles=window.step();checkReadOffset=read;return {reads,cycles,a:CPUregisters.A}})()');
  assert.deepEqual(trace,{reads:[0x8000,0x8001,0x1fd,0x1fe],cycles:4,a:0x81});
 });
+test('APU status bit 5 uses the internal latch while DMA only updates the external bus',()=>{
+ for(const [internal,sample] of [[0,0x20],[0x20,0]]){
+  const bytes=rom();bytes[16+0x4000]=sample;const e=emulator(bytes);
+  e.evaluate(`cpuCycles=101;checkWriteOffset(0,${internal});DMC.timer=100;DMC.currentAddress=0xc000;DMC.bytesRemaining=1;DMC.dmaRequest=true;dmcDoDMA(0x4015)`);
+  assert.equal(e.evaluate('openBus.CPU'),sample);assert.equal(e.evaluate('openBus.internal'),internal);
+  assert.equal(e.evaluate('checkReadOffset(0x4015)&0x20'),internal);
+  assert.equal(e.evaluate('openBus.CPU'),sample); // Status reads do not drive external pins.
+ }
+ const e=emulator();e.evaluate('PPUMASK=0;OAMADDR=0;OAM[0]=0x20;checkReadOffset(0x2004)');
+ assert.deepEqual(e.evaluate('[openBus.internal,openBus.CPU,checkReadOffset(0x4015)&0x20]'),[0x20,0x20,0x20]);
+});
+test('all five unstable stores lose their high-byte mask only when DMA halts the dummy read',()=>{
+ for(const opcode of [0x93,0x9f,0x9b,0x9c,0x9e])for(const haltAddress of [0,0x8001,0x500]){
+  const bytes=rom();bytes.set(opcode===0x93?[opcode,0x20]:[opcode,0,5],16);const e=emulator(bytes);
+  e.evaluate(`CPUregisters.A=0x8f;CPUregisters.X=${opcode===0x9c?0:opcode===0x9e?0x8f:255};CPUregisters.Y=${opcode===0x9c?0x8f:0};systemMemory[0x20]=0;systemMemory[0x21]=5;DMC.timer=100;DMC.currentAddress=0xc000;DMC.bytesRemaining=1;`);
+  e.evaluate(`(()=>{const original=checkReadOffset;let armed=${haltAddress!==0};checkReadOffset=a=>{if(armed && a===${haltAddress}){armed=false;DMC.dmaRequest=true;DMC.dmaAt=0;}return original(a)};cpuRunning=true;window.step();checkReadOffset=original;})()`);
+  assert.equal(e.evaluate('systemMemory[0x500]'),haltAddress===0x500?0x8f:6,`opcode ${opcode.toString(16)}, halt ${haltAddress.toString(16)}`);
+  if(opcode===0x9b)assert.equal(e.evaluate('CPUregisters.S'),0x8f);
+ }
+});
+test('DMC sample low bits decode APU registers only when the CPU is halted in $4000-$401F',()=>{
+ for(const haltedAddress of [0x4000,0x4020,0x8000]){
+  const bytes=rom();bytes[16+0x4015]=0xff;const e=emulator(bytes);
+  e.evaluate(`cpuCycles=101;DMC.timer=100;DMC.currentAddress=0xc015;DMC.bytesRemaining=1;DMC.dmaRequest=true;apuTiming.frameFlag=true;irqAssert.frame=true;dmcDoDMA(${haltedAddress});consumeCycle();consumeCycle()`);
+  assert.equal(e.evaluate('DMC.sampleBuffer'),0xff);
+  assert.equal(e.evaluate('apuTiming.frameFlag'),haltedAddress!==0x4000);
+ }
+ for(const [sample,bit] of [[0,1],[255,0]])for(const address of [0xc016,0xc036,0xc017]){
+  const bytes=rom();bytes[16+address-0x8000]=sample;const e=emulator(bytes);
+  e.evaluate(`cpuCycles=101;DMC.timer=100;DMC.currentAddress=${address};DMC.bytesRemaining=1;DMC.dmaRequest=true;joypad1State=joypad2State=${bit};dmcDoDMA(0x4000)`);
+  assert.equal(e.evaluate('DMC.sampleBuffer'),(sample&254)|bit);
+  assert.equal(e.evaluate('openBus.CPU'),(sample&254)|bit);
+ }
+});

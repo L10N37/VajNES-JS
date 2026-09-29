@@ -101,6 +101,7 @@ function resetCPU() {
   oamCorruptPending = false;
   oamCorruptSeedRow = 0;
 
+  openBus.internal = 0;
   openBus.PPU = 0;
   openBus.ppuDecayTimer = 0;
 }
@@ -5414,13 +5415,17 @@ function XAA_IMM() {
 
 // Unstable indexed stores use base high+1 for the data mask. On page
 // crossing the masked data replaces the address high byte (RP2A03 profile).
+// RDY halting the final dummy read suppresses the high-byte data mask.
 function unstableStoreAbsolute(index,registerValue,setStack=false) {
   const lo=checkReadOffset((CPUregisters.PC+1)&0xFFFF);consumeCycle();
   const hi=checkReadOffset((CPUregisters.PC+2)&0xFFFF);consumeCycle();
   const sum=lo+index,low=sum&255;
-  checkReadOffset((hi<<8)|low);consumeCycle();
+  const dummyCycle=cpuCycles;
+  checkReadOffset((hi<<8)|low);
+  const halted=cpuCycles!==dummyCycle;
+  consumeCycle();
   if(setStack)CPUregisters.S=registerValue&255;
-  const value=registerValue&((hi+1)&255);
+  const value=registerValue&(halted?255:((hi+1)&255));
   const high=sum>255?value:hi;
   checkWriteOffset((high<<8)|low,value);consumeCycle();
   CPUregisters.PC=(CPUregisters.PC+3)&0xFFFF;
@@ -5454,7 +5459,9 @@ function SHA_INDY() { // $93
 
   // C5: dummy read at uncarried page (hi : effLo)
   
+  const dummyCycle=cpuCycles;
   checkReadOffset(((hi << 8) | effLo) & 0xFFFF);
+  const halted=cpuCycles!==dummyCycle;
   
   consumeCycle();
 
@@ -5464,15 +5471,10 @@ function SHA_INDY() { // $93
   const H_plus_1  = (hi + 1) & 0xFF;      // equals effHi when carry=1 (the intentional test case)
 
   // Variant A: data mask
-  let value = (ax & H_plus_1) & 0xFF;
+  let value = ax & (halted ? 255 : H_plus_1);
 
-  // *** Unstable high-byte quirk for $93 (as per AccuracyCoin): ***
-  // If page-crossed, corrupt the write address high byte like SHX/SHA abs,Y:
-  // finalHigh = effHi & ax
-  // If NOT crossed, leave it as effHi.
-  // fail for 6 now, identifies revision 1 CPU behaviour
-  // 6: If the RDY line goes low 2 cycles before the write cycle, the target address of the instruction was not the correct value after the test.
-  const finalHi = carry ? (effHi & ax) & 0xFF : effHi;
+  // Page crossing puts the actual stored value on the address high pins.
+  const finalHi = carry ? value : effHi;
   const addr    = ((finalHi << 8) | effLo) & 0xFFFF;
 
   // C6: write

@@ -139,7 +139,17 @@ function dmcDoDMA(haltedAddress = CPUregisters.PC) {
   const addr = DMC.currentAddress & 0xFFFF;
 
   const busBefore = openBus.CPU;
-  const value = checkReadOffset(addr) & 0xFF;
+  let value = checkReadOffset(addr) & 0xFF;
+  // APU register decode is enabled by the halted CPU address. During DMA,
+  // the low five address bits instead come from the sample address.
+  if((haltedAddress&0xffe0)===0x4000) {
+    const reg=0x4000|(addr&0x1f);
+    if(reg===0x4015)apuStatusRead(); // Internal status does not drive the pins.
+    else if(reg===0x4016 || reg===0x4017) {
+      value=(value&0xfe)|(joypadRead(reg)&1);
+      openBus.CPU=value;
+    }
+  }
   const busAfter = openBus.CPU;
 
   DMC.sampleBuffer = value;

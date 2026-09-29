@@ -33,9 +33,9 @@ function cpuOpenBusFinalise(addr, raw, op, isWrite) {
   // ------------------------------------------------------------
   if (regn === 2) {
     // $4015 READ: return value may have open-bus-ish bit behaviour, BUT it does NOT drive openBus.CPU.
-    // offsetsHandler.js should supply raw = apuRead($4015). Here we merge bit5 from bus.
+    // Bit 5 comes from the CPU internal latch, which DMA cannot overwrite.
     if (!isWrite && addr === 0x4015) {
-      const merged = ((out & ~0x20) | (busBefore & 0x20)) & 0xFF;
+      const merged = ((out & ~0x20) | (openBus.internal & 0x20)) & 0xFF;
       // IMPORTANT: openBus.CPU NOT updated
       return merged;
     }

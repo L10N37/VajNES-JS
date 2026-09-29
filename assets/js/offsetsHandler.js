@@ -9,6 +9,7 @@ let debug = {
 let openBus = {
     PPU: 0x00,
     CPU: 0x00,
+    internal: 0x00,
     ppuDecayTimer: 0x00
 };
 
@@ -58,6 +59,7 @@ function checkReadOffset(address) {
   // MMC3 PRG read
   if (mapperNumber === 4 && addr >= 0x8000) {
     openBus.CPU=mapper4_prg_read(addr);
+    if(!DMC.dmaBusy && !DMA.active)openBus.internal=openBus.CPU;
     return openBus.CPU;
   }
 
@@ -154,7 +156,8 @@ function checkReadOffset(address) {
         openBus.PPU = result & 0xFF;
         openBus.ppuDecayTimer = 1789772;
 
-        return result;
+        raw = result;
+        break;
       }
 
       case 0x2007: {
@@ -258,6 +261,7 @@ function checkReadOffset(address) {
   const out =
     cpuOpenBusFinalise(addr, raw, code, false) & 0xFF;
 
+  if(!DMC.dmaBusy && !DMA.active)openBus.internal=out;
   return out;
 }
 
@@ -265,6 +269,7 @@ const PPU_WRITE_GATE_CYCLES = 29658;
 
 // ----------------- CPU write dispatch -----------------
 function checkWriteOffset(address, value) {
+  if(!DMC.dmaBusy && !DMA.active)openBus.internal=value&255;
   const addr = address & 0xFFFF;
   value &= 0xFF;
   
@@ -525,6 +530,7 @@ function cpuWrite(addr, value) {
   addr &= 0xFFFF;
   value &= 0xFF;
   systemMemory[addr & 0x7FF] = value;
+  openBus.internal = openBus.CPU = value;
 }
 
 // ----------------- mapper PRG -----------------
