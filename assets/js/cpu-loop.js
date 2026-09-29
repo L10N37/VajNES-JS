@@ -138,11 +138,13 @@ window.step = function () {
 
   // poll for interrupts after the current instruction finishes (unless SEI, CLI, PLP, we captured the decision in advance)
 
-  if(nmiPollPrevious) {
+  // BRK handles vector takeover internally. A later NMI waits until the
+  // first handler instruction has completed, rather than nesting immediately.
+  if(code!==0 && nmiPollPrevious) {
     serviceNMI();
     nmiPollCurrent=nmiPollPrevious=false;
     nmiPending=0;
-  } else irqTimingEngine();
+  } else if(code!==0) irqTimingEngine();
 
 
   // step per opcode, if enabled, pause, this is the end of the opcode handler / cpu-loop

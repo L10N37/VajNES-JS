@@ -13,13 +13,15 @@ Base: `ed77b52c9cc93f2ec6c867ccc23157c6075c282e`.
 | MMC3/video/RF stage | 107 | 37 | 0 |
 | Controller/audio/pixel-alignment stage | 108 | 36 | 0 |
 | PPUDATA/sprite-fetch stage | 110 | 34 | 0 |
+| Interrupt takeover stage | 112 | 32 | 0 |
 
-All 108 previous passes are retained. **$2007 read w/ rendering** and
-**Suddenly Resize Sprite** now pass. PPUDATA accesses clock the horizontal and
-vertical scroll counters during rendering, and sprite patterns are fetched at
-their bus phases using the current sprite-size setting instead of during early
-sprite evaluation. The ROM completed at 117100043 cycles, with its own
-144-test tally agreeing with the runner.
+All 110 previous passes are retained. **NMI Overlap BRK** and **NMI Overlap IRQ**
+now pass. BRK completes in seven cycles, and an NMI detected during the stack
+pushes can select the NMI vector while retaining the original return address and
+stacked B bit. Later NMIs wait until the first handler instruction completes.
+IRQ entry now performs its two discarded reads before pushing the stack.
+The ROM completed at 117100053 cycles, with its own 144-test tally agreeing
+with the runner. No tests were skipped.
 
 | Additional upstream suite | Before | Now |
 | --- | ---: | ---: |
@@ -31,7 +33,7 @@ semantics. It still reports failure 2 under the selected Sharp behaviour, and th
 regression gate verifies that outcome. This is **15/16 actual passes**, not 16/16.
 Reports include the untouched ROM hashes, status codes and diagnostic text.
 
-All **54** core/audio/controller/RF unit tests pass. Browser checks confirmed nonzero RF
+All **57** core/audio/controller/RF unit tests pass. Browser checks confirmed nonzero RF
 noise after a gesture, RF silence while running a ROM, and WASM/AudioWorklet PCM
 output with no page errors. Game audio has also been reported working by the
 user. Commercial MMC3 game compatibility still needs user playtesting.
@@ -257,7 +259,7 @@ ensure accuracy.
 ## Remaining accuracy work
 
 Use `tests/results/current.json` for the exact failures and error codes. Priorities:
-DMC DMA get/put arbitration and read retries, interrupt polling/NMI hijacking,
+DMC DMA get/put arbitration and read retries, interrupt flag latency,
 unstable store opcodes, PPU register races, sprite/OAM evaluation and background
 fetch bus behaviour. AccuracyCoin alone cannot validate audio fidelity.
 
@@ -268,3 +270,5 @@ https://www.nesdev.org/wiki/UxROM,
 https://www.nesdev.org/wiki/MMC1.
 
 PPUDATA scrolling reference: https://www.nesdev.org/wiki/PPU_scrolling#%242007_(PPUDATA)_reads_and_writes
+
+Interrupt timing reference: https://www.nesdev.org/wiki/CPU_interrupts

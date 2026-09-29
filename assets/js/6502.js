@@ -255,22 +255,22 @@ function BRK_IMP() {
 
   let lo, hi;
 
-  // Cycle 1: dummy fetch (padding byte)
+  // Cycle 2: dummy fetch (padding byte)
   checkReadOffset((pc + 1) & 0xFFFF);
   consumeCycle();
 
-  // Cycle 2: push PCH
+  // Cycle 3: push PCH
   cpuWrite(0x100 | CPUregisters.S, retHi);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
   consumeCycle();
 
-  // Cycle 3: push PCL
+  // Cycle 4: push PCL
   cpuWrite(0x100 | CPUregisters.S, retLo);
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
   consumeCycle();
 
-  // Cycle 4: push status (B=1, D=1 set on stack)
-  let statusByte = 0b00110000; // B=1, D=1
+  // Cycle 5: push status (B=1, unused bit=1)
+  let statusByte = 0b00110000; // B=1, unused bit=1
   statusByte |= (CPUregisters.P.C & 1) << 0;
   statusByte |= (CPUregisters.P.Z & 1) << 1;
   statusByte |= (CPUregisters.P.I & 1) << 2;
@@ -283,17 +283,23 @@ function BRK_IMP() {
   CPUregisters.P.I = 1; // Set I after pushing
   consumeCycle();
 
-  // Cycle 5: fetch vector low @ $FFFE
-  lo = checkReadOffset(0xFFFE) & 0xFF;
+  // Cycle 6: select the vector using the NMI latch from cycle 4.
+  // A takeover preserves BRK's return address and stacked B=1.
+  const vector = nmiPollPrevious ? 0xFFFA : 0xFFFE;
+  if(vector===0xFFFA) {
+    clearNmiEdge();
+    nmiPollCurrent=nmiPollPrevious=false;
+    nmiSignalSeen=false;
+  }
+  lo = checkReadOffset(vector) & 0xFF;
   consumeCycle();
 
-  // Cycle 6: fetch vector high @ $FFFF
-  hi = checkReadOffset(0xFFFF) & 0xFF;
+  // Cycle 7: fetch vector high
+  hi = checkReadOffset(vector+1) & 0xFF;
   consumeCycle();
 
-  // Cycle 7: set PC = hi<<8 | lo
+  // The vector fetch completes BRK; there is no eighth cycle.
   CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
-  consumeCycle();
 }
 
 function LDA_IMM() {

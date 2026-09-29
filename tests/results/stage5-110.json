@@ -2,11 +2,11 @@
   "suiteFinished": true,
   "suiteCommit": "673ef550db296136d52229961e7d39366116882a",
   "romSha256": "4fe8c2bc9abc6f4d418da47b73f62cba89fcacd950fae763097a1681d650e839",
-  "cpuCycles": 117100053,
+  "cpuCycles": 117100043,
   "pc": 32991,
   "counts": {
-    "pass": 112,
-    "fail": 32
+    "pass": 110,
+    "fail": 34
   },
   "results": [
     {
@@ -752,18 +752,18 @@
       "group": "CPU Interrupts",
       "name": "NMI Overlap BRK",
       "address": 1122,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 10,
+      "status": "fail",
+      "code": 2
     },
     {
       "page": 12,
       "group": "CPU Interrupts",
       "name": "NMI Overlap IRQ",
       "address": 1123,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 6,
+      "status": "fail",
+      "code": 1
     },
     {
       "page": 13,

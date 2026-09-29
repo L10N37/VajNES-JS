@@ -146,6 +146,12 @@ function serviceIRQ(bypass_interrupt_flag = false) {
     
     const pc = CPUregisters.PC & 0xFFFF;
 
+    // Cycles 1 and 2: discarded opcode fetch and dummy read.
+    checkReadOffset(pc);
+    consumeCycle();
+    checkReadOffset(pc);
+    consumeCycle();
+
     // Push PCH
     cpuWrite(0x0100 | (CPUregisters.S & 0xFF), (pc >> 8) & 0xFF);
     CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
@@ -172,17 +178,21 @@ function serviceIRQ(bypass_interrupt_flag = false) {
 
     // Set Interrupt Disable
     CPUregisters.P.I = 1;
+
+    // NMI can hijack an IRQ during its stack pushes. B remains clear.
+    const vector=nmiPollPrevious?0xFFFA:0xFFFE;
+    if(vector===0xFFFA) {
+      clearNmiEdge();
+      nmiPollCurrent=nmiPollPrevious=false;
+      nmiSignalSeen=false;
+    }
+    let lo = checkReadOffset(vector);
     consumeCycle();
 
-    // Fetch IRQ vector
-    let lo = checkReadOffset(0xFFFE);
-    consumeCycle();
-
-    let hi = checkReadOffset(0xFFFF);
+    let hi = checkReadOffset(vector+1);
     consumeCycle();
 
     // Set PC to IRQ vector
     CPUregisters.PC = ((hi << 8) | lo) & 0xFFFF;
 
-    consumeCycle();
 }

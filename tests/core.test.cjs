@@ -216,3 +216,54 @@ test('sprite patterns use CHR and size control at fetch time on NROM, MMC3 and A
   e.evaluate('if(mapperNumber===4)mapper4_chr_write(0x28,0x42);else CHR_ROM[0x28]=0x42;PPUclock.dot=262;renderingBusTick()');assert.equal(e.evaluate('spritesNext.hi[0]'),0x42);
  }
 });
+function interruptROM() {
+ const bytes=rom();bytes[16]=0x00;bytes[17]=0xea;
+ bytes[16+0x1000]=0xea;bytes[16+0x2000]=0xea;
+ bytes.set([0,0xa0,0,0x80,0,0x90],16+0x7ffa);
+ return bytes;
+}
+test('BRK uses seven bus cycles, skips its padding byte and stacks B without setting decimal',()=>{
+ const e=emulator(interruptROM());
+ const result=e.evaluate(`(()=>{
+  const start=cpuCycles,reads=[],writes=[],read=checkReadOffset,write=cpuWrite;
+  checkReadOffset=a=>{reads.push([cpuCycles-start,a]);return read(a)};
+  cpuWrite=(a,v)=>{writes.push([cpuCycles-start,a,v]);return write(a,v)};
+  cpuRunning=true;const cycles=window.step();checkReadOffset=read;cpuWrite=write;
+  return {cycles,reads,writes,pc:CPUregisters.PC,decimal:CPUregisters.P.D};
+ })()`);
+ assert.deepEqual(result,{cycles:7,reads:[[0,0x8000],[1,0x8001],[5,0xfffe],[6,0xffff]],writes:[[2,0x1fd,0x80],[3,0x1fc,2],[4,0x1fb,0x34]],pc:0x9000,decimal:0});
+});
+test('NMI takeover window preserves BRK stack and defers later edges until after a handler instruction',()=>{
+ for(let edgeCycle=1;edgeCycle<=7;edgeCycle++){
+  const e=emulator(interruptROM());
+  const result=e.evaluate(`(()=>{
+   const clock=consumeCycle;let cycles=0;
+   consumeCycle=()=>{if(++cycles===${edgeCycle})PPU_FRAME_FLAGS|=4;clock()};
+   cpuRunning=true;const used=window.step();consumeCycle=clock;
+   return {used,pc:CPUregisters.PC,stack:Array.from(systemMemory.slice(0x1fb,0x1fe))};
+  })()`);
+  assert.equal(result.used,7);assert.equal(result.pc,edgeCycle<=4?0xa000:0x9000);
+  assert.deepEqual(result.stack,[0x34,2,0x80]);
+  if(edgeCycle>=5){
+   assert.equal(e.evaluate('window.step()'),9);
+   assert.equal(e.evaluate('CPUregisters.PC'),0xa000);
+   assert.equal(e.evaluate('systemMemory[0x1f9]'),1); // Return after the handler's NOP.
+  }else{
+   assert.equal(e.evaluate('window.step()'),2); // Taken NMI is not serviced twice.
+  }
+ }
+});
+test('IRQ reads PC twice before stacking and permits NMI takeover without stacking B',()=>{
+ for(const hijack of [false,true]){
+  const e=emulator(interruptROM());
+  const result=e.evaluate(`(()=>{
+   const start=cpuCycles,reads=[],read=checkReadOffset,clock=consumeCycle;let clocks=0;
+   CPUregisters.P.I=0;
+   checkReadOffset=a=>{reads.push([cpuCycles-start,a]);return read(a)};
+   consumeCycle=()=>{if(++clocks===4 && ${hijack})PPU_FRAME_FLAGS|=4;clock()};
+   serviceIRQ();checkReadOffset=read;consumeCycle=clock;
+   return {cycles:cpuCycles-start,reads,pc:CPUregisters.PC,stack:Array.from(systemMemory.slice(0x1fb,0x1fe))};
+  })()`);
+  assert.deepEqual(result,{cycles:7,reads:[[0,0x8000],[1,0x8000],[5,hijack?0xfffa:0xfffe],[6,hijack?0xfffb:0xffff]],pc:hijack?0xa000:0x9000,stack:[0x20,0,0x80]});
+ }
+});
