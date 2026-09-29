@@ -9,31 +9,6 @@ function _region(addr) {
   return 5;                      // PRGROM
 }
 
-// Indexed READ ops that can do the page-cross dummy read behaviour (OpenBus test #3 expectations)
-function _isIndexedReadOp(op) {
-  switch (op & 0xFF) {
-    // LDA abs,X / abs,Y
-    case 0xBD: case 0xB9:
-    // LDX abs,Y / LDY abs,X
-    case 0xBE: case 0xBC:
-    // ORA abs,X / abs,Y
-    case 0x1D: case 0x19:
-    // AND abs,X / abs,Y
-    case 0x3D: case 0x39:
-    // EOR abs,X / abs,Y
-    case 0x5D: case 0x59:
-    // ADC abs,X / abs,Y
-    case 0x7D: case 0x79:
-    // CMP abs,X / abs,Y
-    case 0xDD: case 0xD9:
-    // SBC abs,X / abs,Y
-    case 0xFD: case 0xF9:
-      return true;
-    default:
-      return false;
-  }
-}
-
 function cpuOpenBusFinalise(addr, raw, op, isWrite) {
   addr &= 0xFFFF;
   raw  &= 0xFF;
@@ -85,17 +60,6 @@ function cpuOpenBusFinalise(addr, raw, op, isWrite) {
     if (!isWrite) {
       // default: floating bus -> keep whatever was on the bus
       out = busBefore & 0xFF;
-
-      // ROM-specific quirk your ASM expects:
-      // LDA abs ($AD) from open-bus returns the operand HIGH byte (address high).
-      if (op === 0xAD) {
-        out = (addr >>> 8) & 0xFF;
-      }
-
-      // Indexed reads in open-bus must KEEP bus (don’t become new hi)
-      if (_isIndexedReadOp(op)) {
-        out = busBefore & 0xFF;
-      }
 
       // IMPORTANT: EXP reads do NOT update openBus.CPU
       openBus.CPU = busBefore & 0xFF;

@@ -267,3 +267,46 @@ test('IRQ reads PC twice before stacking and permits NMI takeover without stacki
   assert.deepEqual(result,{cycles:7,reads:[[0,0x8000],[1,0x8000],[5,hijack?0xfffa:0xfffe],[6,hijack?0xfffb:0xffff]],pc:hijack?0xa000:0x9000,stack:[0x20,0,0x80]});
  }
 });
+test('DMC load requests wait for the next read and fetch on the get phase',()=>{
+ for(const start of [100,101]){
+  const bytes=rom();bytes[16+0x4000]=0xa5;const e=emulator(bytes);
+  e.evaluate(`cpuCycles=${start};DMC.timer=100;dmcSetSampleAddressFrom4012(0);dmcSetSampleLengthFrom4013(0);dmcWrite4015(0x10)`);
+  const ready=start+((start&1)?4:3);assert.equal(e.evaluate('DMC.dmaAt'),ready);
+  e.evaluate(`while(cpuCycles<${ready})consumeCycle();checkWriteOffset(0,0x37);consumeCycle()`);
+  assert.equal(e.evaluate('DMC.fetchCount'),0); // RDY cannot stop a write.
+  const result=e.evaluate('(()=>{const before=cpuCycles;const value=checkReadOffset(0);return {value,stolen:cpuCycles-before,buffer:DMC.sampleBuffer,remaining:DMC.bytesRemaining,phase:cpuCycles&1}})()');
+  assert.deepEqual(result,{value:0x37,stolen:4,buffer:0xa5,remaining:0,phase:0});
+ }
+});
+test('DMC halt retries PPUDATA and leaves the sample byte on a floating CPU bus',()=>{
+ const bytes=rom();bytes[16+0x4000]=0x5a;
+ for(const start of [100,101]){
+  const e=emulator(bytes);
+  e.evaluate(`cpuCycles=${start};DMC.timer=100;DMC.currentAddress=0xc000;DMC.bytesRemaining=1;DMC.dmaRequest=true;DMC.dmaAt=0;PPUMASK=0;VRAM_ADDR=0x2000;VRAM_DATA=9;VRAM.set([10,11,12,13]);`);
+  assert.equal(e.evaluate('checkReadOffset(0x2007)'),start&1?11:12);
+  assert.equal(e.evaluate('VRAM_ADDR'),0x2000+(start&1?3:4));
+  e.evaluate(`cpuCycles=${start};DMC.currentAddress=0xc000;DMC.bytesRemaining=1;DMC.dmaRequest=true;code=0xad;openBus.CPU=0x40;`);
+  assert.equal(e.evaluate('checkReadOffset(0x5000)'),0x5a);
+ }
+});
+test('DMC disable preserves buffered audio and timer phase; rate writes do not restart the divider',()=>{
+ const e=emulator();e.evaluate('DMC.timer=20;DMC.bitsRemaining=3;DMC.sampleBuffer=0xa5;DMC.sampleBufferFull=true;DMC.shiftRegister=7;DMC.silence=false;dmcWrite4015(0);dmcSetControlFrom4010(15)');
+ assert.deepEqual(e.evaluate('[DMC.timer,DMC.bitsRemaining,DMC.sampleBufferFull,DMC.shiftRegister,DMC.silence]'),[20,3,true,7,false]);
+ e.evaluate('consumeCycle()');assert.equal(e.evaluate('DMC.timer'),19);
+ e.evaluate('dmcSetSampleLengthFrom4013(1);dmcWrite4015(0x10)');assert.equal(e.evaluate('DMC.dmaRequest'),false);assert.equal(e.evaluate('DMC.bitsRemaining'),3);
+});
+test('overlapping DMC load and output reload cannot fetch past a one-byte sample',()=>{
+ const e=emulator();e.evaluate('cpuCycles=101;DMC.timer=0;DMC.bitsRemaining=1;DMC.bytesRemaining=1;DMC.currentAddress=0xc000;DMC.sampleBufferFull=false;DMC.loop=false;DMC.dmaRequest=true;DMC.dmaAt=0;checkReadOffset(0)');
+ assert.equal(e.evaluate('DMC.bytesRemaining'),0);assert.equal(e.evaluate('DMC.fetchCount'),1);assert.equal(e.evaluate('DMC.dmaRequest'),false);
+ e.evaluate('checkReadOffset(1)');assert.equal(e.evaluate('DMC.fetchCount'),1);
+});
+test('implied instructions read the next address; stack pulls include both dummy reads',()=>{
+ for(const opcode of [0xea,0x18,0x58,0xe8,0xaa,0x0a]){
+  const bytes=rom();bytes[16]=opcode;const e=emulator(bytes);
+  const trace=e.evaluate('(()=>{const read=checkReadOffset,reads=[];checkReadOffset=a=>{reads.push(a);return read(a)};cpuRunning=true;const cycles=window.step();checkReadOffset=read;return {reads,cycles}})()');
+  assert.deepEqual(trace,{reads:[0x8000,0x8001],cycles:2});
+ }
+ const bytes=rom();bytes[16]=0x68;const e=emulator(bytes);
+ const trace=e.evaluate('(()=>{systemMemory[0x1fe]=0x81;const read=checkReadOffset,reads=[];checkReadOffset=a=>{reads.push(a);return read(a)};cpuRunning=true;const cycles=window.step();checkReadOffset=read;return {reads,cycles,a:CPUregisters.A}})()');
+ assert.deepEqual(trace,{reads:[0x8000,0x8001,0x1fd,0x1fe],cycles:4,a:0x81});
+});

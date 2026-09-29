@@ -2,11 +2,11 @@
   "suiteFinished": true,
   "suiteCommit": "673ef550db296136d52229961e7d39366116882a",
   "romSha256": "4fe8c2bc9abc6f4d418da47b73f62cba89fcacd950fae763097a1681d650e839",
-  "cpuCycles": 120100044,
+  "cpuCycles": 117100053,
   "pc": 32991,
   "counts": {
-    "pass": 122,
-    "fail": 22
+    "pass": 112,
+    "fail": 32
   },
   "results": [
     {
@@ -743,9 +743,9 @@
       "group": "CPU Interrupts",
       "name": "Interrupt flag latency",
       "address": 1121,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 6,
+      "status": "fail",
+      "code": 1
     },
     {
       "page": 12,
@@ -770,53 +770,53 @@
       "group": "APU Registers and DMA tests",
       "name": "DMA + Open Bus",
       "address": 1132,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 10,
+      "status": "fail",
+      "code": 2
     },
     {
       "page": 13,
       "group": "APU Registers and DMA tests",
       "name": "DMA + $2002 Read",
       "address": 1160,
-      "raw": 5,
-      "status": "pass",
-      "code": 1
+      "raw": 10,
+      "status": "fail",
+      "code": 2
     },
     {
       "page": 13,
       "group": "APU Registers and DMA tests",
       "name": "DMA + $2007 Read",
       "address": 1100,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 10,
+      "status": "fail",
+      "code": 2
     },
     {
       "page": 13,
       "group": "APU Registers and DMA tests",
       "name": "DMA + $2007 Write",
       "address": 1103,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 6,
+      "status": "fail",
+      "code": 1
     },
     {
       "page": 13,
       "group": "APU Registers and DMA tests",
       "name": "DMA + $4015 Read",
       "address": 1117,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 10,
+      "status": "fail",
+      "code": 2
     },
     {
       "page": 13,
       "group": "APU Registers and DMA tests",
       "name": "DMA + $4016 Read",
       "address": 1118,
-      "raw": 5,
-      "status": "pass",
+      "raw": 6,
+      "status": "fail",
       "code": 1
     },
     {
@@ -824,36 +824,36 @@
       "group": "APU Registers and DMA tests",
       "name": "DMC DMA Bus Conflicts",
       "address": 1131,
-      "raw": 10,
+      "raw": 6,
       "status": "fail",
-      "code": 2
+      "code": 1
     },
     {
       "page": 13,
       "group": "APU Registers and DMA tests",
       "name": "DMC DMA + OAM DMA",
       "address": 1143,
-      "raw": 10,
+      "raw": 6,
       "status": "fail",
-      "code": 2
+      "code": 1
     },
     {
       "page": 13,
       "group": "APU Registers and DMA tests",
       "name": "Explicit DMA Abort",
       "address": 1145,
-      "raw": 10,
+      "raw": 6,
       "status": "fail",
-      "code": 2
+      "code": 1
     },
     {
       "page": 13,
       "group": "APU Registers and DMA tests",
       "name": "Implicit DMA Abort",
       "address": 1144,
-      "raw": 10,
+      "raw": 6,
       "status": "fail",
-      "code": 2
+      "code": 1
     },
     {
       "page": 14,
@@ -905,18 +905,18 @@
       "group": "APU Tests",
       "name": "Delta Modulation Channel",
       "address": 1130,
-      "raw": 86,
+      "raw": 74,
       "status": "fail",
-      "code": 21
+      "code": 18
     },
     {
       "page": 14,
       "group": "APU Tests",
       "name": "APU Register Activation",
       "address": 1116,
-      "raw": 18,
+      "raw": 6,
       "status": "fail",
-      "code": 4
+      "code": 1
     },
     {
       "page": 14,
@@ -941,18 +941,18 @@
       "group": "CPU Behavior 2",
       "name": "Instruction Timing",
       "address": 1120,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 10,
+      "status": "fail",
+      "code": 2
     },
     {
       "page": 15,
       "group": "CPU Behavior 2",
       "name": "Implied Dummy Reads",
       "address": 1133,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 14,
+      "status": "fail",
+      "code": 3
     },
     {
       "page": 15,
@@ -977,9 +977,9 @@
       "group": "CPU Behavior 2",
       "name": "Internal Data Bus",
       "address": 1168,
-      "raw": 10,
+      "raw": 6,
       "status": "fail",
-      "code": 2
+      "code": 1
     },
     {
       "page": 17,
@@ -1184,9 +1184,9 @@
       "group": "PPU Misc.",
       "name": "INC $4014",
       "address": 1152,
-      "raw": 1,
-      "status": "pass",
-      "code": 0
+      "raw": 10,
+      "status": "fail",
+      "code": 2
     },
     {
       "page": 20,

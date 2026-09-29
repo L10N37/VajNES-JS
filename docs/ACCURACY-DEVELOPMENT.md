@@ -14,26 +14,44 @@ Base: `ed77b52c9cc93f2ec6c867ccc23157c6075c282e`.
 | Controller/audio/pixel-alignment stage | 108 | 36 | 0 |
 | PPUDATA/sprite-fetch stage | 110 | 34 | 0 |
 | Interrupt takeover stage | 112 | 32 | 0 |
+| CPU bus/DMC timing stage | 122 | 22 | 0 |
 
-All 110 previous passes are retained. **NMI Overlap BRK** and **NMI Overlap IRQ**
-now pass. BRK completes in seven cycles, and an NMI detected during the stack
-pushes can select the NMI vector while retaining the original return address and
-stacked B bit. Later NMIs wait until the first handler instruction completes.
-IRQ entry now performs its two discarded reads before pushing the stack.
-The ROM completed at 117100053 cycles, with its own 144-test tally agreeing
+All 112 previous passes are retained. Ten new passes:
+
+- Interrupt flag latency
+- DMA + Open Bus
+- DMA + $2002 Read
+- DMA + $2007 Read and Write
+- DMA + $4015 Read
+- DMA + $4016 Read
+- Instruction Timing
+- Implied Dummy Reads
+- INC $4014
+
+DMC requests now halt on CPU reads, retry the halted read, and align sample fetches
+to the APU get phase. The output divider keeps running while sample reads are
+disabled; rate changes preserve its phase, and disabling the channel retains
+buffered audio. CPU stack and implied instructions now perform their dummy bus
+reads. Floating expansion reads use the actual bus value, including DMA data.
+The independent instruction suite also exposed five undocumented opcode timing
+errors (RLA $23/$33/$37, LAX $B3, LAS $BB), now corrected.
+
+The ROM completed at 120100044 cycles, with its own 144-test tally agreeing
 with the runner. No tests were skipped.
 
 | Additional upstream suite | Before | Now |
 | --- | ---: | ---: |
 | `mmc3_test_2`: normal Sharp MMC3 tests 1–5 | 1/5 | 5/5 |
 | `ppu_vbl_nmi`: all ten single tests | 8/10 | 10/10 |
+| `cpu_interrupts_v2`: five single tests | Not previously gated | 5/5 |
+| `instr_timing`: instruction and branch singles | Not previously gated | 2/2 |
 
 `6-MMC3_alt` intentionally expects another chip's incompatible zero-reload IRQ
 semantics. It still reports failure 2 under the selected Sharp behaviour, and the
-regression gate verifies that outcome. This is **15/16 actual passes**, not 16/16.
+regression gate verifies that outcome. This is **22/23 actual passes** across the expanded suite.
 Reports include the untouched ROM hashes, status codes and diagnostic text.
 
-All **57** core/audio/controller/RF unit tests pass. Browser checks confirmed nonzero RF
+All **62** core/audio/controller/RF unit tests pass. Browser checks confirmed nonzero RF
 noise after a gesture, RF silence while running a ROM, and WASM/AudioWorklet PCM
 output with no page errors. Game audio has also been reported working by the
 user. Commercial MMC3 game compatibility still needs user playtesting.
@@ -247,10 +265,10 @@ tested build. Tests also cover 44.1/48 kHz pulse pitch/sample counts, envelopes,
 sweep negate, triangle gating, noise modes, DMC range, batching, worklet buffering,
 and unchanged CPU/PPU/APU execution with the renderer attached.
 
-This is experimental audio, not verified hardware-equivalent sound. DMC reader
-startup, disable/timer behaviour, get/put arbitration and bus retries remain
-inaccurate. A free-running/immediate-fetch attempt exposed an open-bus execution
-crash and was withheld; the established DMA timing remains. No PAL or expansion
+This is experimental audio, not verified hardware-equivalent sound. DMC startup,
+buffer retention, free-running timer, read retries and ordinary get/put timing
+are improved. DMA abort races, simultaneous OAM/DMC arbitration and internal APU
+bus conflicts still fail tests and need further work. No PAL or expansion
 audio is implemented. Buffering can underrun on slow/background tabs; the browser
 smoke observed one underrun and one queue reset during startup/load. Hardware
 waveform comparison and listening tests are still needed. C++ alone does not
@@ -259,7 +277,7 @@ ensure accuracy.
 ## Remaining accuracy work
 
 Use `tests/results/current.json` for the exact failures and error codes. Priorities:
-DMC DMA get/put arbitration and read retries, interrupt flag latency,
+DMC/OAM DMA arbitration, abort races and internal APU bus conflicts,
 unstable store opcodes, PPU register races, sprite/OAM evaluation and background
 fetch bus behaviour. AccuracyCoin alone cannot validate audio fidelity.
 
@@ -272,3 +290,5 @@ https://www.nesdev.org/wiki/MMC1.
 PPUDATA scrolling reference: https://www.nesdev.org/wiki/PPU_scrolling#%242007_(PPUDATA)_reads_and_writes
 
 Interrupt timing reference: https://www.nesdev.org/wiki/CPU_interrupts
+
+DMC DMA reference: https://www.nesdev.org/wiki/DMA

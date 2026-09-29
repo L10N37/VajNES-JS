@@ -131,10 +131,6 @@ function consumeCycle() {
 
   clockDMC();
 
-  if (DMC.dmaRequest) {
-    dmcDoDMA();
-  }
-    
   if (openBus.ppuDecayTimer > 0) {
     openBus.ppuDecayTimer--;
     if (openBus.ppuDecayTimer === 0) {
@@ -717,7 +713,8 @@ function STA_INDY() { // ($nn),Y
 
 }
 
-function CLC_IMP() { // Clear Carry
+function CLC_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff); // Clear Carry
   // C1: opcode fetch
   // C2: execute
   CPUregisters.P.C = 0;
@@ -726,41 +723,47 @@ function CLC_IMP() { // Clear Carry
 
 }
 
-function SEC_IMP() { // Set Carry
+function SEC_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff); // Set Carry
   CPUregisters.P.C = 1;
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
 
 }
 
-function CLI_IMP() { // Clear Interrupt Disable
+function CLI_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff); // Clear Interrupt Disable
   CPUregisters.P.I = 0;
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
 
 }
 
-function SEI_IMP() { // Set Interrupt Disable
+function SEI_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff); // Set Interrupt Disable
   CPUregisters.P.I = 1;
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
 }
 
-function CLD_IMP() { // Clear Decimal
+function CLD_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff); // Clear Decimal
   CPUregisters.P.D = 0;
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
 
 }
 
-function SED_IMP() { // Set Decimal
+function SED_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff); // Set Decimal
   CPUregisters.P.D = 1;
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
 
 }
 
-function CLV_IMP() { // Clear Overflow
+function CLV_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff); // Clear Overflow
   CPUregisters.P.V = 0;
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
@@ -956,6 +959,7 @@ function JMP_IND() {
 }
 
 function ROL_ACC() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1
   let value = CPUregisters.A;
   const carryIn = CPUregisters.P.C;
@@ -1024,6 +1028,7 @@ function ROL_ABSX() {
 }
 
 function TXS_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1
   CPUregisters.S = CPUregisters.X;
   consumeCycle(); // C2
@@ -1032,6 +1037,7 @@ function TXS_IMP() {
 }
 
 function TSX_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1
   CPUregisters.X = CPUregisters.S;
   CPUregisters.P.Z = +(CPUregisters.X === 0);
@@ -1598,6 +1604,7 @@ function AND_INDY() {
 
 // ---------- ASL (Accumulator) — 2 cycles ----------
 function ASL_ACC() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1
   const old    = CPUregisters.A & 0xFF;
   const result = (old << 1) & 0xFF;
@@ -1725,6 +1732,7 @@ function BIT_ABS() {
 
 // ---------- LSR (Accumulator) — 2 cycles ----------
 function LSR_ACC() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1
   const oldA  = CPUregisters.A & 0xFF;
   const result = (oldA >>> 1) & 0xFF;
@@ -3115,6 +3123,7 @@ function SBC_INDY() { // 5 (+1 if page cross)
 
 // TYA — implied (2 cycles: fetch, execute)
 function TYA_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1: opcode fetch
   // C2: transfer + flags
   CPUregisters.A = CPUregisters.Y & 0xFF;
@@ -3127,6 +3136,7 @@ function TYA_IMP() {
 
 // TXA — implied (2 cycles: fetch, execute)
 function TXA_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1: opcode fetch
   // C2: transfer + flags
   CPUregisters.A = CPUregisters.X & 0xFF;
@@ -3140,7 +3150,8 @@ function TXA_IMP() {
 // PHP — implied (3 cycles: fetch, write P, dec S)
 // Pushes P with B=1 and U=1 in the pushed byte.
 function PHP_IMP() {
-  // C1: opcode fetch
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
+  consumeCycle();
   // Build status byte (with B=1, U=1)
   let p =
       ((CPUregisters.P.C & 1) << 0) |
@@ -3152,28 +3163,25 @@ function PHP_IMP() {
       ((CPUregisters.P.V & 1) << 6) |
       ((CPUregisters.P.N & 1) << 7);
 
-  // C2: write P to stack
+  // C3: write P to stack
   checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), p & 0xFF);
   consumeCycle();
 
-  // C3: post-decrement S (internal)
+  // Stack pointer changes after the write.
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
 
 }
 
-// PLP — implied (4 cycles: fetch, inc S, read P, apply P)
+// PLP — fetch, PC dummy read, stack dummy read, status pull (4 cycles).
 // Restores C,Z,I,D,V,N from pulled byte; ignores B; forces U=1.
 function PLP_IMP() {
-  // C1: opcode fetch
-  // C2: pre-increment S
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   consumeCycle();
-
-  // C3: read P from stack
+  checkReadOffset(0x100|CPUregisters.S);
+  consumeCycle();
+  CPUregisters.S=(CPUregisters.S+1)&255;
   const pv = checkReadOffset(0x0100 | (CPUregisters.S & 0xFF)) & 0xFF;
-  consumeCycle();
 
   // C4: apply flags (B ignored, U forced)
   CPUregisters.P.C =  pv        & 1;
@@ -3187,30 +3195,28 @@ function PLP_IMP() {
 
 }
 
-// PHA — implied (3 cycles: fetch, write A, dec S)
+// PHA — fetch, dummy read, stack write (3 cycles).
 function PHA_IMP() {
-  // C1: opcode fetch
-  // C2: write A to stack
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
+  consumeCycle();
+  // C3: write A to stack
   checkWriteOffset(0x0100 | (CPUregisters.S & 0xFF), CPUregisters.A & 0xFF);
   consumeCycle();
 
-  // C3: post-decrement S
+  // Stack pointer changes after the write.
   CPUregisters.S = (CPUregisters.S - 1) & 0xFF;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
 
 }
 
-// PLA — implied (4 cycles: fetch, inc S, read, transfer+flags)
+// PLA — fetch, PC dummy read, stack dummy read, stack pull (4 cycles).
 function PLA_IMP() {
-  // C1: opcode fetch
-  // C2: pre-increment S
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   consumeCycle();
-
-  // C3: read from stack
+  checkReadOffset(0x100|CPUregisters.S);
+  consumeCycle();
+  CPUregisters.S=(CPUregisters.S+1)&255;
   const val = checkReadOffset(0x0100 | (CPUregisters.S & 0xFF)) & 0xFF;
-  consumeCycle();
 
   // C4: transfer to A + flags
   CPUregisters.A   = val;
@@ -3221,15 +3227,14 @@ function PLA_IMP() {
 
 }
 
-// RTI — implied (6 cycles: fetch, incS, read P/apply, incS, read PCL, incS+read PCH/jump)
+// RTI — fetch, two dummy reads, then pull P, PCL and PCH (6 cycles).
 // B ignored, U forced to 1 when restoring P.
 function RTI_IMP() {
-  // C1: opcode fetch
-  // C2: pre-increment S
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   consumeCycle();
-
-  // C3: read P, apply (ignore B, force U)
+  checkReadOffset(0x100|CPUregisters.S);
+  consumeCycle();
+  CPUregisters.S=(CPUregisters.S+1)&255;
   const pv = checkReadOffset(0x0100 | (CPUregisters.S & 0xFF)) & 0xFF;
   CPUregisters.P.C =  pv        & 1;
   CPUregisters.P.Z = (pv >> 1)  & 1;
@@ -3241,7 +3246,6 @@ function RTI_IMP() {
 
   // C4: pre-increment S (for PCL)
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  consumeCycle();
 
   // C5: read PCL
   const pcl = checkReadOffset(0x0100 | (CPUregisters.S & 0xFF)) & 0xFF;
@@ -3256,33 +3260,32 @@ function RTI_IMP() {
 
 // ---------------- RTS (implied) — 6 cycles ----------------
 function RTS_IMP() {
-  // C1: opcode fetch
-  // C2: pre-increment S
-  CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   consumeCycle();
-
-  // C3: read PCL
+  checkReadOffset(0x100|CPUregisters.S);
+  consumeCycle();
+  CPUregisters.S=(CPUregisters.S+1)&255;
   const pcl = checkReadOffset(0x0100 | (CPUregisters.S & 0xFF)) & 0xFF;
   consumeCycle();
 
   // C4: pre-increment S
   CPUregisters.S = (CPUregisters.S + 1) & 0xFF;
-  consumeCycle();
 
   // C5: read PCH
   const pch = checkReadOffset(0x0100 | (CPUregisters.S & 0xFF)) & 0xFF;
   consumeCycle();
 
   // C6: set PC = (PCH:PCL)+1
+  checkReadOffset((pch<<8)|pcl);
   CPUregisters.PC = (((pch << 8) | pcl) + 1) & 0xFFFF;
   consumeCycle();
 }
 
 function NOP_HANDLER() {
 
-  const code = checkReadOffset(CPUregisters.PC) & 0xFF;
+  const opcode = code;
 
-  switch (code) {
+  switch (opcode) {
 
     // ------------------------------------------------
     // 1-byte NOPs (2 cycles)
@@ -3295,6 +3298,7 @@ function NOP_HANDLER() {
     case 0x7A:
     case 0xDA:
     case 0xFA:
+      checkReadOffset((CPUregisters.PC+1)&0xffff);
       consumeCycle();
       CPUregisters.PC = (CPUregisters.PC + 1) & 0xFFFF;
       return;
@@ -3478,6 +3482,7 @@ function CPX_ABS() {
 
 // -------- DEX — 2 cycles --------
 function DEX_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1: opcode fetch
   // C2: execute
   CPUregisters.X = (CPUregisters.X - 1) & 0xFF;
@@ -3490,6 +3495,7 @@ function DEX_IMP() {
 
 // -------- DEY — 2 cycles --------
 function DEY_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1: opcode fetch
   // C2: execute
   CPUregisters.Y = (CPUregisters.Y - 1) & 0xFF;
@@ -3502,6 +3508,7 @@ function DEY_IMP() {
 
 // -------- INX — 2 cycles --------
 function INX_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1: opcode fetch
   // C2: execute
   CPUregisters.X = (CPUregisters.X + 1) & 0xFF;
@@ -3514,6 +3521,7 @@ function INX_IMP() {
 
 // -------- INY — 2 cycles --------
 function INY_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1: opcode fetch
   // C2: execute
   CPUregisters.Y = (CPUregisters.Y + 1) & 0xFF;
@@ -3525,6 +3533,7 @@ function INY_IMP() {
 }
 // -------- ROR A (accumulator) — 2 cycles --------
 function ROR_ACC() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1: opcode fetch
   // C2: execute (read/modify A)
   const carryIn = CPUregisters.P.C & 1;
@@ -3611,6 +3620,7 @@ function ROR_ABSX() {
 }
 // -------- TAX (implied) — 2 cycles --------
 function TAX_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1: opcode fetch
   // C2: execute transfer + flags
   CPUregisters.X = CPUregisters.A & 0xFF;
@@ -3623,6 +3633,7 @@ function TAX_IMP() {
 
 // -------- TAY (implied) — 2 cycles --------
 function TAY_IMP() {
+  checkReadOffset((CPUregisters.PC+1)&0xffff);
   // C1: opcode fetch
   // C2: execute transfer + flags
   CPUregisters.Y = CPUregisters.A & 0xFF;
@@ -4104,18 +4115,20 @@ function LAX_INDY() {
   const effective = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
 
   // page cross (+1)
-  if ( ((base ^ effective) & 0xFF00) !== 0 ) consumeCycle();
+  if (((base ^ effective) & 0xFF00) !== 0) {
+    checkReadOffset((base&0xff00)|(effective&255));
+    consumeCycle();
+  }
 
   // C5: read @EA
   let value = checkReadOffset(effective) & 0xFF;
   consumeCycle();
 
-  // C6: load A/X, set flags
+  // Load A/X and flags without an additional bus cycle
   CPUregisters.A = value;
   CPUregisters.X = value;
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
   CPUregisters.P.N = (value >>> 7) & 1;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -4995,6 +5008,9 @@ function RLA_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
+  checkReadOffset(zp);
+  consumeCycle();
+
   // C3: read low @(zp+X)
   const low = checkReadOffset((zp + (CPUregisters.X & 0xFF)) & 0xFF) & 0xFF;
   consumeCycle();
@@ -5042,6 +5058,8 @@ function RLA_INDY() {
   // C5: EA = base+Y, then read old
   const base = ((hi << 8) | lo) & 0xFFFF;
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  checkReadOffset((base&0xff00)|(addr&255));
+  consumeCycle();
   const old  = checkReadOffset(addr) & 0xFF;
   consumeCycle();
 
@@ -5066,6 +5084,9 @@ function RLA_ZPX() {
   // C1: opcode
   // C2: fetch zp
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  consumeCycle();
+
+  checkReadOffset(base);
   consumeCycle();
 
   // C3: read old at (zp+X)
@@ -5462,7 +5483,7 @@ function SHA_INDY() { // $93
 }
 
 function LAS_ABSY() {
-  // Always 4 cycles (no page-cross penalty)
+  // Four cycles, plus one on page crossing.
 
   // C1: opcode
   // C2: lo
@@ -5476,6 +5497,10 @@ function LAS_ABSY() {
   // C4: read from EA = base+Y, then update regs/flags
   const base    = ((hi << 8) | lo) & 0xFFFF;
   const address = (base + (CPUregisters.Y & 0xFF)) & 0xFFFF;
+  if((base^address)&0xff00) {
+    checkReadOffset((base&0xff00)|(address&255));
+    consumeCycle();
+  }
   let value   = checkReadOffset(address) & CPUregisters.S;
 
   CPUregisters.A = value;

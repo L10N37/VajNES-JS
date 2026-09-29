@@ -27,6 +27,8 @@ const DMC = {
 
   // DMA request flag
   dmaRequest: false,
+  dmaBusy: false,
+  dmaAt: 0,
 
   // debug
   fetchCount: 0
@@ -49,8 +51,8 @@ function dmcRestartSample() {
   }
 }
 
+// The output divider and shift register continue running when sample reads stop.
 function clockDMC() {
-  if (!DMC.enabled) return;
   DMC.timer--;
 
   if (DMC.timer >= 0) return;
@@ -103,6 +105,8 @@ function clockDMC() {
     // ---- request DMA ----
     if (DMC.bytesRemaining > 0 && !DMC.sampleBufferFull) {
       DMC.dmaRequest = true;
+      // Reload halts use put cycles (even in this power-on alignment).
+      DMC.dmaAt = cpuCycles + (cpuCycles & 1);
 
       if (debug.dmcDma) {
         console.log(
@@ -115,16 +119,22 @@ function clockDMC() {
   }
 }
 
-function dmcDoDMA() {
+function dmcDoDMA(haltedAddress = CPUregisters.PC) {
   if (!DMC.dmaRequest) return;
 
   DMC.dmaRequest = false;
-
-  // DMC steals 4 CPU cycles
+  DMC.dmaBusy = true;
+  // Halt and dummy cycles repeat the CPU read. A get must land on the
+  // APU's get phase; writes never enter this function. Controller /OE stays
+  // asserted through the dummy cycles, so they do not clock additional bits.
+  checkReadOffset(haltedAddress);
   consumeCycle();
+  if(haltedAddress!==0x4016 && haltedAddress!==0x4017)checkReadOffset(haltedAddress);
   consumeCycle();
-  consumeCycle();
-  consumeCycle();
+  if(!(cpuCycles&1)) {
+    if(haltedAddress!==0x4016 && haltedAddress!==0x4017)checkReadOffset(haltedAddress);
+    consumeCycle();
+  }
 
   const addr = DMC.currentAddress & 0xFFFF;
 
@@ -134,6 +144,8 @@ function dmcDoDMA() {
 
   DMC.sampleBuffer = value;
   DMC.sampleBufferFull = true;
+  // A buffer-empty event during this fetch does not need a second fetch.
+  DMC.dmaRequest = false;
 
   DMC.fetchCount++;
 
@@ -180,6 +192,8 @@ function dmcDoDMA() {
       }
     }
   }
+  consumeCycle();
+  DMC.dmaBusy = false;
 }
 
 function dmcSetControlFrom4010(value) {
@@ -197,8 +211,7 @@ function dmcSetControlFrom4010(value) {
   ];
 
   DMC.timerPeriod = DMC_RATE_TABLE[DMC.rateIndex];
-  // TODO: preserve divider phase when bus-aware DMC DMA is implemented.
-  DMC.timer = DMC.timerPeriod - 1;
+  // The rate write changes the next divider reload, not its current phase.
 
   if (debug.dmcDma) {
     console.log(
@@ -255,9 +268,6 @@ function dmcWrite4015(value) {
   if (!DMC.enabled) {
     DMC.bytesRemaining = 0;
     DMC.dmaRequest = false;
-    DMC.sampleBufferFull = false;
-    DMC.silence = true;
-    DMC.bitsRemaining = 8;
     return;
   }
 
@@ -266,10 +276,11 @@ function dmcWrite4015(value) {
     DMC.currentAddress = DMC.sampleAddress & 0xFFFF;
     DMC.bytesRemaining = DMC.sampleLength & 0xFFFF;
 
-    DMC.bitsRemaining = 8;
-    DMC.sampleBufferFull = false;
-    DMC.silence = true;
-    DMC.timer = DMC.timerPeriod - 1;
+    if(!DMC.sampleBufferFull) {
+      DMC.dmaRequest = true;
+      // First load halts on the get phase of the second following APU cycle.
+      DMC.dmaAt = cpuCycles + ((cpuCycles&1)?4:3);
+    }
 
     if (debug.dmcDma) {
       console.log(

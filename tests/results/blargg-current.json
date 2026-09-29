@@ -128,6 +128,62 @@
       "text": "08 08 09 07 \n10-even_odd_timing\n\nPassed\n",
       "error": null,
       "cycles": 4400034
+    },
+    {
+      "rom": "cpu_interrupts_v2/rom_singles/1-cli_latency.nes",
+      "sha256": "e402d36118f77dcbbe8ddca90c15fc76a46bcb30b25cb028c383e4a621de5fc0",
+      "status": 0,
+      "text": "\n1-cli_latency\n\nPassed\n",
+      "error": null,
+      "cycles": 600012
+    },
+    {
+      "rom": "cpu_interrupts_v2/rom_singles/2-nmi_and_brk.nes",
+      "sha256": "6e6bf6205930afcfebdc213c583df53986a688a8b36f8856b805ef4c1853e6eb",
+      "status": 0,
+      "text": "NMI BRK 00\n27  36  00 \n26  36  00 \n26  36  00 \n36  00  00 \n36  00  00 \n36  00  00 \n36  00  00 \n36  00  00 \n27  36  00 \n27  36  00 \n\n2-nmi_and_brk\n\nPassed\n",
+      "error": null,
+      "cycles": 3400035
+    },
+    {
+      "rom": "cpu_interrupts_v2/rom_singles/3-nmi_and_irq.nes",
+      "sha256": "3008a9524d174a8aca562ff0361eba81da53e38cf1ebb5125322fe151f14d945",
+      "status": 0,
+      "text": "NMI BRK\n23  00 \n21  00 \n21  00 \n20  00 \n20  00 \n20  00 \n20  00 \n20  00 \n20  00 \n20  00 \n25  20 \n25  20 \n\n3-nmi_and_irq\n\nPassed\n",
+      "error": null,
+      "cycles": 4000029
+    },
+    {
+      "rom": "cpu_interrupts_v2/rom_singles/4-irq_and_dma.nes",
+      "sha256": "6d7b4c1947ada64679af56cf0c227286b2408afe1747dfaa4dc7363d57ff87f6",
+      "status": 0,
+      "text": "0 +0\n1 +1\n1 +2\n2 +3\n2 +4\n4 +5\n4 +6\n7 +7\n7 +8\n7 +9\n7 +10\n8 +11\n8 +12\n8 +13\n...\n8 +524\n8 +525\n8 +526\n9 +527\n\n4-irq_and_dma\n\nPassed\n",
+      "error": null,
+      "cycles": 2200016
+    },
+    {
+      "rom": "cpu_interrupts_v2/rom_singles/5-branch_delays_irq.nes",
+      "sha256": "f9e10b4a24d8f3cd3e51fb7457c72858aab96a6467fdbbd806d0661c2d32fdc7",
+      "status": 0,
+      "text": "test_jmp\nT+ CK PC\n00 02 04 \n01 01 04 \n02 03 07 \n03 02 07 \n04 01 07 \n05 02 08 \n06 01 08 \n07 03 08 \n08 02 08 \n09 01 08 \n\ntest_branch_not_taken\nT+ CK PC\n00 02 04 \n01 01 04 \n02 02 06 \n03 01 06 \n04 02 07 \n05 01 07 \n06 04 0A \n07 03 0A \n08 02 0A \n09 01 0A \n\ntest_branch_taken_pagecross\nT+ CK PC\n00 02 0D \n01 01 0D \n02 04 00 \n03 03 00 \n04 02 00 \n05 01 00 \n06 04 03 \n07 03 03 \n08 02 03 \n09 01 03 \n\ntest_branch_taken\nT+ CK PC\n00 02 04 \n01 01 04 \n02 03 07 \n03 02 07 \n04 05 0A \n05 04 0A \n06 03 0A \n07 02 0A \n08 01 0A \n09 03 0A \n\n\n5-branch_delays_irq\n\nPassed\n",
+      "error": null,
+      "cycles": 11600054
+    },
+    {
+      "rom": "instr_timing/rom_singles/1-instr_timing.nes",
+      "sha256": "e260068839fe3d0402376e97e4ee15f5790ee77c701fd0700bba057527910222",
+      "status": 0,
+      "text": "Instruction timing test\n\nTakes about 25 seconds. Doesn't time the 8 branches and 12 illegal instructions.\n\nOfficial instructions...\n\nNOPs and alternate SBC...\n\nUnofficial instructions...\n\n1-instr_timing\n\nPassed\n",
+      "error": null,
+      "cycles": 30200221
+    },
+    {
+      "rom": "instr_timing/rom_singles/2-branch_timing.nes",
+      "sha256": "0afaa393f375844ab98834c1ecba7fa6d8c44880c8b6e738936d0f04a84c8538",
+      "status": 0,
+      "text": "\n2-branch_timing\n\nPassed\n",
+      "error": null,
+      "cycles": 4200036
     }
   ]
 }
