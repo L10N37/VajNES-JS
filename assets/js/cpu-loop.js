@@ -203,6 +203,7 @@ window.run = function () {
 window.pause = function () {
   if(typeof NESAudio!=="undefined") NESAudio.pause();
   cpuRunning = false;
+  if(disasmRunning && typeof dumpDisasmTrace==="function") dumpDisasmTrace();
   if (typeof updateDebugTables === 'function') {
     try { updateDebugTables(); } catch (_) {}
   }
