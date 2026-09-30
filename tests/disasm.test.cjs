@@ -39,7 +39,7 @@ test('buffered disassembly dump works with global diagnostics disabled',()=>{
   vm.runInContext('dumpDisasmTrace()',context);
   assert.equal(logs.length,1);
   assert.match(logs[0],/VajNES disassembly: last 1 instructions/);
-  assert.match(logs[0],/8123\\s+EA -- --/);
+  assert.match(logs[0],/8123\s+EA -- --/);
   assert.match(logs[0],/A:12 X:34 Y:56 SP:FD/);
 });
 
@@ -50,6 +50,6 @@ test('disabling buffered disassembly dumps the retained recent trace once',()=>{
   context.openDisasm.onclick();
   assert.equal(logs.length,1);
   assert.match(logs[0],/last 25 instructions/);
-  assert.match(logs[0],/8018\\s+EA/);
+  assert.match(logs[0],/8018\s+EA/);
   assert.equal(vm.runInContext('disasmRunning',context),false);
 });
