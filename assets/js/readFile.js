@@ -4,6 +4,37 @@ let prgRamBattery = false;
 // iNES header version detected (1 = iNES, 2 = NES 2.0)
 let headerVersion = 1;
 
+
+function crc32Bytes(bytes) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (let bit = 0; bit < 8; bit++)
+      crc = (crc >>> 1) ^ ((crc & 1) ? 0xEDB88320 : 0);
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+// Known licensed games with old/bad iNES headers whose mapper-high nibble is
+// polluted. Keyed by CRC32 of PRG+CHR payload (header/trainer excluded), so
+// genuine cartridges that really use the reported high mapper are untouched.
+// Adventures in the Magic Kingdom:
+//   USA PRG+CHR  CRC32 5DBD6099
+//   PAL PRG+CHR  CRC32 6B761858
+const KNOWN_BAD_HEADER_MAPPERS = new Map([
+  [0x5DBD6099, 1],
+  [0x6B761858, 1],
+]);
+
+function knownBadHeaderMapper(romBytes, header) {
+  const trainerSize = (header[6] & 0x04) ? 512 : 0;
+  const payloadStart = 16 + trainerSize;
+  const payloadSize = header[4] * 0x4000 + header[5] * 0x2000;
+  if (!payloadSize || romBytes.length < payloadStart + payloadSize) return null;
+  const crc = crc32Bytes(romBytes.subarray(payloadStart, payloadStart + payloadSize));
+  return KNOWN_BAD_HEADER_MAPPERS.has(crc) ? KNOWN_BAD_HEADER_MAPPERS.get(crc) : null;
+}
+
 function readFile(input, auto = false) {
 
   // Manual ROM selection
@@ -96,8 +127,17 @@ function loadRom(romBytes) {
     ((nesHeader[12] | nesHeader[13] | nesHeader[14] | nesHeader[15]) !== 0);
   const mapperHighNibble = archaicINes ? 0 : (nesHeader[7] & 0xF0);
 
-  const incomingMapper = (nesHeader[6] >> 4) | mapperHighNibble |
+  let incomingMapper = (nesHeader[6] >> 4) | mapperHighNibble |
     (isNES2 ? (nesHeader[8] & 15) << 8 : 0);
+
+  // Some otherwise-valid old dumps have only the mapper-high nibble polluted,
+  // with clean zero padding, so the generic archaic-header test above cannot
+  // identify them. Repair only ROM payloads we know exactly.
+  if (!isNES2) {
+    const repairedMapper = knownBadHeaderMapper(romBytes, nesHeader);
+    if (repairedMapper !== null) incomingMapper = repairedMapper;
+  }
+
   if (![0,1,2,3,4,7,9,10,11,66,155].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
   const required = 16 + ((nesHeader[6] & 4) ? 512 : 0) + nesHeader[4]*0x4000 + nesHeader[5]*0x2000;
@@ -140,8 +180,8 @@ function loadRom(romBytes) {
     mapperExt = (nesHeader[8] & 0x0F) << 8;
   }
 
-  // Final mapper number
-  mapperNumber = mapperLow | mapperHigh | mapperExt;
+  // Final mapper number. Use the validated/repaired mapper selected above.
+  mapperNumber = incomingMapper;
 
   // Special MMC1 variant
   if (mapperNumber === 155) mapperNumber = 1;
