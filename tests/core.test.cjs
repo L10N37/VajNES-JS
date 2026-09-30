@@ -226,27 +226,27 @@ test('AxROM rejects unsupported images before replacing a running cartridge',()=
  e.load(rom(7,2,0));assert.equal(e.evaluate('axromBank'),0);assert.equal(e.evaluate('MIRRORING'),'single0');
  const previous=emulator(rom(4));previous.evaluate('irqAssert.mmc3=true');previous.load(rom(7,2,0));assert.equal(previous.evaluate('irqAssert.mmc3'),false);
 });
-test('PPUMASK rendering enable is delayed by three PPU dots',()=>{
+test('PPUMASK rendering enable is delayed by four PPU dots',()=>{
  const e=emulator();
  e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=100;ppuWriteMask(0x18)');
- assert.deepEqual(e.evaluate('[PPUMASK,renderingNow(),ppumaskRenderApplyAt]'),[0x18,false,103]);
- e.evaluate('ppuCycles=102');assert.equal(e.evaluate('renderingNow()'),false);
- e.evaluate('ppuCycles=103');assert.equal(e.evaluate('renderingNow()'),true);
+ assert.deepEqual(e.evaluate('[PPUMASK,renderingNow(),ppumaskRenderApplyAt]'),[0x18,false,104]);
+ e.evaluate('ppuCycles=103');assert.equal(e.evaluate('renderingNow()'),false);
+ e.evaluate('ppuCycles=104');assert.equal(e.evaluate('renderingNow()'),true);
 });
 
 test('late PPUMASK enable skips the dot-256 vertical increment used by Battletoads',()=>{
  const e=emulator();
- e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=100;VRAM_ADDR=0;PPUclock.scanline=14;PPUclock.dot=256;ppuWriteMask(0x18);ppuCycles=102;visibleScanline(256)');
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=100;VRAM_ADDR=0;PPUclock.scanline=14;PPUclock.dot=256;ppuWriteMask(0x18);ppuCycles=103;visibleScanline(256)');
  assert.equal(e.evaluate('VRAM_ADDR'),0);
- e.evaluate('ppuCycles=103;visibleScanline(256)');
+ e.evaluate('ppuCycles=104;visibleScanline(256)');
  assert.equal(e.evaluate('VRAM_ADDR'),0x1001);
 });
 
 test('PPUMASK pending render delay survives PPU save-state round trip',()=>{
  const e=emulator();
  e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=200;ppuWriteMask(0x18);globalThis.__ppust=ppuSavePipelineState();ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;ppuLoadPipelineState(globalThis.__ppust)');
- assert.deepEqual(e.evaluate('[ppumaskRenderHoldBits,ppumaskRenderApplyAt,renderingNow()]'),[0,203,false]);
- e.evaluate('ppuCycles=203');assert.equal(e.evaluate('renderingNow()'),true);
+ assert.deepEqual(e.evaluate('[ppumaskRenderHoldBits,ppumaskRenderApplyAt,renderingNow()]'),[0,204,false]);
+ e.evaluate('ppuCycles=204');assert.equal(e.evaluate('renderingNow()'),true);
 });
 test('background shifter advances after pixel zero without duplicating it',()=>{
  const e=emulator();e.evaluate('spriteXForceZeroNextFrame=false;PPUMASK=0x0a;fineX=0;PPUclock.scanline=0;PPUclock.dot=1;nextLine.t0={lo:0x80,hi:0,at:0};nextLine.t1={lo:0,hi:0,at:0};PALETTE_RAM[0]=0;PALETTE_RAM[1]=0x21;visibleScanline(1);PPUclock.dot=2;visibleScanline(2)');
