@@ -356,11 +356,9 @@ function checkWriteOffset(address, value) {
 
       // PPUMASK
       case 0x2001: {
-        const newMask = value & 0xFF;
-
-        // CPU-visible mask updates immediately
-        PPUMASK = newMask;
-
+        // The register byte itself changes immediately, but BG/SPR rendering
+        // enable bits take effect a few PPU dots later on real hardware.
+        ppuWriteMask(value & 0xFF);
         break;
       }
 

@@ -22,10 +22,40 @@ let ppuInitDone = false;
 let nmiAtVblankEnd = false;
 let oddSkipRendering = false;
 
-// "rendering" = either BG or SPR enabled
-const renderingNow  = () => ((PPUMASK & 0b000011000) !== 0);
-const bgEnabledNow  = () => ((PPUMASK & MASK_BG_ENABLE) !== 0);
-const sprEnabledNow = () => ((PPUMASK & MASK_SPR_ENABLE) !== 0);
+// PPUMASK's rendering-enable bits do not affect the PPU immediately.
+// Hardware applies BG/SPR rendering changes about 3-4 dots after the CPU write.
+// Keep the CPU-visible PPUMASK byte immediate, but hold bits 3/4 at their old
+// effective state for four complete PPU dots.
+let ppumaskRenderHoldBits = 0;
+let ppumaskRenderApplyAt = -1;
+
+function ppuEffectiveMask() {
+  if (ppumaskRenderApplyAt >= 0) {
+    if (ppuCycles < ppumaskRenderApplyAt)
+      return (PPUMASK & ~0x18) | (ppumaskRenderHoldBits & 0x18);
+    ppumaskRenderApplyAt = -1;
+    ppumaskRenderHoldBits = PPUMASK & 0x18;
+  }
+  return PPUMASK & 0xFF;
+}
+
+function ppuWriteMask(value) {
+  const effectiveBefore = ppuEffectiveMask() & 0x18;
+  PPUMASK = value & 0xFF;
+  const requested = PPUMASK & 0x18;
+
+  if (requested === effectiveBefore) {
+    ppumaskRenderHoldBits = requested;
+    ppumaskRenderApplyAt = -1;
+  } else {
+    ppumaskRenderHoldBits = effectiveBefore;
+    ppumaskRenderApplyAt = ppuCycles + 4;
+  }
+}
+
+const renderingNow  = () => ((ppuEffectiveMask() & 0x18) !== 0);
+const bgEnabledNow  = () => ((ppuEffectiveMask() & MASK_BG_ENABLE) !== 0);
+const sprEnabledNow = () => ((ppuEffectiveMask() & MASK_SPR_ENABLE) !== 0);
 
 // ---- Clock state ----
 let PPUclock = { dot: 0, scanline: 261, frame: 0, oddFrame: false };
@@ -104,9 +134,9 @@ let ppumaskPrev = 0;
 // Version 1 is deliberately fixed-width so old state files remain readable;
 // states without this section still load using the older partial restore path.
 function ppuSavePipelineState() {
-  const out=new Uint8Array(158);
+  const out=new Uint8Array(160);
   const dv=new DataView(out.buffer);
-  out[0]=1;
+  out[0]=2;
   let flags=0;
   if(ppuInitDone)flags|=1;
   if(nmiAtVblankEnd)flags|=2;
@@ -156,12 +186,16 @@ function ppuSavePipelineState() {
   };
   let off=42;
   off=writeSprite(spritesA,off);
-  writeSprite(spritesB,off);
+  off=writeSprite(spritesB,off);
+  out[158]=ppumaskRenderHoldBits&0x18;
+  out[159]=ppumaskRenderApplyAt>=0
+    ? Math.max(0,Math.min(255,Math.ceil(ppumaskRenderApplyAt-ppuCycles)))
+    : 0;
   return out;
 }
 
 function ppuLoadPipelineState(bytes) {
-  if(!(bytes instanceof Uint8Array) || bytes.length<158 || bytes[0]!==1)return false;
+  if(!(bytes instanceof Uint8Array) || bytes.length<158 || (bytes[0]!==1 && bytes[0]!==2))return false;
   const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
   const flags=bytes[1];
   ppuInitDone=!!(flags&1);
@@ -210,6 +244,15 @@ function ppuLoadPipelineState(bytes) {
   readSprite(spritesB,off);
   spritesCur=bytes[33]===0?spritesA:spritesB;
   spritesNext=bytes[33]===0?spritesB:spritesA;
+
+  if(bytes[0]>=2 && bytes.length>=160) {
+    ppumaskRenderHoldBits=bytes[158]&0x18;
+    const remaining=bytes[159]&0xff;
+    ppumaskRenderApplyAt=remaining?ppuCycles+remaining:-1;
+  } else {
+    ppumaskRenderHoldBits=PPUMASK&0x18;
+    ppumaskRenderApplyAt=-1;
+  }
 
   // Keep the debug/fetch mirror globals coherent with the restored pipeline.
   BG_ntByte=background.ntByte;
@@ -893,8 +936,11 @@ function ppuTick() {
   }
   renderingPrev = renNow2;
 
-  // Rendering is sampled before the final fetch, not at the skipped dot.
-  if(PPUclock.scanline===261 && PPUclock.dot===338)oddSkipRendering=renNow2;
+  // The odd-frame skipped-dot latch has its own $2001 timing boundary.
+  // Keep sampling the register bits here; the delayed rendering signal above
+  // is for the pixel/fetch/scroll pipeline and must not move this boundary.
+  if(PPUclock.scanline===261 && PPUclock.dot===338)
+    oddSkipRendering=(PPUMASK&0x18)!==0;
   // Odd-frame skip
   if (PPUclock.oddFrame && oddSkipRendering &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
