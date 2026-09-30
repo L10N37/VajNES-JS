@@ -761,3 +761,62 @@ test('MMC5 forwards audio registers to expansion renderer and exposes 5015 statu
  assert.deepEqual(writes,[[0x5000,0xdf],[0x5015,3]]);
  assert.equal(e.evaluate('checkReadOffset(0x5015)'),3);
 });
+
+
+test('UxROM save-state restores active PRG bank',()=>{
+ const e=emulator(rom(2,8,0));e.evaluate('uxromBank=3;globalThis.__s=uxromSaveState();uxromBank=0;uxromLoadState(globalThis.__s)');
+ assert.equal(e.evaluate('uxromBank'),3);
+});
+
+test('MMC1 save-state restores serial latch and bank registers',()=>{
+ const e=emulator(rom(1,8,2));
+ e.evaluate('shiftRegister=0x12;shiftCount=3;mmc1Control=0x1f;mmc1CHR0=2;mmc1CHR1=3;mmc1PRG=4;prgRamEnable=false;MIRRORING="horizontal";globalThis.__s=mmc1SaveState();shiftRegister=shiftCount=mmc1CHR0=mmc1CHR1=mmc1PRG=0;mmc1Control=0x0c;prgRamEnable=true;mmc1LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[shiftRegister,shiftCount,mmc1Control,mmc1CHR0,mmc1CHR1,mmc1PRG,prgRamEnable,MIRRORING]'),[0x12,3,0x1f,2,3,4,false,'horizontal']);
+});
+
+test('MMC3 save-state restores bank select and IRQ edge state',()=>{
+ const e=emulator(rom(4,8,4));
+ e.evaluate('mapper4_write_8000(0xc6);mapper4_write_8001(7);mapper4_write_C000(5);mapper4_write_C001();mapper4_write_E001();mmc3_irq.scanlineCounter=3;mmc3_irq.prevA12=true;mmc3_irq.lowSince=123456;irqAssert.mmc3=true;globalThis.__s=mmc3SaveState();mmc3Reset();mmc3LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[MMC3.control.prgMode,MMC3.control.chrMode,MMC3.registers.PRG_BANK_0,mmc3_irq.latch,mmc3_irq.scanlineCounter,mmc3_irq.reload,mmc3_irq.enabled,mmc3_irq.prevA12,mmc3_irq.lowSince,irqAssert.mmc3]'),
+ ['PRG_SWAP_C000','CHR_INVERTED',7,5,3,true,true,true,123456,true]);
+});
+
+test('MMC2/MMC4 save-state restores CHR latches and mirroring',()=>{
+ for(const mapper of [9,10]){
+  const e=emulator(rom(mapper,8,8));
+  e.evaluate('mmc24PrgBank=3;mmc24ChrFD0=1;mmc24ChrFE0=2;mmc24ChrFD1=3;mmc24ChrFE1=4;mmc24Latch0=0xfd;mmc24Latch1=0xfe;MIRRORING="horizontal";globalThis.__s=extraMapperSaveState(mapperNumber);mmc24Init();extraMapperLoadState(mapperNumber,globalThis.__s)');
+  assert.deepEqual(e.evaluate('[mmc24PrgBank,mmc24ChrFD0,mmc24ChrFE0,mmc24ChrFD1,mmc24ChrFE1,mmc24Latch0,mmc24Latch1,MIRRORING]'),[3,1,2,3,4,0xfd,0xfe,'horizontal']);
+ }
+});
+
+test('simple banked mapper save-state restores selected PRG/CHR banks',()=>{
+ for(const mapper of [3,11,66,79]){
+  const e=emulator(rom(mapper,4,4));
+  if(mapper===3)e.evaluate('cnromChrBank=2');
+  if(mapper===11)e.evaluate('colorDreamsPrgBank=1;colorDreamsChrBank=2');
+  if(mapper===66)e.evaluate('gxromPrgBank=1;gxromChrBank=2');
+  if(mapper===79)e.evaluate('nina79PrgBank=1;nina79ChrBank=2');
+  e.evaluate('globalThis.__s=extraMapperSaveState(mapperNumber)');
+  if(mapper===3)e.evaluate('cnromChrBank=0');
+  if(mapper===11)e.evaluate('colorDreamsPrgBank=colorDreamsChrBank=0');
+  if(mapper===66)e.evaluate('gxromPrgBank=gxromChrBank=0');
+  if(mapper===79)e.evaluate('nina79PrgBank=nina79ChrBank=0');
+  e.evaluate('extraMapperLoadState(mapperNumber,globalThis.__s)');
+  const got=mapper===3?e.evaluate('[cnromChrBank]'):mapper===11?e.evaluate('[colorDreamsPrgBank,colorDreamsChrBank]'):mapper===66?e.evaluate('[gxromPrgBank,gxromChrBank]'):e.evaluate('[nina79PrgBank,nina79ChrBank]');
+  assert.deepEqual(got,mapper===3?[2]:[1,2]);
+ }
+});
+
+test('VRC6 save-state restores banks, IRQ prescaler and line',()=>{
+ const e=emulator(rom(24,16,8));
+ e.evaluate('vrc6Prg16=4;vrc6Prg8=7;vrc6Chr.set([1,2,3,4,5,6,7,8]);vrc6B003=0x84;vrc6IrqLatch=9;vrc6IrqCounter=10;vrc6IrqPrescaler=222;vrc6IrqEnabled=true;vrc6IrqEnableAfterAck=true;vrc6IrqCycleMode=true;irqAssert.vrc=true;globalThis.__s=vrc6SaveState();vrc6Init();vrc6LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[vrc6Prg16,vrc6Prg8,Array.from(vrc6Chr),vrc6B003,vrc6IrqLatch,vrc6IrqCounter,vrc6IrqPrescaler,vrc6IrqEnabled,vrc6IrqEnableAfterAck,vrc6IrqCycleMode,irqAssert.vrc]'),
+ [4,7,[1,2,3,4,5,6,7,8],0x84,9,10,222,true,true,true,true]);
+});
+
+test('MMC5 save-state restores banking ExRAM IRQ and multiplier',()=>{
+ const e=emulator(rom(5,8,4));
+ e.evaluate('mmc5PrgMode=2;mmc5ChrMode=3;mmc5NtMap=0xe4;mmc5PrgBanks.set([1,2,3,4,5]);mmc5ChrA[0]=0x155;mmc5ChrB[0]=0x2aa;mmc5Exram[17]=0x66;mmc5IrqCompare=9;mmc5IrqEnable=true;mmc5IrqPending=true;mmc5InFrame=true;mmc5Scanline=9;mmc5MulA=7;mmc5MulB=8;irqAssert.mmc5=true;globalThis.__s=mmc5SaveState();mmc5Init();mmc5LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[mmc5PrgMode,mmc5ChrMode,mmc5NtMap,Array.from(mmc5PrgBanks),mmc5ChrA[0],mmc5ChrB[0],mmc5Exram[17],mmc5IrqCompare,mmc5IrqEnable,mmc5IrqPending,mmc5InFrame,mmc5Scanline,mmc5MulA,mmc5MulB,irqAssert.mmc5]'),
+ [2,3,0xe4,[1,2,3,4,5],0x155,0x2aa,0x66,9,true,true,true,9,7,8,true]);
+});
