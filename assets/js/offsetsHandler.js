@@ -147,31 +147,11 @@ function checkReadOffset(address) {
         if ((oamAddr & 3) === 2) v &= 0xE3;
 
         const visible = current.scanline >= 0 && current.scanline <= 239;
-        const preRender = current.scanline === 261;
         let result = v;
 
-        if (renderingNow() && (visible || preRender)) {
-          const d = current.dot | 0;
-
-          // OAM2 clear: the internal read buffer is forced to $FF.
-          if (d >= 1 && d <= 64) {
-            result = 0xFF;
-          }
-          // Sprite fetch exposes secondary OAM: Y, tile, attr, X, then X four
-          // more times for each of the eight sprite slots.
-          else if (d >= 257 && d <= 320) {
-            const t = d - 257;
-            const slot = (t >> 3) & 7;
-            const sub = t & 7;
-            const byte = sub < 4 ? sub : 3;
-            result = secondaryOAM[(slot << 2) | byte] & 0xFF;
-          }
-          // During background prefetch/idle the PPU keeps reading OAM2 at its
-          // current 5-bit address. Normally dot 321 wrapped this back to zero,
-          // but precise render toggles can leave it frozen elsewhere.
-          else if (d >= 321 || d === 0) {
-            result = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
-          }
+        if (renderingNow() && visible) {
+          if (current.dot >= 1 && current.dot <= 64) result = 0xFF;
+          else if (current.dot >= 257 && current.dot <= 320) result = 0xFF;
         }
 
         openBus.PPU = result & 0xFF;
