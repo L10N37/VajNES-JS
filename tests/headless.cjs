@@ -38,6 +38,9 @@ function createEmulator(audio) {
       },
       buttons(value) {joypad1Buttons=value;},
       state:()=>({cpuCycles,pc:CPUregisters.PC,frame:PPUclock.frame,ram:Array.from(systemMemory)}),
+      detectExpansion(bytes,mapper,isNES2) {
+        return detectExpansionAudio(bytes,bytes.subarray(0,16),mapper,isNES2);
+      },
       evaluate:expression=>eval(expression)
     };
   `)(audio);
