@@ -570,3 +570,70 @@ test('legacy Sunsoft mapper 69 can be marked uncertain instead of assumed audio'
  const e=createEmulator();
  assert.equal(e.evaluate("(()=>{const r=rom(69,16,16);return detectExpansionAudio(r,r.subarray(0,16),69,false).confidence})()"),'possible');
 });
+
+
+test('VRC6 mapper 24 maps 16K/8K PRG banks and fixed last bank',()=>{
+ const bytes=rom(24,16,32);
+ for(let b=0;b<32;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
+ bytes[16+16*0x4000-4]=0;bytes[16+16*0x4000-3]=0x80;
+ const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,3);checkWriteOffset(0xc000,5)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xa000),checkReadOffset(0xc000),checkReadOffset(0xe000)]'),[6,7,5,31]);
+});
+
+test('VRC6 maps eight 1 KiB CHR banks in the commercial banking mode',()=>{
+ const bytes=rom(24,16,32);
+ for(let b=0;b<256;b++)bytes.fill(b&255,16+16*0x4000+b*0x400,16+16*0x4000+(b+1)*0x400);
+ bytes[16+16*0x4000-4]=0;bytes[16+16*0x4000-3]=0x80;
+ const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0xd000,1);checkWriteOffset(0xd001,2);checkWriteOffset(0xd002,3);checkWriteOffset(0xd003,4);checkWriteOffset(0xe000,5);checkWriteOffset(0xe001,6);checkWriteOffset(0xe002,7);checkWriteOffset(0xe003,8)');
+ assert.deepEqual(e.evaluate('[0,1,2,3,4,5,6,7].map(i=>ppuBusRead(i*0x400))'),[1,2,3,4,5,6,7,8]);
+});
+
+test('VRC6 mapper 26 swaps register A0/A1',()=>{
+ const e=emulator(rom(26,16,32));
+ e.evaluate('checkWriteOffset(0xd001,7);checkWriteOffset(0xd002,9)');
+ assert.deepEqual(e.evaluate('[vrc6Chr[1],vrc6Chr[2]]'),[9,7]);
+});
+
+test('VRC6 commercial mirroring modes map B003 values 20/24/28/2C',()=>{
+ const e=emulator(rom(24,16,32));
+ for(const [value,want] of [[0x20,'vertical'],[0x24,'horizontal'],[0x28,'single0'],[0x2c,'single1']]){
+  e.evaluate(`checkWriteOffset(0xb003,${value})`);
+  assert.equal(e.evaluate('MIRRORING'),want);
+ }
+});
+
+test('VRC6 PRG RAM is gated by B003 bit 7',()=>{
+ const e=emulator(rom(24,16,32));
+ e.evaluate('prgRam[0]=0x55;openBus.CPU=0x33;checkWriteOffset(0x6000,0xaa);openBus.CPU=0x33');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x33,0x55]);
+ e.evaluate('checkWriteOffset(0xb003,0xa0);checkWriteOffset(0x6000,0xaa)');
+ assert.equal(e.evaluate('checkReadOffset(0x6000)'),0xaa);
+});
+
+test('VRC6 cycle-mode IRQ asserts on counter overflow and reloads latch',()=>{
+ const e=emulator(rom(24,16,32));
+ e.evaluate('checkWriteOffset(0xf000,0xfe);checkWriteOffset(0xf001,0x06)');
+ assert.deepEqual(e.evaluate('[vrc6IrqCounter,irqAssert.vrc]'),[0xfe,false]);
+ e.evaluate('consumeCycle()');
+ assert.deepEqual(e.evaluate('[vrc6IrqCounter,irqAssert.vrc]'),[0xff,false]);
+ e.evaluate('consumeCycle()');
+ assert.deepEqual(e.evaluate('[vrc6IrqCounter,irqAssert.vrc]'),[0xfe,true]);
+ e.evaluate('checkWriteOffset(0xf002,0)');
+ assert.equal(e.evaluate('irqAssert.vrc'),false);
+});
+
+test('VRC6 mapper forwards canonical audio register writes',()=>{
+ const writes=[];
+ const audio={reset(){},unlock(){},write(){},quarter(){},half(){},dmc(){},frame(){},pause(){},setExpansion(){},
+   expansionWrite(cycle,address,value){writes.push([address,value]);}};
+ const e=createEmulator(audio);e.load(rom(24,16,32));
+ e.evaluate('checkWriteOffset(0x9001,0x34);checkWriteOffset(0xb002,0x8f)');
+ assert.deepEqual(writes.slice(-2),[[0x9001,0x34],[0xb002,0x8f]]);
+ const writes2=[];
+ const audio2={...audio,expansionWrite(cycle,address,value){writes2.push([address,value]);}};
+ const e2=createEmulator(audio2);e2.load(rom(26,16,32));
+ e2.evaluate('checkWriteOffset(0x9002,0x44)');
+ assert.deepEqual(writes2.slice(-1),[[0x9001,0x44]]);
+});
