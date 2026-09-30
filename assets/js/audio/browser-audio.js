@@ -4,6 +4,7 @@ const NESAudio = (()=>{
   let wasm=null,context=null,node=null,gain=null,lastCycle=0,loading=null;
   let starting=null;
   let expansion=null, expansionChip=null, expansionEnabled=false;
+  const expansionRegs=new Map();
   function sync(cycle) {
     if(!wasm)return;
     if(cycle<lastCycle){reset(cycle);return;}
@@ -17,14 +18,16 @@ const NESAudio = (()=>{
     lastCycle=cycle;
   }
   function mask(){return apuTiming.length.reduce((m,n,i)=>m|(n?1<<i:0),0);}
-  function reset(cycle=0) {
+  function reset(cycle=0,preserveExpansion=false) {
     lastCycle=cycle;
     if(wasm)wasm.audio_reset(context?.sampleRate||48000);
     expansion?.reset(cycle);
+    if(!preserveExpansion) expansionRegs.clear();
+    else if(expansion) for(const [address,value] of expansionRegs) expansion.write(address,value);
     node?.port.postMessage({type:'reset'});
   }
   function seed(cycle) {
-    reset(cycle);
+    reset(cycle,true);
     for(const [address,name] of Object.entries(APU_REG_ADDRESSES))wasm.audio_write(+address,APUregister[name]);
     wasm.audio_lengths(mask());wasm.audio_dmc(DMC.outputLevel||0);
   }
@@ -75,6 +78,7 @@ const NESAudio = (()=>{
   function setExpansion(chip,enabled) {
     expansionChip=chip||null;
     expansionEnabled=!!enabled && !!chip;
+    expansionRegs.clear();
     expansion=expansionEnabled && typeof ExpansionAudioRenderer!=='undefined'
       ? new ExpansionAudioRenderer(expansionChip,context?.sampleRate||48000)
       : null;
@@ -88,6 +92,7 @@ const NESAudio = (()=>{
       expansion.advance(cycle-lastCycle);
       lastCycle=cycle;
     }
+    expansionRegs.set(address&0xffff,value&0xff);
     expansion.write(address,value);
   }
   document.addEventListener('pointerdown',unlock,{capture:true});
