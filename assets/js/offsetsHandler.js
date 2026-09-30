@@ -658,7 +658,13 @@ let _kbBound = false;
   _kbBound = true;
 
   const kbdHandler = (isDown) => (e) => {
-    if(isDown && (e.target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName)))return;
+    if(typeof expansionAudioPromptOpen==='function' && expansionAudioPromptOpen()) {
+      // Never let modal keyboard activation (especially Enter=NES Start) leak
+      // into the emulated controller.
+      joypad1Buttons=0;
+      return;
+    }
+    if(isDown && (e.target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(e.target?.tagName)))return;
     const btn = codeToButtonP1[e.code];
     if (btn === undefined) return;
 
@@ -673,8 +679,14 @@ let _kbBound = false;
   window.addEventListener("blur",()=>{joypad1Buttons=joypad2Buttons=0;});
 })();
 
-function pollController1() { return (joypad1Buttons | (typeof NESGamepads!=="undefined"?NESGamepads.read(0):0)) & 0xFF; }
-function pollController2() { return (joypad2Buttons | (typeof NESGamepads!=="undefined"?NESGamepads.read(1):0)) & 0xFF; }
+function pollController1() {
+  if(typeof expansionAudioPromptOpen==='function' && expansionAudioPromptOpen()) return 0;
+  return (joypad1Buttons | (typeof NESGamepads!=="undefined"?NESGamepads.read(0):0)) & 0xFF;
+}
+function pollController2() {
+  if(typeof expansionAudioPromptOpen==='function' && expansionAudioPromptOpen()) return 0;
+  return (joypad2Buttons | (typeof NESGamepads!=="undefined"?NESGamepads.read(1):0)) & 0xFF;
+}
 
 function latchIfFallingEdge(oldStrobe, newStrobe) {
   if (oldStrobe && !newStrobe) {
