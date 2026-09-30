@@ -99,9 +99,7 @@ function resetCPU() {
   ppumaskRenderApplyAt = -1;
   renderingPrev = false;
 
-  secondaryOAM.fill(0xFF);
   secOAMAddr = 0;
-  secOAMOverflowed = false;
   oamCorruptPending = false;
   oamCorruptSeedRow = 0;
 
