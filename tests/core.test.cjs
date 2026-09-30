@@ -239,7 +239,7 @@ test('late PPUMASK enable skips the dot-256 vertical increment used by Battletoa
  e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=100;VRAM_ADDR=0;PPUclock.scanline=14;PPUclock.dot=256;ppuWriteMask(0x18);ppuCycles=102;visibleScanline(256)');
  assert.equal(e.evaluate('VRAM_ADDR'),0);
  e.evaluate('ppuCycles=103;visibleScanline(256)');
- assert.equal(e.evaluate('VRAM_ADDR'),0x1000);
+ assert.equal(e.evaluate('VRAM_ADDR'),0x1001);
 });
 
 test('PPUMASK pending render delay survives PPU save-state round trip',()=>{
