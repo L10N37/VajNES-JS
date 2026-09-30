@@ -3,6 +3,8 @@
 // same write/advance/pop interface without changing CPU/APU timing.
 class ExpansionAudioRenderer {
   static CPU_HZ = 1789772.7272727273;
+  static MMC5_LENGTH = [10,254,20,2,40,4,80,6,160,8,60,10,14,12,26,14,
+                        12,16,24,18,48,20,96,22,192,24,72,26,16,28,32,30];
 
   constructor(chip, sampleRate=48000) {
     this.sampleRate=sampleRate;
@@ -27,11 +29,22 @@ class ExpansionAudioRenderer {
       ],
       saw:{rate:0,period:0,enabled:false,phase:0}
     };
+    this.mmc5={
+      pulse:[
+        {control:0,period:0,enabled:false,phase:0,length:0,envelope:0,envelopeDivider:0,envelopeStart:false},
+        {control:0,period:0,enabled:false,phase:0,length:0,envelope:0,envelopeDivider:0,envelopeStart:false}
+      ],
+      pcmControl:0,
+      pcm:0x80,
+      pcmIrqTrip:false,
+      frameClock:0
+    };
   }
 
   write(address,value) {
     value&=0xff;
     if(this.chip==='Konami VRC6') this.writeVRC6(address&0xffff,value);
+    else if(this.chip==='MMC5') this.writeMMC5(address&0xffff,value);
   }
 
   writeVRC6(address,value) {
@@ -62,6 +75,73 @@ class ExpansionAudioRenderer {
     }
   }
 
+  writeMMC5(address,value) {
+    const m=this.mmc5;
+    if(address===0x5010){m.pcmControl=value&0x81;return;}
+    if(address===0x5011){
+      if(!(m.pcmControl&1) && value!==0)m.pcm=value;
+      if(!(m.pcmControl&1) && value===0)m.pcmIrqTrip=true;
+      return;
+    }
+    if(address===0x5015){
+      for(let i=0;i<2;i++){
+        const enabled=!!(value&(1<<i));
+        m.pulse[i].enabled=enabled;
+        if(!enabled)m.pulse[i].length=0;
+      }
+      return;
+    }
+    let p=null,reg=-1;
+    if(address>=0x5000&&address<=0x5003){p=m.pulse[0];reg=address-0x5000;}
+    else if(address>=0x5004&&address<=0x5007){p=m.pulse[1];reg=address-0x5004;}
+    if(!p)return;
+    if(reg===0)p.control=value;
+    else if(reg===2)p.period=(p.period&0x700)|value;
+    else if(reg===3){
+      p.period=(p.period&0xff)|((value&7)<<8);
+      p.phase=0;
+      p.envelopeStart=true;
+      if(p.enabled)p.length=ExpansionAudioRenderer.MMC5_LENGTH[(value>>>3)&31];
+    }
+  }
+
+  read(address) {
+    if(this.chip!=='MMC5')return 0;
+    const m=this.mmc5;
+    if(address===0x5010){
+      const out=((m.pcmIrqTrip&&(m.pcmControl&0x80))?0x80:0)|1;
+      m.pcmIrqTrip=false;
+      return out;
+    }
+    if(address===0x5015)
+      return (m.pulse[0].length?1:0)|(m.pulse[1].length?2:0);
+    return 0;
+  }
+
+  observeRead(address,value) {
+    if(this.chip!=='MMC5')return;
+    const m=this.mmc5;
+    if((m.pcmControl&1) && address>=0x8000 && address<=0xbfff) {
+      if(value===0)m.pcmIrqTrip=true;
+      else {m.pcmIrqTrip=false;m.pcm=value&0xff;}
+    }
+  }
+
+  clockMMC5Frame() {
+    const m=this.mmc5;
+    for(const p of m.pulse){
+      if(p.envelopeStart){
+        p.envelopeStart=false;p.envelope=15;p.envelopeDivider=p.control&15;
+      } else if(p.envelopeDivider>0)p.envelopeDivider--;
+      else {
+        p.envelopeDivider=p.control&15;
+        if(p.envelope>0)p.envelope--;
+        else if(p.control&0x20)p.envelope=15;
+      }
+      if(p.length && !(p.control&0x20))p.length--;
+    }
+  }
+
   vrc6Shift() {
     const f=this.vrc6.freqControl;
     if(f&1)return null; // oscillator halt
@@ -71,6 +151,17 @@ class ExpansionAudioRenderer {
   }
 
   advanceOscillators(cycles) {
+    if(this.chip==='MMC5'){
+      const m=this.mmc5;
+      m.frameClock+=cycles;
+      while(m.frameClock>=7424){m.frameClock-=7424;this.clockMMC5Frame();}
+      for(const p of m.pulse){
+        if(!p.enabled || !p.length)continue;
+        const period=2*(p.period+1);
+        p.phase=(p.phase+cycles/period)%8;
+      }
+      return;
+    }
     if(this.chip!=='Konami VRC6')return;
     const shift=this.vrc6Shift();
     if(shift===null)return;
@@ -112,8 +203,24 @@ class ExpansionAudioRenderer {
     return (sum/61)*0.34;
   }
 
+  sampleMMC5() {
+    const dutyPatterns=[0x02,0x06,0x1e,0xf9];
+    let pulseSum=0;
+    for(const p of this.mmc5.pulse){
+      if(!p.enabled || !p.length)continue;
+      const duty=(p.control>>>6)&3;
+      const step=Math.floor(p.phase)&7;
+      if((dutyPatterns[duty]>>step)&1)
+        pulseSum+=(p.control&0x10)?(p.control&15):p.envelope;
+    }
+    const pulse=(pulseSum/30)*0.22;
+    const pcm=((this.mmc5.pcm-128)/128)*0.18;
+    return pulse+pcm;
+  }
+
   sample() {
     if(this.chip==='Konami VRC6')return this.sampleVRC6();
+    if(this.chip==='MMC5')return this.sampleMMC5();
     return 0;
   }
 
