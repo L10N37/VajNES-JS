@@ -82,6 +82,9 @@ function mmc5CpuWrite(addr,value){
 
 function mmc5ChrBankFor(addr,sprite){
   const slot=(addr&0x1fff)>>>10;
+  // With 8x8 sprites MMC5 uses the primary CHR register set for all fetches.
+  // The separate background set is meaningful with 8x16 sprites.
+  if(!sprite && !(PPUCTRL&0x20))sprite=true;
   const regs=sprite?mmc5ChrA:mmc5ChrB;
   if(sprite){
     if(mmc5ChrMode===3)return regs[slot];
