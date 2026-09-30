@@ -366,7 +366,7 @@ test('CNROM submapper 1 disables bus conflicts',()=>{
 });
 test('CNROM mirrors a 16 KiB PRG image into both CPU halves',()=>{
  const e=emulator(rom(3,1,2,0,1));
- assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xc000),checkReadOffset(0xffff)]'),[0,0,0x80]);
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xc000),checkReadOffset(0xfffd)]'),[0,0,0x80]);
 });
 test('Color Dreams switches 32 KiB PRG and 8 KiB CHR from one register',()=>{
  const bytes=rom(11,8,8);for(let b=0;b<4;b++)bytes[16+b*0x8000]=0xff;const e=emulator(bytes);
