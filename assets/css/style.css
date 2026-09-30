@@ -388,3 +388,13 @@ registersText{
 .expansion-audio-actions{display:flex;justify-content:center;gap:14px}
 .expansion-audio-button{min-width:100px;padding:9px 18px;border:1px solid #6b7078;border-radius:7px;background:#2b2f35;color:#fff;font:600 15px sans-serif;cursor:pointer}
 .expansion-audio-button:hover,.expansion-audio-button:focus{background:#3a4048;outline:2px solid #8ab4f8;outline-offset:2px}
+
+
+/* ZIP ROM picker */
+.zip-rom-picker{position:fixed;inset:0;z-index:30000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.76)}
+.zip-rom-card{width:min(560px,calc(100vw - 40px));background:#17191d;color:#f1f3f4;border:1px solid #4b4f56;border-radius:12px;padding:24px 26px;box-shadow:0 18px 60px rgba(0,0,0,.6);font:15px/1.5 sans-serif}
+.zip-rom-card h2{margin:0 0 14px;text-align:center}
+.zip-rom-select{width:100%;box-sizing:border-box;padding:9px 10px;background:#24282e;color:#fff;border:1px solid #666;border-radius:6px}
+.zip-rom-actions{display:flex;justify-content:center;gap:14px;margin-top:18px}
+.zip-rom-button{min-width:100px;padding:9px 18px;border:1px solid #6b7078;border-radius:7px;background:#2b2f35;color:#fff;font:600 15px sans-serif;cursor:pointer}
+.zip-rom-button:hover,.zip-rom-button:focus{background:#3a4048;outline:2px solid #8ab4f8;outline-offset:2px}
