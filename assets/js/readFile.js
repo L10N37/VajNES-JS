@@ -54,8 +54,9 @@ function readFile(input, auto = false) {
     const file = input.files[0];
 
     // Validate extension
-    if (!file || !file.name.toLowerCase().endsWith('.nes')) {
-      globalThis.NES_DEBUG_LOGGING && console.error('Invalid file type. Please select a NES ROM file.');
+    const lowerName=file?.name?.toLowerCase()||'';
+    if (!file || (!lowerName.endsWith('.nes') && !lowerName.endsWith('.zip'))) {
+      globalThis.NES_DEBUG_LOGGING && console.error('Invalid file type. Please select a NES ROM or ZIP archive.');
       return;
     }
 
@@ -70,14 +71,25 @@ function readFile(input, auto = false) {
     const reader = new FileReader();
     reader.readAsArrayBuffer(file);
 
-    reader.onload = function () {
+    reader.onload = async function () {
+      try {
+        let romBytes = new Uint8Array(reader.result);
 
-      // Convert ArrayBuffer → Uint8Array
-      const romBytes = new Uint8Array(reader.result);
+        if (lowerName.endsWith('.zip')) {
+          if (typeof extractNesFromZip!=='function')
+            throw new Error('ZIP support is unavailable');
+          const extracted=await extractNesFromZip(romBytes);
+          if(!extracted)return;
+          romBytes=extracted.bytes;
+        }
 
-    // Cache only after the selected ROM has fully loaded.
-    if (loadRom(romBytes) === true)
-      localStorage.setItem('lastRomData', bytesToBase64(romBytes));
+        // Cache only the successfully extracted/loaded NES ROM, never the ZIP container.
+        if (loadRom(romBytes) === true)
+          localStorage.setItem('lastRomData', bytesToBase64(romBytes));
+      } catch (error) {
+        console.error(error);
+        if(typeof window.alert==='function')window.alert(error.message||String(error));
+      }
     };
 
     reader.onerror = function () {
