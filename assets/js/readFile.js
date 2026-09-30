@@ -24,6 +24,8 @@ function crc32Bytes(bytes) {
 const KNOWN_BAD_HEADER_MAPPERS = new Map([
   [0x5DBD6099, 1],
   [0x6B761858, 1],
+  // Splatterhouse: Wanpaku Graffiti, Namco 340. Many legacy dumps tag it 19.
+  [0x46FD7843, 210],
 ]);
 
 function knownBadHeaderMapper(romBytes, header) {
