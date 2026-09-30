@@ -569,6 +569,7 @@ test('Magic Kingdom known bad-header payload CRCs repair mapper 65 to MMC1',()=>
  const e=createEmulator();
  assert.equal(e.evaluate('KNOWN_BAD_HEADER_MAPPERS.get(0x5DBD6099)'),1);
  assert.equal(e.evaluate('KNOWN_BAD_HEADER_MAPPERS.get(0x6B761858)'),1);
+ assert.equal(e.evaluate('KNOWN_BAD_HEADER_MAPPERS.get(0x46FD7843)'),210);
 });
 
 test('genuine unknown mapper 65 is not broadly rewritten to MMC1',()=>{
