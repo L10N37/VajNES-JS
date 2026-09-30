@@ -28,6 +28,11 @@ function mmc5PrgRamWritable(){return (mmc5Protect1&3)===2 && (mmc5Protect2&3)===
 
 function mmc5CpuRead(addr){
   addr&=0xffff;
+  if(addr===0x5010 || addr===0x5015) {
+    if(typeof NESAudio!=='undefined' && NESAudio.expansionRead)
+      return NESAudio.expansionRead(cpuCycles,addr)&0xff;
+    return 0;
+  }
   if(addr===0x5204){
     const v=(mmc5IrqPending?0x80:0)|(mmc5InFrame?0x40:0);
     mmc5IrqPending=false;irqAssert.mmc5=false;return v;
@@ -53,11 +58,19 @@ function mmc5CpuRead(addr){
       bank=addr<0xa000?r14&0x7f:addr<0xc000?r15&0x7f:addr<0xe000?r16&0x7f:r17&0x7f;
       break;
   }
-  return mmc5PrgRom8(bank,addr);
+  const value=mmc5PrgRom8(bank,addr);
+  if(typeof NESAudio!=='undefined' && NESAudio.expansionObserveRead)
+    NESAudio.expansionObserveRead(cpuCycles,addr,value);
+  return value;
 }
 
 function mmc5CpuWrite(addr,value){
   addr&=0xffff;value&=0xff;
+  if((addr>=0x5000&&addr<=0x5007) || addr===0x5010 || addr===0x5011 || addr===0x5015) {
+    if(typeof NESAudio!=='undefined' && NESAudio.expansionWrite)
+      NESAudio.expansionWrite(cpuCycles,addr,value);
+    return;
+  }
   if(addr>=0x5c00&&addr<=0x5fff){if(mmc5ExramMode!==3)mmc5Exram[addr&0x3ff]=value;return;}
   if(addr>=0x6000&&addr<0x8000){if(mmc5PrgRamWritable())prgRam[addr&0x1fff]=value;return;}
   switch(addr){
