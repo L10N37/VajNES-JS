@@ -218,6 +218,8 @@ function cartridgeChrRead(addr) {
     case 11: return colorDreamsChrRead(addr);
     case 66: return gxromChrRead(addr);
     case 79: return nina79ChrRead(addr);
+    case 24:
+    case 26: return vrc6ChrRead(addr);
     default: return CHR_ROM[addr % Math.max(1,CHR_ROM.length)] & 0xFF;
   }
 }
