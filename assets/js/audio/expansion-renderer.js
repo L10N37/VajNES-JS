@@ -242,6 +242,22 @@ class ExpansionAudioRenderer {
     this.cycle+=cycles;
   }
 
+  saveState(){
+    return {
+      chip:this.chip,cycle:this.cycle,sampleClock:this.sampleClock,
+      vrc6:JSON.parse(JSON.stringify(this.vrc6)),
+      mmc5:JSON.parse(JSON.stringify(this.mmc5))
+    };
+  }
+  loadState(state){
+    if(!state||state.chip!==this.chip)return false;
+    this.cycle=Number(state.cycle)||0;
+    this.sampleClock=Number(state.sampleClock)||0;
+    this.queue.length=0;
+    if(state.vrc6)this.vrc6=JSON.parse(JSON.stringify(state.vrc6));
+    if(state.mmc5)this.mmc5=JSON.parse(JSON.stringify(state.mmc5));
+    return true;
+  }
   available(){return this.queue.length;}
   pop(){return this.queue.length?this.queue.shift():0;}
 }
