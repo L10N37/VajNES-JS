@@ -130,6 +130,9 @@ function loadRom(romBytes) {
   let incomingMapper = (nesHeader[6] >> 4) | mapperHighNibble |
     (isNES2 ? (nesHeader[8] & 15) << 8 : 0);
 
+  if(typeof configureExpansionAudioForRom==='function')
+    configureExpansionAudioForRom(romBytes,nesHeader,incomingMapper,isNES2);
+
   // Some otherwise-valid old dumps have only the mapper-high nibble polluted,
   // with clean zero padding, so the generic archaic-header test above cannot
   // identify them. Repair only ROM payloads we know exactly.
@@ -137,6 +140,9 @@ function loadRom(romBytes) {
     const repairedMapper = knownBadHeaderMapper(romBytes, nesHeader);
     if (repairedMapper !== null) incomingMapper = repairedMapper;
   }
+
+  if(typeof configureExpansionAudioForRom==='function')
+    configureExpansionAudioForRom(romBytes,nesHeader,incomingMapper,isNES2);
 
   if (![0,1,2,3,4,7,9,10,11,66,79,155].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
