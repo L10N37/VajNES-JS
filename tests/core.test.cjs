@@ -242,6 +242,13 @@ test('late PPUMASK enable skips the dot-256 vertical increment used by Battletoa
  assert.equal(e.evaluate('VRAM_ADDR'),0x1001);
 });
 
+test('odd-frame skip latch keeps its existing raw PPUMASK timing boundary',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=100;ppuWriteMask(0x18);PPUclock.scanline=261;PPUclock.dot=338;PPUclock.oddFrame=false;oddSkipRendering=false;ppuTick()');
+ assert.deepEqual(e.evaluate('[renderingNow(),oddSkipRendering]'),[false,true]);
+ e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;ppuCycles=200;ppuWriteMask(0);PPUclock.scanline=261;PPUclock.dot=338;oddSkipRendering=true;ppuTick()');
+ assert.deepEqual(e.evaluate('[renderingNow(),oddSkipRendering]'),[true,false]);
+});
 test('PPUMASK pending render delay survives PPU save-state round trip',()=>{
  const e=emulator();
  e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=200;ppuWriteMask(0x18);globalThis.__ppust=ppuSavePipelineState();ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;ppuLoadPipelineState(globalThis.__ppust)');
