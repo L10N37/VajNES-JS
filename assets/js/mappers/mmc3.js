@@ -697,3 +697,37 @@ function openMMC3DebugModal()
 
     window.__mmc3DynamicDebugTimer=setInterval(render,200);
 }
+
+function mmc3SaveState(){
+  const r=MMC3.registers,c=MMC3.control,q=mmc3_irq;
+  return new Uint8Array([
+    1,
+    c.prgMode==="PRG_SWAP_C000"?1:0,
+    c.chrMode==="CHR_INVERTED"?1:0,
+    ["CHR_BANK_0","CHR_BANK_1","CHR_BANK_2","CHR_BANK_3","CHR_BANK_4","CHR_BANK_5","PRG_BANK_0","PRG_BANK_1"].indexOf(c.selectedRegister)&7,
+    c.prgRamEnabled?1:0,c.prgRamWriteProtect?1:0,
+    r.CHR_BANK_0&255,r.CHR_BANK_1&255,r.CHR_BANK_2&255,r.CHR_BANK_3&255,r.CHR_BANK_4&255,r.CHR_BANK_5&255,
+    r.PRG_BANK_0&255,r.PRG_BANK_1&255,
+    q.scanlineCounter&255,q.latch&255,q.reload?1:0,q.enabled?1:0,q.prevA12?1:0,
+    q.lowSince&255,(q.lowSince>>>8)&255,(q.lowSince>>>16)&255,(q.lowSince>>>24)&255,
+    irqAssert.mmc3?1:0,
+    MIRRORING==='horizontal'?1:MIRRORING==='vertical'?0:2
+  ]);
+}
+function mmc3LoadState(bytes){
+  if(!(bytes instanceof Uint8Array)||bytes.length<24||bytes[0]!==1)return false;
+  let o=1;const names=["CHR_BANK_0","CHR_BANK_1","CHR_BANK_2","CHR_BANK_3","CHR_BANK_4","CHR_BANK_5","PRG_BANK_0","PRG_BANK_1"];
+  MMC3.control.prgMode=bytes[o++]?"PRG_SWAP_C000":"PRG_SWAP_8000";
+  MMC3.control.chrMode=bytes[o++]?"CHR_INVERTED":"CHR_NORMAL";
+  MMC3.control.selectedRegister=names[bytes[o++]&7];
+  MMC3.control.prgRamEnabled=!!bytes[o++];MMC3.control.prgRamWriteProtect=!!bytes[o++];
+  MMC3.registers.CHR_BANK_0=bytes[o++];MMC3.registers.CHR_BANK_1=bytes[o++];MMC3.registers.CHR_BANK_2=bytes[o++];
+  MMC3.registers.CHR_BANK_3=bytes[o++];MMC3.registers.CHR_BANK_4=bytes[o++];MMC3.registers.CHR_BANK_5=bytes[o++];
+  MMC3.registers.PRG_BANK_0=bytes[o++];MMC3.registers.PRG_BANK_1=bytes[o++];
+  mmc3_irq.scanlineCounter=bytes[o++];mmc3_irq.latch=bytes[o++];mmc3_irq.reload=!!bytes[o++];mmc3_irq.enabled=!!bytes[o++];
+  mmc3_irq.prevA12=!!bytes[o++];
+  mmc3_irq.lowSince=(bytes[o++]|(bytes[o++]<<8)|(bytes[o++]<<16)|(bytes[o++]<<24))>>>0;
+  irqAssert.mmc3=!!bytes[o++];
+  const m=bytes[o++];if(m===0)MIRRORING='vertical';else if(m===1)MIRRORING='horizontal';
+  return true;
+}
