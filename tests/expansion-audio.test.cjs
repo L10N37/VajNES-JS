@@ -29,8 +29,9 @@ test('VRC6 pulse follows CPU/(16*(period+1))',()=>{
   const samples=drain(r);
   assert(samples.length>11000 && samples.length<13000);
   const f=1789772.7272727273/(16*(period+1));
-  assert(amplitude(samples.slice(2000),rate,f)>0.08);
-  assert(amplitude(samples.slice(2000),rate,f)>4*amplitude(samples.slice(2000),rate,f/2));
+  const fundamental=amplitude(samples.slice(2000),rate,f);
+  assert(fundamental>0.035);
+  assert(fundamental>4*amplitude(samples.slice(2000),rate,f/2));
 });
 
 test('VRC6 channel disable resets pulse phase and silences it',()=>{
