@@ -820,3 +820,33 @@ test('MMC5 save-state restores banking ExRAM IRQ and multiplier',()=>{
  assert.deepEqual(e.evaluate('[mmc5PrgMode,mmc5ChrMode,mmc5NtMap,Array.from(mmc5PrgBanks),mmc5ChrA[0],mmc5ChrB[0],mmc5Exram[17],mmc5IrqCompare,mmc5IrqEnable,mmc5IrqPending,mmc5InFrame,mmc5Scanline,mmc5MulA,mmc5MulB,irqAssert.mmc5]'),
  [2,3,0xe4,[1,2,3,4,5],0x155,0x2aa,0x66,9,true,true,true,9,7,8,true]);
 });
+
+
+test('Namco 340 mapper 210 switches 8K PRG, 1K CHR and mirroring',()=>{
+ const bytes=rom(210,16,8,0,2);
+ for(let b=0;b<32;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
+ for(let b=0;b<64;b++)bytes.fill(b,16+16*0x4000+b*0x400,16+16*0x4000+(b+1)*0x400);
+ const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,7);checkWriteOffset(0x8800,8);checkWriteOffset(0xe000,0x43);checkWriteOffset(0xe800,4);checkWriteOffset(0xf000,5)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xa000),checkReadOffset(0xc000),checkReadOffset(0xe000)]'),[3,4,5,31]);
+ assert.deepEqual(e.evaluate('[ppuBusRead(0),ppuBusRead(0x400)]'),[7,8]);
+ assert.equal(e.evaluate('MIRRORING'),'vertical');
+ e.evaluate('checkWriteOffset(0xe000,0xc3)');
+ assert.equal(e.evaluate('MIRRORING'),'horizontal');
+});
+
+test('Namco 163 mapper 19 exposes internal RAM and cycle IRQ',()=>{
+ const e=emulator(rom(19,16,8));
+ e.evaluate('checkWriteOffset(0xf800,0x82);checkWriteOffset(0x4800,0x5a);checkWriteOffset(0xf800,0x02)');
+ assert.equal(e.evaluate('checkReadOffset(0x4800)'),0x5a);
+ e.evaluate('checkWriteOffset(0x5000,0xfe);checkWriteOffset(0x5800,0xff);consumeCycle()');
+ assert.equal(e.evaluate('irqAssert.namco'),true);
+ assert.equal(e.evaluate('namcoIrqCounter'),0x7fff);
+});
+
+test('Namco mapper save-state restores banks IRQ and internal RAM',()=>{
+ const e=emulator(rom(19,16,8));
+ e.evaluate('namcoChr[0]=9;namcoPrg[0]=6;namcoNt[0]=0xe1;namcoIrqCounter=0x3456;namcoIrqEnable=true;irqAssert.namco=true;namcoRam[3]=0x77;namcoRamAddr=3;namcoRamAuto=true;globalThis.__ns=namcoSaveState();namcoInit(new Uint8Array(16));namcoLoadState(globalThis.__ns)');
+ assert.deepEqual(e.evaluate('[namcoChr[0],namcoPrg[0],namcoNt[0],namcoIrqCounter,namcoIrqEnable,irqAssert.namco,namcoRam[3],namcoRamAddr,namcoRamAuto]'),
+ [9,6,0xe1,0x3456,true,true,0x77,3,true]);
+});
