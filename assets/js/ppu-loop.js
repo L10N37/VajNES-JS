@@ -805,8 +805,11 @@ function ppuTick() {
   }
   renderingPrev = renNow2;
 
-  // Rendering is sampled before the final fetch, not at the skipped dot.
-  if(PPUclock.scanline===261 && PPUclock.dot===338)oddSkipRendering=renNow2;
+  // The odd-frame skipped-dot latch has its own $2001 timing boundary.
+  // Keep sampling the CPU-visible register bits here; the delayed effective
+  // rendering state above is for the pixel/fetch/scroll pipeline.
+  if(PPUclock.scanline===261 && PPUclock.dot===338)
+    oddSkipRendering=(PPUMASK&0x18)!==0;
   // Odd-frame skip
   if (PPUclock.oddFrame && oddSkipRendering &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
