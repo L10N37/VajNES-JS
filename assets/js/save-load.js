@@ -337,6 +337,26 @@ document.addEventListener("DOMContentLoaded", () => {
     return u32ToBytesLE(n >>> 0);
   }
 
+  function num64LE(n) {
+    n=Math.max(0,Math.floor(Number(n)||0));
+    const lo=n>>>0;
+    const hi=Math.floor(n/0x100000000)>>>0;
+    const b=new Uint8Array(8);
+    b.set(u32ToBytesLE(lo),0);b.set(u32ToBytesLE(hi),4);
+    return b;
+  }
+  function bytesToU64LE(arr,off=0) {
+    const lo=bytesToU32LE(arr,off);
+    const hi=bytesToU32LE(arr,off+4);
+    return hi*0x100000000+lo;
+  }
+  function jsonBytes(value) {
+    return new TextEncoder().encode(JSON.stringify(value));
+  }
+  function bytesJson(bytes) {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
   function bool1(v) {
     return num8(v ? 1 : 0);
   }
@@ -415,22 +435,31 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function saveMapperState(mapperIdValue) {
     switch (mapperIdValue | 0) {
-      case 7:
-        return typeof axromSaveState === "function" ? axromSaveState() : new Uint8Array(0);
-      case 0:
-      default:
-        return new Uint8Array(0);
+      case 1: return typeof mmc1SaveState==="function"?mmc1SaveState():new Uint8Array(0);
+      case 2: return typeof uxromSaveState==="function"?uxromSaveState():new Uint8Array(0);
+      case 3: case 9: case 10: case 11: case 66: case 79:
+        return typeof extraMapperSaveState==="function"?extraMapperSaveState(mapperIdValue):new Uint8Array(0);
+      case 4: return typeof mmc3SaveState==="function"?mmc3SaveState():new Uint8Array(0);
+      case 19: case 210: return typeof namcoSaveState==="function"?namcoSaveState():new Uint8Array(0);
+      case 5: return typeof mmc5SaveState==="function"?mmc5SaveState():new Uint8Array(0);
+      case 7: return typeof axromSaveState==="function"?axromSaveState():new Uint8Array(0);
+      case 24: case 26: return typeof vrc6SaveState==="function"?vrc6SaveState():new Uint8Array(0);
+      default:return new Uint8Array(0);
     }
   }
 
   function loadMapperState(mapperIdValue, bytes) {
     switch (mapperIdValue | 0) {
-      case 7:
-        if (typeof axromLoadState === "function") axromLoadState(bytes);
-        return;
-      case 0:
-      default:
-        return;
+      case 1: if(typeof mmc1LoadState==="function")mmc1LoadState(bytes);return;
+      case 2: if(typeof uxromLoadState==="function")uxromLoadState(bytes);return;
+      case 3: case 9: case 10: case 11: case 66: case 79:
+        if(typeof extraMapperLoadState==="function")extraMapperLoadState(mapperIdValue,bytes);return;
+      case 4: if(typeof mmc3LoadState==="function")mmc3LoadState(bytes);return;
+      case 19: case 210: if(typeof namcoLoadState==="function")namcoLoadState(bytes);return;
+      case 5: if(typeof mmc5LoadState==="function")mmc5LoadState(bytes);return;
+      case 7: if(typeof axromLoadState==="function")axromLoadState(bytes);return;
+      case 24: case 26: if(typeof vrc6LoadState==="function")vrc6LoadState(bytes);return;
+      default:return;
     }
   }
 
@@ -497,8 +526,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // CPU regs + timing
     chunks.push(buildSection("CPUR", cpuReg));
 
-    chunks.push(buildSection("CYC0", num32LE((typeof cpuCycles !== "undefined" ? cpuCycles : 0) >>> 0)));
-    chunks.push(buildSection("CYC1", num32LE((typeof ppuCycles !== "undefined" ? ppuCycles : 0) >>> 0)));
+    chunks.push(buildSection("CYC0", num64LE(typeof cpuCycles !== "undefined" ? cpuCycles : 0)));
+    chunks.push(buildSection("CYC1", num64LE(typeof ppuCycles !== "undefined" ? ppuCycles : 0)));
 
     // CPU/IRQ/NMI related
     chunks.push(buildSection("NMIF", num8((typeof PPU_FRAME_FLAGS !== "undefined" ? PPU_FRAME_FLAGS : 0) & 0xFF)));
@@ -511,13 +540,47 @@ document.addEventListener("DOMContentLoaded", () => {
     chunks.push(buildSection("PPUB", num8((typeof openBus.PPU !== "undefined" ? openBus.PPU : 0) & 0xFF)));
     chunks.push(buildSection("RUNN", bool1(typeof cpuRunning !== "undefined" ? cpuRunning : true)));
 
+    chunks.push(buildSection("MACH", jsonBytes({
+      mirroring:typeof MIRRORING!=="undefined"?MIRRORING:null,
+      openBus:typeof openBus!=="undefined"?{...openBus}:null,
+      irqAssert:typeof irqAssert!=="undefined"?{...irqAssert}:null,
+      irqPollCurrent:typeof irqPollCurrent!=="undefined"?!!irqPollCurrent:false,
+      irqPollPrevious:typeof irqPollPrevious!=="undefined"?!!irqPollPrevious:false,
+      irqBypassI:typeof irqBypassI!=="undefined"?!!irqBypassI:false,
+      nmiPollCurrent:typeof nmiPollCurrent!=="undefined"?!!nmiPollCurrent:false,
+      nmiPollPrevious:typeof nmiPollPrevious!=="undefined"?!!nmiPollPrevious:false,
+      nmiSignalSeen:typeof nmiSignalSeen!=="undefined"?!!nmiSignalSeen:false,
+      breakPending:typeof breakPending!=="undefined"?!!breakPending:false,
+      frameCycleDebt:typeof _frameCycleDebt!=="undefined"?_frameCycleDebt:0
+    })));
+
+    if(typeof DMA!=="undefined")chunks.push(buildSection("ODMA",jsonBytes({...DMA})));
+    if(typeof DMC!=="undefined")chunks.push(buildSection("DMCS",jsonBytes({...DMC})));
+    if(typeof APUregister!=="undefined" && typeof apuTiming!=="undefined")
+      chunks.push(buildSection("APUS",jsonBytes({register:{...APUregister},timing:{
+        ...apuTiming,length:Array.from(apuTiming.length),halt:Array.from(apuTiming.halt)
+      }})));
+    chunks.push(buildSection("CTRL",jsonBytes({
+      joypadStrobe:typeof joypadStrobe!=="undefined"?joypadStrobe:0,
+      joypadStrobeOutput:typeof joypadStrobeOutput!=="undefined"?joypadStrobeOutput:0,
+      joypad1Buttons:typeof joypad1Buttons!=="undefined"?joypad1Buttons:0,
+      joypad2Buttons:typeof joypad2Buttons!=="undefined"?joypad2Buttons:0,
+      joypad1State:typeof joypad1State!=="undefined"?joypad1State:0,
+      joypad2State:typeof joypad2State!=="undefined"?joypad2State:0
+    })));
+    if(typeof NESAudio!=="undefined" && typeof NESAudio.saveState==="function")
+      chunks.push(buildSection("AUDS",jsonBytes(NESAudio.saveState())));
+
     // PPU memory
     chunks.push(buildSection("VRAM", VRAM));
     chunks.push(buildSection("OAMM", OAM));
     chunks.push(buildSection("PALR", PALETTE_RAM));
     // CHR RAM is mutable cartridge video memory. Battletoads (AxROM) depends on it.
-    if (typeof chrIsRAM !== "undefined" && chrIsRAM)
-      chunks.push(buildSection("CHRR", CHR_ROM));
+    if (typeof chrIsRAM !== "undefined" && chrIsRAM) {
+      const chrState=(mapper===4 && typeof FULL_CHR_ROM!=="undefined" && FULL_CHR_ROM instanceof Uint8Array)
+        ? FULL_CHR_ROM : CHR_ROM;
+      chunks.push(buildSection("CHRR", chrState));
+    }
 
     // PPU internal latches/state (scalars)
     chunks.push(buildSection("NMIS", bool1(typeof nmiSuppression !== "undefined" ? nmiSuppression : false)));
@@ -587,6 +650,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let mapperFromFile = 0;
     let mapperStateBytes = new Uint8Array(0);
     let ppuPipelineBytes = null;
+    let audioState = null;
 
     while (off + 8 <= fileBytes.length) {
       const tag = bytesToTag(fileBytes, off); off += 4;
@@ -625,8 +689,8 @@ document.addEventListener("DOMContentLoaded", () => {
           CPUregisters.P = unpackCPUFlags(payload[6] & 0xFF);
         } break;
 
-        case "CYC0": cpuCycles = bytesToU32LE(payload, 0) >>> 0; break;
-        case "CYC1": ppuCycles = bytesToU32LE(payload, 0) >>> 0; break;
+        case "CYC0": cpuCycles = payload.length>=8?bytesToU64LE(payload,0):(bytesToU32LE(payload,0)>>>0); break;
+        case "CYC1": ppuCycles = payload.length>=8?bytesToU64LE(payload,0):(bytesToU32LE(payload,0)>>>0); break;
 
         case "NMIF": PPU_FRAME_FLAGS = payload[0] & 0xFF; break;
         case "NMIP":
@@ -638,6 +702,43 @@ document.addEventListener("DOMContentLoaded", () => {
         case "CPUB": openBus.CPU = payload[0] & 0xFF; break;
         case "PPUB": openBus.PPU = payload[0] & 0xFF; break;
         case "RUNN": cpuRunning = !!(payload[0] & 1); break;
+
+        case "MACH": {
+          const s=bytesJson(payload);
+          if(s.mirroring!=null)MIRRORING=s.mirroring;
+          if(s.openBus&&typeof openBus!=="undefined")Object.assign(openBus,s.openBus);
+          if(s.irqAssert&&typeof irqAssert!=="undefined")Object.assign(irqAssert,s.irqAssert);
+          if(typeof irqPollCurrent!=="undefined")irqPollCurrent=!!s.irqPollCurrent;
+          if(typeof irqPollPrevious!=="undefined")irqPollPrevious=!!s.irqPollPrevious;
+          if(typeof irqBypassI!=="undefined")irqBypassI=!!s.irqBypassI;
+          if(typeof nmiPollCurrent!=="undefined")nmiPollCurrent=!!s.nmiPollCurrent;
+          if(typeof nmiPollPrevious!=="undefined")nmiPollPrevious=!!s.nmiPollPrevious;
+          if(typeof nmiSignalSeen!=="undefined")nmiSignalSeen=!!s.nmiSignalSeen;
+          if(typeof breakPending!=="undefined")breakPending=!!s.breakPending;
+          if(typeof _frameCycleDebt!=="undefined")_frameCycleDebt=Number(s.frameCycleDebt)||0;
+        } break;
+        case "ODMA": if(typeof DMA!=="undefined")Object.assign(DMA,bytesJson(payload)); break;
+        case "DMCS": if(typeof DMC!=="undefined")Object.assign(DMC,bytesJson(payload)); break;
+        case "APUS": {
+          const s=bytesJson(payload);
+          if(s.register&&typeof APUregister!=="undefined")Object.assign(APUregister,s.register);
+          if(s.timing&&typeof apuTiming!=="undefined"){
+            const length=s.timing.length||[],halt=s.timing.halt||[];
+            Object.assign(apuTiming,s.timing);
+            apuTiming.length.splice(0,apuTiming.length.length,...length);
+            apuTiming.halt.splice(0,apuTiming.halt.length,...halt);
+          }
+        } break;
+        case "CTRL": {
+          const s=bytesJson(payload);
+          if(typeof joypadStrobe!=="undefined")joypadStrobe=s.joypadStrobe|0;
+          if(typeof joypadStrobeOutput!=="undefined")joypadStrobeOutput=s.joypadStrobeOutput|0;
+          if(typeof joypad1Buttons!=="undefined")joypad1Buttons=s.joypad1Buttons|0;
+          if(typeof joypad2Buttons!=="undefined")joypad2Buttons=s.joypad2Buttons|0;
+          if(typeof joypad1State!=="undefined")joypad1State=s.joypad1State|0;
+          if(typeof joypad2State!=="undefined")joypad2State=s.joypad2State|0;
+        } break;
+        case "AUDS": audioState=bytesJson(payload); break;
 
         case "VRAM": {
           const L = Math.min(payload.length, VRAM.length);
@@ -658,10 +759,14 @@ document.addEventListener("DOMContentLoaded", () => {
         } break;
 
         case "CHRR": {
-          if (typeof chrIsRAM !== "undefined" && chrIsRAM && CHR_ROM instanceof Uint8Array) {
-            const L = Math.min(payload.length, CHR_ROM.length);
-            CHR_ROM.set(payload.subarray(0, L));
-            if (payload.length < CHR_ROM.length) CHR_ROM.fill(0, payload.length);
+          if (typeof chrIsRAM !== "undefined" && chrIsRAM) {
+            const target=(getMapperIdSafe()===4 && typeof FULL_CHR_ROM!=="undefined" && FULL_CHR_ROM instanceof Uint8Array)
+              ? FULL_CHR_ROM : CHR_ROM;
+            if(target instanceof Uint8Array) {
+              const L=Math.min(payload.length,target.length);
+              target.set(payload.subarray(0,L));
+              if(payload.length<target.length)target.fill(0,payload.length);
+            }
           }
         } break;
 
@@ -708,10 +813,21 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    if(mapperFromFile!==getMapperIdSafe()) {
+      alert("Save state mapper does not match the currently loaded ROM.");
+      return false;
+    }
+    if(mapperFromFile!==0 && mapperStateBytes.length===0) {
+      alert("This save state predates complete mapper-state support and cannot be restored safely.");
+      return false;
+    }
+
     // Apply cartridge latches before restoring the live PPU pipeline.
     loadMapperState(mapperFromFile, mapperStateBytes);
     if (ppuPipelineBytes && typeof ppuLoadPipelineState === "function")
       ppuLoadPipelineState(ppuPipelineBytes);
+    if(audioState && typeof NESAudio!=="undefined" && typeof NESAudio.loadState==="function")
+      NESAudio.loadState(audioState);
 
     return true;
   }

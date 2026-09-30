@@ -182,8 +182,12 @@ function checkReadOffset(address) {
 
           } else {
 
-            const ntAddr = mapNT(vv);
-            VRAM_DATA = VRAM[ntAddr] & 0xFF;
+            if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(vv)&0xff;
+            else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(vv)&0xff;
+            else {
+              const ntAddr = mapNT(vv);
+              VRAM_DATA = VRAM[ntAddr] & 0xFF;
+            }
           }
         } else {
 
@@ -203,8 +207,12 @@ function checkReadOffset(address) {
           // Reload VRAM buffer from nametable mirror ($2F00-$2FFF)
           const ntMirror = vv & 0x2FFF;
 
-          const ntAddr = mapNT(ntMirror);
-          VRAM_DATA = VRAM[ntAddr] & 0xFF;
+          if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(ntMirror)&0xff;
+          else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(ntMirror)&0xff;
+          else {
+            const ntAddr = mapNT(ntMirror);
+            VRAM_DATA = VRAM[ntAddr] & 0xFF;
+          }
         }
 
         incrementPPUDataAddress();
@@ -231,13 +239,18 @@ function checkReadOffset(address) {
 
   } else if (addr < 0x6000) {
 
-    raw = openBus.CPU & 0xFF;
+    raw = mapperNumber===5 ? mmc5CpuRead(addr)&0xFF :
+      mapperNumber===19 ? namcoReadLow(addr)&0xff : openBus.CPU & 0xFF;
 
   } else if (addr < 0x8000) {
 
     raw =
-      (mapperNumber===24 || mapperNumber===26)
-        ? vrc6CpuRead(addr) & 0xFF
+      mapperNumber===5
+        ? mmc5CpuRead(addr) & 0xFF
+        : (mapperNumber===19 || mapperNumber===210)
+          ? namcoPrgRead(addr) & 0xff
+        : (mapperNumber===24 || mapperNumber===26)
+          ? vrc6CpuRead(addr) & 0xFF
         : mapperNumber === 1
           ? mmc1CpuRead(addr) & 0xFF
           : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
@@ -457,6 +470,9 @@ function checkWriteOffset(address, value) {
           {
               mmc1ChrWrite(v & 0x1FFF, value);
           }
+          else if (mapperNumber===5) {
+              // MMC5 commercial boards use CHR ROM; no write here.
+          }
           else if (chrIsRAM)
           {
               CHR_ROM[v & 0x1FFF] = value;
@@ -464,8 +480,12 @@ function checkWriteOffset(address, value) {
       }
       else if (v < 0x3F00)
       {
-          const ntAddr = mapNT(v);
-          VRAM[ntAddr] = value;
+          if(mapperNumber===5) mmc5NametableWrite(v,value);
+          else if(mapperNumber===19 || mapperNumber===210) namcoNtWrite(v,value);
+          else {
+            const ntAddr = mapNT(v);
+            VRAM[ntAddr] = value;
+          }
       }
       else
       {
@@ -498,7 +518,9 @@ function checkWriteOffset(address, value) {
     apuWrite(addr, value);
 
   } else if (addr < 0x8000) {
-    if (mapperNumber === 1) mmc1CpuWrite(addr, value);
+    if (mapperNumber === 5) mmc5CpuWrite(addr,value);
+    else if (mapperNumber===19 || mapperNumber===210) namcoWrite(addr,value);
+    else if (mapperNumber === 1) mmc1CpuWrite(addr, value);
     else if (mapperNumber === 79) nina79Write(addr, value);
     else if (mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
     else if(addr>=0x6000 && mapperNumber!==7 && mapperNumber!==3 &&
@@ -509,6 +531,7 @@ function checkWriteOffset(address, value) {
   } else {
     // Mapper registers decode writes across the full $8000–$FFFF range.
     if (mapperNumber === 1) mmc1CpuWrite(addr, value);
+    else if (mapperNumber===19 || mapperNumber===210) namcoWrite(addr,value);
     else mapperWritePRG(addr, value);
   }
 
@@ -531,6 +554,8 @@ function cpuWrite(addr, value) {
 
 // ----------------- mapper PRG -----------------
 function mapperReadPRG(addr) {
+  if (mapperNumber===5) return mmc5CpuRead(addr);
+  if (mapperNumber===19 || mapperNumber===210) return namcoPrgRead(addr);
   if (mapperNumber===7) return axromRead(addr);
   if (mapperNumber===2) return uxromRead(addr);
   if (mapperNumber===24 || mapperNumber===26) return vrc6CpuRead(addr);
@@ -538,7 +563,9 @@ function mapperReadPRG(addr) {
   return extra === null ? prgRom[addr - 0x8000] : extra;
 }
 function mapperWritePRG(addr, value) {
-  if(mapperNumber===7) axromWrite(addr,value);
+  if(mapperNumber===5) mmc5CpuWrite(addr,value);
+  else if(mapperNumber===19 || mapperNumber===210) namcoWrite(addr,value);
+  else if(mapperNumber===7) axromWrite(addr,value);
   else if(mapperNumber===2) uxromWrite(addr,value);
   else if(mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
   else extraMapperWritePRG(addr,value);

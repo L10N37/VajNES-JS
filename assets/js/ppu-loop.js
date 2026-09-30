@@ -590,6 +590,8 @@ function ppuBusRead(addr) {
     }
 
     if (addr < 0x3F00) {
+        if(mapperNumber===5)return mmc5NametableRead(0x2000 | (addr & 0x0FFF)) & 0xFF;
+        if(mapperNumber===19 || mapperNumber===210)return namcoNtRead(0x2000 | (addr & 0x0FFF)) & 0xff;
         const mapped = mapNametableAddr(0x2000 | (addr & 0x0FFF));
         return VRAM[mapped] & 0xFF;
     }
@@ -602,6 +604,7 @@ function ppuBusRead(addr) {
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
   const ren = renderingNow();
+  if(mapperNumber===5 && dot===0)mmc5EndFrame();
 
   if (dot === 1 && oamCorruptPending && ren) {
     oamCorruptDoCopyRow(oamCorruptSeedRow);
@@ -699,6 +702,7 @@ function preRenderScanline(dot) {
 
 function visibleScanline(dot) {
   const ren   = renderingNow();
+  if(mapperNumber===5 && dot===4)mmc5ClockScanline(PPUclock.scanline);
   const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
 
@@ -899,7 +903,7 @@ function renderingBusTick() {
       const fetchAddress=address+(phase===6?8:0);
       mmc3Irq(fetchAddress);
       if(slot<spritesNext.count) {
-        let data=ppuBusRead(fetchAddress);
+        let data=mapperNumber===5?mmc5ChrRead(fetchAddress,true):ppuBusRead(fetchAddress);
         if(spritesNext.attr[slot]&0x40)data=reverseByte(data);
         if(phase===4)spritesNext.lo[slot]=data;else spritesNext.hi[slot]=data;
       }

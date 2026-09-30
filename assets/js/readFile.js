@@ -24,6 +24,8 @@ function crc32Bytes(bytes) {
 const KNOWN_BAD_HEADER_MAPPERS = new Map([
   [0x5DBD6099, 1],
   [0x6B761858, 1],
+  // Splatterhouse: Wanpaku Graffiti, Namco 340. Many legacy dumps tag it 19.
+  [0x46FD7843, 210],
 ]);
 
 function knownBadHeaderMapper(romBytes, header) {
@@ -151,7 +153,7 @@ function loadRom(romBytes) {
     if (repairedMapper !== null) incomingMapper = repairedMapper;
   }
 
-  if (![0,1,2,3,4,7,9,10,11,24,26,66,79,155].includes(incomingMapper))
+  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,66,79,155,210].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
 
   // Never show an expansion-audio prompt for a mapper this build cannot run.
@@ -171,12 +173,16 @@ function loadRom(romBytes) {
   if (incomingMapper===3 && (nesHeader[5]===0 || ![1,2].includes(nesHeader[4]) ||
       (isNES2 && (nesHeader[8]>>4)>2)))
     throw new Error('Unsupported CNROM board: expected 16/32 KiB PRG, CHR ROM and submapper 0–2');
+  if (incomingMapper===5 && nesHeader[5]===0)
+    throw new Error('Unsupported MMC5 board: CHR ROM required');
   if ([9,10,11,66].includes(incomingMapper) && nesHeader[5]===0)
     throw new Error(`Unsupported mapper ${incomingMapper} board: CHR ROM required`);
 
   if (incomingMapper===79 && (nesHeader[5]===0 || ![2,4].includes(nesHeader[4])))
     throw new Error('Unsupported NINA-03/06 board: expected 32/64 KiB PRG and CHR ROM');
 
+  if ((incomingMapper===19 || incomingMapper===210) && nesHeader[5]===0)
+    throw new Error(`Unsupported Namco mapper ${incomingMapper}: CHR ROM required`);
   if ((incomingMapper===24 || incomingMapper===26) && nesHeader[5]===0)
     throw new Error('Unsupported VRC6 board: CHR ROM required');
 

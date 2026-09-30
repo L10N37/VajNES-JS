@@ -97,3 +97,24 @@ function vrc6ClockCpu(){
   vrc6IrqPrescaler-=3;
   if(vrc6IrqPrescaler<=0){vrc6IrqPrescaler+=341;vrc6IrqCounterClock();}
 }
+
+
+function vrc6SaveState(){
+  const out=new Uint8Array(1+2+8+1+3+3+1);
+  let o=0;out[o++]=1;out[o++]=vrc6Prg16&255;out[o++]=vrc6Prg8&255;out.set(vrc6Chr,o);o+=8;
+  out[o++]=vrc6B003&255;out[o++]=vrc6IrqLatch&255;out[o++]=vrc6IrqCounter&255;
+  out[o++]=vrc6IrqPrescaler&255;out[o++]=(vrc6IrqPrescaler>>>8)&255;
+  out[o++]=(vrc6IrqEnabled?1:0)|(vrc6IrqEnableAfterAck?2:0)|(vrc6IrqCycleMode?4:0);
+  out[o++]=irqAssert.vrc?1:0;
+  return out;
+}
+function vrc6LoadState(bytes){
+  if(!(bytes instanceof Uint8Array)||bytes.length<18||bytes[0]!==1)return false;
+  let o=1;vrc6Prg16=bytes[o++];vrc6Prg8=bytes[o++];vrc6Chr.set(bytes.subarray(o,o+8));o+=8;
+  vrc6B003=bytes[o++];vrc6IrqLatch=bytes[o++];vrc6IrqCounter=bytes[o++];
+  vrc6IrqPrescaler=bytes[o++]|(bytes[o++]<<8);
+  const f=bytes[o++];vrc6IrqEnabled=!!(f&1);vrc6IrqEnableAfterAck=!!(f&2);vrc6IrqCycleMode=!!(f&4);
+  irqAssert.vrc=!!bytes[o++];
+  vrc6SetMirroring(vrc6B003);
+  return true;
+}

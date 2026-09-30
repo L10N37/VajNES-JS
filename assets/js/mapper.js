@@ -66,6 +66,17 @@ function mapper(nesHeader) {
     }
 
     // ==========================================================
+    // Mapper 5: MMC5 (ExROM)
+    // ==========================================================
+    case 5: {
+      globalThis.NES_DEBUG_LOGGING && console.debug("[Mapper5] Initializing MMC5");
+      chrIsRAM = (chrSize === 0);
+      mmc5Init();
+      resetCPU();
+      break;
+    }
+
+    // ==========================================================
     // Mapper 4: MMC3 (TxROM family)
     // ==========================================================
     case 4: {
@@ -112,6 +123,14 @@ function mapper(nesHeader) {
     case 79: {
       nina79Init();
       chrIsRAM = false;
+      resetCPU();
+      break;
+    }
+
+    case 19:
+    case 210: {
+      namcoInit(nesHeader);
+      chrIsRAM=false;
       resetCPU();
       break;
     }
