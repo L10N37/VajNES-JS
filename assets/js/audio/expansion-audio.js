@@ -78,27 +78,92 @@ function detectExpansionAudio(romBytes, header, mapper, isNES2) {
 
 let expansionAudioState={chip:null,enabled:false,confidence:null};
 
+function setExpansionAudioChoice(found, enabled) {
+  expansionAudioState={
+    chip:found?.chip||null,
+    enabled:!!enabled && !!found,
+    confidence:found?.confidence||null
+  };
+  if(typeof NESAudio!=='undefined' && NESAudio.setExpansion)
+    NESAudio.setExpansion(found?.chip||null, expansionAudioState.enabled);
+}
+
+function showExpansionAudioPrompt(found) {
+  const certain=found.confidence!=='possible';
+  const message=certain
+    ? `This game supports expansion audio (${found.chip}). Enable it?`
+    : `This legacy ROM may use expansion audio (${found.chip}), but its old header cannot identify the board exactly. Enable it?`;
+
+  // Headless/test fallback. Browsers get the explicit Yes / No VajNES dialog.
+  if(typeof document==='undefined' || !document.body || typeof document.createElement!=='function') {
+    const enabled=typeof window!=='undefined' && typeof window.confirm==='function'
+      ? !!window.confirm(message) : false;
+    setExpansionAudioChoice(found,enabled);
+    return;
+  }
+
+  document.getElementById('expansion-audio-prompt')?.remove();
+
+  const overlay=document.createElement('div');
+  overlay.id='expansion-audio-prompt';
+  overlay.className='expansion-audio-prompt';
+  overlay.setAttribute('role','dialog');
+  overlay.setAttribute('aria-modal','true');
+  overlay.setAttribute('aria-labelledby','expansion-audio-title');
+
+  const card=document.createElement('div');
+  card.className='expansion-audio-card';
+
+  const title=document.createElement('h2');
+  title.id='expansion-audio-title';
+  title.textContent='Expansion Audio';
+
+  const text=document.createElement('p');
+  text.textContent=message;
+
+  const actions=document.createElement('div');
+  actions.className='expansion-audio-actions';
+
+  const yes=document.createElement('button');
+  yes.type='button';
+  yes.className='expansion-audio-button';
+  yes.textContent='Yes';
+
+  const no=document.createElement('button');
+  no.type='button';
+  no.className='expansion-audio-button';
+  no.textContent='No';
+
+  const choose=enabled=>{
+    setExpansionAudioChoice(found,enabled);
+    overlay.remove();
+  };
+
+  yes.addEventListener('click',()=>choose(true));
+  no.addEventListener('click',()=>choose(false));
+  overlay.addEventListener('keydown',event=>{
+    if(event.key==='Escape'){event.preventDefault();choose(false);}
+  });
+
+  actions.append(yes,no);
+  card.append(title,text,actions);
+  overlay.append(card);
+  document.body.append(overlay);
+  yes.focus();
+}
+
 function configureExpansionAudioForRom(romBytes,header,mapper,isNES2) {
   const found=detectExpansionAudio(romBytes,header,mapper,isNES2);
   expansionAudioState={chip:found?.chip||null,enabled:false,confidence:found?.confidence||null};
 
   if(!found) {
+    document?.getElementById?.('expansion-audio-prompt')?.remove();
     if(typeof NESAudio!=='undefined' && NESAudio.setExpansion) NESAudio.setExpansion(null,false);
     return expansionAudioState;
   }
 
-  const certain=found.confidence!=='possible';
-  const message=certain
-    ? `This game supports expansion audio (${found.chip}). Enable?`
-    : `This legacy ROM may use expansion audio (${found.chip}), but its old header cannot identify the board exactly. Enable expansion audio?`;
-
-  const enabled=typeof window!=='undefined' && typeof window.confirm==='function'
-    ? !!window.confirm(message) : false;
-
-  expansionAudioState.enabled=enabled;
-
-  if(typeof NESAudio!=='undefined' && NESAudio.setExpansion)
-    NESAudio.setExpansion(found.chip,enabled);
-
+  // Start disabled until the player explicitly chooses Yes.
+  setExpansionAudioChoice(found,false);
+  showExpansionAudioPrompt(found);
   return expansionAudioState;
 }
