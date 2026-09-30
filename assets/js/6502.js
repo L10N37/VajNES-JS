@@ -50,6 +50,7 @@ function resetCPU() {
   apuResetTiming();
   resetDMC();
   irqAssert.mmc3=false; // A newly loaded non-MMC3 cartridge has no MMC3 IRQ source.
+  irqAssert.mmc5=false;
   irqAssert.vrc=false;
   if(mapperNumber===4)mmc3Reset();
   joypadStrobe=joypadStrobeOutput=joypad1State=joypad2State=0;
@@ -131,7 +132,7 @@ function consumeCycle() {
   if(nmiSignal && !nmiSignalSeen)nmiPollCurrent=true;
   nmiSignalSeen=nmiSignal;
   irqPollPrevious=irqPollCurrent;
-  irqPollCurrent=(irqAssert.frame || irqAssert.mmc3 || irqAssert.vrc || irqAssert.dmcDma) && !CPUregisters.P.I;
+  irqPollCurrent=(irqAssert.frame || irqAssert.mmc3 || irqAssert.mmc5 || irqAssert.vrc || irqAssert.dmcDma) && !CPUregisters.P.I;
   clockJoypadStrobe();
 
   clockDMC();
