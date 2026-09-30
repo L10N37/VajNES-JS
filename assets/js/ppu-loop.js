@@ -128,14 +128,7 @@ let spriteOnlyPrimePending = false;
 // ---- OAM corruption ----
 let oamCorruptPending = false;
 let oamCorruptSeedRow = 0;
-
-// Secondary OAM is a real 32-byte store with a 5-bit address counter.
-// When that counter wraps, the overflow latch suppresses further increments
-// until an OAM2-address reset pulse is seen while rendering is active.
-const secondaryOAM = new Uint8Array(32);
-secondaryOAM.fill(0xFF);
 let secOAMAddr = 0;
-let secOAMOverflowed = false;
 let ppumaskPrev = 0;
 
 // ---- Debug offsets ----
@@ -161,49 +154,24 @@ function oamCorruptDoCopyRow(seedRow) {
   }
 }
 
-function resetSecondaryOAMAddress() {
-  secOAMAddr = 0;
-  secOAMOverflowed = false;
-}
-
-function incrementSecondaryOAMAddress() {
-  if (secOAMOverflowed) return;
-  if (secOAMAddr === 0x1F) {
-    secOAMAddr = 0;
-    secOAMOverflowed = true;
-  } else {
-    secOAMAddr = (secOAMAddr + 1) & 0x1F;
-  }
-}
-
-// Model the externally observable OAM2 address behaviour used by AccuracyCoin.
-// Sprite fetch advances the 5-bit address through $1F; the extra increment at
-// dot 321 normally wraps it back to zero and raises the overflow/freeze latch.
-// Disabling rendering pauses these transitions, which can leave a non-zero
-// OAM2 address visible during the idle part of the scanline.
+// Minimal secondary OAM address model
 function updateSecondaryOAMAddrForDot(scanline, dot) {
   if (!renderingNow()) return;
-  const visible = scanline >= 0 && scanline <= 239;
-  const preRender = scanline === 261;
-  if (!visible && !preRender) return;
+  if (!(scanline === 261 || (scanline >= 0 && scanline <= 239))) return;
 
-  // Normal reset before sprite fetch. If rendering is forced off across this
-  // boundary the old address/overflow state survives, as on the PPU.
-  if (dot === 257) {
-    resetSecondaryOAMAddress();
+  if (dot >= 1 && dot <= 64) {
+    secOAMAddr = ((dot - 1) >> 1) & 0x1F;
     return;
   }
 
-  // During the 64-dot sprite-fetch window, move from $00 through $1F.
-  // The last address is held through dot 320.
-  if (dot >= 259 && dot <= 319 && (dot & 1)) {
-    incrementSecondaryOAMAddress();
+  if (dot >= 257 && dot <= 320) {
+    const t = dot - 257;
+    const sub = t & 7;
+    if (dot === 257) secOAMAddr = 0;
+    if (sub === 0 || sub === 1 || sub === 2 || sub === 7) {
+      secOAMAddr = (secOAMAddr + 1) & 0x1F;
+    }
     return;
-  }
-
-  // Hardware has an additional increment as sprite fetch ends.
-  if (dot === 321) {
-    incrementSecondaryOAMAddress();
   }
 }
 
@@ -238,11 +206,6 @@ function evalSpritesForScanline(target, scanline) {
 
   if (!renderingNow()) return;
 
-  // Evaluation clears/fills OAM2 on visible scanlines. The pre-render line
-  // deliberately does not call this function, leaving stale OAM2 data for
-  // scanline-0 sprite fetch behaviour.
-  secondaryOAM.fill(0xFF);
-
   const is8x16 = (PPUCTRL & SPRITE_SIZE_16) !== 0;
   const sprH   = is8x16 ? 16 : 8;
 
@@ -275,12 +238,6 @@ function evalSpritesForScanline(target, scanline) {
       target.lo[i]   = 0;
       target.hi[i]   = 0;
       target.idx[i]  = baseAddr & 0xFF;
-
-      const o2 = i << 2;
-      secondaryOAM[o2]     = y;
-      secondaryOAM[o2 + 1] = tile;
-      secondaryOAM[o2 + 2] = attr;
-      secondaryOAM[o2 + 3] = x;
 
       if (m === 0) target.sprite0ListIndex = i & 0xFF;
     } else {
@@ -531,6 +488,8 @@ function preRenderScanline(dot) {
     doNotSetVblank = false;
   }
 
+  if (dot === 65) evalSpritesForScanline(spritesNext, 0);
+
   if (ren && dot === 256) incY();
   if (ren && dot === 257) copyHoriz();
   if (ren && dot >= 280 && dot <= 304) copyVert();
@@ -748,22 +707,18 @@ function vblankStartScanline(dot) {
 
   // vblank signal might be rising
   if (dot === 0) {
-    // PPU_FRAME_FLAGS |= 0b00000010; // # I think i was using bit 1 to track v blank at one stage, this is a spare bit (bit 1)
     if (isNmiBitSet()){
-    setNmiEdge(); // for now, set the NMI edge based on the NMI bit in PPU Control Reg - no other conditions (like vblank = 1)
+    setNmiEdge();
     }
   }
 
   if (dot === 1) {
-    // yes, set vblank at dot 1 unconditionally (not based off bit 7 of PPUSTATUS being set)
-    // we can gate this with that check, but its not necessary. If the CPU did a $2002 (PPUSTATUS) read
-    // at dot zero, it clears the vblank bit (7) and thats checked after in both this dot (1) and dot 2
     SET_VBLANK(); 
 
     if (!isNmiBitSet()) clearNmiEdge();
     if (doNotSetVblank) CLEAR_VBLANK();
   }
-  // for NMI disabled at Vblank test
+
   if (dot === 2){ 
     if (doNotSetVblank) CLEAR_VBLANK();
     if (!isNmiBitSet()) clearNmiEdge();
@@ -792,8 +747,6 @@ function renderingBusTick() {
   const d=PPUclock.dot+1,sl=PPUclock.scanline;
   if(mapperNumber!==4 && (d<257 || d>320))return;
   if(!renderingNow() || (sl>239 && sl!==261)){mmc3Irq(VRAM_ADDR);return;}
-  // The two trailing nametable accesses start at dots 337 and 339.
-  // They do not inherit the pattern-fetch address-phase offset.
   if(PPUclock.dot>=336){
     if(PPUclock.dot===337 || PPUclock.dot===339)mmc3Irq(0x2000|(VRAM_ADDR&0xfff));
     return;
@@ -846,12 +799,9 @@ function ppuTick() {
   }
   renderingPrev = renNow2;
 
-  // The odd-frame skipped-dot latch has its own $2001 timing boundary.
-  // Keep sampling the CPU-visible register bits here; the delayed effective
-  // rendering state above is for the pixel/fetch/scroll pipeline.
   if(PPUclock.scanline===261 && PPUclock.dot===338)
     oddSkipRendering=(PPUMASK&0x18)!==0;
-  // Odd-frame skip
+
   if (PPUclock.oddFrame && oddSkipRendering &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
       PPUclock.scanline = 0;
@@ -861,15 +811,8 @@ function ppuTick() {
       return;
     }
 
-  // Per-dot behaviour
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
 
-  // --- Sprite evaluation OAMADDR behaviour (PPU-timed) ---
-  // Implements:
-  //  - Rule 8: during dots 65–256 of visible scanlines, reads from $2004
-  //    use the "current" OAM address which changes every other PPU cycle.
-  //  - OAMADDR reset: during dots 257–320 of visible + pre-render scanlines,
-  //    OAMADDR is reset to 0.
   if (renNow2) {
     const sl = PPUclock.scanline | 0;
     const d  = PPUclock.dot | 0;
@@ -878,14 +821,12 @@ function ppuTick() {
     const preRender = (sl === 261);
     const visOrPre  = visible || preRender;
 
-    // Approximate sprite evaluation: walk OAM every other dot
     if (visible && d >= 65 && d <= 256) {
       if ((d & 1) === 0) {
         OAMADDR = (OAMADDR + 1) & 0xFF;
       }
     }
 
-    // Reset OAMADDR during 257–320 on visible and pre-render lines
     if (visOrPre && d >= 257 && d <= 320) {
       OAMADDR = 0;
     }
@@ -905,10 +846,7 @@ function ppuTick() {
 
 // ---- Main PPU Loop ----
 function startPPULoop() {
-
     for (let ticks = 0; ticks < 3; ticks++) {
-
-      // store pre dot advancing for $2002
       current.dot = PPUclock.dot;
       current.frame = PPUclock.frame;
       current.scanline = PPUclock.scanline;
