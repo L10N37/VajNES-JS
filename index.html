@@ -48,6 +48,7 @@
       <button class="dropbtn" id="SRAM">SRAM</button>
       <button class="dropbtn" id="saveState">States</button>
       <button class="dropbtn" id="resetButton">Reset</button>
+      <button class="dropbtn" id="aboutButton">About</button>
       <details class="gamepad-menu">
         <summary class="dropbtn">Controller</summary>
         <div class="gamepad-help">
@@ -93,6 +94,47 @@
       <script src="https://www.highrevenueformat.com/0cdf162c47350c8574f5237c2f50b440/invoke.js"></script>
     </div>
   </aside>
+
+  <div id="about-modal" class="about-modal" aria-hidden="true">
+    <div class="about-card" role="dialog" aria-modal="true" aria-labelledby="about-title">
+      <button id="about-close" class="about-close" aria-label="Close About">&times;</button>
+      <h1 id="about-title">VajNES</h1>
+      <p class="about-tagline">One of the most accurate NES emulators running right in your browser!</p>
+
+      <div class="about-status">
+        <strong>AccuracyCoin:</strong> <span>130 / 144 tests passing</span>
+      </div>
+
+      <h2>Features</h2>
+      <ul>
+        <li>Runs NES ROMs directly in the browser — no install required.</li>
+        <li>Cycle-focused CPU, PPU, DMA and APU accuracy work with automated regression testing.</li>
+        <li>Save states, SRAM support, ROM header information, disassembler, memory/debug views and tile viewer.</li>
+        <li>Scanlines, pixel effects, palettes, scaling and display customisation.</li>
+        <li>Automatic keyboard and browser Gamepad API controller support.</li>
+        <li>Experimental native/WebAssembly audio path with regression testing.</li>
+      </ul>
+
+      <h2>Keyboard shortcuts</h2>
+      <div class="about-grid">
+        <span><kbd>R</kbd></span><span>Run / Pause the loaded ROM</span>
+        <span><kbd>F2</kbd></span><span>Open screen-size / scale settings</span>
+        <span><kbd>F11</kbd></span><span>Recommended browser fullscreen shortcut</span>
+        <span><kbd>~</kbd></span><span>Single-step / debugging mode</span>
+        <span><kbd>X</kbd> / <kbd>Z</kbd></span><span>NES A / B</span>
+        <span><kbd>Enter</kbd></span><span>Start</span>
+        <span><kbd>Backspace</kbd></span><span>Select</span>
+        <span><kbd>Arrow keys</kbd></span><span>D-pad</span>
+      </div>
+
+      <h2>Supported mappers</h2>
+      <p class="mapper-list">0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 7 AxROM · 9 MMC2 · 10 MMC4 · 11 Color Dreams · 66 GxROM · 155 MMC1 variant</p>
+      <p class="about-note">Mapper support is actively expanding. Passing mapper unit tests does not yet guarantee every commercial game on that mapper is compatible.</p>
+
+      <h2>Bug reports</h2>
+      <p>If a game fails, shows a grey screen, has broken graphics/audio, or behaves incorrectly, email <a href="mailto:vajskids@gmail.com">vajskids@gmail.com</a>. Please include the game title/region and, if known, the ROM hash.</p>
+    </div>
+  </div>
 
   <!-- Tile Viewer Modal -->
   <div id="tileModal" class="TileViewModal" aria-hidden="true">
@@ -361,6 +403,22 @@
 <script src="assets/js/cpu-loop.js"></script>
 <script src="assets/js/ppu-loop.js"></script>
 
+
+<script>
+(() => {
+  const modal = document.getElementById('about-modal');
+  const open = document.getElementById('aboutButton');
+  const close = document.getElementById('about-close');
+  const setOpen = (value) => {
+    modal.classList.toggle('is-open', value);
+    modal.setAttribute('aria-hidden', value ? 'false' : 'true');
+  };
+  open.addEventListener('click', () => setOpen(true));
+  close.addEventListener('click', () => setOpen(false));
+  modal.addEventListener('click', (e) => { if (e.target === modal) setOpen(false); });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('is-open')) setOpen(false); });
+})();
+</script>
 
 <!-- actual JS code, LAST to run after JS includes - loads last loaded ROM on page refresh/ site re-launch -->
 <script>

@@ -86,7 +86,17 @@ function loadRom(romBytes) {
   const isNES2 = (nesHeader[7] & 0x0C) === 0x08;
   if (isNES2 && nesHeader[9] !== 0)
     throw new Error('NES 2.0 extended ROM sizes are not supported yet');
-  const incomingMapper = (nesHeader[6] >> 4) | (nesHeader[7] & 0xF0) |
+
+  // Archaic iNES images made by old tools such as NES Image can contain
+  // signatures like "DiskDude!" in bytes 7-15. In that case byte 7's high
+  // nibble is not mapper metadata (it famously adds 64 to the real mapper).
+  // NESdev's compatibility rule is to ignore those upper mapper bits when a
+  // non-NES-2.0 header has non-zero padding in bytes 12-15.
+  const archaicINes = !isNES2 &&
+    ((nesHeader[12] | nesHeader[13] | nesHeader[14] | nesHeader[15]) !== 0);
+  const mapperHighNibble = archaicINes ? 0 : (nesHeader[7] & 0xF0);
+
+  const incomingMapper = (nesHeader[6] >> 4) | mapperHighNibble |
     (isNES2 ? (nesHeader[8] & 15) << 8 : 0);
   if (![0,1,2,3,4,7,9,10,11,66,155].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
@@ -118,9 +128,10 @@ function loadRom(romBytes) {
   // Detect header version (NES 2.0 vs classic iNES)
   headerVersion = ((nesHeader[7] >> 2) & 0x03) === 0x02 ? 2 : 1;
 
-  // Mapper number is split across flags 6 and 7
+  // Mapper number is split across flags 6 and 7. For an archaic
+  // polluted iNES header, mapperHighNibble was deliberately masked above.
   const mapperLow  = nesHeader[6] >> 4;
-  const mapperHigh = nesHeader[7] & 0xF0;
+  const mapperHigh = mapperHighNibble;
 
   let mapperExt = 0;
 

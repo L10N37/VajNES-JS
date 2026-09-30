@@ -52,7 +52,8 @@ function paletteIndex(addr14) {
 // ----------------- CPU read dispatch -----------------
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
-  if(DMC.dmaRequest && !DMC.dmaBusy && cpuCycles>=DMC.dmaAt)dmcDoDMA(addr);
+  if(DMC.dmaRequest && !DMC.dmaBusy && cpuCycles>=DMC.dmaAt &&
+     (DMC.dmaKind!=="reload" || cpuCycles>=DMC.readerEnableAt)) dmcDoDMA(addr);
 
   let raw = 0x00;
 

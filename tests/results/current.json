@@ -2,11 +2,11 @@
   "suiteFinished": true,
   "suiteCommit": "673ef550db296136d52229961e7d39366116882a",
   "romSha256": "4fe8c2bc9abc6f4d418da47b73f62cba89fcacd950fae763097a1681d650e839",
-  "cpuCycles": 120100046,
-  "pc": 32991,
+  "cpuCycles": 120100043,
+  "pc": 63733,
   "counts": {
-    "pass": 129,
-    "fail": 15
+    "pass": 130,
+    "fail": 14
   },
   "results": [
     {
@@ -905,9 +905,9 @@
       "group": "APU Tests",
       "name": "Delta Modulation Channel",
       "address": 1130,
-      "raw": 86,
-      "status": "fail",
-      "code": 21
+      "raw": 1,
+      "status": "pass",
+      "code": 0
     },
     {
       "page": 14,
