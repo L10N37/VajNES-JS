@@ -102,7 +102,7 @@ function showExpansionAudioPrompt(found) {
     return;
   }
 
-  document.getElementById('expansion-audio-prompt')?.remove();
+  document.getElementById('expansion-audio-prompt')?.remove?.();
 
   const overlay=document.createElement('div');
   overlay.id='expansion-audio-prompt';
@@ -150,6 +150,11 @@ function showExpansionAudioPrompt(found) {
   overlay.append(card);
   document.body.append(overlay);
   yes.focus();
+}
+
+function expansionAudioPromptOpen() {
+  return typeof document!=='undefined' &&
+    !!document.getElementById?.('expansion-audio-prompt');
 }
 
 function configureExpansionAudioForRom(romBytes,header,mapper,isNES2) {
