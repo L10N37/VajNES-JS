@@ -815,6 +815,10 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("Save state mapper does not match the currently loaded ROM.");
       return false;
     }
+    if(mapperFromFile!==0 && mapperStateBytes.length===0) {
+      alert("This save state predates complete mapper-state support and cannot be restored safely.");
+      return false;
+    }
 
     // Apply cartridge latches before restoring the live PPU pipeline.
     loadMapperState(mapperFromFile, mapperStateBytes);
