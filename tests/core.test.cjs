@@ -545,3 +545,28 @@ test('NINA-03/06 mapper 79 has no PRG RAM window',()=>{
  e.evaluate('prgRam[0]=0x99;openBus.CPU=0x5a;checkWriteOffset(0x6000,1);openBus.CPU=0x5a');
  assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x5a,0x99]);
 });
+
+
+test('expansion audio detector identifies unambiguous mapper families',()=>{
+ const e=createEmulator();
+ assert.equal(e.evaluate("detectExpansionAudio(rom(5,2,1),rom(5,2,1).subarray(0,16),5,false).chip"),'MMC5');
+ assert.equal(e.evaluate("detectExpansionAudio(rom(24,2,1),rom(24,2,1).subarray(0,16),24,false).chip"),'Konami VRC6');
+ assert.equal(e.evaluate("detectExpansionAudio(rom(26,2,1),rom(26,2,1).subarray(0,16),26,false).chip"),'Konami VRC6');
+});
+
+test('NES 2.0 N163 submappers distinguish audio and non-audio boards',()=>{
+ const e=createEmulator();
+ assert.equal(e.evaluate("(()=>{const r=rom(19,8,8,0,2);return detectExpansionAudio(r,r.subarray(0,16),19,true)})()"),null);
+ assert.equal(e.evaluate("(()=>{const r=rom(19,8,8,0,5);return detectExpansionAudio(r,r.subarray(0,16),19,true).chip})()"),'Namco 163');
+});
+
+test('NES 2.0 VRC7 submappers distinguish audio and non-audio boards',()=>{
+ const e=createEmulator();
+ assert.equal(e.evaluate("(()=>{const r=rom(85,8,0,0,1);return detectExpansionAudio(r,r.subarray(0,16),85,true)})()"),null);
+ assert.equal(e.evaluate("(()=>{const r=rom(85,8,0,0,2);return detectExpansionAudio(r,r.subarray(0,16),85,true).chip})()"),'Konami VRC7');
+});
+
+test('legacy Sunsoft mapper 69 can be marked uncertain instead of assumed audio',()=>{
+ const e=createEmulator();
+ assert.equal(e.evaluate("(()=>{const r=rom(69,16,16);return detectExpansionAudio(r,r.subarray(0,16),69,false).confidence})()"),'possible');
+});
