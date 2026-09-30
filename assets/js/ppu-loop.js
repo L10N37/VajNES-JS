@@ -591,6 +591,7 @@ function ppuBusRead(addr) {
 
     if (addr < 0x3F00) {
         if(mapperNumber===5)return mmc5NametableRead(0x2000 | (addr & 0x0FFF)) & 0xFF;
+        if(mapperNumber===19 || mapperNumber===210)return namcoNtRead(0x2000 | (addr & 0x0FFF)) & 0xff;
         const mapped = mapNametableAddr(0x2000 | (addr & 0x0FFF));
         return VRAM[mapped] & 0xFF;
     }
