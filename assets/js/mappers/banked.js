@@ -217,6 +217,8 @@ function cartridgeChrRead(addr) {
     case 9:
     case 10: return mmc24ChrRead(addr);
     case 11: return colorDreamsChrRead(addr);
+    case 19:
+    case 210: return namcoChrRead(addr);
     case 66: return gxromChrRead(addr);
     case 79: return nina79ChrRead(addr);
     case 24:
