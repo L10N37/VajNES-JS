@@ -791,7 +791,7 @@ test('MMC2/MMC4 save-state restores CHR latches and mirroring',()=>{
 
 test('simple banked mapper save-state restores selected PRG/CHR banks',()=>{
  for(const mapper of [3,11,66,79]){
-  const e=emulator(rom(mapper,4,4));
+  const e=emulator(rom(mapper,mapper===3?2:4,4));
   if(mapper===3)e.evaluate('cnromChrBank=2');
   if(mapper===11)e.evaluate('colorDreamsPrgBank=1;colorDreamsChrBank=2');
   if(mapper===66)e.evaluate('gxromPrgBank=1;gxromChrBank=2');
