@@ -22,10 +22,41 @@ let ppuInitDone = false;
 let nmiAtVblankEnd = false;
 let oddSkipRendering = false;
 
-// "rendering" = either BG or SPR enabled
-const renderingNow  = () => ((PPUMASK & 0b000011000) !== 0);
-const bgEnabledNow  = () => ((PPUMASK & MASK_BG_ENABLE) !== 0);
-const sprEnabledNow = () => ((PPUMASK & MASK_SPR_ENABLE) !== 0);
+// PPUMASK rendering-enable bits become effective a few PPU dots after the
+// CPU write. Keep the CPU-visible register immediate while the renderer uses
+// the previous BG/SPR enable state for four complete PPU dots.
+let ppumaskRenderHoldBits = 0;
+let ppumaskRenderApplyAt = -1;
+
+function ppuEffectiveMask() {
+  if (ppumaskRenderApplyAt >= 0) {
+    if (ppuCycles < ppumaskRenderApplyAt)
+      return (PPUMASK & ~0x18) | (ppumaskRenderHoldBits & 0x18);
+
+    ppumaskRenderApplyAt = -1;
+    ppumaskRenderHoldBits = PPUMASK & 0x18;
+  }
+  return PPUMASK & 0xFF;
+}
+
+function ppuWriteMask(value) {
+  const effectiveBefore = ppuEffectiveMask() & 0x18;
+  PPUMASK = value & 0xFF;
+  const requested = PPUMASK & 0x18;
+
+  if (requested === effectiveBefore) {
+    ppumaskRenderHoldBits = requested;
+    ppumaskRenderApplyAt = -1;
+  } else {
+    ppumaskRenderHoldBits = effectiveBefore;
+    ppumaskRenderApplyAt = ppuCycles + 4;
+  }
+}
+
+// "rendering" = either BG or SPR enabled, using the delayed effective state.
+const renderingNow  = () => ((ppuEffectiveMask() & 0x18) !== 0);
+const bgEnabledNow  = () => ((ppuEffectiveMask() & MASK_BG_ENABLE) !== 0);
+const sprEnabledNow = () => ((ppuEffectiveMask() & MASK_SPR_ENABLE) !== 0);
 
 // ---- Clock state ----
 let PPUclock = { dot: 0, scanline: 261, frame: 0, oddFrame: false };
