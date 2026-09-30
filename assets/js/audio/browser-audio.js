@@ -69,7 +69,8 @@ const NESAudio = (()=>{
     const pcm=new Float32Array(count);
     for(let i=0;i<count;i++){
       const base=wasm.audio_pop();
-      const extra=expansion?.pop()||0;
+      const rawExtra=expansion?.pop()||0;
+      const extra=expansionEnabled?rawExtra:0;
       pcm[i]=Math.max(-1,Math.min(1,base+extra));
     }
     if(node && context?.state==='running')node.port.postMessage({type:'samples',samples:pcm},[pcm.buffer]);
@@ -79,14 +80,16 @@ const NESAudio = (()=>{
     expansionChip=chip||null;
     expansionEnabled=!!enabled && !!chip;
     expansionRegs.clear();
-    expansion=expansionEnabled && typeof ExpansionAudioRenderer!=='undefined'
+    // Keep expansion hardware state alive even when the user mutes its audio:
+    // MMC5 status/PCM IRQ semantics must not depend on the audible choice.
+    expansion=expansionChip && typeof ExpansionAudioRenderer!=='undefined'
       ? new ExpansionAudioRenderer(expansionChip,context?.sampleRate||48000)
       : null;
     expansion?.reset(lastCycle);
   }
 
   function expansionWrite(cycle,address,value) {
-    if(!expansionEnabled || !expansion)return;
+    if(!expansion)return;
     if(wasm)sync(cycle);
     else if(cycle>=lastCycle){
       expansion.advance(cycle-lastCycle);
@@ -95,9 +98,22 @@ const NESAudio = (()=>{
     expansionRegs.set(address&0xffff,value&0xff);
     expansion.write(address,value);
   }
+  function expansionRead(cycle,address) {
+    if(!expansion)return 0;
+    if(wasm)sync(cycle);
+    else if(cycle>=lastCycle){expansion.advance(cycle-lastCycle);lastCycle=cycle;}
+    return expansion.read?expansion.read(address)&0xff:0;
+  }
+  function expansionObserveRead(cycle,address,value) {
+    if(!expansion || !expansion.observeRead)return;
+    if(wasm)sync(cycle);
+    else if(cycle>=lastCycle){expansion.advance(cycle-lastCycle);lastCycle=cycle;}
+    expansion.observeRead(address,value);
+  }
+
   document.addEventListener('pointerdown',unlock,{capture:true});
   document.addEventListener('keydown',unlock,{capture:true});
-  return {reset,frame,unlock,setExpansion,expansionWrite,
+  return {reset,frame,unlock,setExpansion,expansionWrite,expansionRead,expansionObserveRead,
     write(cycle,address,value){if(wasm){sync(cycle);wasm.audio_lengths(mask());wasm.audio_write(address,value);}},
     quarter(cycle){if(wasm){sync(cycle);wasm.audio_quarter();}},
     half(cycle){if(wasm){sync(cycle);wasm.audio_lengths(mask());wasm.audio_half();}},
