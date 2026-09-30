@@ -272,13 +272,15 @@ fbxOriginalHardware: {
 
 };
 
-  window.currentPaletteName = "nesClassic";
+  const savedPaletteName = localStorage.getItem('vajnesPalette');
+  window.currentPaletteName = window.PALETTES[savedPaletteName] ? savedPaletteName : "nesClassic";
   window.currentPalette = window.PALETTES[window.currentPaletteName];
   
   function setCurrentPalette(name) {
     if (window.PALETTES[name]) {
       window.currentPaletteName = name;
       window.currentPalette = window.PALETTES[name];
+      localStorage.setItem('vajnesPalette', name);
       globalThis.NES_DEBUG_LOGGING && console.debug(`[Palette] using '${name}'`);
     } else {
       globalThis.NES_DEBUG_LOGGING && console.warn(`[Palette] Unknown palette name '${name}'`);
