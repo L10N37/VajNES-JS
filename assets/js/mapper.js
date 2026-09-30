@@ -127,6 +127,14 @@ function mapper(nesHeader) {
       break;
     }
 
+    case 19:
+    case 210: {
+      namcoInit(nesHeader);
+      chrIsRAM=false;
+      resetCPU();
+      break;
+    }
+
     case 24:
     case 26: {
       vrc6Init();
