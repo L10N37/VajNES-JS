@@ -239,7 +239,7 @@ function checkReadOffset(address) {
       mapperNumber === 1
         ? mmc1CpuRead(addr) & 0xFF
         : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
-           mapperNumber===11 || mapperNumber===66 ||
+           mapperNumber===11 || mapperNumber===66 || mapperNumber===79 ||
            (mapperNumber===4 && !MMC3.control.prgRamEnabled))
           ? openBus.CPU & 255 : prgRam[addr - 0x6000] & 0xFF;
 
@@ -499,8 +499,9 @@ function checkWriteOffset(address, value) {
 
   } else if (addr < 0x8000) {
     if (mapperNumber === 1) mmc1CpuWrite(addr, value);
+    else if (mapperNumber === 79) nina79Write(addr, value);
     else if(addr>=0x6000 && mapperNumber!==7 && mapperNumber!==3 &&
-      mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==66 &&
+      mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==66 && mapperNumber!==79 &&
       (mapperNumber!==4 || (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)))
       prgRam[addr - 0x6000] = value & 0xFF;
 
