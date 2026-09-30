@@ -157,7 +157,7 @@ function configureExpansionAudioForRom(romBytes,header,mapper,isNES2) {
   expansionAudioState={chip:found?.chip||null,enabled:false,confidence:found?.confidence||null};
 
   if(!found) {
-    document?.getElementById?.('expansion-audio-prompt')?.remove();
+    document?.getElementById?.('expansion-audio-prompt')?.remove?.();
     if(typeof NESAudio!=='undefined' && NESAudio.setExpansion) NESAudio.setExpansion(null,false);
     return expansionAudioState;
   }
