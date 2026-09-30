@@ -337,6 +337,26 @@ document.addEventListener("DOMContentLoaded", () => {
     return u32ToBytesLE(n >>> 0);
   }
 
+  function num64LE(n) {
+    n=Math.max(0,Math.floor(Number(n)||0));
+    const lo=n>>>0;
+    const hi=Math.floor(n/0x100000000)>>>0;
+    const b=new Uint8Array(8);
+    b.set(u32ToBytesLE(lo),0);b.set(u32ToBytesLE(hi),4);
+    return b;
+  }
+  function bytesToU64LE(arr,off=0) {
+    const lo=bytesToU32LE(arr,off);
+    const hi=bytesToU32LE(arr,off+4);
+    return hi*0x100000000+lo;
+  }
+  function jsonBytes(value) {
+    return new TextEncoder().encode(JSON.stringify(value));
+  }
+  function bytesJson(bytes) {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
   function bool1(v) {
     return num8(v ? 1 : 0);
   }
@@ -504,8 +524,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // CPU regs + timing
     chunks.push(buildSection("CPUR", cpuReg));
 
-    chunks.push(buildSection("CYC0", num32LE((typeof cpuCycles !== "undefined" ? cpuCycles : 0) >>> 0)));
-    chunks.push(buildSection("CYC1", num32LE((typeof ppuCycles !== "undefined" ? ppuCycles : 0) >>> 0)));
+    chunks.push(buildSection("CYC0", num64LE(typeof cpuCycles !== "undefined" ? cpuCycles : 0)));
+    chunks.push(buildSection("CYC1", num64LE(typeof ppuCycles !== "undefined" ? ppuCycles : 0)));
 
     // CPU/IRQ/NMI related
     chunks.push(buildSection("NMIF", num8((typeof PPU_FRAME_FLAGS !== "undefined" ? PPU_FRAME_FLAGS : 0) & 0xFF)));
@@ -517,6 +537,37 @@ document.addEventListener("DOMContentLoaded", () => {
     chunks.push(buildSection("CPUB", num8((typeof openBus.CPU !== "undefined" ? openBus.CPU : 0) & 0xFF)));
     chunks.push(buildSection("PPUB", num8((typeof openBus.PPU !== "undefined" ? openBus.PPU : 0) & 0xFF)));
     chunks.push(buildSection("RUNN", bool1(typeof cpuRunning !== "undefined" ? cpuRunning : true)));
+
+    chunks.push(buildSection("MACH", jsonBytes({
+      mirroring:typeof MIRRORING!=="undefined"?MIRRORING:null,
+      openBus:typeof openBus!=="undefined"?{...openBus}:null,
+      irqAssert:typeof irqAssert!=="undefined"?{...irqAssert}:null,
+      irqPollCurrent:typeof irqPollCurrent!=="undefined"?!!irqPollCurrent:false,
+      irqPollPrevious:typeof irqPollPrevious!=="undefined"?!!irqPollPrevious:false,
+      irqBypassI:typeof irqBypassI!=="undefined"?!!irqBypassI:false,
+      nmiPollCurrent:typeof nmiPollCurrent!=="undefined"?!!nmiPollCurrent:false,
+      nmiPollPrevious:typeof nmiPollPrevious!=="undefined"?!!nmiPollPrevious:false,
+      nmiSignalSeen:typeof nmiSignalSeen!=="undefined"?!!nmiSignalSeen:false,
+      breakPending:typeof breakPending!=="undefined"?!!breakPending:false,
+      frameCycleDebt:typeof _frameCycleDebt!=="undefined"?_frameCycleDebt:0
+    })));
+
+    if(typeof DMA!=="undefined")chunks.push(buildSection("ODMA",jsonBytes({...DMA})));
+    if(typeof DMC!=="undefined")chunks.push(buildSection("DMCS",jsonBytes({...DMC})));
+    if(typeof APUregister!=="undefined" && typeof apuTiming!=="undefined")
+      chunks.push(buildSection("APUS",jsonBytes({register:{...APUregister},timing:{
+        ...apuTiming,length:Array.from(apuTiming.length),halt:Array.from(apuTiming.halt)
+      }})));
+    chunks.push(buildSection("CTRL",jsonBytes({
+      joypadStrobe:typeof joypadStrobe!=="undefined"?joypadStrobe:0,
+      joypadStrobeOutput:typeof joypadStrobeOutput!=="undefined"?joypadStrobeOutput:0,
+      joypad1Buttons:typeof joypad1Buttons!=="undefined"?joypad1Buttons:0,
+      joypad2Buttons:typeof joypad2Buttons!=="undefined"?joypad2Buttons:0,
+      joypad1State:typeof joypad1State!=="undefined"?joypad1State:0,
+      joypad2State:typeof joypad2State!=="undefined"?joypad2State:0
+    })));
+    if(typeof NESAudio!=="undefined" && typeof NESAudio.saveState==="function")
+      chunks.push(buildSection("AUDS",jsonBytes(NESAudio.saveState())));
 
     // PPU memory
     chunks.push(buildSection("VRAM", VRAM));
@@ -594,6 +645,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let mapperFromFile = 0;
     let mapperStateBytes = new Uint8Array(0);
     let ppuPipelineBytes = null;
+    let audioState = null;
 
     while (off + 8 <= fileBytes.length) {
       const tag = bytesToTag(fileBytes, off); off += 4;
@@ -632,8 +684,8 @@ document.addEventListener("DOMContentLoaded", () => {
           CPUregisters.P = unpackCPUFlags(payload[6] & 0xFF);
         } break;
 
-        case "CYC0": cpuCycles = bytesToU32LE(payload, 0) >>> 0; break;
-        case "CYC1": ppuCycles = bytesToU32LE(payload, 0) >>> 0; break;
+        case "CYC0": cpuCycles = payload.length>=8?bytesToU64LE(payload,0):(bytesToU32LE(payload,0)>>>0); break;
+        case "CYC1": ppuCycles = payload.length>=8?bytesToU64LE(payload,0):(bytesToU32LE(payload,0)>>>0); break;
 
         case "NMIF": PPU_FRAME_FLAGS = payload[0] & 0xFF; break;
         case "NMIP":
@@ -645,6 +697,43 @@ document.addEventListener("DOMContentLoaded", () => {
         case "CPUB": openBus.CPU = payload[0] & 0xFF; break;
         case "PPUB": openBus.PPU = payload[0] & 0xFF; break;
         case "RUNN": cpuRunning = !!(payload[0] & 1); break;
+
+        case "MACH": {
+          const s=bytesJson(payload);
+          if(s.mirroring!=null)MIRRORING=s.mirroring;
+          if(s.openBus&&typeof openBus!=="undefined")Object.assign(openBus,s.openBus);
+          if(s.irqAssert&&typeof irqAssert!=="undefined")Object.assign(irqAssert,s.irqAssert);
+          if(typeof irqPollCurrent!=="undefined")irqPollCurrent=!!s.irqPollCurrent;
+          if(typeof irqPollPrevious!=="undefined")irqPollPrevious=!!s.irqPollPrevious;
+          if(typeof irqBypassI!=="undefined")irqBypassI=!!s.irqBypassI;
+          if(typeof nmiPollCurrent!=="undefined")nmiPollCurrent=!!s.nmiPollCurrent;
+          if(typeof nmiPollPrevious!=="undefined")nmiPollPrevious=!!s.nmiPollPrevious;
+          if(typeof nmiSignalSeen!=="undefined")nmiSignalSeen=!!s.nmiSignalSeen;
+          if(typeof breakPending!=="undefined")breakPending=!!s.breakPending;
+          if(typeof _frameCycleDebt!=="undefined")_frameCycleDebt=Number(s.frameCycleDebt)||0;
+        } break;
+        case "ODMA": if(typeof DMA!=="undefined")Object.assign(DMA,bytesJson(payload)); break;
+        case "DMCS": if(typeof DMC!=="undefined")Object.assign(DMC,bytesJson(payload)); break;
+        case "APUS": {
+          const s=bytesJson(payload);
+          if(s.register&&typeof APUregister!=="undefined")Object.assign(APUregister,s.register);
+          if(s.timing&&typeof apuTiming!=="undefined"){
+            const length=s.timing.length||[],halt=s.timing.halt||[];
+            Object.assign(apuTiming,s.timing);
+            apuTiming.length.splice(0,apuTiming.length.length,...length);
+            apuTiming.halt.splice(0,apuTiming.halt.length,...halt);
+          }
+        } break;
+        case "CTRL": {
+          const s=bytesJson(payload);
+          if(typeof joypadStrobe!=="undefined")joypadStrobe=s.joypadStrobe|0;
+          if(typeof joypadStrobeOutput!=="undefined")joypadStrobeOutput=s.joypadStrobeOutput|0;
+          if(typeof joypad1Buttons!=="undefined")joypad1Buttons=s.joypad1Buttons|0;
+          if(typeof joypad2Buttons!=="undefined")joypad2Buttons=s.joypad2Buttons|0;
+          if(typeof joypad1State!=="undefined")joypad1State=s.joypad1State|0;
+          if(typeof joypad2State!=="undefined")joypad2State=s.joypad2State|0;
+        } break;
+        case "AUDS": audioState=bytesJson(payload); break;
 
         case "VRAM": {
           const L = Math.min(payload.length, VRAM.length);
@@ -715,10 +804,17 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
+    if(mapperFromFile!==getMapperIdSafe()) {
+      alert("Save state mapper does not match the currently loaded ROM.");
+      return false;
+    }
+
     // Apply cartridge latches before restoring the live PPU pipeline.
     loadMapperState(mapperFromFile, mapperStateBytes);
     if (ppuPipelineBytes && typeof ppuLoadPipelineState === "function")
       ppuLoadPipelineState(ppuPipelineBytes);
+    if(audioState && typeof NESAudio!=="undefined" && typeof NESAudio.loadState==="function")
+      NESAudio.loadState(audioState);
 
     return true;
   }
