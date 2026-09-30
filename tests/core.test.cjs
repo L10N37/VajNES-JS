@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const {createEmulator}=require('./headless.cjs');
 function rom(mapper=0,prg=2,chr=1,flags=0,submapper=null) {
  const bytes=new Uint8Array(16+prg*0x4000+chr*0x2000);
- bytes.set([0x4e,0x45,0x53,0x1a,prg,chr,(mapper<<4)|flags,submapper===null?0:8,submapper===null?0:submapper<<4]);
+ bytes.set([0x4e,0x45,0x53,0x1a,prg,chr,((mapper&15)<<4)|flags,(mapper&0xf0)|(submapper===null?0:8),submapper===null?0:submapper<<4]);
  for(let b=0;b<prg;b++) bytes.fill(b,16+b*0x4000,16+(b+1)*0x4000);
  for(let b=0;b<chr*2;b++) bytes.fill(b,16+prg*0x4000+b*0x1000,16+prg*0x4000+(b+1)*0x1000);
  bytes[16+prg*0x4000-4]=0;bytes[16+prg*0x4000-3]=0x80;
@@ -343,4 +343,104 @@ test('DMC sample low bits decode APU registers only when the CPU is halted in $4
   assert.equal(e.evaluate('DMC.sampleBuffer'),(sample&254)|bit);
   assert.equal(e.evaluate('openBus.CPU'),(sample&254)|bit);
  }
+});
+
+
+test('CNROM selects 8 KiB CHR banks while PRG stays fixed',()=>{
+ const e=emulator(rom(3,2,4,0,1));
+ assert.deepEqual(e.evaluate('[ppuBusRead(0),ppuBusRead(0x1000),checkReadOffset(0x8000),checkReadOffset(0xc000)]'),[0,1,0,1]);
+ e.evaluate('checkWriteOffset(0x8000,3)');
+ assert.deepEqual(e.evaluate('[ppuBusRead(0),ppuBusRead(0x1000)]'),[6,7]);
+});
+test('CNROM legacy/submapper 2 applies AND bus conflicts',()=>{
+ for(const sub of [null,0,2]){
+  const bytes=rom(3,2,4,0,sub);bytes[16]=1;const e=emulator(bytes);
+  e.evaluate('checkWriteOffset(0x8000,3)');
+  assert.equal(e.evaluate('cnromChrBank'),1);
+ }
+});
+test('CNROM submapper 1 disables bus conflicts',()=>{
+ const bytes=rom(3,2,4,0,1);bytes[16]=1;const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,3)');
+ assert.equal(e.evaluate('cnromChrBank'),3);
+});
+test('CNROM mirrors a 16 KiB PRG image into both CPU halves',()=>{
+ const e=emulator(rom(3,1,2,0,1));
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xc000),checkReadOffset(0xffff)]'),[0,0,0x80]);
+});
+test('Color Dreams switches 32 KiB PRG and 8 KiB CHR from one register',()=>{
+ const bytes=rom(11,8,8);for(let b=0;b<4;b++)bytes[16+b*0x8000]=0xff;const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,0x32)');
+ assert.deepEqual(e.evaluate('[colorDreamsPrgBank,colorDreamsChrBank,checkReadOffset(0x8001),ppuBusRead(0)]'),[2,3,4,6]);
+});
+test('Color Dreams write value is ANDed with ROM bus data',()=>{
+ const bytes=rom(11,8,8);bytes[16]=0x11;const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,0x32)');
+ assert.deepEqual(e.evaluate('[colorDreamsPrgBank,colorDreamsChrBank]'),[0,1]);
+});
+test('Color Dreams exposes no cartridge RAM at $6000',()=>{
+ const e=emulator(rom(11,2,1));e.evaluate('prgRam[0]=0x99;openBus.CPU=0x5a;checkWriteOffset(0x6000,1);openBus.CPU=0x5a');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x5a,0x99]);
+});
+test('GxROM switches its 32 KiB PRG and 8 KiB CHR banks',()=>{
+ const bytes=rom(66,8,4);for(let b=0;b<4;b++)bytes[16+b*0x8000]=0xff;const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,0x31)');
+ assert.deepEqual(e.evaluate('[gxromPrgBank,gxromChrBank,checkReadOffset(0x8001),ppuBusRead(0)]'),[3,1,6,2]);
+});
+test('GxROM discrete write has ROM bus conflicts',()=>{
+ const bytes=rom(66,8,4);bytes[16]=0x11;const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,0x32)');
+ assert.deepEqual(e.evaluate('[gxromPrgBank,gxromChrBank]'),[1,0]);
+});
+test('GxROM has no PRG RAM window',()=>{
+ const e=emulator(rom(66,2,1));e.evaluate('prgRam[0]=0x99;openBus.CPU=0x46;checkWriteOffset(0x6000,1);openBus.CPU=0x46');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x46,0x99]);
+});
+test('MMC2 maps one selectable and three fixed 8 KiB PRG banks',()=>{
+ const bytes=rom(9,8,4);for(let b=0;b<16;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0xa000,5)');
+ assert.deepEqual(e.evaluate('[0x8000,0xa000,0xc000,0xe000].map(checkReadOffset)'),[5,13,14,15]);
+});
+test('MMC2 CHR latch switches after the triggering pattern byte is read',()=>{
+ const bytes=rom(9,8,8);for(let b=0;b<16;b++)bytes.fill(b,16+0x20000+b*0x1000,16+0x20000+(b+1)*0x1000);const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0xb000,2);checkWriteOffset(0xc000,3);checkWriteOffset(0xd000,4);checkWriteOffset(0xe000,5)');
+ assert.equal(e.evaluate('ppuBusRead(0x0200)'),3);
+ assert.equal(e.evaluate('ppuBusRead(0x0fd8)'),3);
+ assert.equal(e.evaluate('ppuBusRead(0x0200)'),2);
+ assert.equal(e.evaluate('ppuBusRead(0x1fd8)'),5);
+ assert.equal(e.evaluate('ppuBusRead(0x1200)'),4);
+});
+test('MMC2 mirroring register preserves CIRAM contents',()=>{
+ const e=emulator(rom(9,8,4));e.evaluate('VRAM[0]=11;VRAM[0x400]=22;checkWriteOffset(0xf000,1)');
+ assert.deepEqual(e.evaluate('[MIRRORING,ppuBusRead(0x2000),ppuBusRead(0x2400)]'),['horizontal',11,11]);
+ e.evaluate('checkWriteOffset(0xf000,0)');
+ assert.deepEqual(e.evaluate('[MIRRORING,ppuBusRead(0x2000),ppuBusRead(0x2400)]'),['vertical',11,22]);
+});
+test('MMC2 has no PRG RAM window',()=>{
+ const e=emulator(rom(9,8,4));e.evaluate('prgRam[0]=0x7c;openBus.CPU=0x33;checkWriteOffset(0x6000,9);openBus.CPU=0x33');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x33,0x7c]);
+});
+test('MMC4 maps a selectable 16 KiB bank plus the fixed last bank',()=>{
+ const bytes=rom(10,8,4);for(let b=0;b<8;b++)bytes.fill(b,16+b*0x4000,16+(b+1)*0x4000);const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0xa000,3)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xc000)]'),[3,7]);
+});
+test('MMC4 latch reacts to the complete FD8-FDF and FE8-FEF ranges',()=>{
+ const bytes=rom(10,8,8);for(let b=0;b<16;b++)bytes.fill(b,16+0x20000+b*0x1000,16+0x20000+(b+1)*0x1000);const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0xb000,6);checkWriteOffset(0xc000,7)');
+ assert.equal(e.evaluate('ppuBusRead(0x0fdf)'),7);
+ assert.equal(e.evaluate('ppuBusRead(0x0100)'),6);
+ assert.equal(e.evaluate('ppuBusRead(0x0fef)'),6);
+ assert.equal(e.evaluate('ppuBusRead(0x0100)'),7);
+});
+test('MMC4 keeps an 8 KiB PRG RAM window',()=>{
+ const e=emulator(rom(10,8,4));e.evaluate('checkWriteOffset(0x6000,0xa5)');
+ assert.equal(e.evaluate('checkReadOffset(0x6000)'),0xa5);
+});
+test('loader accepts all newly supported mapper IDs and rejects CNROM CHR RAM',()=>{
+ for(const [m,p,c] of [[3,2,1],[9,8,4],[10,8,4],[11,2,1],[66,2,1]]) {
+  const e=emulator(rom(m,p,c,m===3?0:0,m===3?1:null));
+  assert.equal(e.evaluate('mapperNumber'),m);
+ }
+ const e=emulator();assert.throws(()=>e.load(rom(3,2,0,0,1)),/Unsupported CNROM/);
 });

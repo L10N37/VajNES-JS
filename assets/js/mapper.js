@@ -80,6 +80,35 @@ function mapper(nesHeader) {
       break;
     }
 
+    case 3: {
+      cnromInit(nesHeader);
+      chrIsRAM = false;
+      resetCPU();
+      break;
+    }
+
+    case 9:
+    case 10: {
+      mmc24Init();
+      chrIsRAM = false;
+      resetCPU();
+      break;
+    }
+
+    case 11: {
+      colorDreamsInit();
+      chrIsRAM = false;
+      resetCPU();
+      break;
+    }
+
+    case 66: {
+      gxromInit();
+      chrIsRAM = false;
+      resetCPU();
+      break;
+    }
+
     // ==========================================================
     // Unsupported mappers
     // ==========================================================

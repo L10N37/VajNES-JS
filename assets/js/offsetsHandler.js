@@ -175,17 +175,7 @@ function checkReadOffset(address) {
 
           if (vv < 0x2000) {
 
-            if (mapperNumber === 4) {
-              newVal = mapper4_chr_read(vv) & 0xFF;
-
-            }else if (mapperNumber === 1) {
-
-              newVal = mmc1ChrRead(vv);
-            } else {
-
-              newVal =
-                CHR_ROM[vv & (CHR_ROM.length - 1)] & 0xFF;
-            }
+            newVal = cartridgeChrRead(vv) & 0xFF;
 
             VRAM_DATA = newVal;
 
@@ -247,7 +237,9 @@ function checkReadOffset(address) {
     raw =
       mapperNumber === 1
         ? mmc1CpuRead(addr) & 0xFF
-        : (mapperNumber===7 || (mapperNumber===4 && !MMC3.control.prgRamEnabled))
+        : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
+           mapperNumber===11 || mapperNumber===66 ||
+           (mapperNumber===4 && !MMC3.control.prgRamEnabled))
           ? openBus.CPU & 255 : prgRam[addr - 0x6000] & 0xFF;
 
   } else {
@@ -506,8 +498,9 @@ function checkWriteOffset(address, value) {
 
   } else if (addr < 0x8000) {
     if (mapperNumber === 1) mmc1CpuWrite(addr, value);
-    else if(addr>=0x6000 && mapperNumber!==7 && (mapperNumber!==4 ||
-      (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)))
+    else if(addr>=0x6000 && mapperNumber!==7 && mapperNumber!==3 &&
+      mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==66 &&
+      (mapperNumber!==4 || (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)))
       prgRam[addr - 0x6000] = value & 0xFF;
 
   } else {
@@ -534,8 +527,17 @@ function cpuWrite(addr, value) {
 }
 
 // ----------------- mapper PRG -----------------
-function mapperReadPRG(addr) { return mapperNumber===7 ? axromRead(addr) : mapperNumber===2 ? uxromRead(addr) : prgRom[addr - 0x8000]; }
-function mapperWritePRG(addr, value) { if(mapperNumber===7) axromWrite(addr,value); else if(mapperNumber===2) uxromWrite(addr,value); }
+function mapperReadPRG(addr) {
+  if (mapperNumber===7) return axromRead(addr);
+  if (mapperNumber===2) return uxromRead(addr);
+  const extra = extraMapperReadPRG(addr);
+  return extra === null ? prgRom[addr - 0x8000] : extra;
+}
+function mapperWritePRG(addr, value) {
+  if(mapperNumber===7) axromWrite(addr,value);
+  else if(mapperNumber===2) uxromWrite(addr,value);
+  else extraMapperWritePRG(addr,value);
+}
 
 // ----------------- APU -----------------
 function apuWrite(address, value) {

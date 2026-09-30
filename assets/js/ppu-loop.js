@@ -424,13 +424,7 @@ function ppuBusRead(addr) {
     //if (mapperNumber === 4) mmc3Irq(addr);
 
     if (addr < 0x2000) {
-        if (mapperNumber === 4) return mapper4_chr_read(addr);
-
-        if (mapperNumber === 1) return mmc1ChrRead(addr);
-
-        // Mapper 0 — CHR ROM or CHR RAM
-        if (CHR_ROM.length > 0) return CHR_ROM[addr] & 0xFF;
-        return CHR_RAM ? (CHR_RAM[addr] & 0xFF) : 0xFF;
+        return cartridgeChrRead(addr) & 0xFF;
     }
 
     if (addr < 0x3F00) {
