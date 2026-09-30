@@ -7,7 +7,8 @@ test('save-state file parses and wires AxROM, CHR RAM and PPU pipeline sections'
   assert.doesNotThrow(()=>new Function(src));
   assert.match(src,/typeof mapperNumber !== "undefined"/);
   assert.match(src,/case 7:[\s\S]*axromSaveState/);
-  assert.match(src,/buildSection\("CHRR", CHR_ROM\)/);
+  assert.match(src,/buildSection\("CHRR", chrState\)/);
+  assert.match(src,/FULL_CHR_ROM/);
   assert.match(src,/buildSection\("PPIP", ppuSavePipelineState\(\)\)/);
   assert.match(src,/case "CHRR"/);
   assert.match(src,/case "PPIP"/);
