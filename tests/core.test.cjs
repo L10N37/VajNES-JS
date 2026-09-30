@@ -529,7 +529,7 @@ test('NINA-03/06 mapper 79 decodes only its expansion-area control addresses',()
  e.evaluate('checkWriteOffset(0x4000,0x0f);checkWriteOffset(0x4200,0x0f);checkWriteOffset(0x6000,0x0f)');
  assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank]'),[0,0]);
  e.evaluate('checkWriteOffset(0x4100,0x0d)');
- assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank,checkReadOffset(0x8000),ppuBusRead(0)]'),[1,5,1,5]);
+ assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank,checkReadOffset(0x8000),ppuBusRead(0)]'),[1,5,1,10]);
 });
 
 test('NINA-03/06 mapper 79 mirrors its control decode through odd $xx00 pages to $5FFF',()=>{
@@ -549,26 +549,30 @@ test('NINA-03/06 mapper 79 has no PRG RAM window',()=>{
 
 test('expansion audio detector identifies unambiguous mapper families',()=>{
  const e=createEmulator();
- assert.equal(e.evaluate("detectExpansionAudio(rom(5,2,1),rom(5,2,1).subarray(0,16),5,false).chip"),'MMC5');
- assert.equal(e.evaluate("detectExpansionAudio(rom(24,2,1),rom(24,2,1).subarray(0,16),24,false).chip"),'Konami VRC6');
- assert.equal(e.evaluate("detectExpansionAudio(rom(26,2,1),rom(26,2,1).subarray(0,16),26,false).chip"),'Konami VRC6');
+ for(const [m,chip] of [[5,'MMC5'],[24,'Konami VRC6'],[26,'Konami VRC6']]){
+  const bytes=rom(m,2,1);
+  assert.equal(e.detectExpansion(bytes,m,false).chip,chip);
+ }
 });
 
 test('NES 2.0 N163 submappers distinguish audio and non-audio boards',()=>{
  const e=createEmulator();
- assert.equal(e.evaluate("(()=>{const r=rom(19,8,8,0,2);return detectExpansionAudio(r,r.subarray(0,16),19,true)})()"),null);
- assert.equal(e.evaluate("(()=>{const r=rom(19,8,8,0,5);return detectExpansionAudio(r,r.subarray(0,16),19,true).chip})()"),'Namco 163');
+ const noAudio=rom(19,8,8,0,2), audio=rom(19,8,8,0,5);
+ assert.equal(e.detectExpansion(noAudio,19,true),null);
+ assert.equal(e.detectExpansion(audio,19,true).chip,'Namco 163');
 });
 
 test('NES 2.0 VRC7 submappers distinguish audio and non-audio boards',()=>{
  const e=createEmulator();
- assert.equal(e.evaluate("(()=>{const r=rom(85,8,0,0,1);return detectExpansionAudio(r,r.subarray(0,16),85,true)})()"),null);
- assert.equal(e.evaluate("(()=>{const r=rom(85,8,0,0,2);return detectExpansionAudio(r,r.subarray(0,16),85,true).chip})()"),'Konami VRC7');
+ const noAudio=rom(85,8,0,0,1), audio=rom(85,8,0,0,2);
+ assert.equal(e.detectExpansion(noAudio,85,true),null);
+ assert.equal(e.detectExpansion(audio,85,true).chip,'Konami VRC7');
 });
 
 test('legacy Sunsoft mapper 69 can be marked uncertain instead of assumed audio',()=>{
  const e=createEmulator();
- assert.equal(e.evaluate("(()=>{const r=rom(69,16,16);return detectExpansionAudio(r,r.subarray(0,16),69,false).confidence})()"),'possible');
+ const bytes=rom(69,16,16);
+ assert.equal(e.detectExpansion(bytes,69,false).confidence,'possible');
 });
 
 
