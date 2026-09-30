@@ -19,6 +19,6 @@ test('save-state file parses and wires AxROM, CHR RAM and PPU pipeline sections'
   assert.match(src,/payload.length>=8\?bytesToU64LE/);
   assert.match(src,/Save state mapper does not match/);
   assert.match(src,/predates complete mapper-state support/);
-  for(const mapper of ['mmc1SaveState','uxromSaveState','extraMapperSaveState','mmc3SaveState','mmc5SaveState','axromSaveState','vrc6SaveState'])
+  for(const mapper of ['mmc1SaveState','uxromSaveState','extraMapperSaveState','mmc3SaveState','mmc5SaveState','axromSaveState','namcoSaveState','vrc6SaveState'])
     assert.match(src,new RegExp(mapper));
 });
