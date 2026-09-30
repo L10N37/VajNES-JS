@@ -565,12 +565,14 @@ test('clean iNES mapper high nibble remains significant',()=>{
 });
 
 
-test('Magic Kingdom known bad-header payload CRCs repair mapper 65 to MMC1',()=>{
+test('ROM compatibility database contains the verified mapper repairs',()=>{
  const e=createEmulator();
- assert.equal(e.evaluate('KNOWN_BAD_HEADER_MAPPERS.get(0x5DBD6099)'),1);
- assert.equal(e.evaluate('KNOWN_BAD_HEADER_MAPPERS.get(0x26C7D763)'),1);
- assert.equal(e.evaluate('KNOWN_BAD_HEADER_MAPPERS.get(0x6B761858)'),1);
- assert.equal(e.evaluate('KNOWN_BAD_HEADER_MAPPERS.get(0x46FD7843)'),210);
+ assert.equal(e.evaluate('ROM_COMPAT_OVERRIDES.get(0x5DBD6099).mapper'),1);
+ assert.equal(e.evaluate('ROM_COMPAT_OVERRIDES.get(0x26C7D763).mapper'),1);
+ assert.equal(e.evaluate('ROM_COMPAT_OVERRIDES.get(0x6B761858).mapper'),1);
+ assert.equal(e.evaluate('ROM_COMPAT_OVERRIDES.get(0x46FD7843).mapper'),210);
+ assert.equal(e.evaluate('ROM_COMPAT_OVERRIDES.get(0x8B957B50).mapper'),3);
+ assert.equal(e.evaluate('ROM_COMPAT_OVERRIDES.get(0x7A36CAD2).mapper'),4);
 });
 
 test('genuine unknown mapper 65 is not broadly rewritten to MMC1',()=>{
@@ -578,11 +580,17 @@ test('genuine unknown mapper 65 is not broadly rewritten to MMC1',()=>{
  assert.throws(()=>e.load(rom(65,8,16)),/Mapper 65 not yet implemented/);
 });
 
-test('known bad-header mapper repair is applied before unsupported-mapper rejection',()=>{
+test('ROM compatibility repair is applied before unsupported-mapper rejection',()=>{
  const e=createEmulator();
  e.evaluate('crc32Bytes=()=>0x5DBD6099');
  e.load(rom(65,8,16));
  assert.equal(e.evaluate('mapperNumber'),1);
+});
+
+test('ROM compatibility repair is constrained to the bad reported mapper',()=>{
+ const e=createEmulator();
+ e.evaluate('crc32Bytes=()=>0x5DBD6099');
+ assert.throws(()=>e.load(rom(73,8,16)),/Mapper 73 not yet implemented/);
 });
 
 
