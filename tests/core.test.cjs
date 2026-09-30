@@ -184,6 +184,15 @@ test('AxROM bank write changes the very next opcode fetch',()=>{
  const bytes=rom(7,4,0);bytes.set([0xa9,1,0x8d,0,0x80],16);bytes.set([0xa9,0x5a,0x85,0x20,0x4c,9,0x80],16+0x8000+5);bytes[16+0x7ffc]=0;bytes[16+0x7ffd]=0x80;
  const e=emulator(bytes);e.run(100);assert.equal(e.evaluate('systemMemory[0x20]'),0x5a);assert.equal(e.evaluate('axromBank'),1);
 });
+test('disassembler peek follows the active AxROM PRG bank',()=>{
+ const bytes=rom(7,4,0);
+ bytes[16+1]=0x11;
+ bytes[16+0x8000+1]=0x77;
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('disasmPeekByte(0x8001)'),0x11);
+ e.evaluate('checkWriteOffset(0x8000,1)');
+ assert.equal(e.evaluate('disasmPeekByte(0x8001)'),0x77);
+});
 test('AxROM rejects unsupported images before replacing a running cartridge',()=>{
  const e=emulator(rom(7,4,0));e.evaluate('checkWriteOffset(0x8000,0x11)');
  for(const bytes of [rom(7,2,1),rom(7,3,0),rom(7,32,0),rom(7,2,0,0,3)])assert.throws(()=>e.load(bytes),/Unsupported AxROM/);
