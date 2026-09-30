@@ -132,7 +132,8 @@ fpsOverlay.style.display = "none";
 
 if (systemScreen) systemScreen.appendChild(fpsOverlay);
 
-let _fpsEnabled = false;
+let _fpsEnabled = localStorage.getItem('vajnesFpsEnabled') === '1';
+fpsOverlay.style.display = _fpsEnabled ? "block" : "none";
 
 function _glCompile(type, src) {
   const s = GL.createShader(type);
@@ -676,12 +677,18 @@ function redrawWithCurrentPalette() {
 }
 window.redrawWithCurrentPalette = redrawWithCurrentPalette;
 
-// Blur slider remains
+// Composite blur preference
 const slider = document.getElementById('composite-blur-slider');
 if (slider) {
+  const savedBlurRaw = localStorage.getItem('vajnesCompositeBlur');
+  const savedBlur = savedBlurRaw === null ? 0 : Number(savedBlurRaw);
+  const initialBlur = Number.isFinite(savedBlur) ? Math.min(Math.max(savedBlur, 0), 5) : 0;
+  slider.value = String(initialBlur);
+  document.getElementById('screen-canvas').style.filter = `blur(${initialBlur.toFixed(1)}px)`;
   slider.addEventListener('input', (event) => {
     const v = Math.min(Math.max(+event.target.value || 0, 0), 5);
     document.getElementById('screen-canvas').style.filter = `blur(${v.toFixed(1)}px)`;
+    localStorage.setItem('vajnesCompositeBlur', String(v));
   });
 }
 
@@ -866,6 +873,7 @@ if (fpsOption) {
   fpsOption.addEventListener("click", () => {
     _fpsEnabled = !_fpsEnabled;
     fpsOverlay.style.display = _fpsEnabled ? "block" : "none";
+    localStorage.setItem('vajnesFpsEnabled', _fpsEnabled ? '1' : '0');
 
     // Reset the actual frame counter used by presentFrame().
     fps = 0;
