@@ -5,6 +5,7 @@
 irqAssert = {
   mmc3: false,
   mmc5: false,
+  namco: false,
   vrc: false,
   dmcDma: false,
   frame: false
@@ -142,7 +143,8 @@ function serviceIRQ(bypass_interrupt_flag = false) {
 
     globalThis.NES_DEBUG_LOGGING && console.log("IRQ SERVICED, source-",
     "mmc3:",  irqAssert.mmc3,
-    "mmc5:",  irqAssert.mmc5, 
+    "mmc5:",  irqAssert.mmc5,
+    "namco:", irqAssert.namco, 
     "DMC:",   irqAssert.dmcDma,
     "Frame:", irqAssert.frame
     );
