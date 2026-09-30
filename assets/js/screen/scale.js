@@ -1,7 +1,7 @@
 let scaleModal = document.getElementById('scale-modal');
 
 // Open the modal (first item in your options bar)
-const scaleButton = systemScreen.querySelector('.optionsBar li:nth-child(1)');
+const scaleButton = document.getElementById('screen-option-scale');
 scaleButton.addEventListener('click', () => {
   scaleModal.style.display = 'block';
 });
