@@ -109,6 +109,13 @@ function mapper(nesHeader) {
       break;
     }
 
+    case 79: {
+      nina79Init();
+      chrIsRAM = false;
+      resetCPU();
+      break;
+    }
+
     // ==========================================================
     // Unsupported mappers
     // ==========================================================
