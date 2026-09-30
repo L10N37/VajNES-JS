@@ -705,3 +705,44 @@ test('VRC6 mapper forwards canonical audio register writes',()=>{
  e2.evaluate('checkWriteOffset(0x9002,0x44)');
  assert.deepEqual(writes2.slice(-1),[[0x9001,0x44]]);
 });
+
+
+test('MMC5 PRG mode 2 maps Castlevania III style 16K+8K+8K ROM windows',()=>{
+ const bytes=rom(5,16,8);
+ for(let bank=0;bank<32;bank++)bytes.fill(bank,16+bank*0x2000,16+(bank+1)*0x2000);
+ const e=emulator(bytes);
+ e.evaluate('mmc5CpuWrite(0x5100,2);mmc5CpuWrite(0x5115,0x84);mmc5CpuWrite(0x5116,0x89);mmc5CpuWrite(0x5117,0x8f)');
+ assert.deepEqual(e.evaluate('[0x8000,0xa000,0xc000,0xe000].map(checkReadOffset)'),[4,5,9,15]);
+});
+
+test('MMC5 exposes separate 1 KiB sprite/background CHR sets in 8x16 mode',()=>{
+ const bytes=rom(5,8,4);
+ for(let bank=0;bank<32;bank++)bytes.fill(bank,16+8*0x4000+bank*0x400,16+8*0x4000+(bank+1)*0x400);
+ const e=emulator(bytes);
+ e.evaluate('PPUCTRL=0x20;mmc5CpuWrite(0x5101,3);mmc5CpuWrite(0x5120,6);mmc5CpuWrite(0x5128,13)');
+ assert.equal(e.evaluate('mmc5ChrRead(0,true)'),6);
+ assert.equal(e.evaluate('mmc5ChrRead(0,false)'),13);
+});
+
+test('MMC5 nametable mapping supports CIRAM, ExRAM and fill mode',()=>{
+ const e=emulator(rom(5,8,4));
+ e.evaluate('VRAM[0]=0x11;VRAM[0x400]=0x22;mmc5Exram[0]=0x33;mmc5CpuWrite(0x5104,0);mmc5CpuWrite(0x5106,0x44);mmc5CpuWrite(0x5107,2);mmc5CpuWrite(0x5105,0xe4)');
+ assert.deepEqual(e.evaluate('[mmc5NametableRead(0x2000),mmc5NametableRead(0x2400),mmc5NametableRead(0x2800),mmc5NametableRead(0x2c00)]'),[0x11,0x22,0x33,0x44]);
+ assert.equal(e.evaluate('mmc5NametableRead(0x2fc0)'),0xaa);
+});
+
+test('MMC5 scanline compare raises and status read acknowledges IRQ',()=>{
+ const e=emulator(rom(5,8,4));
+ e.evaluate('mmc5CpuWrite(0x5203,2);mmc5CpuWrite(0x5204,0x80);mmc5ClockScanline(0);mmc5ClockScanline(1)');
+ assert.equal(e.evaluate('irqAssert.mmc5'),false);
+ e.evaluate('mmc5ClockScanline(2)');
+ assert.equal(e.evaluate('irqAssert.mmc5'),true);
+ assert.equal(e.evaluate('mmc5CpuRead(0x5204)&0xc0'),0xc0);
+ assert.equal(e.evaluate('irqAssert.mmc5'),false);
+});
+
+test('MMC5 multiplier returns 16-bit product',()=>{
+ const e=emulator(rom(5,8,4));
+ e.evaluate('mmc5CpuWrite(0x5205,25);mmc5CpuWrite(0x5206,10)');
+ assert.deepEqual(e.evaluate('[mmc5CpuRead(0x5205),mmc5CpuRead(0x5206)]'),[250,0]);
+});
