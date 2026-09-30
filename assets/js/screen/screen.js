@@ -686,7 +686,7 @@ if (slider) {
 }
 
 // --- Palette Modal -----------------------------------------------------------
-const paletteOption = systemScreen && systemScreen.querySelector('.optionsBar li:nth-child(3)');
+const paletteOption = document.getElementById('screen-option-palette');
 if (paletteOption) {
   paletteOption.style.cursor = 'pointer';
   paletteOption.addEventListener('click', openPaletteModal);
@@ -753,7 +753,7 @@ function openPaletteModal() {
 }
 
 // --- Pixel Aspect Modal ------------------------------------------------------
-const pixelOption = systemScreen && systemScreen.querySelector('.optionsBar li:nth-child(4)');
+const pixelOption = document.getElementById('screen-option-pixel');
 if (pixelOption) {
   pixelOption.style.cursor = 'pointer';
   pixelOption.addEventListener('click', openPixelModal);
@@ -811,7 +811,7 @@ function openPixelModal() {
 }
 
 // exit
-const exitOption = systemScreen && systemScreen.querySelector('.optionsBar li:nth-child(6)');
+const exitOption = document.getElementById('screen-option-exit');
 if (exitOption) {
   exitOption.addEventListener('click', () => {
     if (systemScreen)   systemScreen.style.display   = 'none';
@@ -861,16 +861,15 @@ document.addEventListener('keydown', (ev) => {
 );
 
 // FPS toggle option (li:nth-child(5))
-const fpsOption = systemScreen && systemScreen.querySelector(".optionsBar li:nth-child(5)");
+const fpsOption = document.getElementById('screen-option-fps');
 if (fpsOption) {
   fpsOption.addEventListener("click", () => {
     _fpsEnabled = !_fpsEnabled;
     fpsOverlay.style.display = _fpsEnabled ? "block" : "none";
 
-    // reset timing so it starts on first frame after enabling
-    _fpsStarted = false;
-    _fpsFrames = 0;
-    _fpsValue = 0;
+    // Reset the actual frame counter used by presentFrame().
+    fps = 0;
+    fpsCounter = 0;
     fpsOverlay.textContent = "FPS: 0";
   });
 }
