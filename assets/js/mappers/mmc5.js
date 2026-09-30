@@ -146,7 +146,7 @@ function mmc5EndFrame(){mmc5InFrame=false;mmc5Scanline=0;irqAssert.mmc5=false;}
 
 
 function mmc5SaveState(){
-  const out=new Uint8Array(1+8+5+16+8+0x400);
+  const out=new Uint8Array(1+8+5+16+8+8+0x400);
   let o=0;
   out[o++]=1;
   out[o++]=mmc5PrgMode&3;out[o++]=mmc5ChrMode&3;out[o++]=mmc5ExramMode&3;out[o++]=mmc5NtMap&255;
