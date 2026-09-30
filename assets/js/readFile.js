@@ -35,6 +35,16 @@ function knownBadHeaderMapper(romBytes, header) {
   return KNOWN_BAD_HEADER_MAPPERS.has(crc) ? KNOWN_BAD_HEADER_MAPPERS.get(crc) : null;
 }
 
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const sub = bytes.subarray(i, i + chunk);
+    binary += String.fromCharCode.apply(null, sub);
+  }
+  return btoa(binary);
+}
+
 function readFile(input, auto = false) {
 
   // Manual ROM selection
