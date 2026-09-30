@@ -478,3 +478,24 @@ test('DMC reload waits for a recent $4015 reader enable and then uses a 3-cycle 
  assert.equal(result.fetches,1);
  assert.equal(result.stolen,3);
 });
+
+
+test('archaic DiskDude header does not turn UxROM mapper 2 into mapper 66',()=>{
+ const bytes=rom(2,8,0,1,null);
+ bytes.set(Buffer.from('DiskDude!','ascii'),7);
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('mapperNumber'),2);
+ assert.equal(e.evaluate('chrIsRAM'),true);
+});
+
+test('archaic DiskDude header does not turn MMC2 mapper 9 into mapper 73',()=>{
+ const bytes=rom(9,8,16,0,null);
+ bytes.set(Buffer.from('DiskDude!','ascii'),7);
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('mapperNumber'),9);
+});
+
+test('clean iNES mapper high nibble remains significant',()=>{
+ const bytes=rom(73,8,16,0,null);
+ assert.throws(()=>emulator(bytes),/Mapper 73 not yet implemented/);
+});
