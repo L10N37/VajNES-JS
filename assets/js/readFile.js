@@ -19,10 +19,12 @@ function crc32Bytes(bytes) {
 // polluted. Keyed by CRC32 of PRG+CHR payload (header/trainer excluded), so
 // genuine cartridges that really use the reported high mapper are untouched.
 // Adventures in the Magic Kingdom:
-//   USA PRG+CHR  CRC32 5DBD6099
-//   PAL PRG+CHR  CRC32 6B761858
+//   USA [!] PRG+CHR CRC32 5DBD6099
+//   USA [a1] PRG+CHR CRC32 26C7D763
+//   PAL [!] PRG+CHR CRC32 6B761858
 const KNOWN_BAD_HEADER_MAPPERS = new Map([
   [0x5DBD6099, 1],
+  [0x26C7D763, 1],
   [0x6B761858, 1],
   // Splatterhouse: Wanpaku Graffiti, Namco 340. Many legacy dumps tag it 19.
   [0x46FD7843, 210],
