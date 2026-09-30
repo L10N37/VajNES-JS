@@ -151,7 +151,7 @@ function loadRom(romBytes) {
     if (repairedMapper !== null) incomingMapper = repairedMapper;
   }
 
-  if (![0,1,2,3,4,7,9,10,11,24,26,66,79,155].includes(incomingMapper))
+  if (![0,1,2,3,4,5,7,9,10,11,24,26,66,79,155].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
 
   // Never show an expansion-audio prompt for a mapper this build cannot run.
@@ -171,6 +171,8 @@ function loadRom(romBytes) {
   if (incomingMapper===3 && (nesHeader[5]===0 || ![1,2].includes(nesHeader[4]) ||
       (isNES2 && (nesHeader[8]>>4)>2)))
     throw new Error('Unsupported CNROM board: expected 16/32 KiB PRG, CHR ROM and submapper 0–2');
+  if (incomingMapper===5 && nesHeader[5]===0)
+    throw new Error('Unsupported MMC5 board: CHR ROM required');
   if ([9,10,11,66].includes(incomingMapper) && nesHeader[5]===0)
     throw new Error(`Unsupported mapper ${incomingMapper} board: CHR ROM required`);
 
