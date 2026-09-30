@@ -354,11 +354,7 @@ function checkWriteOffset(address, value) {
 
       // PPUMASK
       case 0x2001: {
-        const newMask = value & 0xFF;
-
-        // CPU-visible mask updates immediately
-        PPUMASK = newMask;
-
+        ppuWriteMask(value & 0xFF);
         break;
       }
 
