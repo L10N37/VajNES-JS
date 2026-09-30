@@ -51,9 +51,11 @@ function vrc6CpuWrite(addr,value){
   if(addr<0x8000)return;
   const reg=vrc6CanonicalAddress(addr);
 
-  if(reg>=0x9000&&reg<=0xb002&&
-     (reg<0xb000 || reg<=0xb002) &&
-     typeof NESAudio!=='undefined'&&NESAudio.expansionWrite)
+  const isAudioReg =
+    (reg>=0x9000&&reg<=0x9003) ||
+    (reg>=0xa000&&reg<=0xa002) ||
+    (reg>=0xb000&&reg<=0xb002);
+  if(isAudioReg && typeof NESAudio!=='undefined' && NESAudio.expansionWrite)
     NESAudio.expansionWrite(cpuCycles,reg,value);
 
   if((reg&0xf000)===0x8000){vrc6Prg16=value&0x0f;return;}
