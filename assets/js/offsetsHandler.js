@@ -182,8 +182,12 @@ function checkReadOffset(address) {
 
           } else {
 
-            const ntAddr = mapNT(vv);
-            VRAM_DATA = VRAM[ntAddr] & 0xFF;
+            if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(vv)&0xff;
+            else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(vv)&0xff;
+            else {
+              const ntAddr = mapNT(vv);
+              VRAM_DATA = VRAM[ntAddr] & 0xFF;
+            }
           }
         } else {
 
@@ -203,8 +207,12 @@ function checkReadOffset(address) {
           // Reload VRAM buffer from nametable mirror ($2F00-$2FFF)
           const ntMirror = vv & 0x2FFF;
 
-          const ntAddr = mapNT(ntMirror);
-          VRAM_DATA = VRAM[ntAddr] & 0xFF;
+          if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(ntMirror)&0xff;
+          else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(ntMirror)&0xff;
+          else {
+            const ntAddr = mapNT(ntMirror);
+            VRAM_DATA = VRAM[ntAddr] & 0xFF;
+          }
         }
 
         incrementPPUDataAddress();
