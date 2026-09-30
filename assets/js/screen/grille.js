@@ -135,7 +135,7 @@
 (function wireModal() {
   const modal = document.querySelector('.scanlinesModal');
   const okBtn = document.querySelector('#ok-button');
-  const openLink = document.querySelector('li:nth-child(2)'); // if you have a menu link
+  const openLink = document.getElementById('screen-option-scanlines');
   openLink?.addEventListener('click', () => { if (modal) modal.style.display = 'block'; });
   okBtn   ?.addEventListener('click', () => { if (modal) modal.style.display = 'none'; });
 })();
