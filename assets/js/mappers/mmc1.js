@@ -283,3 +283,25 @@ function mmc1Init(prg, chr) {
 
   if (mmc1Debugging) globalThis.NES_DEBUG_LOGGING && console.debug("[MMC1] Initialized");
 }
+
+
+function mmc1MirroringCode(){
+  return MIRRORING==='single0'?0:MIRRORING==='single1'?1:MIRRORING==='vertical'?2:3;
+}
+function mmc1SaveState(){
+  return new Uint8Array([1,shiftRegister&31,shiftCount&7,mmc1Control&31,mmc1CHR0&31,
+    mmc1CHR1&31,mmc1PRG&31,prgRamEnable?1:0,mmc1MirroringCode()]);
+}
+function mmc1LoadState(bytes){
+  if(!(bytes instanceof Uint8Array)||bytes.length<8)return false;
+  let o=bytes[0]===1?1:0;
+  shiftRegister=bytes[o++]&31;shiftCount=bytes[o++]&7;mmc1Control=bytes[o++]&31;
+  mmc1CHR0=bytes[o++]&31;mmc1CHR1=bytes[o++]&31;mmc1PRG=bytes[o++]&31;
+  prgRamEnable=!!bytes[o++];
+  if(bytes.length>o){
+    const m=bytes[o]&3;MIRRORING=['single0','single1','vertical','horizontal'][m];
+  } else updateMirroring();
+  chr8kModeFlag=((mmc1Control>>4)&1)===0;
+  updatePRGBanks();updateCHRBanks();
+  return true;
+}
