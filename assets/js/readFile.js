@@ -49,6 +49,13 @@ function readFile(input, auto = false) {
       return;
     }
 
+    // A new manual selection supersedes the old one immediately. If this ROM
+    // proves unsupported, do not silently resurrect or auto-load the old ROM.
+    if (typeof window.pause === 'function') window.pause();
+    if (typeof NESAudio !== 'undefined' && NESAudio.setExpansion)
+      NESAudio.setExpansion(null,false);
+    localStorage.removeItem('lastRomData');
+
     // FileReader loads ROM as binary buffer
     const reader = new FileReader();
     reader.readAsArrayBuffer(file);
@@ -58,25 +65,9 @@ function readFile(input, auto = false) {
       // Convert ArrayBuffer → Uint8Array
       const romBytes = new Uint8Array(reader.result);
 
-    // Cache ROM for automatic reload on refresh
-    function bytesToBase64(bytes)
-    {
-        let binary = "";
-        const chunk = 0x8000;
-
-        for (let i = 0; i < bytes.length; i += chunk)
-        {
-            const sub = bytes.subarray(i, i + chunk);
-            binary += String.fromCharCode.apply(null, sub);
-        }
-
-        return btoa(binary);
-    }
-
-    localStorage.setItem('lastRomData', bytesToBase64(romBytes));
-
-      // Pass ROM to loader
-      loadRom(romBytes);
+    // Cache only after the selected ROM has fully loaded.
+    if (loadRom(romBytes) === true)
+      localStorage.setItem('lastRomData', bytesToBase64(romBytes));
     };
 
     reader.onerror = function () {
@@ -138,11 +129,12 @@ function loadRom(romBytes) {
     if (repairedMapper !== null) incomingMapper = repairedMapper;
   }
 
-  if(typeof configureExpansionAudioForRom==='function')
-    configureExpansionAudioForRom(romBytes,nesHeader,incomingMapper,isNES2);
-
   if (![0,1,2,3,4,7,9,10,11,24,26,66,79,155].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
+
+  // Never show an expansion-audio prompt for a mapper this build cannot run.
+  if(typeof configureExpansionAudioForRom==='function')
+    configureExpansionAudioForRom(romBytes,nesHeader,incomingMapper,isNES2);
   const required = 16 + ((nesHeader[6] & 4) ? 512 : 0) + nesHeader[4]*0x4000 + nesHeader[5]*0x2000;
   if (!nesHeader[4] || romBytes.length < required) throw new Error('Truncated cartridge ROM');
   if (incomingMapper===0 && ![1,2].includes(nesHeader[4])) throw new Error('Invalid NROM PRG size');
@@ -320,4 +312,6 @@ function loadRom(romBytes) {
 
     window.alert(info);
   });
+
+  return true;
 }
