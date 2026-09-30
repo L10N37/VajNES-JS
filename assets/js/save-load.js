@@ -574,8 +574,11 @@ document.addEventListener("DOMContentLoaded", () => {
     chunks.push(buildSection("OAMM", OAM));
     chunks.push(buildSection("PALR", PALETTE_RAM));
     // CHR RAM is mutable cartridge video memory. Battletoads (AxROM) depends on it.
-    if (typeof chrIsRAM !== "undefined" && chrIsRAM)
-      chunks.push(buildSection("CHRR", CHR_ROM));
+    if (typeof chrIsRAM !== "undefined" && chrIsRAM) {
+      const chrState=(mapper===4 && typeof FULL_CHR_ROM!=="undefined" && FULL_CHR_ROM instanceof Uint8Array)
+        ? FULL_CHR_ROM : CHR_ROM;
+      chunks.push(buildSection("CHRR", chrState));
+    }
 
     // PPU internal latches/state (scalars)
     chunks.push(buildSection("NMIS", bool1(typeof nmiSuppression !== "undefined" ? nmiSuppression : false)));
@@ -754,10 +757,14 @@ document.addEventListener("DOMContentLoaded", () => {
         } break;
 
         case "CHRR": {
-          if (typeof chrIsRAM !== "undefined" && chrIsRAM && CHR_ROM instanceof Uint8Array) {
-            const L = Math.min(payload.length, CHR_ROM.length);
-            CHR_ROM.set(payload.subarray(0, L));
-            if (payload.length < CHR_ROM.length) CHR_ROM.fill(0, payload.length);
+          if (typeof chrIsRAM !== "undefined" && chrIsRAM) {
+            const target=(getMapperIdSafe()===4 && typeof FULL_CHR_ROM!=="undefined" && FULL_CHR_ROM instanceof Uint8Array)
+              ? FULL_CHR_ROM : CHR_ROM;
+            if(target instanceof Uint8Array) {
+              const L=Math.min(payload.length,target.length);
+              target.set(payload.subarray(0,L));
+              if(payload.length<target.length)target.fill(0,payload.length);
+            }
           }
         } break;
 
