@@ -415,22 +415,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function saveMapperState(mapperIdValue) {
     switch (mapperIdValue | 0) {
-      case 7:
-        return typeof axromSaveState === "function" ? axromSaveState() : new Uint8Array(0);
-      case 0:
-      default:
-        return new Uint8Array(0);
+      case 1: return typeof mmc1SaveState==="function"?mmc1SaveState():new Uint8Array(0);
+      case 2: return typeof uxromSaveState==="function"?uxromSaveState():new Uint8Array(0);
+      case 3: case 9: case 10: case 11: case 66: case 79:
+        return typeof extraMapperSaveState==="function"?extraMapperSaveState(mapperIdValue):new Uint8Array(0);
+      case 4: return typeof mmc3SaveState==="function"?mmc3SaveState():new Uint8Array(0);
+      case 5: return typeof mmc5SaveState==="function"?mmc5SaveState():new Uint8Array(0);
+      case 7: return typeof axromSaveState==="function"?axromSaveState():new Uint8Array(0);
+      case 24: case 26: return typeof vrc6SaveState==="function"?vrc6SaveState():new Uint8Array(0);
+      default:return new Uint8Array(0);
     }
   }
 
   function loadMapperState(mapperIdValue, bytes) {
     switch (mapperIdValue | 0) {
-      case 7:
-        if (typeof axromLoadState === "function") axromLoadState(bytes);
-        return;
-      case 0:
-      default:
-        return;
+      case 1: if(typeof mmc1LoadState==="function")mmc1LoadState(bytes);return;
+      case 2: if(typeof uxromLoadState==="function")uxromLoadState(bytes);return;
+      case 3: case 9: case 10: case 11: case 66: case 79:
+        if(typeof extraMapperLoadState==="function")extraMapperLoadState(mapperIdValue,bytes);return;
+      case 4: if(typeof mmc3LoadState==="function")mmc3LoadState(bytes);return;
+      case 5: if(typeof mmc5LoadState==="function")mmc5LoadState(bytes);return;
+      case 7: if(typeof axromLoadState==="function")axromLoadState(bytes);return;
+      case 24: case 26: if(typeof vrc6LoadState==="function")vrc6LoadState(bytes);return;
+      default:return;
     }
   }
 
