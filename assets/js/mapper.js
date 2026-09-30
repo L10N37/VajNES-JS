@@ -116,6 +116,14 @@ function mapper(nesHeader) {
       break;
     }
 
+    case 24:
+    case 26: {
+      vrc6Init();
+      chrIsRAM = false;
+      resetCPU();
+      break;
+    }
+
     // ==========================================================
     // Unsupported mappers
     // ==========================================================
