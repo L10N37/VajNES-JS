@@ -16,3 +16,19 @@ function axromWrite(address,value) {
   axromBank=(value&7)&((prgRom.length/0x8000)-1);
   MIRRORING=value&0x10?'single1':'single0';
 }
+
+
+function axromSaveState(){
+  return new Uint8Array([
+    axromBank & 0xff,
+    MIRRORING === 'single1' ? 1 : 0
+  ]);
+}
+
+function axromLoadState(bytes){
+  if(!(bytes instanceof Uint8Array) || bytes.length < 2)return false;
+  const banks=Math.max(1,(prgRom.length/0x8000)|0);
+  axromBank=(bytes[0]&7)%banks;
+  MIRRORING=bytes[1]?'single1':'single0';
+  return true;
+}

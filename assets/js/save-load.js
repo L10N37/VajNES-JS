@@ -405,34 +405,31 @@ document.addEventListener("DOMContentLoaded", () => {
   // ==========================================================
 
   function getMapperIdSafe() {
-    // Adjust this to however you store it
-    // e.g. window.mapperId, currentMapper, cartridge.mapper, etc.
+    // mapperNumber is the actual active cartridge mapper used by the core.
+    if (typeof mapperNumber !== "undefined") return mapperNumber | 0;
     if (typeof mapperId !== "undefined") return mapperId | 0;
     if (typeof currentMapper !== "undefined") return currentMapper | 0;
     if (typeof cartridge !== "undefined" && cartridge && typeof cartridge.mapper !== "undefined") return cartridge.mapper | 0;
-    return 0; // assume mapper 0 if unknown
+    return 0;
   }
 
   function saveMapperState(mapperIdValue) {
-    // For now:
-    // Mapper 0: no extra state besides memory you already save (prgRam/systemMemory/etc)
-    // Others: stub empty until you implement them.
     switch (mapperIdValue | 0) {
+      case 7:
+        return typeof axromSaveState === "function" ? axromSaveState() : new Uint8Array(0);
       case 0:
-        return new Uint8Array(0);
       default:
-        // stub - no-op for now
         return new Uint8Array(0);
     }
   }
 
   function loadMapperState(mapperIdValue, bytes) {
-    // For now: no-op
     switch (mapperIdValue | 0) {
-      case 0:
+      case 7:
+        if (typeof axromLoadState === "function") axromLoadState(bytes);
         return;
+      case 0:
       default:
-        // stub
         return;
     }
   }
@@ -505,7 +502,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // CPU/IRQ/NMI related
     chunks.push(buildSection("NMIF", num8((typeof PPU_FRAME_FLAGS !== "undefined" ? PPU_FRAME_FLAGS : 0) & 0xFF)));
-    chunks.push(buildSection("NMIP", bool1(typeof nmiPending !== "undefined" ? nmiPending : false)));
+    // nmiPending stores the PPU frame number, not merely a boolean.
+    chunks.push(buildSection("NMIP", num32LE((typeof nmiPending !== "undefined" ? nmiPending : 0) >>> 0)));
     chunks.push(buildSection("IRQP", bool1(typeof mmc3_irq.enabled !== "undefined" ? mmc3_irq.enabled : false)));
     chunks.push(buildSection("STAL", num32LE((typeof cpuStallFlag !== "undefined" ? cpuStallFlag : 0) >>> 0)));
 
@@ -517,6 +515,9 @@ document.addEventListener("DOMContentLoaded", () => {
     chunks.push(buildSection("VRAM", VRAM));
     chunks.push(buildSection("OAMM", OAM));
     chunks.push(buildSection("PALR", PALETTE_RAM));
+    // CHR RAM is mutable cartridge video memory. Battletoads (AxROM) depends on it.
+    if (typeof chrIsRAM !== "undefined" && chrIsRAM)
+      chunks.push(buildSection("CHRR", CHR_ROM));
 
     // PPU internal latches/state (scalars)
     chunks.push(buildSection("NMIS", bool1(typeof nmiSuppression !== "undefined" ? nmiSuppression : false)));
@@ -537,6 +538,8 @@ document.addEventListener("DOMContentLoaded", () => {
     chunks.push(buildSection("PCTL", num8((typeof PPUCTRL !== "undefined" ? PPUCTRL : 0) & 0xFF)));
     chunks.push(buildSection("PMSK", num8((typeof PPUMASK !== "undefined" ? PPUMASK : 0) & 0xFF)));
     chunks.push(buildSection("PSTA", num8((typeof PPUSTATUS !== "undefined" ? PPUSTATUS : 0) & 0xFF)));
+    if (typeof ppuSavePipelineState === "function")
+      chunks.push(buildSection("PPIP", ppuSavePipelineState()));
 
     chunks.push(buildSection("OADR", num8((typeof OAMADDR !== "undefined" ? OAMADDR : 0) & 0xFF)));
     chunks.push(buildSection("ODAT", num8((typeof OAMDATA !== "undefined" ? OAMDATA : 0) & 0xFF)));
@@ -583,6 +586,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let mapperFromFile = 0;
     let mapperStateBytes = new Uint8Array(0);
+    let ppuPipelineBytes = null;
 
     while (off + 8 <= fileBytes.length) {
       const tag = bytesToTag(fileBytes, off); off += 4;
@@ -625,7 +629,9 @@ document.addEventListener("DOMContentLoaded", () => {
         case "CYC1": ppuCycles = bytesToU32LE(payload, 0) >>> 0; break;
 
         case "NMIF": PPU_FRAME_FLAGS = payload[0] & 0xFF; break;
-        case "NMIP": nmiPending = !!(payload[0] & 1); break;
+        case "NMIP":
+          nmiPending = payload.length >= 4 ? bytesToU32LE(payload, 0) >>> 0 : (payload[0] & 1);
+          break;
         case "IRQP": mmc3_irq.enabled = !!(payload[0] & 1); break;
         case "STAL": cpuStallFlag = bytesToU32LE(payload, 0) >>> 0; break;
 
@@ -651,6 +657,14 @@ document.addEventListener("DOMContentLoaded", () => {
           if (payload.length < PALETTE_RAM.length) PALETTE_RAM.fill(0, payload.length);
         } break;
 
+        case "CHRR": {
+          if (typeof chrIsRAM !== "undefined" && chrIsRAM && CHR_ROM instanceof Uint8Array) {
+            const L = Math.min(payload.length, CHR_ROM.length);
+            CHR_ROM.set(payload.subarray(0, L));
+            if (payload.length < CHR_ROM.length) CHR_ROM.fill(0, payload.length);
+          }
+        } break;
+
         case "NMIS": nmiSuppression = !!(payload[0] & 1); break;
         case "VADD": VRAM_ADDR = (payload[0] | (payload[1] << 8)) & 0xFFFF; break;
 
@@ -670,6 +684,7 @@ document.addEventListener("DOMContentLoaded", () => {
         case "PCTL": PPUCTRL = payload[0] & 0xFF; break;
         case "PMSK": PPUMASK = payload[0] & 0xFF; break;
         case "PSTA": PPUSTATUS = payload[0] & 0xFF; break;
+        case "PPIP": ppuPipelineBytes = payload.slice(); break;
 
         case "OADR": OAMADDR = payload[0] & 0xFF; break;
         case "ODAT": OAMDATA = payload[0] & 0xFF; break;
@@ -693,8 +708,10 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    // Apply mapper-specific state (stub for now)
+    // Apply cartridge latches before restoring the live PPU pipeline.
     loadMapperState(mapperFromFile, mapperStateBytes);
+    if (ppuPipelineBytes && typeof ppuLoadPipelineState === "function")
+      ppuLoadPipelineState(ppuPipelineBytes);
 
     return true;
   }
