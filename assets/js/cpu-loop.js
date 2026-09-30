@@ -86,6 +86,16 @@ function _mainLoopRAF(now) {
   requestAnimationFrame(_mainLoopRAF);
 }
 
+function disasmPeekByte(address) {
+  const addr=address&0xffff;
+  // The live trace must follow the active cartridge bank without performing a
+  // normal CPU-bus read (which could perturb open bus or DMA/debug state).
+  if(addr<0x8000)return undefined;
+  if(mapperNumber===4)return mapper4_prg_read(addr)&0xff;
+  if(mapperNumber===1)return mmc1CpuRead(addr)&0xff;
+  return mapperReadPRG(addr)&0xff;
+}
+
 window.step = function () {
 
   NoSignalAudio.setEnabled(false);
@@ -103,8 +113,8 @@ window.step = function () {
   if (disasmRunning) {
 
   if (CPUregisters.PC >= 0x8000) {
-    operand[1] = prgRom[((CPUregisters.PC + 1) & 0xFFFF) - 0x8000];
-    operand[2] = prgRom[((CPUregisters.PC + 2) & 0xFFFF) - 0x8000];
+    operand[1] = disasmPeekByte((CPUregisters.PC + 1) & 0xFFFF);
+    operand[2] = disasmPeekByte((CPUregisters.PC + 2) & 0xFFFF);
   }
   const len = OPCODES[code].pc;
   if (len < 2) operand[1] = "--"; // no operand1
