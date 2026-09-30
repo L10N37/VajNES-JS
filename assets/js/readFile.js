@@ -141,7 +141,7 @@ function loadRom(romBytes) {
   if(typeof configureExpansionAudioForRom==='function')
     configureExpansionAudioForRom(romBytes,nesHeader,incomingMapper,isNES2);
 
-  if (![0,1,2,3,4,7,9,10,11,66,79,155].includes(incomingMapper))
+  if (![0,1,2,3,4,7,9,10,11,24,26,66,79,155].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
   const required = 16 + ((nesHeader[6] & 4) ? 512 : 0) + nesHeader[4]*0x4000 + nesHeader[5]*0x2000;
   if (!nesHeader[4] || romBytes.length < required) throw new Error('Truncated cartridge ROM');
@@ -162,6 +162,9 @@ function loadRom(romBytes) {
 
   if (incomingMapper===79 && (nesHeader[5]===0 || ![2,4].includes(nesHeader[4])))
     throw new Error('Unsupported NINA-03/06 board: expected 32/64 KiB PRG and CHR ROM');
+
+  if ((incomingMapper===24 || incomingMapper===26) && nesHeader[5]===0)
+    throw new Error('Unsupported VRC6 board: CHR ROM required');
 
   // Header fields
   const prgBanks = nesHeader[4];  // PRG banks (16KB units)
