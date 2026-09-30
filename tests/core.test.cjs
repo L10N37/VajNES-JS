@@ -746,3 +746,18 @@ test('MMC5 multiplier returns 16-bit product',()=>{
  e.evaluate('mmc5CpuWrite(0x5205,25);mmc5CpuWrite(0x5206,10)');
  assert.deepEqual(e.evaluate('[mmc5CpuRead(0x5205),mmc5CpuRead(0x5206)]'),[250,0]);
 });
+
+
+test('MMC5 forwards audio registers to expansion renderer and exposes 5015 status',()=>{
+ const writes=[];
+ const audio={
+  reset(){},unlock(){},write(){},quarter(){},half(){},dmc(){},frame(){},pause(){},setExpansion(){},
+  expansionWrite(c,a,v){writes.push([a,v]);},
+  expansionRead(c,a){return a===0x5015?3:0;},
+  expansionObserveRead(){}
+ };
+ const e=createEmulator(audio);e.load(rom(5,8,4));
+ e.evaluate('checkWriteOffset(0x5000,0xdf);checkWriteOffset(0x5015,3)');
+ assert.deepEqual(writes,[[0x5000,0xdf],[0x5015,3]]);
+ assert.equal(e.evaluate('checkReadOffset(0x5015)'),3);
+});
