@@ -236,12 +236,14 @@ function checkReadOffset(address) {
   } else if (addr < 0x8000) {
 
     raw =
-      mapperNumber === 1
-        ? mmc1CpuRead(addr) & 0xFF
-        : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
-           mapperNumber===11 || mapperNumber===66 || mapperNumber===79 ||
-           (mapperNumber===4 && !MMC3.control.prgRamEnabled))
-          ? openBus.CPU & 255 : prgRam[addr - 0x6000] & 0xFF;
+      (mapperNumber===24 || mapperNumber===26)
+        ? vrc6CpuRead(addr) & 0xFF
+        : mapperNumber === 1
+          ? mmc1CpuRead(addr) & 0xFF
+          : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
+             mapperNumber===11 || mapperNumber===66 || mapperNumber===79 ||
+             (mapperNumber===4 && !MMC3.control.prgRamEnabled))
+            ? openBus.CPU & 255 : prgRam[addr - 0x6000] & 0xFF;
 
   } else {
 
@@ -500,6 +502,7 @@ function checkWriteOffset(address, value) {
   } else if (addr < 0x8000) {
     if (mapperNumber === 1) mmc1CpuWrite(addr, value);
     else if (mapperNumber === 79) nina79Write(addr, value);
+    else if (mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
     else if(addr>=0x6000 && mapperNumber!==7 && mapperNumber!==3 &&
       mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==66 && mapperNumber!==79 &&
       (mapperNumber!==4 || (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)))
@@ -532,12 +535,14 @@ function cpuWrite(addr, value) {
 function mapperReadPRG(addr) {
   if (mapperNumber===7) return axromRead(addr);
   if (mapperNumber===2) return uxromRead(addr);
+  if (mapperNumber===24 || mapperNumber===26) return vrc6CpuRead(addr);
   const extra = extraMapperReadPRG(addr);
   return extra === null ? prgRom[addr - 0x8000] : extra;
 }
 function mapperWritePRG(addr, value) {
   if(mapperNumber===7) axromWrite(addr,value);
   else if(mapperNumber===2) uxromWrite(addr,value);
+  else if(mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
   else extraMapperWritePRG(addr,value);
 }
 
