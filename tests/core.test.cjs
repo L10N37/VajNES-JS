@@ -499,3 +499,22 @@ test('clean iNES mapper high nibble remains significant',()=>{
  const bytes=rom(73,8,16,0,null);
  assert.throws(()=>emulator(bytes),/Mapper 73 not yet implemented/);
 });
+
+
+test('Magic Kingdom known bad-header payload CRCs repair mapper 65 to MMC1',()=>{
+ const e=createEmulator();
+ assert.equal(e.evaluate('KNOWN_BAD_HEADER_MAPPERS.get(0x5DBD6099)'),1);
+ assert.equal(e.evaluate('KNOWN_BAD_HEADER_MAPPERS.get(0x6B761858)'),1);
+});
+
+test('genuine unknown mapper 65 is not broadly rewritten to MMC1',()=>{
+ const e=createEmulator();
+ assert.throws(()=>e.load(rom(65,8,16)),/Mapper 65 not yet implemented/);
+});
+
+test('known bad-header mapper repair is applied before unsupported-mapper rejection',()=>{
+ const e=createEmulator();
+ e.evaluate('crc32Bytes=()=>0x5DBD6099');
+ e.load(rom(65,8,16));
+ assert.equal(e.evaluate('mapperNumber'),1);
+});
