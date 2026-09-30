@@ -143,3 +143,34 @@ function mmc5ClockScanline(scanline){
   }
 }
 function mmc5EndFrame(){mmc5InFrame=false;mmc5Scanline=0;irqAssert.mmc5=false;}
+
+
+function mmc5SaveState(){
+  const out=new Uint8Array(1+8+5+16+8+0x400);
+  let o=0;
+  out[o++]=1;
+  out[o++]=mmc5PrgMode&3;out[o++]=mmc5ChrMode&3;out[o++]=mmc5ExramMode&3;out[o++]=mmc5NtMap&255;
+  out[o++]=mmc5FillTile&255;out[o++]=mmc5FillAttr&3;out[o++]=mmc5ChrHigh&3;
+  out[o++]=((mmc5Protect1&3)<<2)|(mmc5Protect2&3);
+  out.set(mmc5PrgBanks,o);o+=5;
+  for(let i=0;i<8;i++){out[o++]=mmc5ChrA[i]&255;out[o++]=(mmc5ChrA[i]>>>8)&3;}
+  for(let i=0;i<4;i++){out[o++]=mmc5ChrB[i]&255;out[o++]=(mmc5ChrB[i]>>>8)&3;}
+  out[o++]=mmc5IrqCompare&255;out[o++]=mmc5IrqEnable?1:0;out[o++]=mmc5IrqPending?1:0;out[o++]=mmc5InFrame?1:0;
+  out[o++]=mmc5Scanline&255;out[o++]=mmc5MulA&255;out[o++]=mmc5MulB&255;out[o++]=irqAssert.mmc5?1:0;
+  out.set(mmc5Exram,o);
+  return out;
+}
+function mmc5LoadState(bytes){
+  if(!(bytes instanceof Uint8Array)||bytes.length<1+8+5+16+8+0x400||bytes[0]!==1)return false;
+  let o=1;
+  mmc5PrgMode=bytes[o++]&3;mmc5ChrMode=bytes[o++]&3;mmc5ExramMode=bytes[o++]&3;mmc5NtMap=bytes[o++];
+  mmc5FillTile=bytes[o++];mmc5FillAttr=bytes[o++]&3;mmc5ChrHigh=bytes[o++]&3;
+  const p=bytes[o++];mmc5Protect1=(p>>>2)&3;mmc5Protect2=p&3;
+  mmc5PrgBanks.set(bytes.subarray(o,o+5));o+=5;
+  for(let i=0;i<8;i++)mmc5ChrA[i]=(bytes[o++]|((bytes[o++]&3)<<8))&0x3ff;
+  for(let i=0;i<4;i++)mmc5ChrB[i]=(bytes[o++]|((bytes[o++]&3)<<8))&0x3ff;
+  mmc5IrqCompare=bytes[o++];mmc5IrqEnable=!!bytes[o++];mmc5IrqPending=!!bytes[o++];mmc5InFrame=!!bytes[o++];
+  mmc5Scanline=bytes[o++];mmc5MulA=bytes[o++];mmc5MulB=bytes[o++];irqAssert.mmc5=!!bytes[o++];
+  mmc5Exram.set(bytes.subarray(o,o+0x400));
+  return true;
+}
