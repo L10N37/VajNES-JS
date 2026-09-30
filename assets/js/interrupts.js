@@ -4,6 +4,7 @@
 // IRQ line, active low, idle high - we can track what requested the interrupt
 irqAssert = {
   mmc3: false,
+  vrc: false,
   dmcDma: false,
   frame: false
 };
