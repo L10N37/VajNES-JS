@@ -378,3 +378,13 @@ registersText{
 .about-note{color:#bdc1c6;font-size:13px}
 .about-close{position:absolute;right:14px;top:10px;border:0;background:transparent;color:#fff;font-size:32px;cursor:pointer}
 @media(max-width:620px){.about-card{padding:22px 18px}.about-grid{grid-template-columns:1fr}.about-grid span:nth-child(odd){margin-top:5px}}
+
+
+/* Expansion-audio opt-in */
+.expansion-audio-prompt{position:fixed;inset:0;z-index:30000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(0,0,0,.76)}
+.expansion-audio-card{width:min(460px,calc(100vw - 40px));background:#17191d;color:#f1f3f4;border:1px solid #4b4f56;border-radius:12px;padding:24px 26px;box-shadow:0 18px 60px rgba(0,0,0,.6);font:15px/1.5 sans-serif;text-align:center}
+.expansion-audio-card h2{margin:0 0 12px;font-size:23px}
+.expansion-audio-card p{margin:0 0 22px}
+.expansion-audio-actions{display:flex;justify-content:center;gap:14px}
+.expansion-audio-button{min-width:100px;padding:9px 18px;border:1px solid #6b7078;border-radius:7px;background:#2b2f35;color:#fff;font:600 15px sans-serif;cursor:pointer}
+.expansion-audio-button:hover,.expansion-audio-button:focus{background:#3a4048;outline:2px solid #8ab4f8;outline-offset:2px}
