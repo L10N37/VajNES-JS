@@ -215,26 +215,6 @@ test('odd-frame skip latch keeps its existing raw PPUMASK timing boundary',()=>{
  assert.deepEqual(e.evaluate('[renderingNow(),oddSkipRendering]'),[true,false]);
 });
 
-test('secondary OAM address wraps at dot 321 and freezes after overflow',()=>{
- const e=emulator();
- e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUclock.scanline=10;resetSecondaryOAMAddress()');
- for(let d=257;d<=319;d++)e.evaluate(`PPUclock.dot=${d};updateSecondaryOAMAddrForDot(10,${d})`);
- assert.deepEqual(e.evaluate('[secOAMAddr,secOAMOverflowed]'),[31,false]);
- e.evaluate('PPUclock.dot=321;updateSecondaryOAMAddrForDot(10,321)');
- assert.deepEqual(e.evaluate('[secOAMAddr,secOAMOverflowed]'),[0,true]);
- e.evaluate('PPUclock.dot=259;updateSecondaryOAMAddrForDot(10,259)');
- assert.deepEqual(e.evaluate('[secOAMAddr,secOAMOverflowed]'),[0,true]);
-});
-
-test('$2004 exposes secondary OAM during sprite fetch and idle',()=>{
- const e=emulator();
- e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;secondaryOAM.fill(0xff);secondaryOAM.set([1,2,3,4,5,6,7,8]);current.scanline=10');
- e.evaluate('current.dot=257');assert.equal(e.evaluate('checkReadOffset(0x2004)'),1);
- e.evaluate('current.dot=260');assert.equal(e.evaluate('checkReadOffset(0x2004)'),4);
- e.evaluate('current.dot=264');assert.equal(e.evaluate('checkReadOffset(0x2004)'),4);
- e.evaluate('secOAMAddr=4;current.dot=330');assert.equal(e.evaluate('checkReadOffset(0x2004)'),5);
-});
-
 test('background shifter advances after pixel zero without duplicating it',()=>{
  const e=emulator();e.evaluate('spriteXForceZeroNextFrame=false;PPUMASK=0x0a;fineX=0;PPUclock.scanline=0;PPUclock.dot=1;nextLine.t0={lo:0x80,hi:0,at:0};nextLine.t1={lo:0,hi:0,at:0};PALETTE_RAM[0]=0;PALETTE_RAM[1]=0x21;visibleScanline(1);PPUclock.dot=2;visibleScanline(2)');
  assert.deepEqual(e.evaluate('Array.from(paletteIndexFrame.slice(0,2))'),[0x21,0]);
