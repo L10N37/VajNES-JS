@@ -50,8 +50,17 @@ function _resyncScanlineOverlayAfterScale() {
 }
 
 // Radio buttons for choosing the overlay
+const savedScanlineImage = localStorage.getItem('vajnesScanlineImage');
+if (savedScanlineImage) {
+  const radio = document.querySelector(`input[name="scanlines"][value="${savedScanlineImage}"]`);
+  if (radio) radio.checked = true;
+}
+
 document.querySelectorAll('input[name="scanlines"]').forEach((b) => {
-  b.addEventListener('change', setScanlinesImage);
+  b.addEventListener('change', () => {
+    localStorage.setItem('vajnesScanlineImage', b.value);
+    setScanlinesImage();
+  });
 });
 
 // Initial pass
