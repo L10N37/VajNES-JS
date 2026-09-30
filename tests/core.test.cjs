@@ -191,6 +191,30 @@ test('AxROM rejects unsupported images before replacing a running cartridge',()=
  e.load(rom(7,2,0));assert.equal(e.evaluate('axromBank'),0);assert.equal(e.evaluate('MIRRORING'),'single0');
  const previous=emulator(rom(4));previous.evaluate('irqAssert.mmc3=true');previous.load(rom(7,2,0));assert.equal(previous.evaluate('irqAssert.mmc3'),false);
 });
+test('PPUMASK rendering enable is delayed by four PPU dots',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=100;ppuWriteMask(0x18)');
+ assert.deepEqual(e.evaluate('[PPUMASK,renderingNow(),ppumaskRenderApplyAt]'),[0x18,false,104]);
+ e.evaluate('ppuCycles=103');assert.equal(e.evaluate('renderingNow()'),false);
+ e.evaluate('ppuCycles=104');assert.equal(e.evaluate('renderingNow()'),true);
+});
+
+test('late PPUMASK enable skips the dot-256 vertical increment used by Battletoads',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=100;VRAM_ADDR=0;PPUclock.scanline=14;PPUclock.dot=256;ppuWriteMask(0x18);ppuCycles=103;visibleScanline(256)');
+ assert.equal(e.evaluate('VRAM_ADDR'),0);
+ e.evaluate('ppuCycles=104;visibleScanline(256)');
+ assert.equal(e.evaluate('VRAM_ADDR'),0x1001);
+});
+
+test('odd-frame skip latch keeps its existing raw PPUMASK timing boundary',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=100;ppuWriteMask(0x18);PPUclock.scanline=261;PPUclock.dot=338;PPUclock.oddFrame=false;oddSkipRendering=false;ppuTick()');
+ assert.deepEqual(e.evaluate('[renderingNow(),oddSkipRendering]'),[false,true]);
+ e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;ppuCycles=200;ppuWriteMask(0);PPUclock.scanline=261;PPUclock.dot=338;oddSkipRendering=true;ppuTick()');
+ assert.deepEqual(e.evaluate('[renderingNow(),oddSkipRendering]'),[true,false]);
+});
+
 test('background shifter advances after pixel zero without duplicating it',()=>{
  const e=emulator();e.evaluate('spriteXForceZeroNextFrame=false;PPUMASK=0x0a;fineX=0;PPUclock.scanline=0;PPUclock.dot=1;nextLine.t0={lo:0x80,hi:0,at:0};nextLine.t1={lo:0,hi:0,at:0};PALETTE_RAM[0]=0;PALETTE_RAM[1]=0x21;visibleScanline(1);PPUclock.dot=2;visibleScanline(2)');
  assert.deepEqual(e.evaluate('Array.from(paletteIndexFrame.slice(0,2))'),[0x21,0]);
