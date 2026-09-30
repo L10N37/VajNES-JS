@@ -111,9 +111,36 @@ const NESAudio = (()=>{
     expansion.observeRead(address,value);
   }
 
+  function saveState() {
+    return {
+      lastCycle,expansionChip,expansionEnabled,
+      expansionRegs:Array.from(expansionRegs.entries()),
+      expansion:expansion?.saveState?.()||null
+    };
+  }
+  function loadState(state) {
+    if(!state)return false;
+    lastCycle=Number(state.lastCycle)||0;
+    expansionChip=state.expansionChip||null;
+    expansionEnabled=!!state.expansionEnabled;
+    expansionRegs.clear();
+    for(const pair of state.expansionRegs||[])if(Array.isArray(pair)&&pair.length===2)
+      expansionRegs.set(pair[0]&0xffff,pair[1]&0xff);
+    expansion=expansionChip&&typeof ExpansionAudioRenderer!=='undefined'
+      ? new ExpansionAudioRenderer(expansionChip,context?.sampleRate||48000):null;
+    if(expansion&&state.expansion)expansion.loadState(state.expansion);
+    if(wasm) {
+      wasm.audio_reset(context?.sampleRate||48000);
+      for(const [address,name] of Object.entries(APU_REG_ADDRESSES))wasm.audio_write(+address,APUregister[name]);
+      wasm.audio_lengths(mask());wasm.audio_dmc(DMC.outputLevel||0);
+    }
+    node?.port.postMessage({type:'reset'});
+    return true;
+  }
+
   document.addEventListener('pointerdown',unlock,{capture:true});
   document.addEventListener('keydown',unlock,{capture:true});
-  return {reset,frame,unlock,setExpansion,expansionWrite,expansionRead,expansionObserveRead,
+  return {reset,frame,unlock,setExpansion,expansionWrite,expansionRead,expansionObserveRead,saveState,loadState,
     write(cycle,address,value){if(wasm){sync(cycle);wasm.audio_lengths(mask());wasm.audio_write(address,value);}},
     quarter(cycle){if(wasm){sync(cycle);wasm.audio_quarter();}},
     half(cycle){if(wasm){sync(cycle);wasm.audio_lengths(mask());wasm.audio_half();}},
