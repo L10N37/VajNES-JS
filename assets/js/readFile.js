@@ -151,7 +151,7 @@ function loadRom(romBytes) {
     if (repairedMapper !== null) incomingMapper = repairedMapper;
   }
 
-  if (![0,1,2,3,4,5,7,9,10,11,24,26,66,79,155].includes(incomingMapper))
+  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,66,79,155,210].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
 
   // Never show an expansion-audio prompt for a mapper this build cannot run.
@@ -179,6 +179,8 @@ function loadRom(romBytes) {
   if (incomingMapper===79 && (nesHeader[5]===0 || ![2,4].includes(nesHeader[4])))
     throw new Error('Unsupported NINA-03/06 board: expected 32/64 KiB PRG and CHR ROM');
 
+  if ((incomingMapper===19 || incomingMapper===210) && nesHeader[5]===0)
+    throw new Error(`Unsupported Namco mapper ${incomingMapper}: CHR ROM required`);
   if ((incomingMapper===24 || incomingMapper===26) && nesHeader[5]===0)
     throw new Error('Unsupported VRC6 board: CHR ROM required');
 
