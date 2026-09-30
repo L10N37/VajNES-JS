@@ -15,6 +15,9 @@ closeModal.addEventListener('click', () => {
 // Radio group -> update global scaleFactor then call applyScale()
 const scaleRadioButtons = scaleModal.querySelectorAll('input[type=radio]');
 for (let i = 0; i < scaleRadioButtons.length; i++) {
+  scaleRadioButtons[i].checked = Math.abs(parseFloat(scaleRadioButtons[i].value) - scaleFactor) < 0.001;
+}
+for (let i = 0; i < scaleRadioButtons.length; i++) {
   scaleRadioButtons[i].addEventListener('click', () => {
     const next = parseFloat(scaleRadioButtons[i].value);
     if (!isFinite(next) || next <= 0) return;
