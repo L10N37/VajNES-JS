@@ -153,8 +153,9 @@ function showExpansionAudioPrompt(found) {
 }
 
 function expansionAudioPromptOpen() {
-  return typeof document!=='undefined' &&
-    !!document.getElementById?.('expansion-audio-prompt');
+  if(typeof document==='undefined') return false;
+  const prompt=document.getElementById?.('expansion-audio-prompt');
+  return !!prompt && prompt.id==='expansion-audio-prompt';
 }
 
 function configureExpansionAudioForRom(romBytes,header,mapper,isNES2) {
