@@ -25,7 +25,7 @@ let oddSkipRendering = false;
 // PPUMASK's rendering-enable bits do not affect the PPU immediately.
 // Hardware applies BG/SPR rendering changes about 3-4 dots after the CPU write.
 // Keep the CPU-visible PPUMASK byte immediate, but hold bits 3/4 at their old
-// effective state for three complete PPU dots.
+// effective state for four complete PPU dots.
 let ppumaskRenderHoldBits = 0;
 let ppumaskRenderApplyAt = -1;
 
@@ -49,7 +49,7 @@ function ppuWriteMask(value) {
     ppumaskRenderApplyAt = -1;
   } else {
     ppumaskRenderHoldBits = effectiveBefore;
-    ppumaskRenderApplyAt = ppuCycles + 3;
+    ppumaskRenderApplyAt = ppuCycles + 4;
   }
 }
 
