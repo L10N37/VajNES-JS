@@ -29,6 +29,8 @@ const DMC = {
   dmaRequest: false,
   dmaBusy: false,
   dmaAt: 0,
+  dmaKind: "none",
+  readerEnableAt: 0,
 
   // debug
   fetchCount: 0
@@ -103,9 +105,12 @@ function clockDMC() {
     }
 
     // ---- request DMA ----
-    if (DMC.bytesRemaining > 0 && !DMC.sampleBufferFull) {
+    if (DMC.bytesRemaining > 0 && !DMC.sampleBufferFull && !DMC.dmaRequest) {
       DMC.dmaRequest = true;
+      DMC.dmaKind = "reload";
       // Reload halts use put cycles (even in this power-on alignment).
+      // If a $4015 restart is still enabling the memory reader, the request
+      // remains pending until that enable delay has elapsed.
       DMC.dmaAt = cpuCycles + (cpuCycles & 1);
 
       if (debug.dmcDma) {
@@ -123,6 +128,7 @@ function dmcDoDMA(haltedAddress = CPUregisters.PC) {
   if (!DMC.dmaRequest) return;
 
   DMC.dmaRequest = false;
+  DMC.dmaKind = "none";
   DMC.dmaBusy = true;
   // Halt and dummy cycles repeat the CPU read. A get must land on the
   // APU's get phase; writes never enter this function. Controller /OE stays
@@ -278,6 +284,8 @@ function dmcWrite4015(value) {
   if (!DMC.enabled) {
     DMC.bytesRemaining = 0;
     DMC.dmaRequest = false;
+    DMC.dmaKind = "none";
+    DMC.readerEnableAt = 0;
     return;
   }
 
@@ -286,8 +294,15 @@ function dmcWrite4015(value) {
     DMC.currentAddress = DMC.sampleAddress & 0xFFFF;
     DMC.bytesRemaining = DMC.sampleLength & 0xFFFF;
 
+    // A restart makes the memory reader available after three CPU cycles.
+    // This matters when an already-buffered byte empties during that window:
+    // the resulting reload DMA must wait for the reader instead of firing
+    // immediately and stealing the wrong CPU cycle.
+    DMC.readerEnableAt = cpuCycles + 3;
+
     if(!DMC.sampleBufferFull) {
       DMC.dmaRequest = true;
+      DMC.dmaKind = "load";
       // First load halts on the get phase of the second following APU cycle.
       DMC.dmaAt = cpuCycles + ((cpuCycles&1)?4:3);
     }

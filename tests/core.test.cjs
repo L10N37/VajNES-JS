@@ -444,3 +444,37 @@ test('loader accepts all newly supported mapper IDs and rejects CNROM CHR RAM',(
  }
  const e=emulator();assert.throws(()=>e.load(rom(3,2,0,0,1)),/Unsupported CNROM/);
 });
+
+
+test('DMC reload waits for a recent $4015 reader enable and then uses a 3-cycle DMA',()=>{
+ const e=emulator();
+ const result=e.evaluate(`(()=>{
+   cpuCycles=100;
+   DMC.timer=0;
+   DMC.bitsRemaining=1;
+   DMC.sampleBuffer=0x55;
+   DMC.sampleBufferFull=true;
+   DMC.silence=false;
+   DMC.bytesRemaining=0;
+   dmcSetSampleLengthFrom4013(0);
+   dmcWrite4015(0x10);
+   const enableAt=DMC.readerEnableAt;
+   consumeCycle();
+   const scheduled={at:DMC.dmaAt,kind:DMC.dmaKind,enableAt};
+   const f0=DMC.fetchCount;
+   checkReadOffset(0); consumeCycle();
+   const f1=DMC.fetchCount;
+   checkReadOffset(0); consumeCycle();
+   const f2=DMC.fetchCount;
+   const before=cpuCycles;
+   checkReadOffset(0);
+   return {scheduled,f0,f1,f2,fetches:DMC.fetchCount,stolen:cpuCycles-before};
+ })()`);
+ assert.equal(result.scheduled.kind,'reload');
+ assert.equal(result.scheduled.enableAt,103);
+ assert.equal(result.f0,0);
+ assert.equal(result.f1,0);
+ assert.equal(result.f2,0);
+ assert.equal(result.fetches,1);
+ assert.equal(result.stolen,3);
+});
