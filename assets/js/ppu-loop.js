@@ -100,6 +100,125 @@ let oamCorruptSeedRow = 0;
 let secOAMAddr = 0;
 let ppumaskPrev = 0;
 
+// Save-state payload for live PPU timing/pipeline state.
+// Version 1 is deliberately fixed-width so old state files remain readable;
+// states without this section still load using the older partial restore path.
+function ppuSavePipelineState() {
+  const out=new Uint8Array(158);
+  const dv=new DataView(out.buffer);
+  out[0]=1;
+  let flags=0;
+  if(ppuInitDone)flags|=1;
+  if(nmiAtVblankEnd)flags|=2;
+  if(oddSkipRendering)flags|=4;
+  if(PPUclock.oddFrame)flags|=8;
+  if(renderingPrev)flags|=16;
+  if(spriteOnlyPrimePending)flags|=32;
+  if(oamCorruptPending)flags|=64;
+  if(typeof spriteXForceZeroNextFrame!=='undefined' && spriteXForceZeroNextFrame)flags|=128;
+  out[1]=flags;
+  dv.setUint16(2,PPUclock.dot&0xffff,true);
+  dv.setUint16(4,PPUclock.scanline&0xffff,true);
+  dv.setUint32(6,PPUclock.frame>>>0,true);
+  dv.setUint16(10,vFetch&0xffff,true);
+  dv.setUint16(12,background.bgShiftLo&0xffff,true);
+  dv.setUint16(14,background.bgShiftHi&0xffff,true);
+  dv.setUint16(16,background.atShiftLo&0xffff,true);
+  dv.setUint16(18,background.atShiftHi&0xffff,true);
+  out[20]=background.ntByte&0xff;
+  out[21]=background.atByte&0xff;
+  out[22]=background.tileLo&0xff;
+  out[23]=background.tileHi&0xff;
+  out[24]=nextLine.t0.lo&0xff;
+  out[25]=nextLine.t0.hi&0xff;
+  out[26]=nextLine.t0.at&0xff;
+  out[27]=nextLine.t1.lo&0xff;
+  out[28]=nextLine.t1.hi&0xff;
+  out[29]=nextLine.t1.at&0xff;
+  out[30]=oamCorruptSeedRow&0xff;
+  out[31]=secOAMAddr&0xff;
+  out[32]=ppumaskPrev&0xff;
+  out[33]=spritesCur===spritesA?0:1;
+  if(typeof current!=='undefined'){
+    dv.setUint16(34,current.dot&0xffff,true);
+    dv.setUint16(36,current.scanline&0xffff,true);
+    dv.setUint32(38,current.frame>>>0,true);
+  }
+
+  const writeSprite=(buf,off)=>{
+    out[off++]=buf.count&0xff;
+    out[off++]=buf.sprite0ListIndex&0xff;
+    for(const field of ['attr','xcnt','lo','hi','idx','tile','row']){
+      out.set(buf[field].subarray(0,SPR_MAX),off);
+      off+=SPR_MAX;
+    }
+    return off;
+  };
+  let off=42;
+  off=writeSprite(spritesA,off);
+  writeSprite(spritesB,off);
+  return out;
+}
+
+function ppuLoadPipelineState(bytes) {
+  if(!(bytes instanceof Uint8Array) || bytes.length<158 || bytes[0]!==1)return false;
+  const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  const flags=bytes[1];
+  ppuInitDone=!!(flags&1);
+  nmiAtVblankEnd=!!(flags&2);
+  oddSkipRendering=!!(flags&4);
+  PPUclock.dot=dv.getUint16(2,true);
+  PPUclock.scanline=dv.getUint16(4,true);
+  PPUclock.frame=dv.getUint32(6,true);
+  PPUclock.oddFrame=!!(flags&8);
+  vFetch=dv.getUint16(10,true);
+  background.bgShiftLo=dv.getUint16(12,true);
+  background.bgShiftHi=dv.getUint16(14,true);
+  background.atShiftLo=dv.getUint16(16,true);
+  background.atShiftHi=dv.getUint16(18,true);
+  background.ntByte=bytes[20]&0xff;
+  background.atByte=bytes[21]&0xff;
+  background.tileLo=bytes[22]&0xff;
+  background.tileHi=bytes[23]&0xff;
+  nextLine.t0={lo:bytes[24]&0xff,hi:bytes[25]&0xff,at:bytes[26]&3};
+  nextLine.t1={lo:bytes[27]&0xff,hi:bytes[28]&0xff,at:bytes[29]&3};
+  oamCorruptSeedRow=bytes[30]&0xff;
+  secOAMAddr=bytes[31]&0xff;
+  ppumaskPrev=bytes[32]&0xff;
+  renderingPrev=!!(flags&16);
+  spriteOnlyPrimePending=!!(flags&32);
+  oamCorruptPending=!!(flags&64);
+  spriteXForceZeroNextFrame=!!(flags&128);
+
+  if(typeof current!=='undefined'){
+    current.dot=dv.getUint16(34,true);
+    current.scanline=dv.getUint16(36,true);
+    current.frame=dv.getUint32(38,true);
+  }
+
+  const readSprite=(buf,off)=>{
+    buf.count=Math.min(SPR_MAX,bytes[off++]&0xff);
+    buf.sprite0ListIndex=bytes[off++]&0xff;
+    for(const field of ['attr','xcnt','lo','hi','idx','tile','row']){
+      buf[field].set(bytes.subarray(off,off+SPR_MAX));
+      off+=SPR_MAX;
+    }
+    return off;
+  };
+  let off=42;
+  off=readSprite(spritesA,off);
+  readSprite(spritesB,off);
+  spritesCur=bytes[33]===0?spritesA:spritesB;
+  spritesNext=bytes[33]===0?spritesB:spritesA;
+
+  // Keep the debug/fetch mirror globals coherent with the restored pipeline.
+  BG_ntByte=background.ntByte;
+  BG_atByte=background.atByte;
+  BG_tileLo=background.tileLo;
+  BG_tileHi=background.tileHi;
+  return true;
+}
+
 // ---- Debug offsets ----
 let BG_DEBUG_X_OFFSET = 0;
 let BG_DEBUG_Y_OFFSET = 0;
