@@ -180,6 +180,32 @@ test('AxROM legacy/no-conflict and explicit AND-conflict board variants',()=>{
  }
  const bytes=rom(7,8,0,0,2);bytes[16]=1;const e=emulator(bytes);e.evaluate('checkWriteOffset(0x8000,0x11)');assert.equal(e.evaluate('axromBank'),1);assert.equal(e.evaluate('MIRRORING'),'single0');
 });
+test('AxROM save-state round trip restores PRG bank and one-screen mirroring',()=>{
+ const e=emulator(rom(7,8,0));
+ e.evaluate("checkWriteOffset(0x8000,0x13);globalThis.__axState=axromSaveState();checkWriteOffset(0x8000,0);axromLoadState(globalThis.__axState)");
+ assert.deepEqual(e.evaluate('[axromBank,MIRRORING,checkReadOffset(0x8000)]'),[3,'single1',6]);
+});
+
+test('PPU save-state round trip restores timing, shifters and sprite-zero pipeline',()=>{
+ const e=emulator(rom(7,8,0));
+ const expr="(()=>{"+
+   "PPUclock.dot=173;PPUclock.scanline=88;PPUclock.frame=12345;PPUclock.oddFrame=true;"+
+   "current.dot=170;current.scanline=88;current.frame=12345;"+
+   "ppuInitDone=true;nmiAtVblankEnd=true;oddSkipRendering=true;vFetch=0x2345;"+
+   "background.bgShiftLo=0x8123;background.bgShiftHi=0x4567;background.atShiftLo=0x89ab;background.atShiftHi=0xcdef;"+
+   "background.ntByte=0x44;background.atByte=3;background.tileLo=0x55;background.tileHi=0xaa;"+
+   "nextLine.t0={lo:1,hi:2,at:3};nextLine.t1={lo:4,hi:5,at:2};"+
+   "renderingPrev=true;spriteOnlyPrimePending=true;oamCorruptPending=true;oamCorruptSeedRow=7;secOAMAddr=9;ppumaskPrev=0x18;spriteXForceZeroNextFrame=true;"+
+   "spritesA.count=1;spritesA.sprite0ListIndex=0;spritesA.attr[0]=0x21;spritesA.xcnt[0]=17;spritesA.lo[0]=0x80;spritesA.hi[0]=0x40;spritesA.idx[0]=0;spritesA.tile[0]=0x33;spritesA.row[0]=5;"+
+   "spritesCur=spritesA;spritesNext=spritesB;const saved=ppuSavePipelineState();"+
+   "PPUclock.dot=0;PPUclock.scanline=261;PPUclock.frame=0;PPUclock.oddFrame=false;background.bgShiftLo=background.bgShiftHi=0;"+
+   "spritesA.count=0;spritesA.sprite0ListIndex=0xff;spritesA.lo[0]=0;spriteXForceZeroNextFrame=false;"+
+   "const ok=ppuLoadPipelineState(saved);"+
+   "return [ok,PPUclock.dot,PPUclock.scanline,PPUclock.frame,PPUclock.oddFrame,current.dot,vFetch,background.bgShiftLo,background.bgShiftHi,background.atShiftLo,background.atShiftHi,spritesCur===spritesA,spritesCur.count,spritesCur.sprite0ListIndex,spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.tile[0],spritesCur.row[0],renderingPrev,spriteOnlyPrimePending,oamCorruptPending,oamCorruptSeedRow,secOAMAddr,ppumaskPrev,spriteXForceZeroNextFrame];"+
+   "})()";
+ const state=e.evaluate(expr);
+ assert.deepEqual(state,[true,173,88,12345,true,170,0x2345,0x8123,0x4567,0x89ab,0xcdef,true,1,0,0x21,17,0x80,0x40,0x33,5,true,true,true,7,9,0x18,true]);
+});
 test('AxROM bank write changes the very next opcode fetch',()=>{
  const bytes=rom(7,4,0);bytes.set([0xa9,1,0x8d,0,0x80],16);bytes.set([0xa9,0x5a,0x85,0x20,0x4c,9,0x80],16+0x8000+5);bytes[16+0x7ffc]=0;bytes[16+0x7ffd]=0x80;
  const e=emulator(bytes);e.run(100);assert.equal(e.evaluate('systemMemory[0x20]'),0x5a);assert.equal(e.evaluate('axromBank'),1);
