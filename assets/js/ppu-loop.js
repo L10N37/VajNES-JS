@@ -120,6 +120,36 @@ const SPRITE_SIZE_16 = 0x20; // PPUCTRL bit 5
 const SPR_PATTERN_T  = 0x08; // PPUCTRL bit 3 (8x8 sprites)
 const SPR_Y_OFFSET   = 1;
 
+// Lightweight diagnostics for sprite-0 split-screen failures.
+// This records only a handful of scalar fields; it does not alter PPU timing.
+const sprite0Debug = {
+  evalFrame:-1, evalScanline:-1, evalFound:false, evalCount:0, evalStartAddr:0,
+  oamY:0, tile:0, attr:0, x:0, row:0, listIndex:0xFF,
+  fetchFrame:-1, fetchScanline:-1, fetchLo:0, fetchHi:0, fetchAddrLo:0, fetchAddrHi:0,
+  candidateFrame:-1, candidateScanline:-1, candidateDot:-1, candidateX:-1,
+  candidateBgOpaque:false, candidateSpriteOpaque:false, candidateMask:0,
+  hitFrame:-1, hitScanline:-1, hitDot:-1, hitX:-1,
+  evals:0, fetches:0, candidates:0, hits:0
+};
+
+function dumpSprite0Debug() {
+  const snapshot={...sprite0Debug,
+    PPUSTATUS:PPUSTATUS&0xff,
+    PPUMASK:PPUMASK&0xff,
+    PPUCTRL:PPUCTRL&0xff,
+    OAMADDR:OAMADDR&0xff,
+    ppuFrame:PPUclock.frame|0,
+    ppuScanline:PPUclock.scanline|0,
+    ppuDot:PPUclock.dot|0,
+    rendering:!!renderingNow(),
+    bgEnabled:!!bgEnabledNow(),
+    sprEnabled:!!sprEnabledNow()
+  };
+  console.log("[VajNES sprite0 diagnostic]",snapshot);
+  return snapshot;
+}
+if(typeof window!=="undefined")window.dumpSprite0Debug=dumpSprite0Debug;
+
 // ---- render-enable edge tracking ----
 let renderingPrev = false;
 let spriteOnlyPrimePending = false;
@@ -377,6 +407,29 @@ function evalSpritesForScanline(target, scanline) {
     }
   }
 
+  if (target.sprite0ListIndex !== 0xFF) {
+    const i=target.sprite0ListIndex;
+    sprite0Debug.evalFrame=PPUclock.frame|0;
+    sprite0Debug.evalScanline=scanline|0;
+    sprite0Debug.evalFound=true;
+    sprite0Debug.evalCount=target.count|0;
+    sprite0Debug.evalStartAddr=startAddr&0xff;
+    sprite0Debug.oamY=OAM[0]&0xff;
+    sprite0Debug.tile=target.tile[i]&0xff;
+    sprite0Debug.attr=target.attr[i]&0xff;
+    sprite0Debug.x=target.xcnt[i]&0xff;
+    sprite0Debug.row=target.row[i]&0xff;
+    sprite0Debug.listIndex=i&0xff;
+    sprite0Debug.evals++;
+  } else {
+    sprite0Debug.evalFrame=PPUclock.frame|0;
+    sprite0Debug.evalScanline=scanline|0;
+    sprite0Debug.evalFound=false;
+    sprite0Debug.evalCount=target.count|0;
+    sprite0Debug.evalStartAddr=startAddr&0xff;
+    sprite0Debug.listIndex=0xFF;
+  }
+
   if (overflow) SET_SPRITE_OVERFLOW();
 }
 
@@ -516,10 +569,26 @@ function emitPixelHardwarePalette() {
   if (spr) {
     const bgOpaque = bgOn && (bgColor2 !== 0);
 
+    if (spr.isSprite0) {
+      sprite0Debug.candidateFrame=PPUclock.frame|0;
+      sprite0Debug.candidateScanline=PPUclock.scanline|0;
+      sprite0Debug.candidateDot=PPUclock.dot|0;
+      sprite0Debug.candidateX=x|0;
+      sprite0Debug.candidateBgOpaque=!!bgOpaque;
+      sprite0Debug.candidateSpriteOpaque=true;
+      sprite0Debug.candidateMask=PPUMASK&0xff;
+      sprite0Debug.candidates++;
+    }
+
     if (spr.isSprite0 && bgOpaque &&
         PPUclock.scanline >= 0 && PPUclock.scanline < 240 &&
         PPUclock.dot >= 1 && PPUclock.dot <= 255) {
       SET_SPRITE0_HIT();
+      sprite0Debug.hitFrame=PPUclock.frame|0;
+      sprite0Debug.hitScanline=PPUclock.scanline|0;
+      sprite0Debug.hitDot=PPUclock.dot|0;
+      sprite0Debug.hitX=x|0;
+      sprite0Debug.hits++;
     }
 
     if (!spr.priBehindBG || !bgOpaque) {
@@ -902,6 +971,18 @@ function renderingBusTick() {
         let data=ppuBusRead(fetchAddress);
         if(spritesNext.attr[slot]&0x40)data=reverseByte(data);
         if(phase===4)spritesNext.lo[slot]=data;else spritesNext.hi[slot]=data;
+        if(slot===spritesNext.sprite0ListIndex) {
+          sprite0Debug.fetchFrame=PPUclock.frame|0;
+          sprite0Debug.fetchScanline=PPUclock.scanline|0;
+          if(phase===4){
+            sprite0Debug.fetchLo=data&0xff;
+            sprite0Debug.fetchAddrLo=fetchAddress&0x1fff;
+          } else {
+            sprite0Debug.fetchHi=data&0xff;
+            sprite0Debug.fetchAddrHi=fetchAddress&0x1fff;
+            sprite0Debug.fetches++;
+          }
+        }
       }
     }
   } else if(d<=256 || d>=321) {
