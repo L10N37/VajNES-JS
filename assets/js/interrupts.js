@@ -4,6 +4,7 @@
 // IRQ line, active low, idle high - we can track what requested the interrupt
 irqAssert = {
   mmc3: false,
+  mmc5: false,
   vrc: false,
   dmcDma: false,
   frame: false
@@ -140,7 +141,8 @@ function serviceIRQ(bypass_interrupt_flag = false) {
   
 
     globalThis.NES_DEBUG_LOGGING && console.log("IRQ SERVICED, source-",
-    "mmc3:",  irqAssert.mmc3, 
+    "mmc3:",  irqAssert.mmc3,
+    "mmc5:",  irqAssert.mmc5, 
     "DMC:",   irqAssert.dmcDma,
     "Frame:", irqAssert.frame
     );
