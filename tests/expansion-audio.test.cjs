@@ -54,3 +54,38 @@ test('VRC6 frequency-control halt freezes oscillator phase',()=>{
   r.write(0x9003,1);r.advance(10000);
   assert.equal(r.vrc6.pulse[0].phase,before);
 });
+
+
+test('MMC5 pulse channel generates duty-gated output',()=>{
+ const r=renderer('MMC5',48000);
+ r.write(0x5015,0x01);
+ r.write(0x5000,0xdf); // duty 3, constant volume 15
+ r.write(0x5002,0x20);
+ r.write(0x5003,0x08); // load length
+ r.advance(5000);
+ const samples=[];
+ while(r.available())samples.push(r.pop());
+ assert.ok(samples.some(v=>v>0));
+});
+
+test('MMC5 PCM DAC contributes signed mixed output',()=>{
+ const r=renderer('MMC5',48000);
+ r.write(0x5011,0xff);
+ r.advance(2000);
+ let positive=false;
+ while(r.available())if(r.pop()>0)positive=true;
+ assert.equal(positive,true);
+ r.write(0x5011,0x01);
+ r.advance(2000);
+ let negative=false;
+ while(r.available())if(r.pop()<0)negative=true;
+ assert.equal(negative,true);
+});
+
+test('MMC5 5015 reports active pulse length and disabling clears it',()=>{
+ const r=renderer('MMC5',48000);
+ r.write(0x5015,1);r.write(0x5003,0x08);
+ assert.equal(r.read(0x5015)&1,1);
+ r.write(0x5015,0);
+ assert.equal(r.read(0x5015)&1,0);
+});
