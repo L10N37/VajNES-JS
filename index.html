@@ -35,7 +35,7 @@
     <div class="file-dropdown">
       <button class="dropbtn">File</button>
       <div class="dropdown-content" id="file-upload-button">
-        <input class="fileMenuItems" type="file" accept=".nes,application/octet-stream" onchange="readFile(this)">
+        <input class="fileMenuItems" type="file" accept=".nes,.zip,application/octet-stream,application/zip" onchange="readFile(this)">
         <button class="fileMenuItems" id="header-button">ROM Header Information</button>
       </div>
     </div>
@@ -357,6 +357,7 @@
 <script src="assets/js/mappers/banked.js"></script>
 <script src="assets/js/mappers/vrc6.js"></script>
 <script src="assets/js/audio/expansion-audio.js"></script>
+<script src="assets/js/zip-rom.js"></script>
 
 <script src="assets/js/readFile.js"></script>
 
