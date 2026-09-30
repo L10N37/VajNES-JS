@@ -15,28 +15,38 @@ function crc32Bytes(bytes) {
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
-// Known licensed games with old/bad iNES headers whose mapper-high nibble is
-// polluted. Keyed by CRC32 of PRG+CHR payload (header/trainer excluded), so
-// genuine cartridges that really use the reported high mapper are untouched.
-// Adventures in the Magic Kingdom:
-//   USA [!] PRG+CHR CRC32 5DBD6099
-//   USA [a1] PRG+CHR CRC32 26C7D763
-//   PAL [!] PRG+CHR CRC32 6B761858
-const KNOWN_BAD_HEADER_MAPPERS = new Map([
-  [0x5DBD6099, 1],
-  [0x26C7D763, 1],
-  [0x6B761858, 1],
-  // Splatterhouse: Wanpaku Graffiti, Namco 340. Many legacy dumps tag it 19.
-  [0x46FD7843, 210],
+// ROM compatibility database -------------------------------------------------
+// Exact CRC32 of PRG+CHR payload (header/trainer excluded).  Nothing here
+// modifies the ROM file: entries only correct the cartridge interpretation in
+// memory.  reportedMappers prevents an override from touching an already-valid
+// or intentionally different header that happens to share the same payload.
+const ROM_COMPAT_OVERRIDES = new Map([
+  // Adventures in the Magic Kingdom: bad/alternate iNES headers report 65.
+  [0x5DBD6099, { mapper: 1, reportedMappers: [65], title: 'Adventures in the Magic Kingdom (USA)' }],
+  [0x26C7D763, { mapper: 1, reportedMappers: [65], title: 'Adventures in the Magic Kingdom (USA) [a1]' }],
+  [0x6B761858, { mapper: 1, reportedMappers: [65], title: 'Adventures in the Magic Kingdom (PAL)' }],
+
+  // Splatterhouse: Wanpaku Graffiti: legacy dumps commonly identify the
+  // Namco 340 board as mapper 19 rather than mapper 210.
+  [0x46FD7843, { mapper: 210, reportedMappers: [19], title: 'Splatterhouse: Wanpaku Graffiti' }],
+
+  // Audit-derived duplicate-payload header repairs.  The same payload exists
+  // elsewhere in the set with the correct licensed cartridge mapper.
+  [0x8B957B50, { mapper: 3, reportedMappers: [0], title: 'Kung-Fu Heroes' }],
+  [0x7A36CAD2, { mapper: 4, reportedMappers: [0], title: 'Last Armageddon' }],
 ]);
 
-function knownBadHeaderMapper(romBytes, header) {
+function romCompatibilityOverride(romBytes, header, reportedMapper) {
   const trainerSize = (header[6] & 0x04) ? 512 : 0;
   const payloadStart = 16 + trainerSize;
   const payloadSize = header[4] * 0x4000 + header[5] * 0x2000;
   if (!payloadSize || romBytes.length < payloadStart + payloadSize) return null;
+
   const crc = crc32Bytes(romBytes.subarray(payloadStart, payloadStart + payloadSize));
-  return KNOWN_BAD_HEADER_MAPPERS.has(crc) ? KNOWN_BAD_HEADER_MAPPERS.get(crc) : null;
+  const entry = ROM_COMPAT_OVERRIDES.get(crc);
+  if (!entry) return null;
+  if (entry.reportedMappers && !entry.reportedMappers.includes(reportedMapper)) return null;
+  return { ...entry, crc };
 }
 
 function bytesToBase64(bytes) {
@@ -151,8 +161,13 @@ function loadRom(romBytes) {
   // with clean zero padding, so the generic archaic-header test above cannot
   // identify them. Repair only ROM payloads we know exactly.
   if (!isNES2) {
-    const repairedMapper = knownBadHeaderMapper(romBytes, nesHeader);
-    if (repairedMapper !== null) incomingMapper = repairedMapper;
+    const compat = romCompatibilityOverride(romBytes, nesHeader, incomingMapper);
+    if (compat) {
+      globalThis.NES_DEBUG_LOGGING && console.debug(
+        `[ROM compat] ${compat.title}: mapper ${incomingMapper} -> ${compat.mapper} (CRC ${compat.crc.toString(16).toUpperCase().padStart(8,'0')})`
+      );
+      incomingMapper = compat.mapper;
+    }
   }
 
   if (![0,1,2,3,4,5,7,9,10,11,19,24,26,66,79,155,210].includes(incomingMapper))
