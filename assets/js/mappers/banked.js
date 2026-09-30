@@ -224,3 +224,42 @@ function cartridgeChrRead(addr) {
     default: return CHR_ROM[addr % Math.max(1,CHR_ROM.length)] & 0xFF;
   }
 }
+
+
+function extraMapperMirrorCode(){
+  return MIRRORING==='vertical'?0:MIRRORING==='horizontal'?1:MIRRORING==='single0'?2:3;
+}
+function extraMapperLoadMirror(code){
+  MIRRORING=['vertical','horizontal','single0','single1'][code&3];
+}
+function extraMapperSaveState(mapperId=mapperNumber){
+  switch(mapperId|0){
+    case 3:return new Uint8Array([1,cnromChrBank&0xff,cnromBusConflicts?1:0]);
+    case 9:case 10:return new Uint8Array([1,mmc24PrgBank&0xff,mmc24ChrFD0&0xff,mmc24ChrFE0&0xff,
+      mmc24ChrFD1&0xff,mmc24ChrFE1&0xff,mmc24Latch0&0xff,mmc24Latch1&0xff,extraMapperMirrorCode()]);
+    case 11:return new Uint8Array([1,colorDreamsPrgBank&0xff,colorDreamsChrBank&0xff]);
+    case 66:return new Uint8Array([1,gxromPrgBank&0xff,gxromChrBank&0xff]);
+    case 79:return new Uint8Array([1,nina79PrgBank&0xff,nina79ChrBank&0xff]);
+    default:return new Uint8Array(0);
+  }
+}
+function extraMapperLoadState(mapperId,bytes){
+  if(!(bytes instanceof Uint8Array)||!bytes.length)return false;
+  let o=bytes[0]===1?1:0;
+  switch(mapperId|0){
+    case 3:
+      cnromChrBank=mapperBankIndex(bytes[o++]||0,mapperBankCount(CHR_ROM,0x2000));
+      if(bytes.length>o)cnromBusConflicts=!!bytes[o];
+      return true;
+    case 9:case 10:
+      if(bytes.length<o+7)return false;
+      mmc24PrgBank=bytes[o++];mmc24ChrFD0=bytes[o++];mmc24ChrFE0=bytes[o++];
+      mmc24ChrFD1=bytes[o++];mmc24ChrFE1=bytes[o++];mmc24Latch0=bytes[o++];mmc24Latch1=bytes[o++];
+      if(bytes.length>o)extraMapperLoadMirror(bytes[o]);
+      return true;
+    case 11:colorDreamsPrgBank=bytes[o++]||0;colorDreamsChrBank=bytes[o++]||0;return true;
+    case 66:gxromPrgBank=bytes[o++]||0;gxromChrBank=bytes[o++]||0;return true;
+    case 79:nina79PrgBank=bytes[o++]||0;nina79ChrBank=bytes[o++]||0;return true;
+  }
+  return false;
+}
