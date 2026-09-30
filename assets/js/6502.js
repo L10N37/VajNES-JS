@@ -95,6 +95,8 @@ function resetCPU() {
   // ---- remaining CPU/PPU misc state NOT covered by resetSharedState/resetMMC1 ----
 
   ppumaskPrev = 0;
+  ppumaskRenderHoldBits = 0;
+  ppumaskRenderApplyAt = -1;
   renderingPrev = false;
 
   secOAMAddr = 0;
