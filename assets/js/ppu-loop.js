@@ -172,6 +172,7 @@ let secOAMFetchInterrupted = false;
 let frozenSecondaryFetchApplied = false;
 let accuracyCoinFrozenFetchTrace = [];
 let accuracyCoinScanline0Trace = [];
+let preRenderOAMEvalStarted = false;
 let ppuOAMDataBus = 0xFF;
 let spriteOverflowSetScanline = -1;
 let spriteOverflowSetDot = -1;
@@ -691,6 +692,9 @@ function ppuBackgroundRead(addr, kind) {
 function preRenderScanline(dot) {
   const ren = renderingNow();
 
+  if (dot === 1) preRenderOAMEvalStarted = false;
+  if (dot === 65 && ppuOAMMaskBits() !== 0) preRenderOAMEvalStarted = true;
+
   if (dot === 1 && oamCorruptPending && ren) {
     oamCorruptDoCopyRow(oamCorruptSeedRow);
     oamCorruptPending = false;
@@ -1064,6 +1068,36 @@ function applyFrozenSecondaryOAMFetch(scanline) {
   spritesNext.sprite0ListIndex = oldSprite0;
 }
 
+// If pre-render OAM evaluation never started because rendering was still
+// disabled at dot 65, a later enable can cause stale secondary OAM to be
+// consumed by the sprite fetch units for scanline 0. The pre-render comparator
+// uses (261 & $FF) == 5.
+function loadLatePreRenderStaleSprites() {
+  let count = 0;
+  let sprite0ListIndex = 0xFF;
+  const sprH = (PPUCTRL & SPRITE_SIZE_16) ? 16 : 8;
+
+  for (let slot = 0; slot < SPR_MAX; slot++) {
+    const base = slot << 2;
+    const y = secondaryOAM[base] & 0xFF;
+    const row = (5 - y) & 0xFF;
+    if (row >= sprH) continue;
+
+    const i = count++;
+    spritesNext.tile[i] = secondaryOAM[base + 1] & 0xFF;
+    spritesNext.attr[i] = secondaryOAM[base + 2] & 0xE3;
+    spritesNext.xcnt[i] = secondaryOAM[base + 3] & 0xFF;
+    spritesNext.row[i] = row & 0x0F;
+    spritesNext.lo[i] = 0;
+    spritesNext.hi[i] = 0;
+    spritesNext.idx[i] = base & 0xFF;
+    if (slot === 0) sprite0ListIndex = i;
+  }
+
+  spritesNext.count = count;
+  spritesNext.sprite0ListIndex = sprite0ListIndex;
+}
+
 // Fetch sprite patterns at their bus phases, using the live sprite-size setting.
 // MMC3 observes the same addresses. Palette lookups and
 // bulk sprite evaluation are internal renderer work and must not clock A12.
@@ -1096,7 +1130,15 @@ function renderingBusTick() {
   // bytes on the first OAM-active dot before the pattern fetch phases begin.
   // A CPU PPUMASK write around dot 256 can make that first active dot occur
   // just after 257 because OAM uses its own one-dot sampling delay.
-  if (d === 257) frozenSecondaryFetchApplied = false;
+  if (d === 257) {
+    frozenSecondaryFetchApplied = false;
+
+    // Only the late-enable pre-render path consumes stale OAM2. Normal
+    // pre-render evaluation remains entirely on the established renderer.
+    if (sl === 261 && !preRenderOAMEvalStarted && ppuOAMMaskBits() !== 0) {
+      loadLatePreRenderStaleSprites();
+    }
+  }
   if (!frozenSecondaryFetchApplied &&
       d >= 257 && d <= 261 &&
       secOAMAddrOverflow && ppuOAMMaskBits() !== 0 &&
