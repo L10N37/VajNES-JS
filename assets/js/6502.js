@@ -98,6 +98,7 @@ function resetCPU() {
   ppumaskRenderHoldBits = 0;
   ppumaskRenderApplyAt = -1;
   renderingPrev = false;
+  spriteXForceZeroNextFrame = false;
 
   secOAMAddr = 0;
   oamCorruptPending = false;
