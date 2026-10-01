@@ -164,8 +164,8 @@ function checkReadOffset(address) {
           // During rendering $2004 sees the internal OAM data bus rather than
           // a fresh primary-OAM read.  After the sprite fetch window the bus
           // settles on secondary OAM byte zero.
-          result = current.dot >= 323
-            ? (secondaryOAM[0] & 0xFF)
+          result = current.dot >= 321
+            ? (secondaryOAM[secOAMAddr & 0x1F] & 0xFF)
             : (ppuOAMDataBus & 0xFF);
         } else if ((oamAddr & 3) === 2) {
           result &= 0xE3;
