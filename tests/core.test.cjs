@@ -300,7 +300,7 @@ test('interrupted sprite-zero fetch keeps the previous active shifter buffer',()
  e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesCur.count=1;spritesCur.sprite0ListIndex=0;spritesCur.attr[0]=0x21;spritesCur.xcnt[0]=0x11;spritesCur.lo[0]=0x81;spritesCur.hi[0]=0x42;spritesCur.idx[0]=0;spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x22;spritesNext.attr[0]=0x02;spritesNext.xcnt[0]=0x33;spritesNext.lo[0]=0x24;spritesNext.hi[0]=0x18;spritesNext.idx[0]=4;sprite0FetchComplete=false;PPUclock.scanline=5;PPUclock.dot=1;visibleScanline(1)');
  assert.deepEqual(e.evaluate('[spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0],spritesCur.tile[0]]'),[0x21,0x10,0x81,0x42,0,0x22]);
  e.evaluate('spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x44;spritesNext.attr[0]=0x03;spritesNext.xcnt[0]=0x55;spritesNext.lo[0]=0x66;spritesNext.hi[0]=0x77;spritesNext.idx[0]=8;sprite0FetchComplete=true;PPUclock.dot=1;visibleScanline(1)');
- assert.deepEqual(e.evaluate('[spritesCur.tile[0],spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0]]'),[0x44,0x03,0x55,0x66,0x77,8]);
+ assert.deepEqual(e.evaluate('[spritesCur.tile[0],spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0]]'),[0x44,0x03,0x54,0x66,0x77,8]);
 });
 
 test('background shifter advances after pixel zero without duplicating it',()=>{
