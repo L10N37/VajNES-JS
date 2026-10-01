@@ -45,5 +45,5 @@ if(process.argv[4]) {
  const regressions=baseline.results.filter(t=>t.status==='pass' &&
    !results.some(r=>r.address===t.address && r.name===t.name && r.status==='pass'));
  console.log('Previously passing tests lost:',regressions.map(t=>t.name));
- process.exitCode=suiteFinished && !regressions.length && !counts.skipped && !counts['not-completed']?0:1;
+ process.exitCode=suiteFinished && counts.pass===144 && !regressions.length && !counts.skipped && !counts['not-completed']?0:1;
 } else process.exitCode=suiteFinished && counts.pass===144?0:1;
