@@ -127,6 +127,20 @@ function clockDMC() {
 function dmcDoDMA(haltedAddress = CPUregisters.PC) {
   if (!DMC.dmaRequest) return;
 
+  const implicitAbortWindow = DMC.dmaKind === "load" &&
+    DMC.bytesRemaining === 1 && !DMC.loop &&
+    DMC.bitsRemaining === 1 && DMC.timer === 3;
+
+  if (DMC.dmaKind === "abort") {
+    DMC.dmaRequest = false;
+    DMC.dmaKind = "none";
+    DMC.dmaBusy = true;
+    checkReadOffset(haltedAddress);
+    consumeCycle();
+    DMC.dmaBusy = false;
+    return;
+  }
+
   DMC.dmaRequest = false;
   DMC.dmaKind = "none";
   DMC.dmaBusy = true;
@@ -134,10 +148,10 @@ function dmcDoDMA(haltedAddress = CPUregisters.PC) {
   // APU's get phase; writes never enter this function. Controller /OE stays
   // asserted through the dummy cycles, so they do not clock additional bits.
   checkReadOffset(haltedAddress);
-  consumeCycle();
+  if (!DMA.active) consumeCycle();
   if(haltedAddress!==0x4016 && haltedAddress!==0x4017)checkReadOffset(haltedAddress);
-  consumeCycle();
-  if(!(cpuCycles&1)) {
+  if (!(DMA.active && DMA.index === 255)) consumeCycle();
+  if(!DMA.active && !(cpuCycles&1)) {
     if(haltedAddress!==0x4016 && haltedAddress!==0x4017)checkReadOffset(haltedAddress);
     consumeCycle();
   }
@@ -189,7 +203,7 @@ function dmcDoDMA(haltedAddress = CPUregisters.PC) {
   // ---- sample end ----
   if (DMC.bytesRemaining === 0) {
 
-    if (DMC.loop) {
+    if (DMC.loop && DMC.enabled) {
 
       if (debug.dmcDma) {
         globalThis.NES_DEBUG_LOGGING && console.log("[DMC] sample ended -> loop restart");
@@ -209,6 +223,13 @@ function dmcDoDMA(haltedAddress = CPUregisters.PC) {
     }
   }
   consumeCycle();
+
+  if (implicitAbortWindow) {
+    DMC.dmaRequest = true;
+    DMC.dmaKind = "abort";
+    DMC.dmaAt = cpuCycles + 2;
+  }
+
   DMC.dmaBusy = false;
 }
 
@@ -223,7 +244,7 @@ function dmcSetControlFrom4010(value) {
     428, 380, 340, 320,
     286, 254, 226, 214,
     190, 160, 142, 128,
-    106,  85,  72,  54
+    106,  84,  72,  54
   ];
 
   DMC.timerPeriod = DMC_RATE_TABLE[DMC.rateIndex];
@@ -282,6 +303,24 @@ function dmcWrite4015(value) {
   }
 
   if (!DMC.enabled) {
+    const pendingReload = DMC.dmaRequest && DMC.dmaKind === "reload";
+    const untilHalt = pendingReload ? (DMC.dmaAt - cpuCycles) : 999;
+
+    if (pendingReload && untilHalt >= 0 && untilHalt <= 1) {
+      DMC.readerEnableAt = 0;
+      return;
+    }
+
+    if (!DMC.dmaRequest && DMC.sampleBufferFull && DMC.bitsRemaining === 1 &&
+        DMC.timer >= 0 && DMC.timer <= 1) {
+      DMC.bytesRemaining = 0;
+      DMC.dmaRequest = true;
+      DMC.dmaKind = "abort";
+      DMC.dmaAt = cpuCycles + 2;
+      DMC.readerEnableAt = 0;
+      return;
+    }
+
     DMC.bytesRemaining = 0;
     DMC.dmaRequest = false;
     DMC.dmaKind = "none";
