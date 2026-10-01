@@ -793,8 +793,12 @@ function visibleScanline(dot) {
   const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
 
-  if (dot === 257) sprite0FetchComplete = ren;
-  else if (dot > 257 && dot <= 264 && !ren) sprite0FetchComplete = false;
+  // Sprite-0 fetch completion follows the OAM fetch pipeline, not the
+  // delayed visual-rendering state. A PPUMASK enable around dot 256 can start
+  // a valid sprite fetch while the pixel pipeline is still catching up.
+  const oamFetchEnabled = ppuOAMMaskBits() !== 0;
+  if (dot === 257) sprite0FetchComplete = oamFetchEnabled;
+  else if (dot > 257 && dot <= 264 && !oamFetchEnabled) sprite0FetchComplete = false;
 
   if (PPUclock.scanline === spriteOverflowSetScanline && dot === spriteOverflowSetDot) {
     SET_SPRITE_OVERFLOW();
