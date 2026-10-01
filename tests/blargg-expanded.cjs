@@ -27,6 +27,7 @@ const groupsByShard={
  ],
  extra:[
   'branch_timing_tests',
+  'apu_reset',
   'cpu_exec_space',
   'cpu_reset',
   'dmc_tests',
