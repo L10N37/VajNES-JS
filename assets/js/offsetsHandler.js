@@ -567,18 +567,19 @@ function cpuWrite(addr, value) {
     }
   }
 
-  // Temporary AccuracyCoin diagnostic: capture completed $2004 stress
-  // tables at the exact write of their final byte, before the evaluator or
-  // following test can reuse $500-$654.
-  if ((addr & 0x7FF) === 0x654 && (value === 0x7F || value === 0x80)) {
-    const first = systemMemory[0x500] & 0xFF;
-    if (first === 0x7F || first === 0x78) {
+  // Temporary AccuracyCoin diagnostic: capture every completed $2004
+  // stress table while ErrorCode is in the stress-test stages. Do not filter
+  // on the expected first/final bytes: a mismatch there is exactly what this
+  // diagnostic needs to reveal.
+  if ((addr & 0x7FF) === 0x654) {
+    const errorCode = systemMemory[0x10] & 0xFF;
+    if (errorCode === 2 || errorCode === 3) {
       accuracyCoinTrace654.push({
         value,
-        errorCode: systemMemory[0x10] & 0xFF,
+        errorCode,
         table: Array.from(systemMemory.slice(0x500, 0x655))
       });
-      if (accuracyCoinTrace654.length > 8) accuracyCoinTrace654.shift();
+      if (accuracyCoinTrace654.length > 16) accuracyCoinTrace654.shift();
     }
   }
 
