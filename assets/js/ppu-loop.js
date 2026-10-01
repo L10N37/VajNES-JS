@@ -144,6 +144,7 @@ let secOAMPrimaryOverflow = false;
 let secOAMAddrOverflow = false;
 let secOAMOverflowDetection = false;
 let secOAMCopyBytes = 0;
+let secOAMFetchInterrupted = false;
 let ppuOAMDataBus = 0xFF;
 let spriteOverflowSetScanline = -1;
 let spriteOverflowSetDot = -1;
@@ -299,6 +300,7 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
 
   if (dot >= 257 && dot <= 320) {
     if (dot === 257) {
+      secOAMFetchInterrupted = false;
       // Normal rendering cleared the freeze at dot 255, so sprite fetch starts
       // from byte 0. If rendering was disabled across dot 255, the freeze
       // survives and fetch repeatedly exposes the current OAM2 byte.
@@ -322,8 +324,14 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
     return;
   }
 
-  if (dot >= 321 && dot <= 340)
+  if (dot >= 321 && dot <= 340) {
+    // A complete sprite-fetch sequence naturally wraps the 5-bit secondary
+    // OAM address to zero. If rendering was interrupted during dots 257-320,
+    // preserve the partial address so the following 321-340 reads expose the
+    // misalignment instead.
+    if (dot === 321 && !secOAMFetchInterrupted) secOAMAddr = 0;
     ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+  }
 }
 
 // ---- Sprite fetch ----
@@ -1002,6 +1010,9 @@ function ppuTick() {
 
   if (renPrev && !renNow) {
     if (PPUclock.scanline === 261 || (PPUclock.scanline >= 0 && PPUclock.scanline <= 239)) {
+      if (PPUclock.dot >= 257 && PPUclock.dot <= 320) {
+        secOAMFetchInterrupted = true;
+      }
       oamCorruptSeedRow = secOAMAddr & 0x1F;
       oamCorruptPending = true;
     }
