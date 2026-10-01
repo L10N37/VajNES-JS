@@ -276,7 +276,9 @@ test('$2007 overlap can feed external PPU data into the next pattern-low fetch',
 
 test('second $2006 write captures the external low-address latch during rendering',()=>{
  const e=emulator();
- e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUclock.scanline=4;PPUclock.dot=180;VRAM_ADDR=0x2c18;writeToggle=1;t_hi=0x2f;t_lo=0;checkWriteOffset(0x2006,0)');
+ // PPUADDR writes are ignored during the hardware power-on write gate, so
+ // place this timing test after that interval before exercising the overlap.
+ e.evaluate('cpuCycles=40000;PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUclock.scanline=4;PPUclock.dot=180;VRAM_ADDR=0x2c18;writeToggle=1;t_hi=0x2f;t_lo=0;checkWriteOffset(0x2006,0)');
  assert.equal(e.evaluate('ppuCpu2006HybridLow'),0x19);
  assert.ok(e.evaluate('ppuCpu2006HybridUntil>=ppuCycles'));
 });
@@ -295,10 +297,10 @@ test('dot 339 forced-zero latch applies on visible scanlines',()=>{
 
 test('interrupted sprite-zero fetch keeps the previous active shifter buffer',()=>{
  const e=emulator();
- e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesCur.count=1;spritesCur.tile[0]=0x11;spritesNext.count=1;spritesNext.tile[0]=0x22;sprite0FetchComplete=false;PPUclock.scanline=5;PPUclock.dot=1;visibleScanline(1)');
- assert.equal(e.evaluate('spritesCur.tile[0]'),0x11);
- e.evaluate('sprite0FetchComplete=true;PPUclock.dot=1;visibleScanline(1)');
- assert.equal(e.evaluate('spritesCur.tile[0]'),0x22);
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesCur.count=1;spritesCur.sprite0ListIndex=0;spritesCur.attr[0]=0x21;spritesCur.xcnt[0]=0x11;spritesCur.lo[0]=0x81;spritesCur.hi[0]=0x42;spritesCur.idx[0]=0;spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x22;spritesNext.attr[0]=0x02;spritesNext.xcnt[0]=0x33;spritesNext.lo[0]=0x24;spritesNext.hi[0]=0x18;spritesNext.idx[0]=4;sprite0FetchComplete=false;PPUclock.scanline=5;PPUclock.dot=1;visibleScanline(1)');
+ assert.deepEqual(e.evaluate('[spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0],spritesCur.tile[0]]'),[0x21,0x11,0x81,0x42,0,0x22]);
+ e.evaluate('spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x44;spritesNext.attr[0]=0x03;spritesNext.xcnt[0]=0x55;spritesNext.lo[0]=0x66;spritesNext.hi[0]=0x77;spritesNext.idx[0]=8;sprite0FetchComplete=true;PPUclock.dot=1;visibleScanline(1)');
+ assert.deepEqual(e.evaluate('[spritesCur.tile[0],spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0]]'),[0x44,0x03,0x55,0x66,0x77,8]);
 });
 
 test('background shifter advances after pixel zero without duplicating it',()=>{
