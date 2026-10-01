@@ -535,6 +535,8 @@ function checkWriteOffset(address, value) {
   cpuOpenBusFinalise(addr, value, code, true);
 }
 
+let accuracyCoinTrace654 = [];
+
 // ----------------- CPU RAM helpers -----------------
 function cpuRead(addr) {
   addr &= 0xFFFF;
@@ -547,15 +549,19 @@ function cpuWrite(addr, value) {
   value &= 0xFF;
   systemMemory[addr & 0x7FF] = value;
 
-  // Temporary AccuracyCoin diagnostic: the second $2004 stress table is
-  // complete when its final byte at $654 becomes $80. Capture it before the
-  // evaluator/failure path reuses the scratch RAM.
-  if ((addr & 0x7FF) === 0x654) {
-    console.log('TRACE654 value=' + value.toString(16).padStart(2,'0') +
-      ' b541=' + (systemMemory[0x541]&255).toString(16).padStart(2,'0') +
-      ' b581=' + (systemMemory[0x581]&255).toString(16).padStart(2,'0') +
-      ' table=' + Array.from(systemMemory.slice(0x500, 0x655),
-        x => x.toString(16).padStart(2, '0')).join(' '));
+  // Temporary AccuracyCoin diagnostic: capture completed $2004 stress
+  // tables at the exact write of their final byte, before the evaluator or
+  // following test can reuse $500-$654.
+  if ((addr & 0x7FF) === 0x654 && (value === 0x7F || value === 0x80)) {
+    const first = systemMemory[0x500] & 0xFF;
+    if (first === 0x7F || first === 0x78) {
+      accuracyCoinTrace654.push({
+        value,
+        errorCode: systemMemory[0x10] & 0xFF,
+        table: Array.from(systemMemory.slice(0x500, 0x655))
+      });
+      if (accuracyCoinTrace654.length > 8) accuracyCoinTrace654.shift();
+    }
   }
 
   openBus.internal = openBus.CPU = value;
