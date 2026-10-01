@@ -24,6 +24,12 @@ breakPending = false;
 
 let writeToggle = 0;
 
+// The 2C02 cannot treat immediately adjacent CPU read strobes of PPUDATA as
+// two fully independent accesses. Keep the previous read so a second $2007
+// access on the very next CPU cycle can merge with the first strobe.
+let ppuLastDataReadCycle = -0x40000000;
+let ppuLastDataReadValue = 0;
+
 // Toggling rendering takes effect approximately 3-4 dots after the write. This delay is required by Battletoads to avoid a crash.
 // would be smashing through test suites if i hadn't gone multicore, oof, cbf with a major refactor so some struggles with chunk by chunk on different cores
 // https://www.nesdev.org/wiki/PPU_registers#Rendering_control
@@ -52,8 +58,10 @@ function paletteIndex(addr14) {
 // ----------------- CPU read dispatch -----------------
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
-  if(DMC.dmaRequest && !DMC.dmaBusy && cpuCycles>=DMC.dmaAt &&
-     (DMC.dmaKind!=="reload" || cpuCycles>=DMC.readerEnableAt)) dmcDoDMA(addr);
+  const dmcHaltThisRead =
+    DMC.dmaRequest && !DMC.dmaBusy && cpuCycles>=DMC.dmaAt &&
+    (DMC.dmaKind!=="reload" || cpuCycles>=DMC.readerEnableAt);
+  if (dmcHaltThisRead) dmcDoDMA(addr);
 
   let raw = 0x00;
 
@@ -128,7 +136,20 @@ function checkReadOffset(address) {
           const obBefore = openBus.PPU & 0xFF;
           const stat = PPUSTATUS & 0xE0;
 
-          raw = (stat | (obBefore & 0x1F)) & 0xFF;
+          // $2002 is sampled across the CPU read, not at one instant. VBlank
+          // is latched near the beginning of the read, while sprite-zero and
+          // overflow reflect the end.
+          let spriteFlags = stat & 0x60;
+          if (PPUclock.scanline === 261 && PPUclock.dot === 1) spriteFlags = 0;
+
+          // If sprite overflow becomes asserted on the same PPU dot this CPU
+          // read begins, the read sees the newly-set overflow bit.
+          if (spriteOverflowSetScanline === PPUclock.scanline &&
+              spriteOverflowSetDot === PPUclock.dot) {
+            spriteFlags |= 0x20;
+          }
+
+          raw = ((stat & 0x80) | spriteFlags | (obBefore & 0x1F)) & 0xFF;
 
           PPUSTATUS &= ~0b10000000;
 
@@ -140,86 +161,91 @@ function checkReadOffset(address) {
 
       // OAMDATA
       case 0x2004: {
-
         const oamAddr = OAMADDR & 0xFF;
-        let v = OAM[oamAddr] & 0xFF;
+        let result = OAM[oamAddr] & 0xFF;
 
-        if ((oamAddr & 3) === 2) v &= 0xE3;
+        const renderLine =
+          current.scanline === 261 ||
+          (current.scanline >= 0 && current.scanline <= 239);
 
-        const visible = current.scanline >= 0 && current.scanline <= 239;
-        let result = v;
+        if (renderingNow() && renderLine) {
+          // During rendering $2004 sees the internal OAM data bus rather than
+          // a fresh primary-OAM read.  After the sprite fetch window the bus
+          // settles on the current secondary-OAM address.
+          result = current.dot >= 321
+            ? (secondaryOAM[secOAMAddr & 0x1F] & 0xFF)
+            : (ppuOAMDataBus & 0xFF);
 
-        if (renderingNow() && visible) {
-          if (current.dot >= 1 && current.dot <= 64) result = 0xFF;
-          else if (current.dot >= 257 && current.dot <= 320) result = 0xFF;
+        } else if ((oamAddr & 3) === 2) {
+          result &= 0xE3;
         }
 
         openBus.PPU = result & 0xFF;
         openBus.ppuDecayTimer = 1789772;
-
         raw = result;
         break;
       }
 
       case 0x2007: {
+        // Back-to-back PPUDATA reads on adjacent CPU cycles share a single
+        // effective read strobe on 2C02 hardware. The second access sees the
+        // previous bus value but does not refill the read buffer or increment
+        // the PPU address. This is observable with indexed page-crossing reads
+        // whose dummy access lands on $2007 and the corrected access on a
+        // mirror such as $2107.
+        if (!DMC.dmaBusy && !dmcHaltThisRead &&
+            cpuCycles === ppuLastDataReadCycle + 1) {
+          raw = ppuLastDataReadValue & 0xFF;
+          openBus.PPU = raw;
+          ppuLastDataReadCycle = cpuCycles;
+          break;
+        }
+
+        const renderRead =
+          renderingNow() &&
+          (PPUclock.scanline <= 239 || PPUclock.scanline === 261);
+
+        // Keep the already-verified ALE+Read collision path intact.
+        if (renderRead) ppuCpu2007ReadUntil = ppuCycles + 8;
 
         const vv = VRAM_ADDR & 0x3FFF;
         const bufBefore = VRAM_DATA & 0xFF;
-
         let ret = 0x00;
 
         if (vv < 0x3F00) {
-
           ret = bufBefore;
-
-          let newVal = 0;
-
-          if (vv < 0x2000) {
-
-            newVal = cartridgeChrRead(vv) & 0xFF;
-
-            VRAM_DATA = newVal;
-
+          if (renderRead) {
+            VRAM_DATA = ppuRenderingFetchRead() & 0xFF;
+          } else if (vv < 0x2000) {
+            VRAM_DATA = cartridgeChrRead(vv) & 0xFF;
           } else {
-
             if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(vv)&0xff;
             else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(vv)&0xff;
-            else {
-              const ntAddr = mapNT(vv);
-              VRAM_DATA = VRAM[ntAddr] & 0xFF;
-            }
+            else VRAM_DATA = VRAM[mapNT(vv)] & 0xFF;
           }
         } else {
-
           const p = paletteIndex(vv);
           let palVal = PALETTE_RAM[p] & 0x3F;
-
-          // Apply greyscale mask (PPUMASK bit 0)
-          if (PPUMASK & 0x01) {
-          palVal &= 0x30; // zero lower 4 bits
-          }
-
+          if (PPUMASK & 0x01) palVal &= 0x30;
           ret = (openBus.PPU & 0xC0) | palVal;
 
-          // Return palette data immediately
-          ret = (openBus.PPU & 0xC0) | palVal;
-
-          // Reload VRAM buffer from nametable mirror ($2F00-$2FFF)
-          const ntMirror = vv & 0x2FFF;
-
-          if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(ntMirror)&0xff;
-          else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(ntMirror)&0xff;
-          else {
-            const ntAddr = mapNT(ntMirror);
-            VRAM_DATA = VRAM[ntAddr] & 0xFF;
+          if (renderRead) {
+            VRAM_DATA = ppuRenderingFetchRead() & 0xFF;
+          } else {
+            const ntMirror = vv & 0x2FFF;
+            if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(ntMirror)&0xff;
+            else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(ntMirror)&0xff;
+            else VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
           }
         }
 
         incrementPPUDataAddress();
         if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
-        
+
         raw = ret & 0xFF;
         openBus.PPU = raw;
+        ppuLastDataReadCycle = cpuCycles;
+        ppuLastDataReadValue = raw;
         break;
       }
 
@@ -277,6 +303,10 @@ const PPU_WRITE_GATE_CYCLES = 29658;
 
 // ----------------- CPU write dispatch -----------------
 function checkWriteOffset(address, value) {
+  if (DMC.dmaRequest && DMC.dmaKind === "abort" && cpuCycles >= DMC.dmaAt) {
+    DMC.dmaRequest = false;
+    DMC.dmaKind = "none";
+  }
   if(!DMC.dmaBusy && !DMA.active)openBus.internal=value&255;
   const addr = address & 0xFFFF;
   value &= 0xFF;
@@ -369,8 +399,6 @@ function checkWriteOffset(address, value) {
 
       // PPUMASK
       case 0x2001: {
-        // The register byte itself changes immediately, but BG/SPR rendering
-        // enable bits take effect a few PPU dots later on real hardware.
         ppuWriteMask(value & 0xFF);
         break;
       }
@@ -441,6 +469,10 @@ function checkWriteOffset(address, value) {
           writeToggle = 1;
       } else {
           // Second write (low byte) — FIXED MASK
+          if (renderingNow() && (PPUclock.scanline <= 239 || PPUclock.scanline === 261)) {
+            ppuCpu2006HybridLow = (VRAM_ADDR + 1) & 0xFF;
+            ppuCpu2006HybridUntil = ppuCycles + 8;
+          }
           t = (t & 0xFF00) | value;
           // Copy t → v
           VRAM_ADDR = t & 0x3FFF;
@@ -549,6 +581,7 @@ function cpuWrite(addr, value) {
   addr &= 0xFFFF;
   value &= 0xFF;
   systemMemory[addr & 0x7FF] = value;
+
   openBus.internal = openBus.CPU = value;
 }
 
@@ -684,8 +717,6 @@ let _kbBound = false;
 
   const kbdHandler = (isDown) => (e) => {
     if(typeof expansionAudioPromptOpen==='function' && expansionAudioPromptOpen()) {
-      // Never let modal keyboard activation (especially Enter=NES Start) leak
-      // into the emulated controller.
       joypad1Buttons=0;
       return;
     }
