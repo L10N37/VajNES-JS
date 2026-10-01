@@ -860,3 +860,134 @@ test('Namco mapper save-state restores banks IRQ and internal RAM',()=>{
  assert.deepEqual(e.evaluate('[namcoChr[0],namcoPrg[0],namcoNt[0],namcoIrqCounter,namcoIrqEnable,irqAssert.namco,namcoRam[3],namcoRamAddr,namcoRamAuto]'),
  [9,6,0xe1,0x3456,true,true,0x77,3,true]);
 });
+
+test('MMC3 Sharp and NEC zero-reload IRQ variants follow their silicon rules',()=>{
+ const sharp=emulator(rom(4));
+ sharp.evaluate('mapper4_write_C000(0);mapper4_write_C001();mapper4_write_E001();ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(sharp.evaluate('mmc3_irq.variant'),'sharp');
+ assert.equal(sharp.evaluate('irqAssert.mmc3'),true);
+ sharp.evaluate('mapper4_write_E000();mapper4_write_E001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(sharp.evaluate('irqAssert.mmc3'),true);
+
+ const nec=emulator(rom(4,2,1,0,4));
+ assert.equal(nec.evaluate('mmc3_irq.variant'),'nec');
+ nec.evaluate('mapper4_write_C000(2);mapper4_write_C001();mapper4_write_E001()');
+ nec.evaluate('ppuCycles+=9;mmc3Irq(0x1000);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(nec.evaluate('irqAssert.mmc3'),true);
+ nec.evaluate('mapper4_write_E000();mapper4_write_E001();mapper4_write_C000(0);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(nec.evaluate('irqAssert.mmc3'),false);
+ nec.evaluate('mapper4_write_C001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(nec.evaluate('irqAssert.mmc3'),true);
+});
+
+test('$2002 read on pre-render dot 1 latches vblank but sees cleared sprite flags',()=>{
+ const e=emulator();
+ e.evaluate('PPUSTATUS=0xe0;openBus.PPU=0;PPUclock.scanline=261;PPUclock.dot=1');
+ assert.equal(e.evaluate('checkReadOffset(0x2002)&0xe0'),0x80);
+ assert.equal(e.evaluate('PPUSTATUS&0xe0'),0x60);
+});
+
+test('$2002 read sees sprite overflow when the scheduled transition occurs on that dot',()=>{
+ const e=emulator();
+ e.evaluate('PPUSTATUS=0x40;openBus.PPU=0;spriteOverflowSetScanline=10;spriteOverflowSetDot=131;PPUclock.scanline=10;PPUclock.dot=131');
+ assert.equal(e.evaluate('checkReadOffset(0x2002)&0x60'),0x60);
+});
+
+test('ninth consecutive in-range sprite schedules overflow at evaluation dot 131',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUSTATUS=0;OAM.fill(0xff);for(let i=0;i<9;i++){OAM[i*4]=0;OAM[i*4+1]=1;OAM[i*4+2]=0;OAM[i*4+3]=0;}PPUclock.scanline=0;evalSpritesForScanline(spritesNext,1)');
+ assert.deepEqual(e.evaluate('[spriteOverflowSetScanline,spriteOverflowSetDot,PPUSTATUS&0x20]'),[0,131,0]);
+});
+
+test('forced blank keeps sprite X counters counting while pattern shifters pause',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=false;spritesCur.count=1;spritesCur.xcnt[0]=3;spritesCur.lo[0]=0x81;spritesCur.hi[0]=0x42;PPUclock.scanline=5;PPUclock.dot=10;visibleScanline(10)');
+ assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0]]'),[2,0x81,0x42]);
+});
+
+test('dot-339 forced-zero latch is retained through blank and applied when rendering resumes',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=true;spritesCur.count=1;spritesCur.xcnt[0]=7;PPUclock.scanline=5;PPUclock.dot=10;visibleScanline(10)');
+ assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spriteXForceZeroNextFrame]'),[6,true]);
+ e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;PPUclock.dot=11;visibleScanline(11)');
+ assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spriteXForceZeroNextFrame]'),[0,false]);
+});
+
+test('$2007 overlap can feed external PPU data into the next pattern-low fetch',()=>{
+ const e=emulator();
+ e.evaluate('ppuExternalData=0xaa;ppuCpu2007ReadUntil=ppuCycles+8;CHR_ROM[0x1aa]=0x5a');
+ assert.equal(e.evaluate("ppuBackgroundRead(0x0103,'patternLo')"),0x5a);
+ assert.deepEqual(e.evaluate('[ppuExternalLatchLow,ppuCpu2007ReadUntil]'),[0xaa,-1]);
+});
+
+test('second $2006 write captures the external low-address latch during rendering',()=>{
+ const e=emulator();
+ // PPUADDR writes are ignored during the hardware power-on write gate, so
+ // place this timing test after that interval before exercising the overlap.
+ e.evaluate('cpuCycles=40000;PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUclock.scanline=4;PPUclock.dot=180;VRAM_ADDR=0x2c18;writeToggle=1;t_hi=0x2f;t_lo=0;checkWriteOffset(0x2006,0)');
+ assert.equal(e.evaluate('ppuCpu2006HybridLow'),0x19);
+ assert.ok(e.evaluate('ppuCpu2006HybridUntil>=ppuCycles'));
+});
+
+test('forced blank preserves stale sprite evaluation data',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x55;evalSpritesForScanline(spritesNext,10)');
+ assert.deepEqual(e.evaluate('[spritesNext.count,spritesNext.sprite0ListIndex,spritesNext.tile[0]]'),[1,0,0x55]);
+});
+
+test('dot 339 forced-zero latch applies on visible scanlines',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=false;PPUclock.scanline=3;PPUclock.dot=339;ppuTick()');
+ assert.equal(e.evaluate('spriteXForceZeroNextFrame'),true);
+});
+
+test('interrupted sprite-zero fetch keeps the previous active shifter buffer',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesCur.count=1;spritesCur.sprite0ListIndex=0;spritesCur.attr[0]=0x21;spritesCur.xcnt[0]=0x11;spritesCur.lo[0]=0x81;spritesCur.hi[0]=0x42;spritesCur.idx[0]=0;spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x22;spritesNext.attr[0]=0x02;spritesNext.xcnt[0]=0x33;spritesNext.lo[0]=0x24;spritesNext.hi[0]=0x18;spritesNext.idx[0]=4;sprite0FetchComplete=false;PPUclock.scanline=5;PPUclock.dot=1;visibleScanline(1)');
+ assert.deepEqual(e.evaluate('[spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0],spritesCur.tile[0]]'),[0x21,0x10,0x81,0x42,0,0x22]);
+ e.evaluate('spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x44;spritesNext.attr[0]=0x03;spritesNext.xcnt[0]=0x55;spritesNext.lo[0]=0x66;spritesNext.hi[0]=0x77;spritesNext.idx[0]=8;sprite0FetchComplete=true;PPUclock.dot=1;visibleScanline(1)');
+ assert.deepEqual(e.evaluate('[spritesCur.tile[0],spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0]]'),[0x44,0x03,0x54,0x66,0x77,8]);
+});
+
+test('OAM DMA source $40xx does not activate APU registers when halted CPU bus is elsewhere',()=>{
+ const e=emulator();
+ e.evaluate("CPUregisters.PC=0x8000;openBus.CPU=0x40;apuTiming.frameFlag=true;irqAssert.frame=true;DMA.active=true;DMA.pad=0;DMA.addr=0x4015;DMA.index=0x15;DMA.phase='get';dmaMicroStep()");
+ assert.equal(e.evaluate('DMA.tmp'),0x40);
+ assert.equal(e.evaluate('apuTiming.frameFlag'),true);
+});
+
+test('OAM DMA aliases APU status through low five source bits when halted CPU bus activates decoder',()=>{
+ const e=emulator();
+ e.evaluate("CPUregisters.PC=0x4001;openBus.CPU=0x40;apuTiming.frameFlag=true;irqAssert.frame=true;apuTiming.length[2]=1;DMA.active=true;DMA.pad=0;DMA.addr=0x5015;DMA.index=0x15;DMA.phase='get';dmaMicroStep()");
+ assert.equal(e.evaluate('DMA.tmp'),0x44);
+});
+
+test('OAM DMA put preserves external CPU bus only during active APU decode window',()=>{
+ for(const [pc,wantBus] of [[0x4001,0x40],[0x8000,0x44]]){
+  const e=emulator();
+  e.evaluate(`CPUregisters.PC=${pc};openBus.CPU=0x40;OAMADDR=0;DMA.active=true;DMA.pad=0;DMA.addr=0x5000;DMA.index=0;DMA.tmp=0x44;DMA.phase='put';dmaMicroStep()`);
+  assert.equal(e.evaluate('OAM[0]'),0x44);
+  assert.equal(e.evaluate('openBus.CPU'),wantBus);
+ }
+});
+
+test('driven OAM DMA source keeps controller alias off external data while still clocking it',()=>{
+ const e=emulator();
+ e.evaluate("CPUregisters.PC=0x4001;systemMemory[0x216]=0xff;joypad1State=0;joypad1Shift=0x55;DMA.active=true;DMA.pad=0;DMA.addr=0x0216;DMA.index=0x16;DMA.phase='get';dmaMicroStep()");
+ assert.equal(e.evaluate('DMA.tmp'),0xff);
+});
+
+test('adjacent-cycle PPUDATA reads merge into one effective strobe',()=>{
+ const e=emulator();
+ e.evaluate('cpuCycles=40000;VRAM_ADDR=1;VRAM_DATA=0x22;CHR_ROM[1]=0x33;CHR_ROM[2]=0x44');
+ assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x22);
+ assert.equal(e.evaluate('VRAM_ADDR'),2);
+ e.evaluate('cpuCycles++');
+ assert.equal(e.evaluate('checkReadOffset(0x2107)'),0x22);
+ assert.equal(e.evaluate('VRAM_ADDR'),2);
+ assert.equal(e.evaluate('VRAM_DATA'),0x33);
+ e.evaluate('cpuCycles+=2');
+ assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x33);
+ assert.equal(e.evaluate('VRAM_ADDR'),3);
+ assert.equal(e.evaluate('VRAM_DATA'),0x44);
+});
