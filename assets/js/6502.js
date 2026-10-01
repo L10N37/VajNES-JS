@@ -43,83 +43,96 @@ let CPUregisters = {
 let P_VARIABLES = ['C', 'Z', 'I', 'D', 'V', 'N'];
 
 
-function resetCPU() {
-
-  // reset shared PPU / mapper / timing state
-  resetSharedState();
-  apuResetTiming();
-  resetDMC();
-  irqAssert.mmc3=false; // A newly loaded non-MMC3 cartridge has no MMC3 IRQ source.
-  if(mapperNumber===4)mmc3Reset();
-  joypadStrobe=joypadStrobeOutput=joypad1State=joypad2State=0;
-  DMA.active=false;
-
-  // clear Vblank and NMI edge on reset
-  clearNmiEdge();
-  nmiPending = 0; // clear nmi timing latch
-  irqPollCurrent=irqPollPrevious=false;
-  nmiPollCurrent=nmiPollPrevious=nmiSignalSeen=false;
-
-  writeToggle = 0;
-
-  systemMemory.fill(0x00); // may not happen on a real system, lets clear junk from RAM though
-
-  // clear CPU regs
-  CPUregisters.A = 0x00;
-  CPUregisters.X = 0x00;
-  CPUregisters.Y = 0x00;
-  CPUregisters.S = 0xFD; // unsure, should be $FC at reset, shouldn't matter
-  CPUregisters.P = {
-    C: 0,    // Carry
-    Z: 0,    // Zero
-    I: 1,    // Interrupt Disable
-    D: 0,    // Decimal Mode
-    V: 0,    // Overflow
-    N: 0     // Negative
-  };
-
-  // pull PC from reset vector
+function readResetVectorAndDelay() {
   const lo = checkReadOffset(0xFFFC);
   const hi = checkReadOffset(0xFFFD);
   CPUregisters.PC = lo | (hi << 8);
-  let resetVector = CPUregisters.PC; // Store the reset vector for debugging in a separate variable
 
-  // burn 7 cycles straight away (PPU 21 ticks in)
-  for (let index = 0; index < 7; index++) {
-    consumeCycle();
-  }
+  // RESET performs a 7-cycle interrupt-like sequence. The three stack
+  // accesses are reads, not writes; S is adjusted separately on warm reset.
+  for (let index = 0; index < 7; index++) consumeCycle();
 
   globalThis.NES_DEBUG_LOGGING && console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
   globalThis.NES_DEBUG_LOGGING && console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
+}
 
-  // ---- remaining CPU/PPU misc state NOT covered by resetSharedState/resetMMC1 ----
+function resetCommonInterruptState() {
+  DMA.active=false;
+  clearNmiEdge();
+  nmiPending=0;
+  irqPollCurrent=irqPollPrevious=false;
+  nmiPollCurrent=nmiPollPrevious=nmiSignalSeen=false;
+}
 
-  ppumaskPrev = 0;
-  ppumaskRenderHoldBits = 0;
-  ppumaskRenderApplyAt = -1;
-  renderingPrev = false;
-  spriteXForceZeroNextFrame = false;
-  sprite0FetchComplete = true;
-  ppuExternalLatchLow = 0;
-  ppuExternalData = 0;
-  ppuCpu2007ReadUntil = -1;
-  ppuCpu2006HybridUntil = -1;
-  ppuCpu2006HybridLow = 0;
+// Full power-on/cartridge-load state. Mapper initialization calls this path so
+// existing deterministic startup behavior remains unchanged.
+function powerOnCPU() {
+  resetSharedState();
+  apuResetTiming();
+  resetDMC();
+  irqAssert.mmc3=false;
+  if(mapperNumber===4) mmc3Reset();
+  joypadStrobe=joypadStrobeOutput=joypad1State=joypad2State=0;
+  resetCommonInterruptState();
 
-  secOAMAddr = 0;
+  writeToggle=0;
+  systemMemory.fill(0x00);
+
+  CPUregisters.A=0x00;
+  CPUregisters.X=0x00;
+  CPUregisters.Y=0x00;
+  CPUregisters.S=0xFD;
+  CPUregisters.P={
+    C:0,
+    Z:0,
+    I:1,
+    D:0,
+    V:0,
+    N:0
+  };
+
+  readResetVectorAndDelay();
+
+  ppumaskPrev=0;
+  ppumaskRenderHoldBits=0;
+  ppumaskRenderApplyAt=-1;
+  renderingPrev=false;
+  spriteXForceZeroNextFrame=false;
+  sprite0FetchComplete=true;
+  ppuExternalLatchLow=0;
+  ppuExternalData=0;
+  ppuCpu2007ReadUntil=-1;
+  ppuCpu2006HybridUntil=-1;
+  ppuCpu2006HybridLow=0;
+
+  secOAMAddr=0;
   secondaryOAM.fill(0xFF);
-  secOAMPrimaryAddr = 0;
-  secOAMPrimaryOverflow = false;
-  secOAMAddrOverflow = false;
-  secOAMOverflowDetection = false;
-  secOAMCopyBytes = 0;
-  ppuOAMDataBus = 0xFF;
-  oamCorruptPending = false;
-  oamCorruptSeedRow = 0;
+  secOAMPrimaryAddr=0;
+  secOAMPrimaryOverflow=false;
+  secOAMAddrOverflow=false;
+  secOAMOverflowDetection=false;
+  secOAMCopyBytes=0;
+  ppuOAMDataBus=0xFF;
+  oamCorruptPending=false;
+  oamCorruptSeedRow=0;
 
-  openBus.internal = 0;
-  openBus.PPU = 0;
-  openBus.ppuDecayTimer = 0;
+  openBus.internal=0;
+  openBus.PPU=0;
+  openBus.ppuDecayTimer=0;
+}
+
+// Hardware-style warm CPU reset. Internal RAM and A/X/Y/C/Z/D/V/N survive;
+// RESET sets I, subtracts three from S without writing stack bytes, and reloads
+// PC from $FFFC/$FFFD. APU reset details are refined separately.
+function resetCPU() {
+  resetCommonInterruptState();
+  apuResetTiming();
+  resetDMC();
+
+  CPUregisters.S=(CPUregisters.S-3)&0xFF;
+  CPUregisters.P.I=1;
+
+  readResetVectorAndDelay();
 }
 
 // actually we can get a script down the track to scrap every variable in existence and reset them all / move the function to a separate file
