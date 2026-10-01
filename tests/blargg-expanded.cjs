@@ -24,6 +24,14 @@ const groupsByShard={
   'apu_test/rom_singles',
   'dmc_dma_during_read4',
   'sprdma_and_dmc_dma'
+ ],
+ extra:[
+  'branch_timing_tests',
+  'cpu_exec_space',
+  'dmc_tests',
+  'blargg_ppu_tests_2005.09.15b',
+  'mmc3_irq_tests',
+  'nes_instr_test/rom_singles'
  ]
 };
 const groups=groupsByShard[shard];if(!groups)throw Error('Unknown BLARGG_SHARD '+shard);
@@ -39,6 +47,13 @@ for(const group of groups){
   const rom=fs.readFileSync(path.join(dir,file)),e=createEmulator();let status=null,text='',error=null;
   try{
    e.load(new Uint8Array(rom));
+   // The two legacy MMC3 revision ROMs intentionally target different IRQ
+   // silicon. Their old iNES headers cannot encode the revision, so select it
+   // explicitly just as the existing mmc3_test_2 gate does.
+   if(group==='mmc3_irq_tests'){
+    if(file==='5.MMC3_rev_A.nes') e.evaluate('mmc3SetIrqVariant("nec")');
+    if(file==='6.MMC3_rev_B.nes') e.evaluate('mmc3SetIrqVariant("sharp")');
+   }
    const legacyF8 =
     group.startsWith('sprite_hit_tests_2005.10.05') ||
     group.startsWith('sprite_overflow_tests') ||
