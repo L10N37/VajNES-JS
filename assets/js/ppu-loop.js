@@ -169,6 +169,7 @@ let secOAMAddrOverflow = false;
 let secOAMOverflowDetection = false;
 let secOAMCopyBytes = 0;
 let secOAMFetchInterrupted = false;
+let frozenSecondaryFetchApplied = false;
 let ppuOAMDataBus = 0xFF;
 let spriteOverflowSetScanline = -1;
 let spriteOverflowSetDot = -1;
@@ -1026,12 +1027,18 @@ function applyFrozenSecondaryOAMFetch(scanline) {
 function renderingBusTick() {
   const d=PPUclock.dot+1,sl=PPUclock.scanline;
 
-  // OAM fetch enable is sampled independently of the visual pipeline. A
-  // frozen OAM2 counter can therefore begin loading sprite units at dot 257
-  // even when the renderer's delayed PPUMASK state has not caught up yet.
-  if (d === 257 && secOAMAddrOverflow && ppuOAMMaskBits() !== 0 &&
+  // OAM fetch enable is sampled independently of the visual pipeline.
+  // Arm at the start of sprite fetch, then apply the frozen secondary-OAM
+  // bytes on the first OAM-active dot before the pattern fetch phases begin.
+  // A CPU PPUMASK write around dot 256 can make that first active dot occur
+  // just after 257 because OAM uses its own one-dot sampling delay.
+  if (d === 257) frozenSecondaryFetchApplied = false;
+  if (!frozenSecondaryFetchApplied &&
+      d >= 257 && d <= 261 &&
+      secOAMAddrOverflow && ppuOAMMaskBits() !== 0 &&
       (sl <= 239 || sl === 261)) {
     applyFrozenSecondaryOAMFetch(sl);
+    frozenSecondaryFetchApplied = true;
   }
 
   if(mapperNumber!==4 && (d<257 || d>320))return;
