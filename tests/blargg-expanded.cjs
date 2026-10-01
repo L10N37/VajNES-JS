@@ -59,6 +59,22 @@ for(const group of groups){
       if(status<128)break;
     }
 
+    // ppu_read_buffer is mapper 3 (CNROM), so the ROM's optional $6000
+    // output is correctly invisible on hardware without PRG-RAM. Its linker
+    // map puts first_failed_test_code at $0A, failure count at $0B and the
+    // 78 per-test result bytes at $0C-$59. A completed all-pass run has every
+    // per-test byte set to 1 and both failure bytes clear.
+    if(status===null && group.startsWith('ppu_read_buffer')){
+      const rr=e.state().ram;
+      const completed=rr.slice(0x0C,0x5A).length===78 &&
+        rr.slice(0x0C,0x5A).every(v=>v===1);
+      if(completed){
+        status=(rr[0x0A]===0 && rr[0x0B]===0)?0:(rr[0x0A]||1);
+        text=status===0?'Passed':'Failed #'+status;
+        break;
+      }
+    }
+
     // Fallback for serial/PPU-console-era ROMs. Their console writes ASCII
     // character codes directly into nametable RAM, so the terminal result can
     // be recognized without special emulator hooks.
