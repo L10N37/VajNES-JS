@@ -135,7 +135,9 @@ for(const group of groups){
     }
    }
   }catch(ex){error=String(ex);}
-  const result={rom:group+'/'+file,sha256:crypto.createHash('sha256').update(rom).digest('hex'),status,text,error,cycles:e.state().cpuCycles};
+  const st=e.state();
+  const result={rom:group+'/'+file,sha256:crypto.createHash('sha256').update(rom).digest('hex'),status,text,error,cycles:st.cpuCycles};
+  if(status===null&&!error){result.pc=st.pc;result.f0=st.ram[0xF0];result.f8=st.ram[0xF8];}
   results.push(result);console.log('BLARGG_EXPANDED '+JSON.stringify(result));
  }
 }
