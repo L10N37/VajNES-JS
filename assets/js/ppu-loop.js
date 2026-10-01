@@ -109,6 +109,7 @@ let ppuExternalData = 0;
 let ppuCpu2007ReadUntil = -1;
 let ppuCpu2007BufferCaptureAt = -1;
 let ppuCpu2007CaptureDelay = 4;
+function setPPU2007CaptureDelay(v) { ppuCpu2007CaptureDelay = v|0; }
 let spriteFetchOldV = 0;
 let ppuCpu2006HybridUntil = -1;
 let ppuCpu2006HybridLow = 0;
