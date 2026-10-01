@@ -618,3 +618,18 @@ test('DMC reload waits for a recent $4015 reader enable and then uses a 3-cycle 
  assert.equal(result.fetches,1);
  assert.equal(result.stolen,3);
 });
+
+test('adjacent-cycle PPUDATA reads merge into one effective strobe',()=>{
+ const e=emulator();
+ e.evaluate('cpuCycles=40000;VRAM_ADDR=1;VRAM_DATA=0x22;CHR_ROM[1]=0x33;CHR_ROM[2]=0x44');
+ assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x22);
+ assert.equal(e.evaluate('VRAM_ADDR'),2);
+ e.evaluate('cpuCycles++');
+ assert.equal(e.evaluate('checkReadOffset(0x2107)'),0x22);
+ assert.equal(e.evaluate('VRAM_ADDR'),2);
+ assert.equal(e.evaluate('VRAM_DATA'),0x33);
+ e.evaluate('cpuCycles+=2');
+ assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x33);
+ assert.equal(e.evaluate('VRAM_ADDR'),3);
+ assert.equal(e.evaluate('VRAM_DATA'),0x44);
+});
