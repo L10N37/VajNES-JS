@@ -90,7 +90,7 @@ for (const [i,trace] of liveTrace654.entries()) {
 // delays against AccuracyCoin's stable-byte answer key.
 function run2007DelayVariant(delay) {
   const v=createEmulator(); v.load(new Uint8Array(rom));
-  v.evaluate('ppuCpu2007CaptureDelay='+delay);
+  v.evaluate('setPPU2007CaptureDelay('+delay+')');
   v.run(3000000); v.buttons(8); v.run(100000); v.buttons(0);
   let st;
   for(let i=0;i<3000;i++) {
