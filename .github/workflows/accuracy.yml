@@ -39,7 +39,7 @@ jobs:
           git -C "$RUNNER_TEMP/nes-test-roms" checkout --detach FETCH_HEAD
       - name: MMC3 and PPU video regression gate
         run: node tests/blargg.cjs "$RUNNER_TEMP/nes-test-roms" blargg-report.json
-      - name: Known-pass regression gate (not a 144/144 claim)
+      - name: AccuracyCoin 144/144 regression gate
         run: node tests/accuracycoin.cjs "$RUNNER_TEMP/accuracycoin/AccuracyCoin.nes" accuracy-report.json tests/results/current.json
       - uses: actions/upload-artifact@v4
         if: always()
@@ -48,3 +48,32 @@ jobs:
           path: |
             accuracy-report.json
             blargg-report.json
+
+  blargg-expanded:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [cpu, ppu, apu]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch pinned nes-test-roms
+        run: |
+          git init "$RUNNER_TEMP/nes-test-roms"
+          git -C "$RUNNER_TEMP/nes-test-roms" remote add origin https://github.com/christopherpow/nes-test-roms.git
+          git -C "$RUNNER_TEMP/nes-test-roms" fetch --depth 1 origin 95d8f621ae55cee0d09b91519a8989ae0e64753b
+          git -C "$RUNNER_TEMP/nes-test-roms" checkout --detach FETCH_HEAD
+      - name: Expanded Blargg regression gate (${{ matrix.shard }})
+        env:
+          BLARGG_SHARD: ${{ matrix.shard }}
+        run: node tests/blargg-expanded.cjs "$RUNNER_TEMP/nes-test-roms" "blargg-expanded-${{ matrix.shard }}.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blargg-expanded-${{ matrix.shard }}
+          path: blargg-expanded-${{ matrix.shard }}.json
+
