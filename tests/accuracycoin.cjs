@@ -40,6 +40,20 @@ for(let i=0;i<3000;i++) {
   }
   if(state.ram[0x35]===0 && state.ram[0x37]===144 && tests.every(t=>state.ram[t.address]!==0)) break;
 }
+const frozenFetchTrace = e.evaluate('accuracyCoinFrozenFetchTrace');
+for (const [i,t] of frozenFetchTrace.entries()) {
+  console.log('FROZENFETCH['+i+'] sl='+t.scanline+' dot='+t.dot+
+    ' value='+t.value.toString(16).padStart(2,'0')+
+    ' addr='+t.secAddr.toString(16).padStart(2,'0')+
+    ' frozen='+(t.frozen?1:0)+
+    ' oamMask='+t.oamMask.toString(16).padStart(2,'0')+
+    ' visualMask='+t.visualMask.toString(16).padStart(2,'0')+
+    ' target='+t.targetLine+' row='+t.row+
+    ' oldCount='+t.oldCount+' oldSprite0='+t.oldSprite0+
+    ' oldTile0='+t.oldTile0.toString(16).padStart(2,'0')+
+    ' oldAttr0='+t.oldAttr0.toString(16).padStart(2,'0')+
+    ' oldX0='+t.oldX0.toString(16).padStart(2,'0'));
+}
 const oam2ReadTrace = e.evaluate('accuracyCoinOAM2ReadTrace');
 for (const [i,t] of oam2ReadTrace.entries()) {
   console.log('OAM2READ['+i+'] sl='+t.scanline+' dot='+t.dot+
