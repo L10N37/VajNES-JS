@@ -633,3 +633,35 @@ test('adjacent-cycle PPUDATA reads merge into one effective strobe',()=>{
  assert.equal(e.evaluate('VRAM_ADDR'),3);
  assert.equal(e.evaluate('VRAM_DATA'),0x44);
 });
+
+
+test('warm reset preserves RAM and registers while applying 6502 reset semantics',()=>{
+ const e=emulator();
+ e.evaluate(`
+   systemMemory[0x0000]=0xDB;
+   systemMemory[0x0110]=0xBC;
+   systemMemory[0x0111]=0x9A;
+   systemMemory[0x0112]=0xFB;
+   CPUregisters.A=0x34;
+   CPUregisters.X=0x56;
+   CPUregisters.Y=0x78;
+   CPUregisters.S=0x12;
+   CPUregisters.P.C=1;
+   CPUregisters.P.Z=1;
+   CPUregisters.P.I=0;
+   CPUregisters.P.D=1;
+   CPUregisters.P.V=1;
+   CPUregisters.P.N=1;
+   resetCPU();
+ `);
+ assert.deepEqual(
+   e.evaluate(`[
+     systemMemory[0x0000],
+     systemMemory[0x0110],systemMemory[0x0111],systemMemory[0x0112],
+     CPUregisters.A,CPUregisters.X,CPUregisters.Y,CPUregisters.S,
+     CPUregisters.P.C,CPUregisters.P.Z,CPUregisters.P.I,
+     CPUregisters.P.D,CPUregisters.P.V,CPUregisters.P.N
+   ]`),
+   [0xDB,0xBC,0x9A,0xFB,0x34,0x56,0x78,0x0F,1,1,1,1,1,1]
+ );
+});
