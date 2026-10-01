@@ -40,6 +40,18 @@ for(let i=0;i<3000;i++) {
   }
   if(state.ram[0x35]===0 && state.ram[0x37]===144 && tests.every(t=>state.ram[t.address]!==0)) break;
 }
+const scanline0Trace = e.evaluate('accuracyCoinScanline0Trace');
+for (const [i,t] of scanline0Trace.entries()) {
+  console.log('SCAN0['+i+'] event='+t.event+' frame='+t.frame+' odd='+(t.odd?1:0)+
+    ' dot='+t.dot+' oamMask='+t.oamMask.toString(16).padStart(2,'0')+
+    ' visualMask='+t.visualMask.toString(16).padStart(2,'0')+
+    ' addr='+t.secAddr.toString(16).padStart(2,'0')+' frozen='+(t.frozen?1:0)+
+    ' sec='+t.secondary.map(x=>x.toString(16).padStart(2,'0')).join(',')+
+    ' nextCount='+t.nextCount+' spr0='+t.nextSprite0+
+    ' tile0='+t.tile0.toString(16).padStart(2,'0')+
+    ' row0='+t.row0+' attr0='+t.attr0.toString(16).padStart(2,'0')+
+    ' x0='+t.x0.toString(16).padStart(2,'0'));
+}
 const frozenFetchTrace = e.evaluate('accuracyCoinFrozenFetchTrace');
 for (const [i,t] of frozenFetchTrace.entries()) {
   console.log('FROZENFETCH['+i+'] sl='+t.scanline+' dot='+t.dot+
