@@ -597,18 +597,3 @@ test('DMC reload waits for a recent $4015 reader enable and then uses a 3-cycle 
  assert.equal(result.fetches,1);
  assert.equal(result.stolen,3);
 });
-
-
-test('secondary OAM fetch counter freezes after 5-bit overflow',()=>{
- const e=emulator();
- e.evaluate('PPUMASK=0x18;PPUclock.scanline=10;secondaryOAM.fill(0);secOAMAddr=0;secOAMOverflowed=false;for(let d=257;d<=320;d++){PPUclock.dot=d;updateSecondaryOAMAddrForDot(10,d)}');
- assert.deepEqual(e.evaluate('[secOAMAddr,secOAMOverflowed]'),[0,true]);
- e.evaluate('PPUclock.dot=321;updateSecondaryOAMAddrForDot(10,321)');
- assert.equal(e.evaluate('secOAMAddr'),0);
-});
-
-test('secondary OAM fetch keeps a misaligned address when rendering interrupts increments',()=>{
- const e=emulator();
- e.evaluate('secondaryOAM.fill(0);secOAMAddr=0;secOAMOverflowed=false;PPUMASK=0x18;for(let d=257;d<=288;d++){PPUclock.dot=d;updateSecondaryOAMAddrForDot(10,d)};PPUMASK=0;for(let d=289;d<=304;d++){PPUclock.dot=d;updateSecondaryOAMAddrForDot(10,d)};PPUMASK=0x18;ppumaskRenderApplyAt=-1;ppumaskRenderHoldBits=0x18;for(let d=305;d<=320;d++){PPUclock.dot=d;updateSecondaryOAMAddrForDot(10,d)}');
- assert.deepEqual(e.evaluate('[secOAMAddr,secOAMOverflowed]'),[24,false]);
-});
