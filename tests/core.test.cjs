@@ -248,6 +248,26 @@ test('dot-339 forced-zero latch is retained through blank and applied when rende
  assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spriteXForceZeroNextFrame]'),[0,false]);
 });
 
+test('forced blank preserves stale sprite evaluation data',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x55;evalSpritesForScanline(spritesNext,10)');
+ assert.deepEqual(e.evaluate('[spritesNext.count,spritesNext.sprite0ListIndex,spritesNext.tile[0]]'),[1,0,0x55]);
+});
+
+test('dot 339 forced-zero latch applies on visible scanlines',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=false;PPUclock.scanline=3;PPUclock.dot=339;ppuTick()');
+ assert.equal(e.evaluate('spriteXForceZeroNextFrame'),true);
+});
+
+test('interrupted sprite-zero fetch keeps the previous active shifter buffer',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesCur.count=1;spritesCur.tile[0]=0x11;spritesNext.count=1;spritesNext.tile[0]=0x22;sprite0FetchComplete=false;PPUclock.scanline=5;PPUclock.dot=1;visibleScanline(1)');
+ assert.equal(e.evaluate('spritesCur.tile[0]'),0x11);
+ e.evaluate('sprite0FetchComplete=true;PPUclock.dot=1;visibleScanline(1)');
+ assert.equal(e.evaluate('spritesCur.tile[0]'),0x22);
+});
+
 test('background shifter advances after pixel zero without duplicating it',()=>{
  const e=emulator();e.evaluate('spriteXForceZeroNextFrame=false;PPUMASK=0x0a;fineX=0;PPUclock.scanline=0;PPUclock.dot=1;nextLine.t0={lo:0x80,hi:0,at:0};nextLine.t1={lo:0,hi:0,at:0};PALETTE_RAM[0]=0;PALETTE_RAM[1]=0x21;visibleScanline(1);PPUclock.dot=2;visibleScanline(2)');
  assert.deepEqual(e.evaluate('Array.from(paletteIndexFrame.slice(0,2))'),[0x21,0]);
