@@ -156,6 +156,7 @@ const SPR_Y_OFFSET   = 1;
 let renderingPrev = false;
 let spriteOnlyPrimePending = false;
 let spriteXForceZeroNextFrame = false;
+let oddPreRenderSpriteEarlyPixel = false;
 let sprite0FetchComplete = true;
 
 // ---- OAM corruption ----
@@ -468,8 +469,10 @@ function sampleSpritePixel(x) {
   if (!sprEnabledNow()) return null;
   if (x < 8 && (PPUMASK & MASK_SPR_SHOW_LEFT8) === 0) return null;
 
+  const earlyOddPixel = oddPreRenderSpriteEarlyPixel && x === 0;
+
   for (let i = 0; i < spritesCur.count; i++) {
-    if (spritesCur.xcnt[i] !== 0) continue;
+    if (!earlyOddPixel && spritesCur.xcnt[i] !== 0) continue;
 
     const p0 = (spritesCur.lo[i] >> 7) & 1;
     const p1 = (spritesCur.hi[i] >> 7) & 1;
@@ -942,6 +945,18 @@ function visibleScanline(dot) {
     }
     emitPixelHardwarePalette();
 
+    // On composite 2C02 odd frames the skipped pre-render dot exposes the
+    // already-loaded first sprite-shifter bit at X=0. Consume that bit once,
+    // but leave X counters to follow their normal countdown; the remaining
+    // seven sprite bits therefore appear one pixel early at the intended area.
+    if (dot === 1 && oddPreRenderSpriteEarlyPixel) {
+      for (let i = 0; i < spritesCur.count; i++) {
+        spritesCur.lo[i] = (spritesCur.lo[i] << 1) & 0xFF;
+        spritesCur.hi[i] = (spritesCur.hi[i] << 1) & 0xFF;
+      }
+      oddPreRenderSpriteEarlyPixel = false;
+    }
+
     if (ren && dot >= 1 && dot <= 256) {
       background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
       background.bgShiftHi = ((background.bgShiftHi << 1) | 1) & 0xFFFF;
@@ -1276,6 +1291,9 @@ function ppuTick() {
 
   if (PPUclock.oddFrame && oddSkipRendering &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
+      // Composite 2C02 odd-frame skipped-dot sprite quirk: the first fetched
+      // sprite shifter bit is visible at X=0 on the following scanline.
+      oddPreRenderSpriteEarlyPixel = spritesNext.count > 0;
       PPUclock.scanline = 0;
       PPUclock.dot = -1;
       PPUclock.oddFrame = false;
