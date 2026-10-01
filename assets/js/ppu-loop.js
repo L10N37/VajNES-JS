@@ -1194,6 +1194,12 @@ function renderingBusTick() {
   if (d === 257) {
     frozenSecondaryFetchApplied = false;
 
+    // A valid pre-render sprite fetch is the fetch that feeds scanline 0.
+    // Mark it complete just like a visible-line HBlank fetch so the line-0
+    // swap does not restore stale X/shifter state over the freshly fetched
+    // secondary-OAM sprite.
+    if (sl === 261) sprite0FetchComplete = ppuOAMMaskBits() !== 0;
+
     // Only the late-enable pre-render path consumes stale OAM2. Normal
     // pre-render evaluation remains entirely on the established renderer.
     if (sl === 261 && !preRenderOAMEvalStarted && ppuOAMMaskBits() !== 0) {
