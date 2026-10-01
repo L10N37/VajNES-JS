@@ -129,6 +129,8 @@ let spriteOnlyPrimePending = false;
 let oamCorruptPending = false;
 let oamCorruptSeedRow = 0;
 let secOAMAddr = 0;
+let spriteOverflowSetScanline = -1;
+let spriteOverflowSetDot = -1;
 let ppumaskPrev = 0;
 
 // ---- Debug offsets ----
@@ -210,6 +212,7 @@ function evalSpritesForScanline(target, scanline) {
   const sprH   = is8x16 ? 16 : 8;
 
   let overflow = false;
+  let evaluationDot = 65;
   // leave this as OAMADDR, do not force 0 here on PPU side, logic in addCycle function
   const startAddr = (OAMADDR & 0xFF);
 
@@ -217,13 +220,13 @@ function evalSpritesForScanline(target, scanline) {
     const baseAddr = (startAddr + (m << 2)) & 0xFF;
 
     const y = (OAM[baseAddr] & 0xFF);
-    if (y === 0xFF) continue;
+    if (y === 0xFF) { evaluationDot += 2; continue; }
 
     const top = (y + SPR_Y_OFFSET) | 0;
-    if (scanline < top) continue;
+    if (scanline < top) { evaluationDot += 2; continue; }
 
     const row = (scanline - top) | 0;
-    if (row < 0 || row >= sprH) continue;
+    if (row < 0 || row >= sprH) { evaluationDot += 2; continue; }
 
     const tile = OAM[(baseAddr + 1) & 0xFF] & 0xFF;
     const attr = OAM[(baseAddr + 2) & 0xFF] & 0xFF;
@@ -240,13 +243,21 @@ function evalSpritesForScanline(target, scanline) {
       target.idx[i]  = baseAddr & 0xFF;
 
       if (m === 0) target.sprite0ListIndex = i & 0xFF;
+      // Each in-range sprite consumes four read/write pairs during evaluation.
+      evaluationDot += 8;
     } else {
       overflow = true;
+      // The ninth in-range Y comparison completes around this dot.
+      spriteOverflowSetScanline = PPUclock.scanline;
+      spriteOverflowSetDot = Math.min(256, evaluationDot + 2);
       break;
     }
   }
 
-  if (overflow) SET_SPRITE_OVERFLOW();
+  if (!overflow) {
+    spriteOverflowSetScanline = -1;
+    spriteOverflowSetDot = -1;
+  }
 }
 
 function spriteShiftersTick() {
@@ -483,6 +494,8 @@ function preRenderScanline(dot) {
 
   if (dot === 1 && ppuInitDone) {
     CLEAR_VBLANK();
+    CLEAR_SPRITE0_HIT();
+    CLEAR_SPRITE_OVERFLOW();
 
     nmiSuppression = false;
     doNotSetVblank = false;
@@ -572,6 +585,12 @@ function visibleScanline(dot) {
   const ren   = renderingNow();
   const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
+
+  if (PPUclock.scanline === spriteOverflowSetScanline && dot === spriteOverflowSetDot) {
+    SET_SPRITE_OVERFLOW();
+    spriteOverflowSetScanline = -1;
+    spriteOverflowSetDot = -1;
+  }
 
   if (dot === 1 && oamCorruptPending && ren) {
     oamCorruptDoCopyRow(oamCorruptSeedRow);
@@ -855,16 +874,6 @@ function startPPULoop() {
 
       ppuTick();
       PPUclock.dot++;
-
-      if (PPUclock.scanline === 260 && (PPUclock.dot === 339 || PPUclock.dot === 340)){
-      CLEAR_SPRITE0_HIT();
-      CLEAR_SPRITE_OVERFLOW();
-      }
-
-      if (PPUclock.scanline === 261 && (PPUclock.dot === 0)){
-      CLEAR_SPRITE0_HIT();
-      CLEAR_SPRITE_OVERFLOW();
-      }
 
       ppuCycles++;
     }
