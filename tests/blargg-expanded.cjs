@@ -44,7 +44,7 @@ for(const group of groups){
  const dir=path.join(root,group);
  if(!fs.existsSync(dir)){results.push({rom:group,status:null,error:'missing directory'});continue;}
  for(const file of fs.readdirSync(dir).filter(p=>p.endsWith('.nes')).sort()){
-  const rom=fs.readFileSync(path.join(dir,file)),e=createEmulator();let status=null,text='',error=null;
+  const rom=fs.readFileSync(path.join(dir,file)),e=createEmulator();let status=null,text='',error=null,classification='passfail';
   try{
    e.load(new Uint8Array(rom));
    // The two legacy MMC3 revision ROMs intentionally target different IRQ
@@ -120,6 +120,33 @@ for(const group of groups){
     }
    }
 
+   // The 2005 PPU suite predates the modern $6000 protocol. Its shared
+   // prefix stores its final result in zero-page $F0, where 1 means pass.
+   // power_up_palette is explicitly machine-specific, so report it as
+   // informational rather than treating a differing power-on palette as fail.
+   if(status===null && group==='blargg_ppu_tests_2005.09.15b'){
+     const legacy=e.state().ram[0xF0]&0xFF;
+     if(file==='power_up_palette.nes'){
+       classification='informational';
+       status=0;
+       text=legacy===1?'Informational: reference power-up palette matched':
+         'Informational: power-up palette differs (result '+legacy+')';
+     } else if(legacy){
+       status=legacy===1?0:legacy;
+       text=legacy===1?'Passed':'Failed #'+legacy;
+     }
+   }
+
+   // These four very old DMC ROMs have no source or documented machine-readable
+   // pass byte in the pinned archive. The archive's test manifest marks each as
+   // a 60-frame pass case, but without a self-reporting protocol we keep them
+   // explicitly diagnostic-only instead of inventing a pass/fail assertion.
+   if(status===null && group==='dmc_tests'){
+     classification='diagnostic';
+     status=0;
+     text='Diagnostic-complete (upstream manifest: 60-frame pass case)';
+   }
+
    // Two DMC/$2007 timing ROMs are observational by design: they print a CRC
    // rather than a pass/fail status. Their CRC accumulator is the first six
    // bytes of the linker ZEROPAGE segment ($10...), with checksum at $10-$13.
@@ -136,7 +163,7 @@ for(const group of groups){
    }
   }catch(ex){error=String(ex);}
   const st=e.state();
-  const result={rom:group+'/'+file,sha256:crypto.createHash('sha256').update(rom).digest('hex'),status,text,error,cycles:st.cpuCycles};
+  const result={rom:group+'/'+file,sha256:crypto.createHash('sha256').update(rom).digest('hex'),status,text,error,classification,cycles:st.cpuCycles};
   if(status===null&&!error){
    result.pc=st.pc;result.f0=st.ram[0xF0];result.f8=st.ram[0xF8];
    if(group==='dmc_tests'){
@@ -154,7 +181,9 @@ for(const group of groups){
 const summary={
  shard,
  total:results.length,
- pass:results.filter(r=>r.status===0&&!r.error).length,
+ pass:results.filter(r=>r.status===0&&!r.error&&r.classification==='passfail').length,
+ informational:results.filter(r=>r.status===0&&!r.error&&r.classification==='informational').length,
+ diagnostic:results.filter(r=>r.status===0&&!r.error&&r.classification==='diagnostic').length,
  fail:results.filter(r=>r.status!==null&&r.status!==0).length,
  noProtocol:results.filter(r=>r.status===null&&!r.error).length,
  errors:results.filter(r=>r.error).length
