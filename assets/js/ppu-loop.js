@@ -172,6 +172,7 @@ let secOAMFetchInterrupted = false;
 let frozenSecondaryFetchApplied = false;
 let accuracyCoinFrozenFetchTrace = [];
 let accuracyCoinScanline0Trace = [];
+let accuracyCoinScanline0LateTrace = [];
 let preRenderOAMEvalStarted = false; // late-enable scanline-0 gate
 let ppuOAMDataBus = 0xFF;
 let spriteOverflowSetScanline = -1;
@@ -692,6 +693,27 @@ function ppuBackgroundRead(addr, kind) {
 function preRenderScanline(dot) {
   const ren = renderingNow();
 
+  const scan0OAMSignature =
+    (OAM[0] & 0xFF) === 0x00 &&
+    (OAM[1] & 0xFF) === 0xC6 &&
+    (OAM[2] & 0xFF) === 0x00 &&
+    (OAM[3] & 0xFF) === 0x80;
+  if (scan0OAMSignature &&
+      [60,63,64,65,66,67,68,69,70,72,80,96,128,160,192,224,255,256,257,258,260,264,272,288,304,320,339,340].includes(dot) &&
+      accuracyCoinScanline0LateTrace.length < 160) {
+    accuracyCoinScanline0LateTrace.push({
+      event:'pre',
+      frame:PPUclock.frame|0,odd:!!PPUclock.oddFrame,dot:dot|0,
+      mask:PPUMASK&0x18,oamMask:ppuOAMMaskBits()&0x18,
+      visualMask:ppuEffectiveMask()&0x18,
+      evalStarted:!!preRenderOAMEvalStarted,
+      secAddr:secOAMAddr&0x1F,priAddr:secOAMPrimaryAddr&0xFF,
+      frozen:!!secOAMAddrOverflow,
+      sec:Array.from(secondaryOAM.slice(0,8)),
+      nextCount:spritesNext.count|0,nextSpr0:spritesNext.sprite0ListIndex|0
+    });
+  }
+
   if (dot === 1) preRenderOAMEvalStarted = false;
   if (dot === 65 && ppuOAMMaskBits() !== 0) preRenderOAMEvalStarted = true;
 
@@ -817,6 +839,20 @@ function visibleScanline(dot) {
   }
 
   if (dot === 1) {
+    if (PPUclock.scanline === 0 &&
+        (OAM[0]&0xFF)===0x00 && (OAM[1]&0xFF)===0xC6 &&
+        (OAM[2]&0xFF)===0x00 && (OAM[3]&0xFF)===0x80 &&
+        accuracyCoinScanline0LateTrace.length < 160) {
+      accuracyCoinScanline0LateTrace.push({
+        event:'line0',frame:PPUclock.frame|0,odd:!!PPUclock.oddFrame,dot:dot|0,
+        mask:PPUMASK&0x18,oamMask:ppuOAMMaskBits()&0x18,
+        visualMask:ppuEffectiveMask()&0x18,evalStarted:!!preRenderOAMEvalStarted,
+        secAddr:secOAMAddr&0x1F,priAddr:secOAMPrimaryAddr&0xFF,
+        frozen:!!secOAMAddrOverflow,sec:Array.from(secondaryOAM.slice(0,8)),
+        nextCount:spritesNext.count|0,nextSpr0:spritesNext.sprite0ListIndex|0,
+        curCount:spritesCur.count|0,curSpr0:spritesCur.sprite0ListIndex|0
+      });
+    }
     if (PPUclock.scanline === 0 && accuracyCoinScanline0Trace.length < 64) {
       accuracyCoinScanline0Trace.push({
         event:'line0-before-swap',
