@@ -215,6 +215,25 @@ test('odd-frame skip latch keeps its existing raw PPUMASK timing boundary',()=>{
  assert.deepEqual(e.evaluate('[renderingNow(),oddSkipRendering]'),[true,false]);
 });
 
+test('$2002 read on pre-render dot 1 latches vblank but sees cleared sprite flags',()=>{
+ const e=emulator();
+ e.evaluate('PPUSTATUS=0xe0;openBus.PPU=0;PPUclock.scanline=261;PPUclock.dot=1');
+ assert.equal(e.evaluate('checkReadOffset(0x2002)&0xe0'),0x80);
+ assert.equal(e.evaluate('PPUSTATUS&0xe0'),0x60);
+});
+
+test('$2002 read sees sprite overflow when the scheduled transition occurs on that dot',()=>{
+ const e=emulator();
+ e.evaluate('PPUSTATUS=0x40;openBus.PPU=0;spriteOverflowSetScanline=10;spriteOverflowSetDot=131;PPUclock.scanline=10;PPUclock.dot=131');
+ assert.equal(e.evaluate('checkReadOffset(0x2002)&0x60'),0x60);
+});
+
+test('ninth consecutive in-range sprite schedules overflow at evaluation dot 131',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUSTATUS=0;OAM.fill(0xff);for(let i=0;i<9;i++){OAM[i*4]=0;OAM[i*4+1]=1;OAM[i*4+2]=0;OAM[i*4+3]=0;}PPUclock.scanline=0;evalSpritesForScanline(spritesNext,1)');
+ assert.deepEqual(e.evaluate('[spriteOverflowSetScanline,spriteOverflowSetDot,PPUSTATUS&0x20]'),[0,131,0]);
+});
+
 test('background shifter advances after pixel zero without duplicating it',()=>{
  const e=emulator();e.evaluate('spriteXForceZeroNextFrame=false;PPUMASK=0x0a;fineX=0;PPUclock.scanline=0;PPUclock.dot=1;nextLine.t0={lo:0x80,hi:0,at:0};nextLine.t1={lo:0,hi:0,at:0};PALETTE_RAM[0]=0;PALETTE_RAM[1]=0x21;visibleScanline(1);PPUclock.dot=2;visibleScanline(2)');
  assert.deepEqual(e.evaluate('Array.from(paletteIndexFrame.slice(0,2))'),[0x21,0]);
