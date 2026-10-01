@@ -212,7 +212,7 @@ function checkReadOffset(address) {
             // The CPU read starts the PPU DATA state machine. The refill is
             // deferred; while rendering, its eventual external read captures
             // the normal fetch cadence instead of reading v immediately.
-            ppuCpu2007BufferCaptureAt = ppuCycles + 4;
+            ppuCpu2007BufferCaptureAt = ppuCycles + ppuCpu2007CaptureDelay;
           } else if (vv < 0x2000) {
             VRAM_DATA = cartridgeChrRead(vv) & 0xFF;
           } else {
@@ -228,7 +228,7 @@ function checkReadOffset(address) {
           // Palette RAM is internal, but the normal external-buffer reload
           // still comes from the mirrored nametable address.
           if (duringRendering) {
-            ppuCpu2007BufferCaptureAt = ppuCycles + 4;
+            ppuCpu2007BufferCaptureAt = ppuCycles + ppuCpu2007CaptureDelay;
           } else {
             const ntMirror = vv & 0x2FFF;
             const ntAddr = mapNT(ntMirror);
