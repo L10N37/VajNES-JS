@@ -153,23 +153,28 @@ function checkReadOffset(address) {
 
       // OAMDATA
       case 0x2004: {
-
         const oamAddr = OAMADDR & 0xFF;
-        let v = OAM[oamAddr] & 0xFF;
+        let result = OAM[oamAddr] & 0xFF;
 
-        if ((oamAddr & 3) === 2) v &= 0xE3;
+        const renderLine =
+          current.scanline === 261 ||
+          (current.scanline >= 0 && current.scanline <= 239);
 
-        const visible = current.scanline >= 0 && current.scanline <= 239;
-        let result = v;
-
-        if (renderingNow() && visible) {
-          if (current.dot >= 1 && current.dot <= 64) result = 0xFF;
-          else if (current.dot >= 257 && current.dot <= 320) result = 0xFF;
+        if (renderingNow() && renderLine) {
+          if (current.dot >= 1 && current.dot <= 64) {
+            result = 0xFF;
+          } else if (current.dot >= 65 && current.dot <= 320) {
+            result = ppuOAMDataBus & 0xFF;
+          } else if (current.dot >= 321 && current.dot <= 340) {
+            result = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+          }
+        } else if ((oamAddr & 3) === 2) {
+          // Attribute bits 2-4 are not implemented in primary OAM.
+          result &= 0xE3;
         }
 
         openBus.PPU = result & 0xFF;
         openBus.ppuDecayTimer = 1789772;
-
         raw = result;
         break;
       }
