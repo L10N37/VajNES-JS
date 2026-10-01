@@ -74,8 +74,10 @@ function mapper(nesHeader) {
       // CHR type: if no CHR banks, it's CHR RAM
       chrIsRAM = (chrSize === 0);
 
-      // Load ups of MMC3 games are handled directly in readFile
+      // NES 2.0 submapper 4 selects NEC/old MMC3 zero-reload IRQ behavior.
+      mmc3ConfigureFromHeader(nesHeader);
 
+      // Load ups of MMC3 games are handled directly in readFile
       resetCPU();
       break;
     }

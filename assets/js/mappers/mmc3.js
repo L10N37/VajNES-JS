@@ -451,7 +451,19 @@ function mapper4_chr_write(address, value)
 // ============================ //
 // Sharp MMC3B/C behaviour. The IRQ output is a latch, separate from enable.
 const mmc3_irq = {scanlineCounter:0,latch:0,reload:false,enabled:false,
-  prevA12:0,lowSince:0};
+  prevA12:0,lowSince:0,variant:"sharp"};
+
+function mmc3SetIrqVariant(variant) {
+  mmc3_irq.variant = variant === "nec" ? "nec" : "sharp";
+}
+
+function mmc3ConfigureFromHeader(header) {
+  const nes2 = ((header[7] >> 2) & 3) === 2;
+  const submapper = nes2 ? (header[8] >>> 4) : 0;
+  // NES 2.0 mapper 4 submapper 4 is the NEC/old IRQ behaviour.
+  // Submapper 0 and MMC6-style configurations use Sharp zero-reload IRQs.
+  mmc3SetIrqVariant(nes2 && submapper === 4 ? "nec" : "sharp");
+}
 function mmc3Reset() {
   Object.assign(MMC3.control,{prgMode:"PRG_SWAP_8000",chrMode:"CHR_NORMAL",
     selectedRegister:"CHR_BANK_0",prgRamEnabled:true,prgRamWriteProtect:false});
@@ -469,11 +481,23 @@ function mmc3Irq(addr) {
   // pulses are rejected. Sub-cycle M2 phase differences remain unmodelled.
   if(high && !mmc3_irq.prevA12 &&
       ppuCycles-mmc3_irq.lowSince>=9) {
-    if(mmc3_irq.scanlineCounter===0 || mmc3_irq.reload)
+    const wasZero = mmc3_irq.scanlineCounter === 0;
+    const forcedReload = mmc3_irq.reload;
+
+    if(wasZero || forcedReload)
       mmc3_irq.scanlineCounter=mmc3_irq.latch;
-    else --mmc3_irq.scanlineCounter;
+    else
+      --mmc3_irq.scanlineCounter;
+
     mmc3_irq.reload=false;
-    if(mmc3_irq.scanlineCounter===0 && mmc3_irq.enabled)irqAssert.mmc3=true;
+
+    if(mmc3_irq.scanlineCounter===0 && mmc3_irq.enabled) {
+      // Sharp MMC3B/C: zero reload asserts every qualified A12 edge.
+      // NEC/old MMC3: automatic reload after a naturally reached zero does
+      // not reassert; a decrement-to-zero or explicit $C001 reload does.
+      if(mmc3_irq.variant==="sharp" || forcedReload || !wasZero)
+        irqAssert.mmc3=true;
+    }
   }
   mmc3_irq.prevA12=high;
 }

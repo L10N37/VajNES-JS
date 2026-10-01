@@ -153,78 +153,68 @@ function checkReadOffset(address) {
 
       // OAMDATA
       case 0x2004: {
-
         const oamAddr = OAMADDR & 0xFF;
-        let v = OAM[oamAddr] & 0xFF;
+        let result = OAM[oamAddr] & 0xFF;
 
-        if ((oamAddr & 3) === 2) v &= 0xE3;
+        const renderLine =
+          current.scanline === 261 ||
+          (current.scanline >= 0 && current.scanline <= 239);
 
-        const visible = current.scanline >= 0 && current.scanline <= 239;
-        let result = v;
+        if (renderingNow() && renderLine) {
+          // During rendering $2004 sees the internal OAM data bus rather than
+          // a fresh primary-OAM read.  After the sprite fetch window the bus
+          // settles on the current secondary-OAM address.
+          result = current.dot >= 321
+            ? (secondaryOAM[secOAMAddr & 0x1F] & 0xFF)
+            : (ppuOAMDataBus & 0xFF);
 
-        if (renderingNow() && visible) {
-          if (current.dot >= 1 && current.dot <= 64) result = 0xFF;
-          else if (current.dot >= 257 && current.dot <= 320) result = 0xFF;
+        } else if ((oamAddr & 3) === 2) {
+          result &= 0xE3;
         }
 
         openBus.PPU = result & 0xFF;
         openBus.ppuDecayTimer = 1789772;
-
         raw = result;
         break;
       }
 
       case 0x2007: {
-        if (renderingNow() && (PPUclock.scanline <= 239 || PPUclock.scanline === 261))
-          ppuCpu2007ReadUntil = ppuCycles + 8;
+        const renderRead =
+          renderingNow() &&
+          (PPUclock.scanline <= 239 || PPUclock.scanline === 261);
+
+        // Keep the already-verified ALE+Read collision path intact.
+        if (renderRead) ppuCpu2007ReadUntil = ppuCycles + 8;
 
         const vv = VRAM_ADDR & 0x3FFF;
         const bufBefore = VRAM_DATA & 0xFF;
-
         let ret = 0x00;
 
         if (vv < 0x3F00) {
-
           ret = bufBefore;
-
-          let newVal = 0;
-
-          if (vv < 0x2000) {
-
-            newVal = cartridgeChrRead(vv) & 0xFF;
-
-            VRAM_DATA = newVal;
-
+          if (renderRead) {
+            VRAM_DATA = ppuRenderingFetchRead() & 0xFF;
+          } else if (vv < 0x2000) {
+            VRAM_DATA = cartridgeChrRead(vv) & 0xFF;
           } else {
-
-            const ntAddr = mapNT(vv);
-            VRAM_DATA = VRAM[ntAddr] & 0xFF;
+            VRAM_DATA = VRAM[mapNT(vv)] & 0xFF;
           }
         } else {
-
           const p = paletteIndex(vv);
           let palVal = PALETTE_RAM[p] & 0x3F;
+          if (PPUMASK & 0x01) palVal &= 0x30;
+          ret = (openBus.PPU & 0xC0) | palVal;
 
-          // Apply greyscale mask (PPUMASK bit 0)
-          if (PPUMASK & 0x01) {
-          palVal &= 0x30; // zero lower 4 bits
+          if (renderRead) {
+            VRAM_DATA = ppuRenderingFetchRead() & 0xFF;
+          } else {
+            VRAM_DATA = VRAM[mapNT(vv & 0x2FFF)] & 0xFF;
           }
-
-          ret = (openBus.PPU & 0xC0) | palVal;
-
-          // Return palette data immediately
-          ret = (openBus.PPU & 0xC0) | palVal;
-
-          // Reload VRAM buffer from nametable mirror ($2F00-$2FFF)
-          const ntMirror = vv & 0x2FFF;
-
-          const ntAddr = mapNT(ntMirror);
-          VRAM_DATA = VRAM[ntAddr] & 0xFF;
         }
 
         incrementPPUDataAddress();
         if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
-        
+
         raw = ret & 0xFF;
         openBus.PPU = raw;
         break;
@@ -543,6 +533,7 @@ function cpuWrite(addr, value) {
   addr &= 0xFFFF;
   value &= 0xFF;
   systemMemory[addr & 0x7FF] = value;
+
   openBus.internal = openBus.CPU = value;
 }
 

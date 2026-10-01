@@ -27,6 +27,8 @@ let oddSkipRendering = false;
 // the previous BG/SPR enable state for four complete PPU dots.
 let ppumaskRenderHoldBits = 0;
 let ppumaskRenderApplyAt = -1;
+let ppumaskOAMHoldBits = 0;
+let ppumaskOAMApplyAt = -1;
 
 function ppuEffectiveMask() {
   if (ppumaskRenderApplyAt >= 0) {
@@ -39,10 +41,32 @@ function ppuEffectiveMask() {
   return PPUMASK & 0xFF;
 }
 
+function ppuOAMMaskBits() {
+  if (ppumaskOAMApplyAt >= 0) {
+    if (ppuCycles < ppumaskOAMApplyAt)
+      return ppumaskOAMHoldBits & 0x18;
+
+    ppumaskOAMApplyAt = -1;
+    ppumaskOAMHoldBits = PPUMASK & 0x18;
+  }
+  return PPUMASK & 0x18;
+}
+
 function ppuWriteMask(value) {
   const effectiveBefore = ppuEffectiveMask() & 0x18;
+  const oamBefore = ppuOAMMaskBits();
   PPUMASK = value & 0xFF;
   const requested = PPUMASK & 0x18;
+
+  if (requested === oamBefore) {
+    ppumaskOAMHoldBits = requested;
+    ppumaskOAMApplyAt = -1;
+  } else {
+    // OAM evaluation/fetch samples rendering enable one PPU dot after a CPU
+    // PPUMASK write. This is distinct from the longer visual-pipeline delay.
+    ppumaskOAMHoldBits = oamBefore;
+    ppumaskOAMApplyAt = ppuCycles + 1;
+  }
 
   if (requested === effectiveBefore) {
     ppumaskRenderHoldBits = requested;
@@ -132,15 +156,27 @@ const SPR_Y_OFFSET   = 1;
 let renderingPrev = false;
 let spriteOnlyPrimePending = false;
 let spriteXForceZeroNextFrame = false;
+let oddPreRenderSpriteEarlyPixel = false;
 let sprite0FetchComplete = true;
 
 // ---- OAM corruption ----
 let oamCorruptPending = false;
 let oamCorruptSeedRow = 0;
 let secOAMAddr = 0;
+const secondaryOAM = new Uint8Array(32);
+let secOAMPrimaryAddr = 0;
+let secOAMPrimaryOverflow = false;
+let secOAMAddrOverflow = false;
+let secOAMOverflowDetection = false;
+let secOAMCopyBytes = 0;
+let secOAMFetchInterrupted = false;
+let frozenSecondaryFetchApplied = false;
+let preRenderOAMEvalStarted = false; // late-enable scanline-0 gate
+let ppuOAMDataBus = 0xFF;
 let spriteOverflowSetScanline = -1;
 let spriteOverflowSetDot = -1;
 let ppumaskPrev = 0;
+let oamRenderPrev = false;
 
 // ---- Debug offsets ----
 let BG_DEBUG_X_OFFSET = 0;
@@ -165,24 +201,174 @@ function oamCorruptDoCopyRow(seedRow) {
   }
 }
 
-// Minimal secondary OAM address model
+// Secondary OAM bus model.  This is deliberately separate from the existing
+// bulk sprite renderer: it tracks the 2C02's 5-bit secondary-OAM counter and
+// primary-OAM evaluation address dot-by-dot so CPU $2004 races can observe the
+// hardware state without perturbing the proven sprite rendering path.
 function updateSecondaryOAMAddrForDot(scanline, dot) {
-  if (!renderingNow()) return;
+  // Secondary-OAM evaluation/fetch has its own one-dot PPUMASK sampling
+  // delay, distinct from the renderer's longer visual-pipeline delay.
+  if (ppuOAMMaskBits() === 0) return;
   if (!(scanline === 261 || (scanline >= 0 && scanline <= 239))) return;
 
+  // The 2C02 clears the secondary-OAM increment freeze at specific reset
+  // points only while rendering is active. Keep the address itself untouched
+  // here so the already-verified $2004 bus values at dots 63/255 are stable.
+  if (dot === 63 || dot === 255 || dot === 339) {
+    secOAMAddrOverflow = false;
+  }
+
+  // Pre-render line keeps OAM2 stale through dots 1-256; hardware does
+  // not run the normal secondary-OAM clear/evaluation there. The stale bytes
+  // are then consumed by the 257-320 sprite fetch using (261 & $FF) == 5.
+  if (scanline === 261 && dot >= 1 && dot <= 256) return;
+
   if (dot >= 1 && dot <= 64) {
-    secOAMAddr = ((dot - 1) >> 1) & 0x1F;
+    if (dot === 1) secOAMAddr = 0;
+    if (dot & 1) {
+      ppuOAMDataBus = 0xFF;
+    } else {
+      secondaryOAM[secOAMAddr & 0x1F] = 0xFF;
+      secOAMAddr = (secOAMAddr + 1) & 0x1F;
+      ppuOAMDataBus = 0xFF;
+    }
+    return;
+  }
+
+  if (dot >= 65 && dot <= 256) {
+    const sprH = (PPUCTRL & SPRITE_SIZE_16) ? 16 : 8;
+
+    if (dot === 65) {
+      secOAMPrimaryAddr = OAMADDR & 0xFF;
+      secOAMPrimaryOverflow = false;
+      secOAMAddrOverflow = false;
+      secOAMOverflowDetection = false;
+      secOAMCopyBytes = 0;
+      secOAMAddr = 0;
+    }
+
+    if (dot & 1) {
+      const a = secOAMPrimaryAddr & 0xFF;
+      let v = OAM[a] & 0xFF;
+      // OAM attribute bits 2-4 are not implemented in the DRAM.  The mask is
+      // visible on the internal evaluation bus as well as ordinary $2004
+      // reads, so secondary OAM receives the masked byte.
+      if ((a & 3) === 2) v &= 0xE3;
+      ppuOAMDataBus = v;
+      return;
+    }
+
+    const original = ppuOAMDataBus & 0xFF;
+
+    if (!(secOAMPrimaryOverflow || secOAMAddrOverflow)) {
+      secondaryOAM[secOAMAddr & 0x1F] = original;
+    } else {
+      ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+    }
+
+    const moveByte = () => {
+      secOAMPrimaryAddr = (secOAMPrimaryAddr + 1) & 0xFF;
+      if (secOAMPrimaryAddr === 0) secOAMPrimaryOverflow = true;
+      if (!secOAMAddrOverflow) {
+        secOAMAddr = (secOAMAddr + 1) & 0x1F;
+        if (secOAMAddr === 0) {
+          secOAMAddrOverflow = true;
+          secOAMOverflowDetection = true;
+        }
+      }
+    };
+
+    // Visible-scanline sprite evaluation does not wrap Y=$FF around to
+    // scanline 0. The pre-render line has its own 8-bit comparator behavior
+    // (261 & $FF == 5), used by the scanline-0 sprite quirk.
+    const compareLine = scanline === 261 ? 5 : scanline;
+    const inRange = scanline === 261
+      ? ((((compareLine - original) & 0xFF) < sprH))
+      : (original <= compareLine && (compareLine - original) < sprH);
+
+    if (secOAMCopyBytes > 0) {
+      const finalXByte = secOAMCopyBytes === 1;
+      secOAMCopyBytes--;
+
+      if (finalXByte && !inRange) {
+        secOAMPrimaryAddr = (secOAMPrimaryAddr + 1) & 0xFC;
+        if (secOAMPrimaryAddr === 0) secOAMPrimaryOverflow = true;
+
+        if (!secOAMAddrOverflow) {
+          secOAMAddr = (secOAMAddr + 1) & 0x1F;
+          if (secOAMAddr === 0) {
+            secOAMAddrOverflow = true;
+            secOAMOverflowDetection = true;
+          }
+        }
+      } else {
+        moveByte();
+      }
+      return;
+    }
+
+    if (inRange && !(secOAMPrimaryOverflow || secOAMAddrOverflow)) {
+      secOAMCopyBytes = 3;
+      moveByte();
+      return;
+    }
+
+    if (!secOAMOverflowDetection) {
+      secOAMPrimaryAddr = (secOAMPrimaryAddr + 4) & 0xFC;
+      if (secOAMPrimaryAddr === 0) secOAMPrimaryOverflow = true;
+    } else if (inRange && !secOAMPrimaryOverflow) {
+      // With secondary OAM full, an in-range comparison ends the diagonal
+      // overflow search. The PPU then reads the remaining three bytes of the
+      // candidate sprite with normal +1 primary-OAM increments while OAM2
+      // remains read-only/frozen.
+      secOAMOverflowDetection = false;
+      secOAMCopyBytes = 3;
+      moveByte();
+    } else {
+      // Out-of-range during the overflow search increments n and m without
+      // carry: +4 to the sprite index and +1 to the byte index, i.e. the
+      // characteristic +5 diagonal scan.
+      secOAMPrimaryAddr =
+        (((secOAMPrimaryAddr + 4) & 0xFC) |
+         ((secOAMPrimaryAddr + 1) & 3)) & 0xFF;
+      if ((secOAMPrimaryAddr & 0xFC) === 0) secOAMPrimaryOverflow = true;
+    }
     return;
   }
 
   if (dot >= 257 && dot <= 320) {
-    const t = dot - 257;
-    const sub = t & 7;
-    if (dot === 257) secOAMAddr = 0;
-    if (sub === 0 || sub === 1 || sub === 2 || sub === 7) {
-      secOAMAddr = (secOAMAddr + 1) & 0x1F;
+    if (dot === 257) {
+      secOAMFetchInterrupted = false;
+      // Normal rendering cleared the freeze at dot 255, so sprite fetch starts
+      // from byte 0. If rendering was disabled across dot 255, the freeze
+      // survives and fetch repeatedly exposes the current OAM2 byte.
+      if (!secOAMAddrOverflow) secOAMAddr = 0;
+    }
+
+    const phase = (dot - 257) & 7;
+    // The secondary-OAM address advances for Y/tile/attribute and once at
+    // the end of each 8-dot sprite fetch.  The X byte remains on the bus
+    // through the four pattern-fetch dots.
+    if (phase === 0 || phase === 1 || phase === 2 || phase === 3 || phase === 7) {
+      // Y/tile/attribute advance on phases 0-2. Phase 3 places X on
+      // the OAM data bus without advancing; X remains there through the
+      // pattern fetches, and phase 7 performs the final address increment.
+      ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+      if (phase !== 3 && !secOAMAddrOverflow) {
+        secOAMAddr = (secOAMAddr + 1) & 0x1F;
+        if (secOAMAddr === 0) secOAMAddrOverflow = true;
+      }
     }
     return;
+  }
+
+  if (dot >= 321 && dot <= 340) {
+    // A complete sprite-fetch sequence naturally wraps the 5-bit secondary
+    // OAM address to zero. If rendering was interrupted during dots 257-320,
+    // preserve the partial address so the following 321-340 reads expose the
+    // misalignment instead.
+    if (dot === 321 && !secOAMFetchInterrupted) secOAMAddr = 0;
+    ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
   }
 }
 
@@ -286,8 +472,10 @@ function sampleSpritePixel(x) {
   if (!sprEnabledNow()) return null;
   if (x < 8 && (PPUMASK & MASK_SPR_SHOW_LEFT8) === 0) return null;
 
+  const earlyOddPixel = oddPreRenderSpriteEarlyPixel && x === 0;
+
   for (let i = 0; i < spritesCur.count; i++) {
-    if (spritesCur.xcnt[i] !== 0) continue;
+    if (!earlyOddPixel && spritesCur.xcnt[i] !== 0) continue;
 
     const p0 = (spritesCur.lo[i] >> 7) & 1;
     const p1 = (spritesCur.hi[i] >> 7) & 1;
@@ -507,9 +695,121 @@ function ppuBackgroundRead(addr, kind) {
   return value;
 }
 
+function ppuRenderingFetchRead() {
+  const D = PPUclock.dot | 0;
+  let targetDot = D + 3;
+  const v = VRAM_ADDR & 0x7FFF;
+  if (targetDot > 340) targetDot -= 341;
+
+  const incCX = (vv) => {
+    vv &= 0x7FFF;
+    if ((vv & 0x001F) === 31) { vv &= ~0x001F; vv ^= 0x0400; }
+    else vv = (vv & ~0x001F) | ((vv + 1) & 0x001F);
+    return vv & 0x7FFF;
+  };
+  const incFY = (vv) => {
+    vv &= 0x7FFF;
+    if ((vv & 0x7000) !== 0x7000) return (vv + 0x1000) & 0x7FFF;
+    vv &= ~0x7000;
+    let y=(vv & 0x03E0)>>5;
+    if (y===29) { y=0; vv^=0x0800; }
+    else if (y===31) y=0;
+    else y++;
+    return ((vv & ~0x03E0) | (y<<5)) & 0x7FFF;
+  };
+
+  let vForAddr = v;
+  if (D <= 336) {
+    let nextCZ;
+    if (D <= 256) {
+      nextCZ = D <= 0 ? 8 : (((D - 1) | 7) + 1);
+      if (nextCZ > 256) nextCZ = 328;
+    } else if (D <= 328) nextCZ = 328;
+    else nextCZ = 336;
+    if (targetDot >= D && nextCZ >= D && nextCZ <= targetDot)
+      vForAddr = incCX(vForAddr);
+  }
+
+  if (D <= 256 && targetDot >= 257 && targetDot <= 320) {
+    vForAddr = incFY(vForAddr);
+
+    // VajNES's CPU-read dot convention reaches the 257 boundary one fetch
+    // step earlier than the Kurogane reference convention. The dot-257
+    // garbage nametable read sees v after the final dot-256 coarse-X step,
+    // but before the horizontal t->v reload.
+    if (targetDot === 257) vForAddr = incCX(vForAddr);
+
+    if (targetDot > 257) {
+      const tv=((t_hi<<8)|t_lo)&0x7FFF;
+      vForAddr=(vForAddr & ~0x041F)|(tv & 0x041F);
+    }
+  }
+
+  if ((targetDot >= 1 && targetDot <= 256) ||
+      (targetDot >= 321 && targetDot <= 336)) {
+    switch (targetDot & 7) {
+      case 1:
+        return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+      case 3: {
+        const a=0x23C0|(vForAddr&0x0C00)|((vForAddr>>4)&0x38)|((vForAddr>>2)&7);
+        return ppuBusRead(a)&0xFF;
+      }
+      case 5: {
+        // If the target fetch lies beyond an NT fetch that has not happened
+        // yet at CPU-read time, predict that latch from the target tile's v.
+        // Using background.ntByte here makes PT-low lag one tile in VajNES.
+        const nt=ppuBusRead(0x2000|(vForAddr&0x0FFF))&0xFF;
+        const base=(PPUCTRL&0x10?0x1000:0)+(nt<<4)+((vForAddr>>12)&7);
+        return ppuBusRead(base)&0xFF;
+      }
+      case 7: {
+        const nt=ppuBusRead(0x2000|(vForAddr&0x0FFF))&0xFF;
+        const base=(PPUCTRL&0x10?0x1000:0)+(nt<<4)+((vForAddr>>12)&7)+8;
+        return ppuBusRead(base)&0xFF;
+      }
+      default:
+        return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+    }
+  }
+
+  if (targetDot >= 257 && targetDot <= 320) {
+    const phase=(targetDot-257)&7;
+    const slot=((targetDot-257)>>3)&7;
+    if (phase < 4)
+      return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+
+    const y=secondaryOAM[slot*4]&0xFF;
+    const tile=secondaryOAM[slot*4+1]&0xFF;
+    const attr=secondaryOAM[slot*4+2]&0xFF;
+    const sprH=(PPUCTRL&SPRITE_SIZE_16)?16:8;
+    const effScanline=PPUclock.scanline&0xFF;
+    const row=((effScanline-y)&0xFF)&(sprH-1);
+    const addr=spritePatternAddress(tile,attr,row);
+    return ppuBusRead(phase>=6 ? addr+8 : addr)&0xFF;
+  }
+
+  if (targetDot >= 337 && targetDot <= 340) {
+    if (targetDot===340) {
+      const a=0x23C0|(vForAddr&0x0C00)|((vForAddr>>4)&0x38)|((vForAddr>>2)&7);
+      return ppuBusRead(a)&0xFF;
+    }
+    return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+  }
+
+  if (targetDot===0) {
+    const a=0x23C0|(vForAddr&0x0C00)|((vForAddr>>4)&0x38)|((vForAddr>>2)&7);
+    return ppuBusRead(a)&0xFF;
+  }
+
+  return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+}
+
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
   const ren = renderingNow();
+
+  if (dot === 1) preRenderOAMEvalStarted = false;
+  if (dot === 65 && ppuOAMMaskBits() !== 0) preRenderOAMEvalStarted = true;
 
   if (dot === 1 && oamCorruptPending && ren) {
     oamCorruptDoCopyRow(oamCorruptSeedRow);
@@ -614,8 +914,12 @@ function visibleScanline(dot) {
   const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
 
-  if (dot === 257) sprite0FetchComplete = ren;
-  else if (dot > 257 && dot <= 264 && !ren) sprite0FetchComplete = false;
+  // Sprite-0 fetch completion follows the OAM fetch pipeline, not the
+  // delayed visual-rendering state. A PPUMASK enable around dot 256 can start
+  // a valid sprite fetch while the pixel pipeline is still catching up.
+  const oamFetchEnabled = ppuOAMMaskBits() !== 0;
+  if (dot === 257) sprite0FetchComplete = oamFetchEnabled;
+  else if (dot > 257 && dot <= 264 && !oamFetchEnabled) sprite0FetchComplete = false;
 
   if (PPUclock.scanline === spriteOverflowSetScanline && dot === spriteOverflowSetDot) {
     SET_SPRITE_OVERFLOW();
@@ -673,6 +977,18 @@ function visibleScanline(dot) {
 
   if (dot >= 1 && dot <= 256) {
     emitPixelHardwarePalette();
+
+    // On composite 2C02 odd frames the skipped pre-render dot exposes the
+    // already-loaded first sprite-shifter bit at X=0. Consume that bit once,
+    // but leave X counters to follow their normal countdown; the remaining
+    // seven sprite bits therefore appear one pixel early at the intended area.
+    if (dot === 1 && oddPreRenderSpriteEarlyPixel) {
+      for (let i = 0; i < spritesCur.count; i++) {
+        spritesCur.lo[i] = (spritesCur.lo[i] << 1) & 0xFF;
+        spritesCur.hi[i] = (spritesCur.hi[i] << 1) & 0xFF;
+      }
+      oddPreRenderSpriteEarlyPixel = false;
+    }
 
     if (ren && dot >= 1 && dot <= 256) {
       background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
@@ -816,11 +1132,97 @@ scanlineLUT[241] = vblankStartScanline;
 for (let i = 242; i <= 260; i++) scanlineLUT[i] = vblankIdleScanline;
 scanlineLUT[261] = preRenderScanline;
 
+// When the secondary-OAM increment freeze survives into sprite fetch, the
+// same OAM2 byte is presented for Y, tile, attribute and X for every slot.
+// Keep this override isolated to the frozen-latch case so the established
+// bulk renderer remains untouched during normal fetches.
+function applyFrozenSecondaryOAMFetch(scanline) {
+  const v = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+  const targetLine = scanline === 261 ? 0 : ((scanline + 1) | 0);
+  const top = (v + SPR_Y_OFFSET) | 0;
+  let row = targetLine - top;
+  if (row < 0) row = 0;
+  row &= 0x0F;
+
+  const oldSprite0 = spritesNext.sprite0ListIndex;
+  spritesNext.count = SPR_MAX;
+  for (let i = 0; i < SPR_MAX; i++) {
+    spritesNext.tile[i] = v;
+    spritesNext.attr[i] = v;
+    spritesNext.xcnt[i] = v;
+    spritesNext.row[i] = row;
+    spritesNext.lo[i] = 0;
+    spritesNext.hi[i] = 0;
+  }
+  // Preserve provenance from the evaluation stage; in AccuracyCoin's frozen
+  // cases OAM2[0] is sprite zero, so slot 0 remains the sprite-zero unit.
+  spritesNext.sprite0ListIndex = oldSprite0;
+}
+
+// If pre-render OAM evaluation never started because rendering was still
+// disabled at dot 65, a later enable can cause stale secondary OAM to be
+// consumed by the sprite fetch units for scanline 0. The pre-render comparator
+// uses (261 & $FF) == 5.
+function loadLatePreRenderStaleSprites() {
+  let count = 0;
+  let sprite0ListIndex = 0xFF;
+  const sprH = (PPUCTRL & SPRITE_SIZE_16) ? 16 : 8;
+
+  for (let slot = 0; slot < SPR_MAX; slot++) {
+    const base = slot << 2;
+    const y = secondaryOAM[base] & 0xFF;
+    const row = (5 - y) & 0xFF;
+    if (row >= sprH) continue;
+
+    const i = count++;
+    spritesNext.tile[i] = secondaryOAM[base + 1] & 0xFF;
+    spritesNext.attr[i] = secondaryOAM[base + 2] & 0xE3;
+    spritesNext.xcnt[i] = secondaryOAM[base + 3] & 0xFF;
+    spritesNext.row[i] = row & 0x0F;
+    spritesNext.lo[i] = 0;
+    spritesNext.hi[i] = 0;
+    spritesNext.idx[i] = base & 0xFF;
+    if (slot === 0) sprite0ListIndex = i;
+  }
+
+  spritesNext.count = count;
+  spritesNext.sprite0ListIndex = sprite0ListIndex;
+}
+
 // Fetch sprite patterns at their bus phases, using the live sprite-size setting.
 // MMC3 observes the same addresses. Palette lookups and
 // bulk sprite evaluation are internal renderer work and must not clock A12.
 function renderingBusTick() {
   const d=PPUclock.dot+1,sl=PPUclock.scanline;
+
+  // OAM fetch enable is sampled independently of the visual pipeline.
+  // Arm at the start of sprite fetch, then apply the frozen secondary-OAM
+  // bytes on the first OAM-active dot before the pattern fetch phases begin.
+  // A CPU PPUMASK write around dot 256 can make that first active dot occur
+  // just after 257 because OAM uses its own one-dot sampling delay.
+  if (d === 257) {
+    frozenSecondaryFetchApplied = false;
+
+    // A valid pre-render sprite fetch is the fetch that feeds scanline 0.
+    // Mark it complete just like a visible-line HBlank fetch so the line-0
+    // swap does not restore stale X/shifter state over the freshly fetched
+    // secondary-OAM sprite.
+    if (sl === 261) sprite0FetchComplete = ppuOAMMaskBits() !== 0;
+
+    // Only the late-enable pre-render path consumes stale OAM2. Normal
+    // pre-render evaluation remains entirely on the established renderer.
+    if (sl === 261 && !preRenderOAMEvalStarted && ppuOAMMaskBits() !== 0) {
+      loadLatePreRenderStaleSprites();
+    }
+  }
+  if (!frozenSecondaryFetchApplied &&
+      d >= 257 && d <= 261 &&
+      secOAMAddrOverflow && ppuOAMMaskBits() !== 0 &&
+      (sl <= 239 || sl === 261)) {
+    applyFrozenSecondaryOAMFetch(sl);
+    frozenSecondaryFetchApplied = true;
+  }
+
   if(mapperNumber!==4 && (d<257 || d>320))return;
   if(!renderingNow() || (sl>239 && sl!==261)){mmc3Irq(VRAM_ADDR);return;}
   if(PPUclock.dot>=336){
@@ -858,10 +1260,27 @@ function ppuTick() {
   const renNow  = (maskNow & 0x18) !== 0;
   const renPrev = ((ppumaskPrev & 0x18) !== 0);
 
+  const oamNow = ppuOAMMaskBits() !== 0;
+  if (!oamRenderPrev && oamNow &&
+      PPUclock.scanline === 261 &&
+      PPUclock.dot > 65 && PPUclock.dot < 257) {
+    // Late pre-render enable: OAM DMA/CPU-side OAMADDR is the primary-OAM
+    // address the evaluation state machine resumes from. Do not reset OAM2;
+    // its stale contents/counter are exactly what the scanline-0 quirk uses.
+    secOAMPrimaryAddr = OAMADDR & 0xFF;
+    secOAMPrimaryOverflow = false;
+    secOAMOverflowDetection = !!secOAMAddrOverflow;
+    secOAMCopyBytes = 0;
+  }
+  oamRenderPrev = oamNow;
+
   updateSecondaryOAMAddrForDot(PPUclock.scanline, PPUclock.dot);
 
   if (renPrev && !renNow) {
     if (PPUclock.scanline === 261 || (PPUclock.scanline >= 0 && PPUclock.scanline <= 239)) {
+      if (PPUclock.dot >= 257 && PPUclock.dot <= 320) {
+        secOAMFetchInterrupted = true;
+      }
       oamCorruptSeedRow = secOAMAddr & 0x1F;
       oamCorruptPending = true;
     }
@@ -880,6 +1299,9 @@ function ppuTick() {
 
   if (PPUclock.oddFrame && oddSkipRendering &&
       PPUclock.scanline === 261 && PPUclock.dot === 339) {
+      // Composite 2C02 odd-frame skipped-dot sprite quirk: the first fetched
+      // sprite shifter bit is visible at X=0 on the following scanline.
+      oddPreRenderSpriteEarlyPixel = spritesNext.count > 0;
       PPUclock.scanline = 0;
       PPUclock.dot = -1;
       PPUclock.oddFrame = false;

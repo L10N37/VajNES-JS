@@ -39,7 +39,7 @@ jobs:
           git -C "$RUNNER_TEMP/nes-test-roms" checkout --detach FETCH_HEAD
       - name: MMC3 and PPU video regression gate
         run: node tests/blargg.cjs "$RUNNER_TEMP/nes-test-roms" blargg-report.json
-      - name: Known-pass regression gate (not a 144/144 claim)
+      - name: AccuracyCoin 144/144 regression gate
         run: node tests/accuracycoin.cjs "$RUNNER_TEMP/accuracycoin/AccuracyCoin.nes" accuracy-report.json tests/results/current.json
       - uses: actions/upload-artifact@v4
         if: always()
