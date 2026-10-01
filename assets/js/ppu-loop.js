@@ -235,16 +235,31 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
       }
     };
 
+    // Sprite Y/X comparisons use the low eight bits of the current PPU
+    // scanline.  On pre-render line 261 this is 5, which is observable by the
+    // scanline-0 sprite tests.
+    const inRange = ((((scanline & 0xFF) - original) & 0xFF) < sprH);
+
     if (secOAMCopyBytes > 0) {
+      const finalXByte = secOAMCopyBytes === 1;
       secOAMCopyBytes--;
-      moveByte();
+
+      if (finalXByte && !inRange) {
+        secOAMPrimaryAddr = (secOAMPrimaryAddr + 1) & 0xFC;
+        if (secOAMPrimaryAddr === 0) secOAMPrimaryOverflow = true;
+
+        if (!secOAMAddrOverflow) {
+          secOAMAddr = (secOAMAddr + 1) & 0x1F;
+          if (secOAMAddr === 0) {
+            secOAMAddrOverflow = true;
+            secOAMOverflowDetection = true;
+          }
+        }
+      } else {
+        moveByte();
+      }
       return;
     }
-
-    // Sprite Y is effectively compared with the low eight bits of the current
-    // PPU scanline.  On pre-render line 261 this is 5, which is observable by
-    // the scanline-0 sprite tests.
-    const inRange = ((((scanline & 0xFF) - original) & 0xFF) < sprH);
 
     if (inRange && !(secOAMPrimaryOverflow || secOAMAddrOverflow)) {
       secOAMCopyBytes = 3;
@@ -256,9 +271,11 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
       secOAMPrimaryAddr = (secOAMPrimaryAddr + 4) & 0xFC;
       if (secOAMPrimaryAddr === 0) secOAMPrimaryOverflow = true;
     } else if (inRange && !secOAMPrimaryOverflow) {
-      // The status-bit timing remains owned by the existing sprite evaluator;
-      // this latch only controls the secondary-OAM address behaviour.
+      // Continue through the remaining bytes of the misaligned sprite while
+      // the full secondary-OAM address remains frozen.
       secOAMOverflowDetection = false;
+      secOAMCopyBytes = 3;
+      moveByte();
     } else {
       secOAMPrimaryAddr =
         (((secOAMPrimaryAddr + 4) & 0xFC) |
