@@ -546,6 +546,17 @@ function cpuWrite(addr, value) {
   addr &= 0xFFFF;
   value &= 0xFF;
   systemMemory[addr & 0x7FF] = value;
+
+  // Temporary AccuracyCoin diagnostic: the second $2004 stress table is
+  // complete when its final byte at $654 becomes $80. Capture it before the
+  // evaluator/failure path reuses the scratch RAM.
+  if ((addr & 0x7FF) === 0x654 && value === 0x80 &&
+      systemMemory[0x541] === 0x80) {
+    console.log('TRACE2004_CASE2:' +
+      Array.from(systemMemory.slice(0x500, 0x655),
+        x => x.toString(16).padStart(2, '0')).join(' '));
+  }
+
   openBus.internal = openBus.CPU = value;
 }
 
