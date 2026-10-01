@@ -221,6 +221,11 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
     secOAMAddrOverflow = false;
   }
 
+  // Pre-render line keeps OAM2 stale through dots 1-256; hardware does
+  // not run the normal secondary-OAM clear/evaluation there. The stale bytes
+  // are then consumed by the 257-320 sprite fetch using (261 & $FF) == 5.
+  if (scanline === 261 && dot >= 1 && dot <= 256) return;
+
   if (dot >= 1 && dot <= 64) {
     if (dot === 1) secOAMAddr = 0;
     if (dot & 1) {
