@@ -107,6 +107,8 @@ let vFetch = 0;
 let ppuExternalLatchLow = 0;
 let ppuExternalData = 0;
 let ppuCpu2007ReadUntil = -1;
+let ppuCpu2007BufferCaptureAt = -1;
+let spriteFetchOldV = 0;
 let ppuCpu2006HybridUntil = -1;
 let ppuCpu2006HybridLow = 0;
 
@@ -794,6 +796,35 @@ function visibleScanline(dot) {
   const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
 
+  // Track the actual external data bus during sprite/dummy fetches. Background
+  // fetches already update ppuExternalData through ppuBackgroundRead().
+  if (ren && dot === 257) spriteFetchOldV = VRAM_ADDR & 0x7FFF;
+  if (ren && dot >= 258 && dot <= 320 && (dot & 1) === 0) {
+    const fetchPhase = (dot - 257) & 7;
+    const slot = (dot - 257) >> 3;
+    let fetchAddr;
+    if (fetchPhase === 1) {
+      // Dot 258 uses the nametable address latched before dot-257 horizontal
+      // reload; the second nametable read in each sprite slot uses live v.
+      const vv = (slot === 0) ? spriteFetchOldV : VRAM_ADDR;
+      fetchAddr = 0x2000 | (vv & 0x0FFF);
+    } else if (fetchPhase === 3) {
+      fetchAddr = 0x2000 | (VRAM_ADDR & 0x0FFF);
+    } else {
+      const address = slot < spritesNext.count
+        ? spritePatternAddress(spritesNext.tile[slot], spritesNext.attr[slot], spritesNext.row[slot])
+        : spritePatternAddress(255, 255, 0);
+      fetchAddr = address + (fetchPhase === 7 ? 8 : 0);
+    }
+    ppuExternalLatchLow = fetchAddr & 0xFF;
+    ppuExternalData = ppuBusRead(fetchAddr) & 0xFF;
+  } else if (ren && (dot === 338 || dot === 340)) {
+    // Final dummy background reads are nametable reads on the external bus.
+    const fetchAddr = 0x2000 | (VRAM_ADDR & 0x0FFF);
+    ppuExternalLatchLow = fetchAddr & 0xFF;
+    ppuExternalData = ppuBusRead(fetchAddr) & 0xFF;
+  }
+
   // Sprite-0 fetch completion follows the OAM fetch pipeline, not the
   // delayed visual-rendering state. A PPUMASK enable around dot 256 can start
   // a valid sprite fetch while the pixel pipeline is still catching up.
@@ -1175,6 +1206,15 @@ function ppuTick() {
     }
 
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
+
+  // A CPU $2007 read returns the old buffer immediately, but its external
+  // memory read completes several PPU dots later. During rendering that refill
+  // captures whatever value is on the shared PPU data bus at that time.
+  if (ppuCpu2007BufferCaptureAt >= 0 &&
+      ppuCycles >= ppuCpu2007BufferCaptureAt) {
+    VRAM_DATA = ppuExternalData & 0xFF;
+    ppuCpu2007BufferCaptureAt = -1;
+  }
 
   if (renNow2) {
     const sl = PPUclock.scanline | 0;
