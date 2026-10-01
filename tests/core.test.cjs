@@ -257,7 +257,7 @@ test('$2007 overlap can feed external PPU data into the next pattern-low fetch',
 
 test('second $2006 write captures the external low-address latch during rendering',()=>{
  const e=emulator();
- e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUclock.scanline=4;PPUclock.dot=180;ppuExternalLatchLow=0x19;writeToggle=1;t_hi=0x2f;t_lo=0;checkWriteOffset(0x2006,0)');
+ e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUclock.scanline=4;PPUclock.dot=180;VRAM_ADDR=0x2c18;writeToggle=1;t_hi=0x2f;t_lo=0;checkWriteOffset(0x2006,0)');
  assert.equal(e.evaluate('ppuCpu2006HybridLow'),0x19);
  assert.ok(e.evaluate('ppuCpu2006HybridUntil>=ppuCycles'));
 });
