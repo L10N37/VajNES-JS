@@ -40,6 +40,12 @@ for(let i=0;i<3000;i++) {
   }
   if(state.ram[0x35]===0 && state.ram[0x37]===144 && tests.every(t=>state.ram[t.address]!==0)) break;
 }
+const liveTrace654 = e.evaluate('accuracyCoinTrace654');
+for (const [i,trace] of liveTrace654.entries()) {
+  console.log('TRACE654['+i+'] value='+trace.value.toString(16).padStart(2,'0')+
+    ' error='+trace.errorCode+
+    ' table='+trace.table.map(x=>x.toString(16).padStart(2,'0')).join(' '));
+}
 const results=tests.map(t=>{
  const raw=state.ram[t.address];
  const status=raw===255?'skipped':raw===0?'not-completed':raw===3?'in-progress':raw&1?'pass':'fail';
