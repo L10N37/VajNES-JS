@@ -23,10 +23,9 @@ if(tests.length!==144) throw new Error('Test table mismatch');
 const e=createEmulator();e.load(new Uint8Array(rom));
 e.run(3000000);e.buttons(8);e.run(100000);e.buttons(0);
 let state;
-// Fixed maximum budget, with completion detection: no patching ROM, result bytes, or test selection.
-for(let i=0;i<100;i++) {
-  e.run(3000000);state=e.state();
-  if(i%10===9) console.error('Emulated cycles:',state.cpuCycles);
+for(let i=0;i<3000;i++) {
+  e.run(100000);state=e.state();
+  if(i%300===299) console.error('Emulated cycles:',state.cpuCycles);
   if(state.ram[0x35]===0 && state.ram[0x37]===144 && tests.every(t=>state.ram[t.address]!==0)) break;
 }
 const results=tests.map(t=>{
@@ -46,5 +45,5 @@ if(process.argv[4]) {
  const regressions=baseline.results.filter(t=>t.status==='pass' &&
    !results.some(r=>r.address===t.address && r.name===t.name && r.status==='pass'));
  console.log('Previously passing tests lost:',regressions.map(t=>t.name));
- process.exitCode=suiteFinished && !regressions.length && !counts.skipped && !counts['not-completed']?0:1;
+ process.exitCode=suiteFinished && counts.pass===144 && !regressions.length && !counts.skipped && !counts['not-completed']?0:1;
 } else process.exitCode=suiteFinished && counts.pass===144?0:1;
