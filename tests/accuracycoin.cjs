@@ -40,6 +40,15 @@ for(let i=0;i<3000;i++) {
   }
   if(state.ram[0x35]===0 && state.ram[0x37]===144 && tests.every(t=>state.ram[t.address]!==0)) break;
 }
+const oam2ReadTrace = e.evaluate('accuracyCoinOAM2ReadTrace');
+for (const [i,t] of oam2ReadTrace.entries()) {
+  console.log('OAM2READ['+i+'] sl='+t.scanline+' dot='+t.dot+
+    ' value='+t.value.toString(16).padStart(2,'0')+
+    ' addr='+t.secAddr.toString(16).padStart(2,'0')+
+    ' frozen='+(t.frozen?1:0)+' interrupted='+(t.interrupted?1:0)+
+    ' oam20='+t.oam20.toString(16).padStart(2,'0')+
+    ' oam24='+t.oam24.toString(16).padStart(2,'0'));
+}
 const stressSnapshots = e.evaluate('accuracyCoinStressSnapshots');
 for (const [i,trace] of stressSnapshots.entries()) {
   console.log('STRESSSNAP['+i+'] tag='+trace.tag+' error='+trace.errorCode+
