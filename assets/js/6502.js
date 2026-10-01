@@ -108,10 +108,6 @@ function resetCPU() {
 
   secOAMAddr = 0;
   secondaryOAM.fill(0xFF);
-  secondaryOAMPrimary.fill(0xFF);
-  secondaryFetchY.fill(0xFF);
-  secondaryFetchStart.fill(0);
-  secondaryFetchInRange.fill(0);
   secOAMPrimaryAddr = 0;
   secOAMPrimaryOverflow = false;
   secOAMAddrOverflow = false;
