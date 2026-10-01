@@ -108,14 +108,12 @@ function resetCPU() {
 
   secOAMAddr = 0;
   secondaryOAM.fill(0xFF);
-  secondaryOAMPrimary.fill(0);
-  secOAMOverflowed = false;
-  evalOAMAddrOverflowed = false;
-  evalOverflowDetection = false;
-  evalCopyBytes = 0;
-  evalOAMData = 0xFF;
+  secOAMPrimaryAddr = 0;
+  secOAMPrimaryOverflow = false;
+  secOAMAddrOverflow = false;
+  secOAMOverflowDetection = false;
+  secOAMCopyBytes = 0;
   ppuOAMDataBus = 0xFF;
-  evalTargetLine = 0;
   oamCorruptPending = false;
   oamCorruptSeedRow = 0;
 
