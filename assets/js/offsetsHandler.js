@@ -440,7 +440,7 @@ function checkWriteOffset(address, value) {
       } else {
           // Second write (low byte) — FIXED MASK
           if (renderingNow() && (PPUclock.scanline <= 239 || PPUclock.scanline === 261)) {
-            ppuCpu2006HybridLow = ppuExternalLatchLow & 0xFF;
+            ppuCpu2006HybridLow = (VRAM_ADDR + 1) & 0xFF;
             ppuCpu2006HybridUntil = ppuCycles + 8;
           }
           t = (t & 0xFF00) | value;
