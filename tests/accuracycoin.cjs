@@ -23,10 +23,21 @@ if(tests.length!==144) throw new Error('Test table mismatch');
 const e=createEmulator();e.load(new Uint8Array(rom));
 e.run(3000000);e.buttons(8);e.run(100000);e.buttons(0);
 let state;
-// Fixed maximum budget, with completion detection: no patching ROM, result bytes, or test selection.
-for(let i=0;i<100;i++) {
-  e.run(3000000);state=e.state();
-  if(i%10===9) console.error('Emulated cycles:',state.cpuCycles);
+const stress2004 = tests.find(t=>t.name==='$2004 Stress Test');
+let stress2004Captured = false;
+// Diagnostic branch: use smaller execution slices so the stress-test scratch
+// buffer can be captured before the following test reuses it.
+for(let i=0;i<3000;i++) {
+  e.run(100000);state=e.state();
+  if(i%300===299) console.error('Emulated cycles:',state.cpuCycles);
+  if (!stress2004Captured && stress2004) {
+    const v=state.ram[stress2004.address];
+    if (v!==0 && v!==3) {
+      console.log('TRACE2004:'+Array.from(state.ram.slice(0x500,0x655),
+        x=>x.toString(16).padStart(2,'0')).join(' '));
+      stress2004Captured=true;
+    }
+  }
   if(state.ram[0x35]===0 && state.ram[0x37]===144 && tests.every(t=>state.ram[t.address]!==0)) break;
 }
 const results=tests.map(t=>{
