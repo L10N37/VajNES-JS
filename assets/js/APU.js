@@ -61,16 +61,36 @@ const APU_LENGTH_TABLE = [10,254,20,2,40,4,80,6,160,8,60,10,14,12,26,14,
 const apuTiming = {
   cycle: 0, fiveStep: false, inhibitIRQ: false, resetDelay: 0,
   pendingFiveStep: false, enabled: 0, length: [0,0,0,0],
-  halt: [false,false,false,false], clearFrameIRQ: 0, frameFlag: false
+  halt: [false,false,false,false], clearFrameIRQ: 0, frameFlag: false,
+  last4017: 0
 };
 function apuResetTiming() {
   apuTiming.cycle=0; apuTiming.fiveStep=false; apuTiming.inhibitIRQ=false;
   apuTiming.resetDelay=0; apuTiming.pendingFiveStep=false;
   apuTiming.enabled=0; apuTiming.length.fill(0); apuTiming.halt.fill(false);
-  apuTiming.clearFrameIRQ=0; apuTiming.frameFlag=false;
+  apuTiming.clearFrameIRQ=0; apuTiming.frameFlag=false; apuTiming.last4017=0;
   irqAssert.frame=false;
   if(typeof NESAudio!=="undefined") NESAudio.reset(cpuCycles);
 }
+function apuWarmResetTiming() {
+  const last4017=apuTiming.last4017&0xC0;
+
+  // RESET acts like a write of $00 to $4015.
+  apuTiming.enabled=0;
+  apuTiming.length.fill(0);
+  irqAssert.dmcDma=false;
+  if(typeof dmcWrite4015==="function") dmcWrite4015(0);
+
+  // A pending frame IRQ is cleared. The frame counter keeps the mode/inhibit
+  // bits of the last $4017 write, as if that value were written again.
+  irqAssert.frame=false;
+  apuTiming.frameFlag=false;
+  apuTiming.clearFrameIRQ=0;
+  apuTiming.pendingFiveStep=!!(last4017&0x80);
+  apuTiming.inhibitIRQ=!!(last4017&0x40);
+  apuTiming.resetDelay=(cpuCycles&1)?4:3;
+}
+
 function apuQuarterFrame() {
   if(typeof NESAudio!=="undefined") NESAudio.quarter(cpuCycles);
 }
@@ -98,6 +118,7 @@ function apuClock() {
 }
 function apuTimingWrite(address,value) {
   if(address===0x4017) {
+    apuTiming.last4017=value&0xC0;
     apuTiming.pendingFiveStep=!!(value&0x80);
     apuTiming.inhibitIRQ=!!(value&0x40);
     if(apuTiming.inhibitIRQ) {irqAssert.frame=false;apuTiming.frameFlag=false;}
