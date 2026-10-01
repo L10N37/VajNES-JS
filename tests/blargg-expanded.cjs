@@ -137,7 +137,17 @@ for(const group of groups){
   }catch(ex){error=String(ex);}
   const st=e.state();
   const result={rom:group+'/'+file,sha256:crypto.createHash('sha256').update(rom).digest('hex'),status,text,error,cycles:st.cpuCycles};
-  if(status===null&&!error){result.pc=st.pc;result.f0=st.ram[0xF0];result.f8=st.ram[0xF8];}
+  if(status===null&&!error){
+   result.pc=st.pc;result.f0=st.ram[0xF0];result.f8=st.ram[0xF8];
+   if(group==='dmc_tests'){
+    const prgBanks=rom[4], prgSize=prgBanks*0x4000;
+    const cpuBase=prgSize===0x4000?0xC000:0x8000;
+    const prgOff=16+((st.pc-cpuBase)&(prgSize-1));
+    const lo=Math.max(16,prgOff-32),hi=Math.min(16+prgSize,prgOff+48);
+    result.terminalBytes=Array.from(rom.slice(lo,hi)).map(v=>v.toString(16).padStart(2,'0')).join(' ');
+    result.terminalOffset=prgOff-16;
+   }
+  }
   results.push(result);console.log('BLARGG_EXPANDED '+JSON.stringify(result));
  }
 }
