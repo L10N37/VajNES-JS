@@ -120,9 +120,20 @@
 // ===========================================================================
 (function wireOpacity() {
   const t = document.getElementById('transparency-slider');
-  t?.addEventListener('input', () => {
-    try { systemScreen.style.opacity = (t.value / 100); } catch {}
-  });
+
+  // Transparency belongs to the emulated picture only. The hover toolbar is
+  // UI and must stay fully opaque above the CRT/scanline layers.
+  try { systemScreen.style.opacity = '1'; } catch {}
+  if (t) {
+    try { canvas.style.opacity = (t.value / 100); } catch {}
+    t.addEventListener('input', () => {
+      try {
+        systemScreen.style.opacity = '1';
+        canvas.style.opacity = (t.value / 100);
+      } catch {}
+    });
+  }
+
   const i = document.getElementById('intensity-slider');
   i?.addEventListener('input', () => {
     try { grilleCanvas.style.opacity = (i.value / 100); } catch {}
@@ -138,32 +149,6 @@
   const openLink = document.querySelector('li:nth-child(2)'); // if you have a menu link
   openLink?.addEventListener('click', () => { if (modal) modal.style.display = 'block'; });
   okBtn   ?.addEventListener('click', () => { if (modal) modal.style.display = 'none'; });
-})();
-
-// ===========================================================================
-// 4) Test sources — mutually exclusive: Test Image, RGBA anim, Index anim
-// ===========================================================================
-(function wireTests() {
-  const img   = document.getElementById('test-image-checkbox');
-  const rgba  = document.getElementById('test-rgba-checkbox');
-  const index = document.getElementById('test-index-checkbox');
-
-  function select(kind) {
-    const H = window._grilleHelpers;
-    H.hardStopAll();          // nuke ANY running loops (tests + emulator)
-    H.clearMainCanvas();      // clean slate
-
-    if (kind === 'image') { H.setExclusive(img);   H.drawTestImage();  return; }
-    if (kind === 'rgba')  { H.setExclusive(rgba);  try { testRGBAAnim?.(); } catch(e){ globalThis.NES_DEBUG_LOGGING && console.error(e);} return; }
-    if (kind === 'index') { H.setExclusive(index); try { testIndexAnim?.(); } catch(e){ globalThis.NES_DEBUG_LOGGING && console.error(e);} return; }
-
-    H.setExclusive(null);
-    H.resumeIfNoneSelected();
-  }
-
-  img  ?.addEventListener('change', () => select(img.checked   ? 'image' : null));
-  rgba ?.addEventListener('change', () => select(rgba.checked  ? 'rgba'  : null));
-  index?.addEventListener('change', () => select(index.checked ? 'index' : null));
 })();
 
 // ===========================================================================
@@ -284,11 +269,6 @@
     // Redraw code-drawn scanlines
     try { window._scanlineRedraw?.(); } catch {}
 
-    // If Test Image is active, redraw it (canvas resize cleared pixels)
-    try {
-      const imgChecked = document.getElementById('test-image-checkbox')?.checked;
-      if (imgChecked) window._grilleHelpers?.drawTestImage?.();
-    } catch {}
   }
 
   // Observe all relevant canvases for size changes
