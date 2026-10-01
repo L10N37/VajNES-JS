@@ -139,6 +139,10 @@ let oamCorruptPending = false;
 let oamCorruptSeedRow = 0;
 let secOAMAddr = 0;
 const secondaryOAM = new Uint8Array(32);
+const secondaryOAMPrimary = new Uint8Array(8);
+const secondaryFetchY = new Uint8Array(8);
+const secondaryFetchStart = new Uint8Array(8);
+const secondaryFetchInRange = new Uint8Array(8);
 let secOAMPrimaryAddr = 0;
 let secOAMPrimaryOverflow = false;
 let secOAMAddrOverflow = false;
@@ -181,7 +185,10 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
   if (!(scanline === 261 || (scanline >= 0 && scanline <= 239))) return;
 
   if (dot >= 1 && dot <= 64) {
-    if (dot === 1) secOAMAddr = 0;
+    if (dot === 1) {
+      secOAMAddr = 0;
+      secondaryOAMPrimary.fill(0xFF);
+    }
     if (dot & 1) {
       ppuOAMDataBus = 0xFF;
     } else {
@@ -241,6 +248,7 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
     const inRange = ((((scanline & 0xFF) - original) & 0xFF) < sprH);
 
     if (inRange && !(secOAMPrimaryOverflow || secOAMAddrOverflow)) {
+      secondaryOAMPrimary[(secOAMAddr >> 2) & 7] = secOAMPrimaryAddr & 0xFF;
       secOAMCopyBytes = 3;
       moveByte();
       return;
@@ -263,14 +271,47 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
   }
 
   if (dot >= 257 && dot <= 320) {
-    if (dot === 257 && !secOAMAddrOverflow) secOAMAddr = 0;
+    if (dot === 257) {
+      if (!secOAMAddrOverflow) secOAMAddr = 0;
+      spritesNext.count = 0;
+      spritesNext.sprite0ListIndex = 0xFF;
+    }
 
+    const slot = (dot - 257) >> 3;
     const phase = (dot - 257) & 7;
-    // The secondary-OAM address advances for Y/tile/attribute and once at
-    // the end of each 8-dot sprite fetch.  The X byte remains on the bus
-    // through the four pattern-fetch dots.
-    if (phase === 0 || phase === 1 || phase === 2 || phase === 7) {
+    const sprH = (PPUCTRL & SPRITE_SIZE_16) ? 16 : 8;
+
+    if (phase === 0) {
+      secondaryFetchStart[slot] = secOAMAddr & 0x1F;
       ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+      secondaryFetchY[slot] = ppuOAMDataBus;
+    } else if (phase === 1) {
+      ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+      spritesNext.tile[slot] = ppuOAMDataBus;
+    } else if (phase === 2) {
+      ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+      spritesNext.attr[slot] = ppuOAMDataBus;
+    } else if (phase === 3) {
+      ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+      spritesNext.xcnt[slot] = ppuOAMDataBus;
+      const y = secondaryFetchY[slot] & 0xFF;
+      const targetLine = scanline === 261 ? 0 : ((scanline + 1) | 0);
+      const row = (targetLine - ((y + SPR_Y_OFFSET) | 0)) | 0;
+      secondaryFetchInRange[slot] = row >= 0 && row < sprH ? 1 : 0;
+      spritesNext.row[slot] = row & 0x0F;
+      spritesNext.lo[slot] = 0;
+      spritesNext.hi[slot] = 0;
+      spritesNext.idx[slot] =
+        secondaryOAMPrimary[(secondaryFetchStart[slot] >> 2) & 7] & 0xFF;
+      spritesNext.count = slot + 1;
+      if (spritesNext.idx[slot] < 4)
+        spritesNext.sprite0ListIndex = slot;
+    } else if (phase === 7) {
+      // X remains on the OAM data bus for the pattern-fetch portion.
+      ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+    }
+
+    if (phase === 0 || phase === 1 || phase === 2 || phase === 7) {
       if (!secOAMAddrOverflow) {
         secOAMAddr = (secOAMAddr + 1) & 0x1F;
         if (secOAMAddr === 0) secOAMAddrOverflow = true;
@@ -935,7 +976,7 @@ function renderingBusTick() {
       const fetchAddress=address+(phase===6?8:0);
       mmc3Irq(fetchAddress);
       if(slot<spritesNext.count) {
-        let data=ppuBusRead(fetchAddress);
+        let data=secondaryFetchInRange[slot] ? ppuBusRead(fetchAddress) : 0;
         if(spritesNext.attr[slot]&0x40)data=reverseByte(data);
         if(phase===4)spritesNext.lo[slot]=data;else spritesNext.hi[slot]=data;
       }
