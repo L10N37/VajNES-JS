@@ -125,6 +125,7 @@ const SPR_Y_OFFSET   = 1;
 let renderingPrev = false;
 let spriteOnlyPrimePending = false;
 let spriteXForceZeroNextFrame = false;
+let sprite0FetchComplete = true;
 
 // ---- OAM corruption ----
 let oamCorruptPending = false;
@@ -204,10 +205,11 @@ function spritePatternAddress(tileIndex, attr, rowInSprite) {
   return addrLo;
 }
 function evalSpritesForScanline(target, scanline) {
+  // Forced blank preserves secondary-OAM/staging contents.
+  if (!renderingNow()) return;
+
   target.count = 0;
   target.sprite0ListIndex = 0xFF;
-
-  if (!renderingNow()) return;
 
   const is8x16 = (PPUCTRL & SPRITE_SIZE_16) !== 0;
   const sprH   = is8x16 ? 16 : 8;
@@ -484,6 +486,9 @@ function ppuBusRead(addr) {
 function preRenderScanline(dot) {
   const ren = renderingNow();
 
+  if (dot === 257) sprite0FetchComplete = ren;
+  else if (dot > 257 && dot <= 264 && !ren) sprite0FetchComplete = false;
+
   if (dot === 1 && oamCorruptPending && ren) {
     oamCorruptDoCopyRow(oamCorruptSeedRow);
     oamCorruptPending = false;
@@ -573,10 +578,6 @@ function preRenderScanline(dot) {
     }
   }
 
-  if (dot === 339) {
-    spriteXForceZeroNextFrame = !renderingNow();
-  }
-
   if (dot === 340) {
     if (!ppuInitDone) ppuInitDone = true;
   }
@@ -585,6 +586,9 @@ function preRenderScanline(dot) {
 function visibleScanline(dot) {
   const ren   = renderingNow();
   const phase = (dot - 1) & 7;
+
+  if (dot === 257) sprite0FetchComplete = ren;
+  else if (dot > 257 && dot <= 264 && !ren) sprite0FetchComplete = false;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
 
   if (PPUclock.scanline === spriteOverflowSetScanline && dot === spriteOverflowSetDot) {
@@ -604,9 +608,11 @@ function visibleScanline(dot) {
       spriteOnlyPrimePending = false;
     }
 
-    const tmp = spritesCur;
-    spritesCur = spritesNext;
-    spritesNext = tmp;
+    if (sprite0FetchComplete) {
+      const tmp = spritesCur;
+      spritesCur = spritesNext;
+      spritesNext = tmp;
+    }
 
     background.bgShiftLo = (nextLine.t0.lo & 0xFF) << 8;
     background.bgShiftHi = (nextLine.t0.hi & 0xFF) << 8;
@@ -821,6 +827,13 @@ function ppuTick() {
   }
 
   ppumaskPrev = maskNow;
+
+  // Dot 339 controls whether freshly loaded sprite X counters enter counting
+  // mode on every rendering scanline, not just pre-render.
+  if (PPUclock.dot === 339 &&
+      (PPUclock.scanline === 261 || (PPUclock.scanline >= 0 && PPUclock.scanline <= 239))) {
+    spriteXForceZeroNextFrame = !renderingNow();
+  }
 
   const renNow2 = renderingNow();
   if (!renderingPrev && renNow2) {
