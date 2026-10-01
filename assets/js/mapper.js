@@ -33,7 +33,7 @@ function mapper(nesHeader) {
       prgRom = flatPrg; // normalize to 32KB flat
 
       // CHR-ROM untouched (CHR_ROM already loaded globally)
-      resetCPU(); // ensures consistent start state
+      powerOnCPU(); // ensures consistent start state
       break;
     }
 
@@ -42,13 +42,13 @@ function mapper(nesHeader) {
     // ==========================================================
     case 7: {
       axromInit(nesHeader);
-      resetCPU();
+      powerOnCPU();
       break;
     }
 
     case 2: {
       uxromInit(nesHeader);
-      resetCPU();
+      powerOnCPU();
       break;
     }
 
@@ -61,7 +61,7 @@ function mapper(nesHeader) {
       // Hand off to mmc1.js init
       mmc1Init(prgRom, CHR_ROM);
 
-      resetCPU();
+      powerOnCPU();
       break;
     }
 
@@ -78,14 +78,14 @@ function mapper(nesHeader) {
       mmc3ConfigureFromHeader(nesHeader);
 
       // Load ups of MMC3 games are handled directly in readFile
-      resetCPU();
+      powerOnCPU();
       break;
     }
 
     case 3: {
       cnromInit(nesHeader);
       chrIsRAM = false;
-      resetCPU();
+      powerOnCPU();
       break;
     }
 
@@ -93,21 +93,21 @@ function mapper(nesHeader) {
     case 10: {
       mmc24Init();
       chrIsRAM = false;
-      resetCPU();
+      powerOnCPU();
       break;
     }
 
     case 11: {
       colorDreamsInit();
       chrIsRAM = false;
-      resetCPU();
+      powerOnCPU();
       break;
     }
 
     case 66: {
       gxromInit();
       chrIsRAM = false;
-      resetCPU();
+      powerOnCPU();
       break;
     }
 
