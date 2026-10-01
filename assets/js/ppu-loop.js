@@ -243,10 +243,13 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
       }
     };
 
-    // Sprite Y/X comparisons use the low eight bits of the current PPU
-    // scanline.  On pre-render line 261 this is 5, which is observable by the
-    // scanline-0 sprite tests.
-    const inRange = ((((scanline & 0xFF) - original) & 0xFF) < sprH);
+    // Visible-scanline sprite evaluation does not wrap Y=$FF around to
+    // scanline 0. The pre-render line has its own 8-bit comparator behavior
+    // (261 & $FF == 5), used by the scanline-0 sprite quirk.
+    const compareLine = scanline === 261 ? 5 : scanline;
+    const inRange = scanline === 261
+      ? ((((compareLine - original) & 0xFF) < sprH))
+      : (original <= compareLine && (compareLine - original) < sprH);
 
     if (secOAMCopyBytes > 0) {
       const finalXByte = secOAMCopyBytes === 1;
