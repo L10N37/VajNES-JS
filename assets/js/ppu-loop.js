@@ -178,7 +178,10 @@ function oamCorruptDoCopyRow(seedRow) {
 // primary-OAM evaluation address dot-by-dot so CPU $2004 races can observe the
 // hardware state without perturbing the proven sprite rendering path.
 function updateSecondaryOAMAddrForDot(scanline, dot) {
-  if (!renderingNow()) return;
+  // Secondary-OAM evaluation/fetch responds to the CPU-visible PPUMASK state,
+  // not the renderer's delayed visual enable used for Battletoads. Keeping
+  // these timing domains separate is required for mid-fetch OAM2 alignment.
+  if ((PPUMASK & 0x18) === 0) return;
   if (!(scanline === 261 || (scanline >= 0 && scanline <= 239))) return;
 
   // The 2C02 clears the secondary-OAM increment freeze at specific reset
