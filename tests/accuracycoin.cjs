@@ -23,72 +23,10 @@ if(tests.length!==144) throw new Error('Test table mismatch');
 const e=createEmulator();e.load(new Uint8Array(rom));
 e.run(3000000);e.buttons(8);e.run(100000);e.buttons(0);
 let state;
-const stress2004 = tests.find(t=>t.name==='$2004 Stress Test');
-let stress2004Captured = false;
-// Diagnostic branch: use smaller execution slices so the stress-test scratch
-// buffer can be captured before the following test reuses it.
 for(let i=0;i<3000;i++) {
   e.run(100000);state=e.state();
   if(i%300===299) console.error('Emulated cycles:',state.cpuCycles);
-  if (!stress2004Captured && stress2004) {
-    const v=state.ram[stress2004.address];
-    if (v!==0 && v!==3) {
-      console.log('TRACE2004:'+Array.from(state.ram.slice(0x500,0x655),
-        x=>x.toString(16).padStart(2,'0')).join(' '));
-      stress2004Captured=true;
-    }
-  }
   if(state.ram[0x35]===0 && state.ram[0x37]===144 && tests.every(t=>state.ram[t.address]!==0)) break;
-}
-const scanline0Trace = e.evaluate('accuracyCoinScanline0Trace');
-for (const [i,t] of scanline0Trace.entries()) {
-  console.log('SCAN0['+i+'] event='+t.event+' frame='+t.frame+' odd='+(t.odd?1:0)+
-    ' dot='+t.dot+' oamMask='+t.oamMask.toString(16).padStart(2,'0')+
-    ' visualMask='+t.visualMask.toString(16).padStart(2,'0')+
-    ' addr='+t.secAddr.toString(16).padStart(2,'0')+' frozen='+(t.frozen?1:0)+
-    ' sec='+t.secondary.map(x=>x.toString(16).padStart(2,'0')).join(',')+
-    ' nextCount='+t.nextCount+' spr0='+t.nextSprite0+
-    ' tile0='+t.tile0.toString(16).padStart(2,'0')+
-    ' row0='+t.row0+' attr0='+t.attr0.toString(16).padStart(2,'0')+
-    ' x0='+t.x0.toString(16).padStart(2,'0'));
-}
-const frozenFetchTrace = e.evaluate('accuracyCoinFrozenFetchTrace');
-for (const [i,t] of frozenFetchTrace.entries()) {
-  console.log('FROZENFETCH['+i+'] sl='+t.scanline+' dot='+t.dot+
-    ' value='+t.value.toString(16).padStart(2,'0')+
-    ' addr='+t.secAddr.toString(16).padStart(2,'0')+
-    ' frozen='+(t.frozen?1:0)+
-    ' oamMask='+t.oamMask.toString(16).padStart(2,'0')+
-    ' visualMask='+t.visualMask.toString(16).padStart(2,'0')+
-    ' target='+t.targetLine+' row='+t.row+
-    ' oldCount='+t.oldCount+' oldSprite0='+t.oldSprite0+
-    ' oldTile0='+t.oldTile0.toString(16).padStart(2,'0')+
-    ' oldAttr0='+t.oldAttr0.toString(16).padStart(2,'0')+
-    ' oldX0='+t.oldX0.toString(16).padStart(2,'0'));
-}
-const oam2ReadTrace = e.evaluate('accuracyCoinOAM2ReadTrace');
-for (const [i,t] of oam2ReadTrace.entries()) {
-  console.log('OAM2READ['+i+'] sl='+t.scanline+' dot='+t.dot+
-    ' value='+t.value.toString(16).padStart(2,'0')+
-    ' addr='+t.secAddr.toString(16).padStart(2,'0')+
-    ' frozen='+(t.frozen?1:0)+' interrupted='+(t.interrupted?1:0)+
-    ' oam20='+t.oam20.toString(16).padStart(2,'0')+
-    ' oam24='+t.oam24.toString(16).padStart(2,'0'));
-}
-const scan0Late = e.evaluate('accuracyCoinScanline0LateTrace');
-for (const [i,x] of scan0Late.entries()) {
-  console.log('SCAN0LATE['+i+'] '+JSON.stringify(x));
-}
-const stressSnapshots = e.evaluate('accuracyCoinStressSnapshots');
-for (const [i,trace] of stressSnapshots.entries()) {
-  console.log('STRESSSNAP['+i+'] tag='+trace.tag+' error='+trace.errorCode+
-    ' table='+trace.table.map(x=>x.toString(16).padStart(2,'0')).join(' '));
-}
-const liveTrace654 = e.evaluate('accuracyCoinTrace654');
-for (const [i,trace] of liveTrace654.entries()) {
-  console.log('TRACE654['+i+'] value='+trace.value.toString(16).padStart(2,'0')+
-    ' error='+trace.errorCode+
-    ' table='+trace.table.map(x=>x.toString(16).padStart(2,'0')).join(' '));
 }
 const results=tests.map(t=>{
  const raw=state.ram[t.address];
