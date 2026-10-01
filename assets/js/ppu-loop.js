@@ -171,6 +171,7 @@ let secOAMCopyBytes = 0;
 let secOAMFetchInterrupted = false;
 let frozenSecondaryFetchApplied = false;
 let accuracyCoinFrozenFetchTrace = [];
+let accuracyCoinScanline0Trace = [];
 let ppuOAMDataBus = 0xFF;
 let spriteOverflowSetScanline = -1;
 let spriteOverflowSetDot = -1;
@@ -812,6 +813,25 @@ function visibleScanline(dot) {
   }
 
   if (dot === 1) {
+    if (PPUclock.scanline === 0 && accuracyCoinScanline0Trace.length < 64) {
+      accuracyCoinScanline0Trace.push({
+        event:'line0-before-swap',
+        frame:PPUclock.frame|0,
+        odd:!!PPUclock.oddFrame,
+        dot:dot|0,
+        oamMask:ppuOAMMaskBits()&0x18,
+        visualMask:ppuEffectiveMask()&0x18,
+        secAddr:secOAMAddr&0x1F,
+        frozen:!!secOAMAddrOverflow,
+        secondary:Array.from(secondaryOAM.slice(0,8)),
+        nextCount:spritesNext.count|0,
+        nextSprite0:spritesNext.sprite0ListIndex|0,
+        tile0:spritesNext.tile[0]&0xFF,
+        row0:spritesNext.row[0]&0xFF,
+        attr0:spritesNext.attr[0]&0xFF,
+        x0:spritesNext.xcnt[0]&0xFF
+      });
+    }
     if (spriteOnlyPrimePending && sprEnabledNow() && !bgEnabledNow()) {
       primeBGForSpriteOnly();
       spriteOnlyPrimePending = false;
@@ -1049,6 +1069,27 @@ function applyFrozenSecondaryOAMFetch(scanline) {
 // bulk sprite evaluation are internal renderer work and must not clock A12.
 function renderingBusTick() {
   const d=PPUclock.dot+1,sl=PPUclock.scanline;
+
+  if (sl === 261 && d >= 257 && d <= 261 &&
+      accuracyCoinScanline0Trace.length < 48) {
+    accuracyCoinScanline0Trace.push({
+      event:'prerender-fetch',
+      frame:PPUclock.frame|0,
+      odd:!!PPUclock.oddFrame,
+      dot:PPUclock.dot|0,
+      oamMask:ppuOAMMaskBits()&0x18,
+      visualMask:ppuEffectiveMask()&0x18,
+      secAddr:secOAMAddr&0x1F,
+      frozen:!!secOAMAddrOverflow,
+      secondary:Array.from(secondaryOAM.slice(0,8)),
+      nextCount:spritesNext.count|0,
+      nextSprite0:spritesNext.sprite0ListIndex|0,
+      tile0:spritesNext.tile[0]&0xFF,
+      row0:spritesNext.row[0]&0xFF,
+      attr0:spritesNext.attr[0]&0xFF,
+      x0:spritesNext.xcnt[0]&0xFF
+    });
+  }
 
   // OAM fetch enable is sampled independently of the visual pipeline.
   // Arm at the start of sprite fetch, then apply the frozen secondary-OAM
