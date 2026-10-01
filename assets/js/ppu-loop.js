@@ -205,7 +205,13 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
     }
 
     if (dot & 1) {
-      ppuOAMDataBus = OAM[secOAMPrimaryAddr & 0xFF] & 0xFF;
+      const a = secOAMPrimaryAddr & 0xFF;
+      let v = OAM[a] & 0xFF;
+      // OAM attribute bits 2-4 are not implemented in the DRAM.  The mask is
+      // visible on the internal evaluation bus as well as ordinary $2004
+      // reads, so secondary OAM receives the masked byte.
+      if ((a & 3) === 2) v &= 0xE3;
+      ppuOAMDataBus = v;
       return;
     }
 
