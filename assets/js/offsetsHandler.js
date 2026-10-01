@@ -197,27 +197,25 @@ function checkReadOffset(address) {
       }
 
       case 0x2007: {
+        const renderRead =
+          renderingNow() &&
+          (PPUclock.scanline <= 239 || PPUclock.scanline === 261);
+
+        // Keep the already-verified ALE+Read collision path intact.
+        if (renderRead) ppuCpu2007ReadUntil = ppuCycles + 8;
+
         const vv = VRAM_ADDR & 0x3FFF;
         const bufBefore = VRAM_DATA & 0xFF;
-        const renderLine =
-          PPUclock.scanline <= 239 || PPUclock.scanline === 261;
-        const duringRendering = renderingNow() && renderLine;
-
         let ret = 0x00;
 
         if (vv < 0x3F00) {
           ret = bufBefore;
-
-          if (duringRendering) {
-            // The CPU read starts the PPU DATA state machine. The refill is
-            // deferred; while rendering, its eventual external read captures
-            // the normal fetch cadence instead of reading v immediately.
-            ppuCpu2007BufferCaptureAt = ppuCycles + ppuCpu2007CaptureDelay;
+          if (renderRead) {
+            VRAM_DATA = ppuRenderingFetchRead() & 0xFF;
           } else if (vv < 0x2000) {
             VRAM_DATA = cartridgeChrRead(vv) & 0xFF;
           } else {
-            const ntAddr = mapNT(vv);
-            VRAM_DATA = VRAM[ntAddr] & 0xFF;
+            VRAM_DATA = VRAM[mapNT(vv)] & 0xFF;
           }
         } else {
           const p = paletteIndex(vv);
@@ -225,14 +223,10 @@ function checkReadOffset(address) {
           if (PPUMASK & 0x01) palVal &= 0x30;
           ret = (openBus.PPU & 0xC0) | palVal;
 
-          // Palette RAM is internal, but the normal external-buffer reload
-          // still comes from the mirrored nametable address.
-          if (duringRendering) {
-            ppuCpu2007BufferCaptureAt = ppuCycles + ppuCpu2007CaptureDelay;
+          if (renderRead) {
+            VRAM_DATA = ppuRenderingFetchRead() & 0xFF;
           } else {
-            const ntMirror = vv & 0x2FFF;
-            const ntAddr = mapNT(ntMirror);
-            VRAM_DATA = VRAM[ntAddr] & 0xFF;
+            VRAM_DATA = VRAM[mapNT(vv & 0x2FFF)] & 0xFF;
           }
         }
 
