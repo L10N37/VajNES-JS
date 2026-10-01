@@ -993,11 +993,47 @@ scanlineLUT[241] = vblankStartScanline;
 for (let i = 242; i <= 260; i++) scanlineLUT[i] = vblankIdleScanline;
 scanlineLUT[261] = preRenderScanline;
 
+// When the secondary-OAM increment freeze survives into sprite fetch, the
+// same OAM2 byte is presented for Y, tile, attribute and X for every slot.
+// Keep this override isolated to the frozen-latch case so the established
+// bulk renderer remains untouched during normal fetches.
+function applyFrozenSecondaryOAMFetch(scanline) {
+  const v = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+  const targetLine = scanline === 261 ? 0 : ((scanline + 1) | 0);
+  const top = (v + SPR_Y_OFFSET) | 0;
+  let row = targetLine - top;
+  if (row < 0) row = 0;
+  row &= 0x0F;
+
+  const oldSprite0 = spritesNext.sprite0ListIndex;
+  spritesNext.count = SPR_MAX;
+  for (let i = 0; i < SPR_MAX; i++) {
+    spritesNext.tile[i] = v;
+    spritesNext.attr[i] = v;
+    spritesNext.xcnt[i] = v;
+    spritesNext.row[i] = row;
+    spritesNext.lo[i] = 0;
+    spritesNext.hi[i] = 0;
+  }
+  // Preserve provenance from the evaluation stage; in AccuracyCoin's frozen
+  // cases OAM2[0] is sprite zero, so slot 0 remains the sprite-zero unit.
+  spritesNext.sprite0ListIndex = oldSprite0;
+}
+
 // Fetch sprite patterns at their bus phases, using the live sprite-size setting.
 // MMC3 observes the same addresses. Palette lookups and
 // bulk sprite evaluation are internal renderer work and must not clock A12.
 function renderingBusTick() {
   const d=PPUclock.dot+1,sl=PPUclock.scanline;
+
+  // OAM fetch enable is sampled independently of the visual pipeline. A
+  // frozen OAM2 counter can therefore begin loading sprite units at dot 257
+  // even when the renderer's delayed PPUMASK state has not caught up yet.
+  if (d === 257 && secOAMAddrOverflow && ppuOAMMaskBits() !== 0 &&
+      (sl <= 239 || sl === 261)) {
+    applyFrozenSecondaryOAMFetch(sl);
+  }
+
   if(mapperNumber!==4 && (d<257 || d>320))return;
   if(!renderingNow() || (sl>239 && sl!==261)){mmc3Irq(VRAM_ADDR);return;}
   if(PPUclock.dot>=336){
