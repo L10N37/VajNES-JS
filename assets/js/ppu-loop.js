@@ -180,6 +180,13 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
   if (!renderingNow()) return;
   if (!(scanline === 261 || (scanline >= 0 && scanline <= 239))) return;
 
+  // The 2C02 clears the secondary-OAM increment freeze at specific reset
+  // points only while rendering is active. Keep the address itself untouched
+  // here so the already-verified $2004 bus values at dots 63/255 are stable.
+  if (dot === 63 || dot === 255 || dot === 339) {
+    secOAMAddrOverflow = false;
+  }
+
   if (dot >= 1 && dot <= 64) {
     if (dot === 1) secOAMAddr = 0;
     if (dot & 1) {
@@ -292,12 +299,10 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
 
   if (dot >= 257 && dot <= 320) {
     if (dot === 257) {
-      // The secondary-OAM overflow latch freezes increments only during
-      // sprite evaluation. Sprite fetch resumes counter movement. Preserve
-      // the current wrapped/misaligned address when evaluation overflowed;
-      // otherwise normal evaluation begins fetch from OAM2 byte 0.
+      // Normal rendering cleared the freeze at dot 255, so sprite fetch starts
+      // from byte 0. If rendering was disabled across dot 255, the freeze
+      // survives and fetch repeatedly exposes the current OAM2 byte.
       if (!secOAMAddrOverflow) secOAMAddr = 0;
-      secOAMAddrOverflow = false;
     }
 
     const phase = (dot - 257) & 7;
