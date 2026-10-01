@@ -277,6 +277,10 @@ const PPU_WRITE_GATE_CYCLES = 29658;
 
 // ----------------- CPU write dispatch -----------------
 function checkWriteOffset(address, value) {
+  if (DMC.dmaRequest && DMC.dmaKind === "abort" && cpuCycles >= DMC.dmaAt) {
+    DMC.dmaRequest = false;
+    DMC.dmaKind = "none";
+  }
   if(!DMC.dmaBusy && !DMA.active)openBus.internal=value&255;
   const addr = address & 0xFFFF;
   value &= 0xFF;
