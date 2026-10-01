@@ -693,6 +693,115 @@ function ppuBackgroundRead(addr, kind) {
   return value;
 }
 
+function ppuRenderingFetchRead() {
+  const D = PPUclock.dot | 0;
+  let targetDot = D + 3;
+  const v = VRAM_ADDR & 0x7FFF;
+  if (targetDot > 340) targetDot -= 341;
+
+  const incCX = (vv) => {
+    vv &= 0x7FFF;
+    if ((vv & 0x001F) === 31) { vv &= ~0x001F; vv ^= 0x0400; }
+    else vv = (vv & ~0x001F) | ((vv + 1) & 0x001F);
+    return vv & 0x7FFF;
+  };
+  const incFY = (vv) => {
+    vv &= 0x7FFF;
+    if ((vv & 0x7000) !== 0x7000) return (vv + 0x1000) & 0x7FFF;
+    vv &= ~0x7000;
+    let y=(vv & 0x03E0)>>5;
+    if (y===29) { y=0; vv^=0x0800; }
+    else if (y===31) y=0;
+    else y++;
+    return ((vv & ~0x03E0) | (y<<5)) & 0x7FFF;
+  };
+
+  let vForAddr = v;
+  if (D <= 336) {
+    let nextCZ;
+    if (D <= 256) {
+      nextCZ = D <= 0 ? 8 : (((D - 1) | 7) + 1);
+      if (nextCZ > 256) nextCZ = 328;
+    } else if (D <= 328) nextCZ = 328;
+    else nextCZ = 336;
+    if (targetDot >= D && nextCZ >= D && nextCZ <= targetDot)
+      vForAddr = incCX(vForAddr);
+  }
+
+  if (D <= 256 && targetDot >= 257 && targetDot <= 320) {
+    vForAddr = incFY(vForAddr);
+
+    // VajNES's CPU-read dot convention reaches the 257 boundary one fetch
+    // step earlier than the Kurogane reference convention. The dot-257
+    // garbage nametable read sees v after the final dot-256 coarse-X step,
+    // but before the horizontal t->v reload.
+    if (targetDot === 257) vForAddr = incCX(vForAddr);
+
+    if (targetDot > 257) {
+      const tv=((t_hi<<8)|t_lo)&0x7FFF;
+      vForAddr=(vForAddr & ~0x041F)|(tv & 0x041F);
+    }
+  }
+
+  if ((targetDot >= 1 && targetDot <= 256) ||
+      (targetDot >= 321 && targetDot <= 336)) {
+    switch (targetDot & 7) {
+      case 1:
+        return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+      case 3: {
+        const a=0x23C0|(vForAddr&0x0C00)|((vForAddr>>4)&0x38)|((vForAddr>>2)&7);
+        return ppuBusRead(a)&0xFF;
+      }
+      case 5: {
+        // If the target fetch lies beyond an NT fetch that has not happened
+        // yet at CPU-read time, predict that latch from the target tile's v.
+        // Using background.ntByte here makes PT-low lag one tile in VajNES.
+        const nt=ppuBusRead(0x2000|(vForAddr&0x0FFF))&0xFF;
+        const base=(PPUCTRL&0x10?0x1000:0)+(nt<<4)+((vForAddr>>12)&7);
+        return ppuBusRead(base)&0xFF;
+      }
+      case 7: {
+        const nt=ppuBusRead(0x2000|(vForAddr&0x0FFF))&0xFF;
+        const base=(PPUCTRL&0x10?0x1000:0)+(nt<<4)+((vForAddr>>12)&7)+8;
+        return ppuBusRead(base)&0xFF;
+      }
+      default:
+        return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+    }
+  }
+
+  if (targetDot >= 257 && targetDot <= 320) {
+    const phase=(targetDot-257)&7;
+    const slot=((targetDot-257)>>3)&7;
+    if (phase < 4)
+      return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+
+    const y=secondaryOAM[slot*4]&0xFF;
+    const tile=secondaryOAM[slot*4+1]&0xFF;
+    const attr=secondaryOAM[slot*4+2]&0xFF;
+    const sprH=(PPUCTRL&SPRITE_SIZE_16)?16:8;
+    const effScanline=PPUclock.scanline&0xFF;
+    const row=((effScanline-y)&0xFF)&(sprH-1);
+    const addr=spritePatternAddress(tile,attr,row);
+    return ppuBusRead(phase>=6 ? addr+8 : addr)&0xFF;
+  }
+
+  if (targetDot >= 337 && targetDot <= 340) {
+    if (targetDot===340) {
+      const a=0x23C0|(vForAddr&0x0C00)|((vForAddr>>4)&0x38)|((vForAddr>>2)&7);
+      return ppuBusRead(a)&0xFF;
+    }
+    return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+  }
+
+  if (targetDot===0) {
+    const a=0x23C0|(vForAddr&0x0C00)|((vForAddr>>4)&0x38)|((vForAddr>>2)&7);
+    return ppuBusRead(a)&0xFF;
+  }
+
+  return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+}
+
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
   const ren = renderingNow();
