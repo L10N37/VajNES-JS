@@ -179,6 +179,7 @@ let ppuOAMDataBus = 0xFF;
 let spriteOverflowSetScanline = -1;
 let spriteOverflowSetDot = -1;
 let ppumaskPrev = 0;
+let oamRenderPrev = false;
 
 // ---- Debug offsets ----
 let BG_DEBUG_X_OFFSET = 0;
@@ -1265,6 +1266,20 @@ function ppuTick() {
   const maskNow = PPUMASK & 0xFF;
   const renNow  = (maskNow & 0x18) !== 0;
   const renPrev = ((ppumaskPrev & 0x18) !== 0);
+
+  const oamNow = ppuOAMMaskBits() !== 0;
+  if (!oamRenderPrev && oamNow &&
+      PPUclock.scanline === 261 &&
+      PPUclock.dot > 65 && PPUclock.dot < 257) {
+    // Late pre-render enable: OAM DMA/CPU-side OAMADDR is the primary-OAM
+    // address the evaluation state machine resumes from. Do not reset OAM2;
+    // its stale contents/counter are exactly what the scanline-0 quirk uses.
+    secOAMPrimaryAddr = OAMADDR & 0xFF;
+    secOAMPrimaryOverflow = false;
+    secOAMOverflowDetection = !!secOAMAddrOverflow;
+    secOAMCopyBytes = 0;
+  }
+  oamRenderPrev = oamNow;
 
   updateSecondaryOAMAddrForDot(PPUclock.scanline, PPUclock.dot);
 
