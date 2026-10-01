@@ -501,7 +501,9 @@ function preRenderScanline(dot) {
 
   if (ren && dot >= 2 && dot <= 256) {
     background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
-    background.bgShiftHi = (background.bgShiftHi << 1) & 0xFFFF;
+    // Fixed serial inputs in the 2C02 pattern shifters: low plane shifts in
+    // logical 0 while the high plane shifts in logical 1.
+    background.bgShiftHi = ((background.bgShiftHi << 1) | 1) & 0xFFFF;
     background.atShiftLo = (background.atShiftLo << 1) & 0xFFFF;
     background.atShiftHi = (background.atShiftHi << 1) & 0xFFFF;
   }
@@ -612,7 +614,7 @@ function visibleScanline(dot) {
 
     if (ren && dot >= 1 && dot <= 256) {
       background.bgShiftLo = (background.bgShiftLo << 1) & 0xFFFF;
-      background.bgShiftHi = (background.bgShiftHi << 1) & 0xFFFF;
+      background.bgShiftHi = ((background.bgShiftHi << 1) | 1) & 0xFFFF;
       background.atShiftLo = (background.atShiftLo << 1) & 0xFFFF;
       background.atShiftHi = (background.atShiftHi << 1) & 0xFFFF;
     }
