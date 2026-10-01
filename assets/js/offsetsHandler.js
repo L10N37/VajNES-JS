@@ -175,6 +175,8 @@ function checkReadOffset(address) {
       }
 
       case 0x2007: {
+        if (renderingNow() && (PPUclock.scanline <= 239 || PPUclock.scanline === 261))
+          ppuCpu2007ReadUntil = ppuCycles + 8;
 
         const vv = VRAM_ADDR & 0x3FFF;
         const bufBefore = VRAM_DATA & 0xFF;
@@ -437,6 +439,10 @@ function checkWriteOffset(address, value) {
           writeToggle = 1;
       } else {
           // Second write (low byte) — FIXED MASK
+          if (renderingNow() && (PPUclock.scanline <= 239 || PPUclock.scanline === 261)) {
+            ppuCpu2006HybridLow = ppuExternalLatchLow & 0xFF;
+            ppuCpu2006HybridUntil = ppuCycles + 8;
+          }
           t = (t & 0xFF00) | value;
           // Copy t → v
           VRAM_ADDR = t & 0x3FFF;
