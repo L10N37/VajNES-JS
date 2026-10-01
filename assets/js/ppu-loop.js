@@ -270,16 +270,20 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
     if (!secOAMOverflowDetection) {
       secOAMPrimaryAddr = (secOAMPrimaryAddr + 4) & 0xFC;
       if (secOAMPrimaryAddr === 0) secOAMPrimaryOverflow = true;
-    } else if (inRange && !secOAMPrimaryOverflow) {
-      // Continue through the remaining bytes of the misaligned sprite while
-      // the full secondary-OAM address remains frozen.
-      secOAMOverflowDetection = false;
-      secOAMCopyBytes = 3;
-      moveByte();
     } else {
-      secOAMPrimaryAddr =
-        (((secOAMPrimaryAddr + 4) & 0xFC) |
-         ((secOAMPrimaryAddr + 1) & 3)) & 0xFF;
+      // Once secondary OAM is full, the 2C02 no longer copies another
+      // sprite.  It performs the well-known overflow-bug search using a
+      // primary-OAM (n,m) address:
+      //   in range     -> n++       (address +4, preserve m)
+      //   out of range -> n++, m++  (address +5 diagonally)
+      // Secondary OAM stays frozen at its wrapped address throughout.
+      const m = secOAMPrimaryAddr & 3;
+      if (inRange) {
+        secOAMPrimaryAddr = (secOAMPrimaryAddr + 4) & 0xFF;
+      } else {
+        secOAMPrimaryAddr =
+          (((secOAMPrimaryAddr + 4) & 0xFC) | ((m + 1) & 3)) & 0xFF;
+      }
       if ((secOAMPrimaryAddr & 0xFC) === 0) secOAMPrimaryOverflow = true;
     }
     return;
