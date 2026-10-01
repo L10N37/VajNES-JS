@@ -79,6 +79,13 @@ const SPR_MAX = 8;
 
 let vFetch = 0;
 
+// External PPU address/data bus state used by CPU/PPU overlap cases.
+let ppuExternalLatchLow = 0;
+let ppuExternalData = 0;
+let ppuCpu2007ReadUntil = -1;
+let ppuCpu2006HybridUntil = -1;
+let ppuCpu2006HybridLow = 0;
+
 function presentFrame() {
   if(typeof NESAudio!=="undefined") NESAudio.frame(cpuCycles);
   blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
@@ -480,6 +487,24 @@ function ppuBusRead(addr) {
     if ((p & 0x13) === 0x10) p &= ~0x10;
     return PALETTE_RAM[p] & 0x3F;
 }
+function ppuBackgroundRead(addr, kind) {
+  addr &= 0x3FFF;
+  let effective = addr;
+
+  if (kind === 'patternLo' && ppuCpu2007ReadUntil >= ppuCycles) {
+    effective = (addr & 0x3F00) | (ppuExternalData & 0xFF);
+    ppuCpu2007ReadUntil = -1;
+  } else if (kind === 'nametable' && ppuCpu2006HybridUntil >= ppuCycles) {
+    effective = (addr & 0x3F00) | (ppuCpu2006HybridLow & 0xFF);
+    ppuCpu2006HybridUntil = -1;
+  }
+
+  ppuExternalLatchLow = effective & 0xFF;
+  const value = ppuBusRead(effective) & 0xFF;
+  ppuExternalData = value;
+  return value;
+}
+
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
   const ren = renderingNow();
@@ -532,14 +557,14 @@ function preRenderScanline(dot) {
 
       switch (phase) {
       case 1: {
-        background.ntByte = ppuBusRead(0x2000 | (v & 0x0FFF));
+        background.ntByte = ppuBackgroundRead(0x2000 | (v & 0x0FFF), 'nametable');
         BG_ntByte = background.ntByte;
         break;
       }
       case 3: {
         const attAddr = 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07);
         const shift   = ((v >> 4) & 4) | (v & 2);
-        const atBits  = (ppuBusRead(attAddr) >> shift) & 3;
+        const atBits  = (ppuBackgroundRead(attAddr, 'attribute') >> shift) & 3;
         background.atByte = atBits & 0x03;
         BG_atByte = background.atByte;
         break;
@@ -547,14 +572,14 @@ function preRenderScanline(dot) {
       case 5: {
         const fineY = (v >> 12) & 7;
         const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineY;
-        background.tileLo = ppuBusRead(base) & 0xFF;
+        background.tileLo = ppuBackgroundRead(base, 'patternLo') & 0xFF;
         BG_tileLo = background.tileLo;
         break;
       }
       case 7: {
         const fineY = (v >> 12) & 7;
         const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineY + 8;
-        background.tileHi = ppuBusRead(base) & 0xFF;
+        background.tileHi = ppuBackgroundRead(base, 'patternHi') & 0xFF;
         BG_tileHi = background.tileHi;
 
         if (dot === 328) {
@@ -668,14 +693,14 @@ function visibleScanline(dot) {
 
       switch (phase) {
       case 1: {
-        background.ntByte = ppuBusRead(0x2000 | (v & 0x0FFF));
+        background.ntByte = ppuBackgroundRead(0x2000 | (v & 0x0FFF), 'nametable');
         BG_ntByte = background.ntByte;
         break;
       }
       case 3: {
         const attAddr = 0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07);
         const shift   = ((v >> 4) & 4) | (v & 2);
-        const atBits  = (ppuBusRead(attAddr) >> shift) & 3;
+        const atBits  = (ppuBackgroundRead(attAddr, 'attribute') >> shift) & 3;
         background.atByte = atBits & 0x03;
         BG_atByte = background.atByte;
         break;
@@ -683,14 +708,14 @@ function visibleScanline(dot) {
       case 5: {
         const fineY = (v >> 12) & 7;
         const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineY;
-        background.tileLo = ppuBusRead(base) & 0xFF;
+        background.tileLo = ppuBackgroundRead(base, 'patternLo') & 0xFF;
         BG_tileLo = background.tileLo;
         break;
       }
       case 7: {
         const fineY = (v >> 12) & 7;
         const base  = (PPUCTRL & 0x10 ? 0x1000 : 0x0000) + ((background.ntByte & 0xFF) << 4) + fineY + 8;
-        background.tileHi = ppuBusRead(base) & 0xFF;
+        background.tileHi = ppuBackgroundRead(base, 'patternHi') & 0xFF;
         BG_tileHi = background.tileHi;
 
        if (dot === 328) {
