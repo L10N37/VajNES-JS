@@ -148,6 +148,25 @@ test('MMC3 IRQ enable and zero latch do not assert until a filtered rising edge'
  e.evaluate('mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),1);
  e.evaluate('mapper4_write_E001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');assert.equal(e.evaluate('irqAssert.mmc3'),true);
 });
+test('MMC3 Sharp and NEC zero-reload IRQ variants follow their silicon rules',()=>{
+ const sharp=emulator(rom(4));
+ sharp.evaluate('mapper4_write_C000(0);mapper4_write_C001();mapper4_write_E001();ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(sharp.evaluate('mmc3_irq.variant'),'sharp');
+ assert.equal(sharp.evaluate('irqAssert.mmc3'),true);
+ sharp.evaluate('mapper4_write_E000();mapper4_write_E001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(sharp.evaluate('irqAssert.mmc3'),true);
+
+ const nec=emulator(rom(4,2,1,0,4));
+ assert.equal(nec.evaluate('mmc3_irq.variant'),'nec');
+ nec.evaluate('mapper4_write_C000(2);mapper4_write_C001();mapper4_write_E001()');
+ nec.evaluate('ppuCycles+=9;mmc3Irq(0x1000);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(nec.evaluate('irqAssert.mmc3'),true);
+ nec.evaluate('mapper4_write_E000();mapper4_write_E001();mapper4_write_C000(0);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(nec.evaluate('irqAssert.mmc3'),false);
+ nec.evaluate('mapper4_write_C001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(nec.evaluate('irqAssert.mmc3'),true);
+});
+
 test('MMC3 rejects short/repeated A12 pulses and ignores activity on other mappers',()=>{
  const e=emulator(rom(4));e.evaluate('mmc3Reset();mapper4_write_C000(3);mapper4_write_C001();for(let i=0;i<100;i++)mmc3Irq(0);mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),0);
  e.evaluate('mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000);ppuCycles+=100;mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),3);
