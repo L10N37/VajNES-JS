@@ -219,11 +219,13 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
 
     const moveByte = () => {
       secOAMPrimaryAddr = (secOAMPrimaryAddr + 1) & 0xFF;
-      secOAMAddr = (secOAMAddr + 1) & 0x1F;
       if (secOAMPrimaryAddr === 0) secOAMPrimaryOverflow = true;
-      if (secOAMAddr === 0) {
-        secOAMAddrOverflow = true;
-        secOAMOverflowDetection = true;
+      if (!secOAMAddrOverflow) {
+        secOAMAddr = (secOAMAddr + 1) & 0x1F;
+        if (secOAMAddr === 0) {
+          secOAMAddrOverflow = true;
+          secOAMOverflowDetection = true;
+        }
       }
     };
 
@@ -261,17 +263,24 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
   }
 
   if (dot >= 257 && dot <= 320) {
-    if (dot === 257) secOAMAddr = 0;
+    if (dot === 257 && !secOAMAddrOverflow) secOAMAddr = 0;
+
     const phase = (dot - 257) & 7;
-    if (phase <= 3) {
+    // The secondary-OAM address advances for Y/tile/attribute and once at
+    // the end of each 8-dot sprite fetch.  The X byte remains on the bus
+    // through the four pattern-fetch dots.
+    if (phase === 0 || phase === 1 || phase === 2 || phase === 7) {
       ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
-      secOAMAddr = (secOAMAddr + 1) & 0x1F;
+      if (!secOAMAddrOverflow) {
+        secOAMAddr = (secOAMAddr + 1) & 0x1F;
+        if (secOAMAddr === 0) secOAMAddrOverflow = true;
+      }
     }
     return;
   }
 
-  if (dot >= 323 && dot <= 340)
-    ppuOAMDataBus = secondaryOAM[0] & 0xFF;
+  if (dot >= 321 && dot <= 340)
+    ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
 }
 
 // ---- Sprite fetch ----
