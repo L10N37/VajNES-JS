@@ -270,20 +270,21 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
     if (!secOAMOverflowDetection) {
       secOAMPrimaryAddr = (secOAMPrimaryAddr + 4) & 0xFC;
       if (secOAMPrimaryAddr === 0) secOAMPrimaryOverflow = true;
+    } else if (inRange && !secOAMPrimaryOverflow) {
+      // With secondary OAM full, an in-range comparison ends the diagonal
+      // overflow search. The PPU then reads the remaining three bytes of the
+      // candidate sprite with normal +1 primary-OAM increments while OAM2
+      // remains read-only/frozen.
+      secOAMOverflowDetection = false;
+      secOAMCopyBytes = 3;
+      moveByte();
     } else {
-      // Once secondary OAM is full, the 2C02 no longer copies another
-      // sprite.  It performs the well-known overflow-bug search using a
-      // primary-OAM (n,m) address:
-      //   in range     -> n++, m++  (address +5 diagonally)
-      //   out of range -> n++       (address +4, preserve m)
-      // Secondary OAM stays frozen at its wrapped address throughout.
-      const m = secOAMPrimaryAddr & 3;
-      if (inRange) {
-        secOAMPrimaryAddr =
-          (((secOAMPrimaryAddr + 4) & 0xFC) | ((m + 1) & 3)) & 0xFF;
-      } else {
-        secOAMPrimaryAddr = (secOAMPrimaryAddr + 4) & 0xFF;
-      }
+      // Out-of-range during the overflow search increments n and m without
+      // carry: +4 to the sprite index and +1 to the byte index, i.e. the
+      // characteristic +5 diagonal scan.
+      secOAMPrimaryAddr =
+        (((secOAMPrimaryAddr + 4) & 0xFC) |
+         ((secOAMPrimaryAddr + 1) & 3)) & 0xFF;
       if ((secOAMPrimaryAddr & 0xFC) === 0) secOAMPrimaryOverflow = true;
     }
     return;
