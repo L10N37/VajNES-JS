@@ -729,6 +729,13 @@ function ppuRenderingFetchRead() {
 
   if (D <= 256 && targetDot >= 257 && targetDot <= 320) {
     vForAddr = incFY(vForAddr);
+
+    // VajNES's CPU-read dot convention reaches the 257 boundary one fetch
+    // step earlier than the Kurogane reference convention. The dot-257
+    // garbage nametable read sees v after the final dot-256 coarse-X step,
+    // but before the horizontal t->v reload.
+    if (targetDot === 257) vForAddr = incCX(vForAddr);
+
     if (targetDot > 257) {
       const tv=((t_hi<<8)|t_lo)&0x7FFF;
       vForAddr=(vForAddr & ~0x041F)|(tv & 0x041F);
