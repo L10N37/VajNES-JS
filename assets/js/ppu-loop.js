@@ -132,6 +132,7 @@ const SPR_Y_OFFSET   = 1;
 let renderingPrev = false;
 let spriteOnlyPrimePending = false;
 let spriteXForceZeroNextFrame = false;
+let sprite0FetchComplete = true;
 
 // ---- OAM corruption ----
 let oamCorruptPending = false;
@@ -211,10 +212,11 @@ function spritePatternAddress(tileIndex, attr, rowInSprite) {
   return addrLo;
 }
 function evalSpritesForScanline(target, scanline) {
+  // Forced blank does not overwrite the already-loaded secondary sprite state.
+  if (!renderingNow()) return;
+
   target.count = 0;
   target.sprite0ListIndex = 0xFF;
-
-  if (!renderingNow()) return;
 
   const is8x16 = (PPUCTRL & SPRITE_SIZE_16) !== 0;
   const sprH   = is8x16 ? 16 : 8;
@@ -612,6 +614,9 @@ function visibleScanline(dot) {
   const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
 
+  if (dot === 257) sprite0FetchComplete = ren;
+  else if (dot > 257 && dot <= 264 && !ren) sprite0FetchComplete = false;
+
   if (PPUclock.scanline === spriteOverflowSetScanline && dot === spriteOverflowSetDot) {
     SET_SPRITE_OVERFLOW();
     spriteOverflowSetScanline = -1;
@@ -629,9 +634,21 @@ function visibleScanline(dot) {
       spriteOnlyPrimePending = false;
     }
 
+    if (!sprite0FetchComplete && spritesCur.count > 0 && spritesNext.count > 0) {
+      // Sprite 0's HBlank reload was interrupted. Keep the active counter and
+      // shifters, while the rest of the newly evaluated sprite list proceeds.
+      spritesNext.attr[0] = spritesCur.attr[0];
+      spritesNext.xcnt[0] = spritesCur.xcnt[0];
+      spritesNext.lo[0] = spritesCur.lo[0];
+      spritesNext.hi[0] = spritesCur.hi[0];
+      spritesNext.idx[0] = spritesCur.idx[0];
+      if (spritesCur.sprite0ListIndex === 0) spritesNext.sprite0ListIndex = 0;
+    }
+
     const tmp = spritesCur;
     spritesCur = spritesNext;
     spritesNext = tmp;
+    sprite0FetchComplete = true;
 
     background.bgShiftLo = (nextLine.t0.lo & 0xFF) << 8;
     background.bgShiftHi = (nextLine.t0.hi & 0xFF) << 8;
@@ -736,6 +753,11 @@ function visibleScanline(dot) {
 
   if (ren && dot === 256) incY();
   if (ren && dot === 257) copyHoriz();
+
+  // Dot 339 selects whether freshly loaded sprite X counters enter counting
+  // mode on every rendering scanline, not just the pre-render line.
+  if (dot === 339) spriteXForceZeroNextFrame = !renderingNow();
+
 }
 
 function postRenderScanline(dot) {}
