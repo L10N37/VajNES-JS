@@ -99,6 +99,11 @@ function resetCPU() {
   ppumaskRenderApplyAt = -1;
   renderingPrev = false;
   spriteXForceZeroNextFrame = false;
+  ppuExternalLatchLow = 0;
+  ppuExternalData = 0;
+  ppuCpu2007ReadUntil = -1;
+  ppuCpu2006HybridUntil = -1;
+  ppuCpu2006HybridLow = 0;
 
   secOAMAddr = 0;
   oamCorruptPending = false;
