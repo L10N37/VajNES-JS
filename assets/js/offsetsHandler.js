@@ -168,10 +168,13 @@ function checkReadOffset(address) {
             ? (secondaryOAM[secOAMAddr & 0x1F] & 0xFF)
             : (ppuOAMDataBus & 0xFF);
 
-          // Temporary AccuracyCoin diagnostic for Misaligned OAM2 test 3.
-          if ((systemMemory[0x10] & 0xFF) === 3 &&
-              current.dot >= 320 && current.dot <= 340 &&
-              accuracyCoinOAM2ReadTrace.length < 128) {
+          // Temporary AccuracyCoin diagnostic for Misaligned OAM2 tests
+          // 3/4: capture the late-scanline $2004 reads both before and after
+          // the deliberate sprite-fetch interruption.
+          if (((systemMemory[0x10] & 0xFF) === 3 ||
+               (systemMemory[0x10] & 0xFF) === 4) &&
+              current.dot >= 300 && current.dot <= 340 &&
+              accuracyCoinOAM2ReadTrace.length < 192) {
             accuracyCoinOAM2ReadTrace.push({
               dot: current.dot|0,
               scanline: current.scanline|0,
