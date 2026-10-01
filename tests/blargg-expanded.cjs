@@ -28,6 +28,7 @@ const groupsByShard={
  extra:[
   'branch_timing_tests',
   'cpu_exec_space',
+  'cpu_reset',
   'dmc_tests',
   'blargg_ppu_tests_2005.09.15b',
   'mmc3_irq_tests',
@@ -44,7 +45,7 @@ for(const group of groups){
  const dir=path.join(root,group);
  if(!fs.existsSync(dir)){results.push({rom:group,status:null,error:'missing directory'});continue;}
  for(const file of fs.readdirSync(dir).filter(p=>p.endsWith('.nes')).sort()){
-  const rom=fs.readFileSync(path.join(dir,file)),e=createEmulator();let status=null,text='',error=null,classification='passfail';
+  const rom=fs.readFileSync(path.join(dir,file)),e=createEmulator();let status=null,text='',error=null,classification='passfail',resetCount=0;
   try{
    e.load(new Uint8Array(rom));
    // The two legacy MMC3 revision ROMs intentionally target different IRQ
@@ -75,6 +76,15 @@ for(const group of groups){
       status=data[0];
       const z=data.indexOf(0,4);
       text=String.fromCharCode(...data.slice(4,z<0?data.length:z));
+      // Blargg reset-aware tests request a physical RESET with status $81.
+      // Preserve cartridge/RAM state and continue from the reset vector.
+      if(status===0x81){
+        if(++resetCount>4) throw new Error('Too many reset requests');
+        e.evaluate('resetCPU()');
+        status=null;
+        text='';
+        continue;
+      }
       if(status<128)break;
     }
 
