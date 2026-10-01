@@ -35,6 +35,10 @@ for(const group of groups){
   const rom=fs.readFileSync(path.join(dir,file)),e=createEmulator();let status=null,text='',error=null;
   try{
    e.load(new Uint8Array(rom));
+   const legacyF8 =
+    group.startsWith('sprite_hit_tests_2005.10.05') ||
+    group.startsWith('sprite_overflow_tests') ||
+    group.startsWith('vbl_nmi_timing');
    for(let i=0;i<100;i++){
     e.run(200000);
     const data=e.evaluate('Array.from(prgRam.slice(0,4096))');
@@ -43,6 +47,14 @@ for(const group of groups){
       const z=data.indexOf(0,4);
       text=String.fromCharCode(...data.slice(4,z<0?data.length:z));
       if(status<128)break;
+    }
+    if(legacyF8){
+      const legacy=e.evaluate('systemMemory[0xF8]&0xFF');
+      if(legacy){
+        status=legacy===1?0:legacy;
+        text=legacy===1?'PASSED':'FAILED #'+legacy;
+        break;
+      }
     }
    }
   }catch(ex){error=String(ex);}
