@@ -107,6 +107,15 @@ function resetCPU() {
   ppuCpu2006HybridLow = 0;
 
   secOAMAddr = 0;
+  secondaryOAM.fill(0xFF);
+  secondaryOAMPrimary.fill(0);
+  secOAMOverflowed = false;
+  evalOAMAddrOverflowed = false;
+  evalOverflowDetection = false;
+  evalCopyBytes = 0;
+  evalOAMData = 0xFF;
+  ppuOAMDataBus = 0xFF;
+  evalTargetLine = 0;
   oamCorruptPending = false;
   oamCorruptSeedRow = 0;
 
