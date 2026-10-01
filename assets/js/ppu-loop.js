@@ -317,6 +317,11 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
       secOAMPrimaryAddr = (secOAMPrimaryAddr + 4) & 0xFC;
       if (secOAMPrimaryAddr === 0) secOAMPrimaryOverflow = true;
     } else if (inRange && !secOAMPrimaryOverflow) {
+      // Once secondary OAM is full, a successful comparison is the hardware
+      // event that asserts sprite overflow. Do it on this exact evaluation
+      // dot rather than waiting for the bulk renderer's predictive timer.
+      SET_SPRITE_OVERFLOW();
+
       // With secondary OAM full, an in-range comparison ends the diagonal
       // overflow search. The PPU then reads the remaining three bytes of the
       // candidate sprite with normal +1 primary-OAM increments while OAM2

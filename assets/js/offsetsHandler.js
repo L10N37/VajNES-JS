@@ -24,6 +24,12 @@ breakPending = false;
 
 let writeToggle = 0;
 
+// The 2C02 cannot treat immediately adjacent CPU read strobes of PPUDATA as
+// two fully independent accesses. Keep the previous read so a second $2007
+// access on the very next CPU cycle can merge with the first strobe.
+let ppuLastDataReadCycle = -0x40000000;
+let ppuLastDataReadValue = 0;
+
 // Toggling rendering takes effect approximately 3-4 dots after the write. This delay is required by Battletoads to avoid a crash.
 // would be smashing through test suites if i hadn't gone multicore, oof, cbf with a major refactor so some struggles with chunk by chunk on different cores
 // https://www.nesdev.org/wiki/PPU_registers#Rendering_control
@@ -52,8 +58,10 @@ function paletteIndex(addr14) {
 // ----------------- CPU read dispatch -----------------
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
-  if(DMC.dmaRequest && !DMC.dmaBusy && cpuCycles>=DMC.dmaAt &&
-     (DMC.dmaKind!=="reload" || cpuCycles>=DMC.readerEnableAt)) dmcDoDMA(addr);
+  const dmcHaltThisRead =
+    DMC.dmaRequest && !DMC.dmaBusy && cpuCycles>=DMC.dmaAt &&
+    (DMC.dmaKind!=="reload" || cpuCycles>=DMC.readerEnableAt);
+  if (dmcHaltThisRead) dmcDoDMA(addr);
 
   let raw = 0x00;
 
@@ -179,6 +187,20 @@ function checkReadOffset(address) {
       }
 
       case 0x2007: {
+        // Back-to-back PPUDATA reads on adjacent CPU cycles share a single
+        // effective read strobe on 2C02 hardware. The second access sees the
+        // previous bus value but does not refill the read buffer or increment
+        // the PPU address. This is observable with indexed page-crossing reads
+        // whose dummy access lands on $2007 and the corrected access on a
+        // mirror such as $2107.
+        if (!DMC.dmaBusy && !dmcHaltThisRead &&
+            cpuCycles === ppuLastDataReadCycle + 1) {
+          raw = ppuLastDataReadValue & 0xFF;
+          openBus.PPU = raw;
+          ppuLastDataReadCycle = cpuCycles;
+          break;
+        }
+
         const renderRead =
           renderingNow() &&
           (PPUclock.scanline <= 239 || PPUclock.scanline === 261);
@@ -217,6 +239,8 @@ function checkReadOffset(address) {
 
         raw = ret & 0xFF;
         openBus.PPU = raw;
+        ppuLastDataReadCycle = cpuCycles;
+        ppuLastDataReadValue = raw;
         break;
       }
 
