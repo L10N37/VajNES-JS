@@ -58,8 +58,10 @@ function paletteIndex(addr14) {
 // ----------------- CPU read dispatch -----------------
 function checkReadOffset(address) {
   const addr = address & 0xFFFF;
-  if(DMC.dmaRequest && !DMC.dmaBusy && cpuCycles>=DMC.dmaAt &&
-     (DMC.dmaKind!=="reload" || cpuCycles>=DMC.readerEnableAt)) dmcDoDMA(addr);
+  const dmcHaltThisRead =
+    DMC.dmaRequest && !DMC.dmaBusy && cpuCycles>=DMC.dmaAt &&
+    (DMC.dmaKind!=="reload" || cpuCycles>=DMC.readerEnableAt);
+  if (dmcHaltThisRead) dmcDoDMA(addr);
 
   let raw = 0x00;
 
@@ -191,7 +193,8 @@ function checkReadOffset(address) {
         // the PPU address. This is observable with indexed page-crossing reads
         // whose dummy access lands on $2007 and the corrected access on a
         // mirror such as $2107.
-        if (cpuCycles === ppuLastDataReadCycle + 1) {
+        if (!DMC.dmaBusy && !dmcHaltThisRead &&
+            cpuCycles === ppuLastDataReadCycle + 1) {
           raw = ppuLastDataReadValue & 0xFF;
           openBus.PPU = raw;
           ppuLastDataReadCycle = cpuCycles;
