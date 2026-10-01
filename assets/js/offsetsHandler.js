@@ -536,6 +536,7 @@ function checkWriteOffset(address, value) {
 }
 
 let accuracyCoinTrace654 = [];
+let accuracyCoinStressSnapshots = [];
 
 // ----------------- CPU RAM helpers -----------------
 function cpuRead(addr) {
@@ -548,6 +549,23 @@ function cpuWrite(addr, value) {
   addr &= 0xFFFF;
   value &= 0xFF;
   systemMemory[addr & 0x7FF] = value;
+
+  // AccuracyCoin diagnostic breakpoints. $10 is ErrorCode; its transition to
+  // 3 occurs immediately after the first $2004 stress table has compared.
+  // FAIL_2004_Stress stores X to $20 before jumping to TEST_Fail, while the
+  // second completed table is still intact.
+  if (((addr & 0x7FF) === 0x10 && value === 3) ||
+      ((addr & 0x7FF) === 0x20 && (systemMemory[0x10] & 0xFF) === 3)) {
+    const first = systemMemory[0x500] & 0xFF;
+    if (first === 0x7F || first === 0x78) {
+      accuracyCoinStressSnapshots.push({
+        tag: (addr & 0x7FF) === 0x10 ? 'after-table1' : 'table2-fail',
+        errorCode: systemMemory[0x10] & 0xFF,
+        table: Array.from(systemMemory.slice(0x500, 0x655))
+      });
+      if (accuracyCoinStressSnapshots.length > 12) accuracyCoinStressSnapshots.shift();
+    }
+  }
 
   // Temporary AccuracyCoin diagnostic: capture completed $2004 stress
   // tables at the exact write of their final byte, before the evaluator or
