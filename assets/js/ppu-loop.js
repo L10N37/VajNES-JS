@@ -275,9 +275,12 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
     // The secondary-OAM address advances for Y/tile/attribute and once at
     // the end of each 8-dot sprite fetch.  The X byte remains on the bus
     // through the four pattern-fetch dots.
-    if (phase === 0 || phase === 1 || phase === 2 || phase === 7) {
+    if (phase === 0 || phase === 1 || phase === 2 || phase === 3 || phase === 7) {
+      // Y/tile/attribute advance on phases 0-2. Phase 3 places X on
+      // the OAM data bus without advancing; X remains there through the
+      // pattern fetches, and phase 7 performs the final address increment.
       ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
-      if (!secOAMAddrOverflow) {
+      if (phase !== 3 && !secOAMAddrOverflow) {
         secOAMAddr = (secOAMAddr + 1) & 0x1F;
         if (secOAMAddr === 0) secOAMAddrOverflow = true;
       }
