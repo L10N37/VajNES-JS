@@ -75,6 +75,10 @@ for (const [i,t] of oam2ReadTrace.entries()) {
     ' oam20='+t.oam20.toString(16).padStart(2,'0')+
     ' oam24='+t.oam24.toString(16).padStart(2,'0'));
 }
+const scan0Late = e.evaluate('accuracyCoinScanline0LateTrace');
+for (const [i,x] of scan0Late.entries()) {
+  console.log('SCAN0LATE['+i+'] '+JSON.stringify(x));
+}
 const stressSnapshots = e.evaluate('accuracyCoinStressSnapshots');
 for (const [i,trace] of stressSnapshots.entries()) {
   console.log('STRESSSNAP['+i+'] tag='+trace.tag+' error='+trace.errorCode+
