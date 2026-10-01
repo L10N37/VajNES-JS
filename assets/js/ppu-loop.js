@@ -700,7 +700,7 @@ function preRenderScanline(dot) {
     (OAM[3] & 0xFF) === 0x80;
   if (scan0OAMSignature &&
       [60,63,64,65,66,67,68,69,70,72,80,96,128,160,192,224,255,256,257,258,260,264,272,288,304,320,339,340].includes(dot) &&
-      accuracyCoinScanline0LateTrace.length < 160) {
+      accuracyCoinScanline0LateTrace.length < 260) {
     accuracyCoinScanline0LateTrace.push({
       event:'pre',
       frame:PPUclock.frame|0,odd:!!PPUclock.oddFrame,dot:dot|0,
@@ -842,7 +842,7 @@ function visibleScanline(dot) {
     if (PPUclock.scanline === 0 &&
         (OAM[0]&0xFF)===0x00 && (OAM[1]&0xFF)===0xC6 &&
         (OAM[2]&0xFF)===0x00 && (OAM[3]&0xFF)===0x80 &&
-        accuracyCoinScanline0LateTrace.length < 160) {
+        accuracyCoinScanline0LateTrace.length < 260) {
       accuracyCoinScanline0LateTrace.push({
         event:'line0',frame:PPUclock.frame|0,odd:!!PPUclock.oddFrame,dot:dot|0,
         mask:PPUMASK&0x18,oamMask:ppuOAMMaskBits()&0x18,
@@ -893,6 +893,19 @@ function visibleScanline(dot) {
     spritesNext = tmp;
     sprite0FetchComplete = true;
 
+    if (PPUclock.scanline === 0 &&
+        (OAM[0]&0xFF)===0x00 && (OAM[1]&0xFF)===0xC6 &&
+        spritesCur.count > 0 && spritesCur.sprite0ListIndex === 0 &&
+        accuracyCoinScanline0LateTrace.length < 260) {
+      accuracyCoinScanline0LateTrace.push({
+        event:'post-swap',frame:PPUclock.frame|0,odd:!!PPUclock.oddFrame,dot:dot|0,
+        tile:spritesCur.tile[0]&0xFF,row:spritesCur.row[0]&0xFF,
+        attr:spritesCur.attr[0]&0xFF,x:spritesCur.xcnt[0]&0xFF,
+        lo:spritesCur.lo[0]&0xFF,hi:spritesCur.hi[0]&0xFF,
+        idx:spritesCur.idx[0]&0xFF,status:PPUSTATUS&0xE0
+      });
+    }
+
     background.bgShiftLo = (nextLine.t0.lo & 0xFF) << 8;
     background.bgShiftHi = (nextLine.t0.hi & 0xFF) << 8;
 
@@ -915,6 +928,18 @@ function visibleScanline(dot) {
   if (ren && phase === 0 && dot >= 9 && dot <= 257) reloadBGShifters(false);
 
   if (dot >= 1 && dot <= 256) {
+    if (PPUclock.scanline === 0 && dot >= 122 && dot <= 138 &&
+        spritesCur.count > 0 && spritesCur.sprite0ListIndex === 0 &&
+        (spritesCur.tile[0]&0xFF) === 0xC6 &&
+        accuracyCoinScanline0LateTrace.length < 260) {
+      accuracyCoinScanline0LateTrace.push({
+        event:'pixel',frame:PPUclock.frame|0,odd:!!PPUclock.oddFrame,dot:dot|0,
+        xcnt:spritesCur.xcnt[0]&0xFF,lo:spritesCur.lo[0]&0xFF,
+        hi:spritesCur.hi[0]&0xFF,row:spritesCur.row[0]&0xFF,
+        bgLo:background.bgShiftLo&0xFFFF,bgHi:background.bgShiftHi&0xFFFF,
+        fineX:fineX&7,status:PPUSTATUS&0xE0,mask:ppuEffectiveMask()&0x18
+      });
+    }
     emitPixelHardwarePalette();
 
     if (ren && dot >= 1 && dot <= 256) {
