@@ -16,7 +16,6 @@ jobs:
         with:
           node-version: '22'
       - name: Core regression tests
-        continue-on-error: true
         run: node --test tests/*.test.cjs
       - name: Build audio source and check native/WASM parity
         run: |
