@@ -27,13 +27,15 @@ const groupsByShard={
  ],
  extra:[
   'branch_timing_tests',
-  'apu_reset',
   'cpu_exec_space',
-  'cpu_reset',
   'dmc_tests',
   'blargg_ppu_tests_2005.09.15b',
   'mmc3_irq_tests',
   'nes_instr_test/rom_singles'
+ ],
+ reset:[
+  'cpu_reset',
+  'apu_reset'
  ]
 };
 const groups=groupsByShard[shard];if(!groups)throw Error('Unknown BLARGG_SHARD '+shard);
