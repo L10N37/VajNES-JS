@@ -27,6 +27,10 @@ const groupsByShard={
  ]
 };
 const groups=groupsByShard[shard];if(!groups)throw Error('Unknown BLARGG_SHARD '+shard);
+const observationalCrc={
+ 'dmc_dma_during_read4/dma_2007_read.nes':new Set(['159A7A8F','5E3DF9C4']),
+ 'dmc_dma_during_read4/double_2007_read.nes':new Set(['85CFD627','F018C287','440EF923','E52F41A5'])
+};
 const results=[];
 for(const group of groups){
  const dir=path.join(root,group);
@@ -98,6 +102,21 @@ for(const group of groups){
     if(legacy){
       status=legacy===1?0:legacy;
       text=legacy===1?'PASSED':'FAILED #'+legacy;
+    }
+   }
+
+   // Two DMC/$2007 timing ROMs are observational by design: they print a CRC
+   // rather than a pass/fail status. Their CRC accumulator is the first six
+   // bytes of the linker ZEROPAGE segment ($10...), with checksum at $10-$13.
+   // print_crc outputs the complement in high-to-low byte order.
+   if(status===null){
+    const key=group+'/'+file, accepted=observationalCrc[key];
+    if(accepted){
+      const rr=e.state().ram;
+      const crc=[rr[0x13],rr[0x12],rr[0x11],rr[0x10]]
+        .map(v=>(v^0xFF).toString(16).padStart(2,'0')).join('').toUpperCase();
+      status=accepted.has(crc)?0:1;
+      text=(status===0?'Accepted CRC ':'Unexpected CRC ')+crc;
     }
    }
   }catch(ex){error=String(ex);}
