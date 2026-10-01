@@ -124,6 +124,7 @@ const SPR_Y_OFFSET   = 1;
 // ---- render-enable edge tracking ----
 let renderingPrev = false;
 let spriteOnlyPrimePending = false;
+let spriteXForceZeroNextFrame = false;
 
 // ---- OAM corruption ----
 let oamCorruptPending = false;
@@ -638,15 +639,22 @@ function visibleScanline(dot) {
       background.atShiftHi = (background.atShiftHi << 1) & 0xFFFF;
     }
 
-    if (ren && !spriteXForceZeroNextFrame) {
-      spriteShiftersTick();
-    }
-    // Stale BG Shift register rule
-    else{
-      for (let i = 0; i < spritesCur.count; i++) {
-        spritesCur.xcnt[i] = 0;
+    if (ren) {
+      if (!spriteXForceZeroNextFrame) {
+        spriteShiftersTick();
+      } else {
+        // If dot 339 occurred during forced blank, the freshly loaded sprite
+        // counters remain halted. They therefore draw immediately when
+        // rendering resumes.
+        for (let i = 0; i < spritesCur.count; i++) spritesCur.xcnt[i] = 0;
+        spriteXForceZeroNextFrame = false;
       }
-      spriteXForceZeroNextFrame = false;
+    } else {
+      // Forced blank pauses sprite pattern shifters, but X counters that are
+      // already counting continue toward zero.
+      for (let i = 0; i < spritesCur.count; i++) {
+        if (spritesCur.xcnt[i] > 0) spritesCur.xcnt[i]--;
+      }
     }
   }
 
