@@ -126,8 +126,7 @@ function powerOnCPU() {
 // PC from $FFFC/$FFFD. APU reset details are refined separately.
 function resetCPU() {
   resetCommonInterruptState();
-  apuResetTiming();
-  resetDMC();
+  apuWarmResetTiming();
 
   CPUregisters.S=(CPUregisters.S-3)&0xFF;
   CPUregisters.P.I=1;
