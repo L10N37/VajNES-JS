@@ -291,7 +291,14 @@ function updateSecondaryOAMAddrForDot(scanline, dot) {
   }
 
   if (dot >= 257 && dot <= 320) {
-    if (dot === 257 && !secOAMAddrOverflow) secOAMAddr = 0;
+    if (dot === 257) {
+      // The secondary-OAM overflow latch freezes increments only during
+      // sprite evaluation. Sprite fetch resumes counter movement. Preserve
+      // the current wrapped/misaligned address when evaluation overflowed;
+      // otherwise normal evaluation begins fetch from OAM2 byte 0.
+      if (!secOAMAddrOverflow) secOAMAddr = 0;
+      secOAMAddrOverflow = false;
+    }
 
     const phase = (dot - 257) & 7;
     // The secondary-OAM address advances for Y/tile/attribute and once at
