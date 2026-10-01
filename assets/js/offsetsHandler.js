@@ -163,10 +163,26 @@ function checkReadOffset(address) {
         if (renderingNow() && renderLine) {
           // During rendering $2004 sees the internal OAM data bus rather than
           // a fresh primary-OAM read.  After the sprite fetch window the bus
-          // settles on secondary OAM byte zero.
+          // settles on the current secondary-OAM address.
           result = current.dot >= 321
             ? (secondaryOAM[secOAMAddr & 0x1F] & 0xFF)
             : (ppuOAMDataBus & 0xFF);
+
+          // Temporary AccuracyCoin diagnostic for Misaligned OAM2 test 3.
+          if ((systemMemory[0x10] & 0xFF) === 3 &&
+              current.dot >= 320 && current.dot <= 340 &&
+              accuracyCoinOAM2ReadTrace.length < 128) {
+            accuracyCoinOAM2ReadTrace.push({
+              dot: current.dot|0,
+              scanline: current.scanline|0,
+              value: result & 0xFF,
+              secAddr: secOAMAddr & 0x1F,
+              frozen: !!secOAMAddrOverflow,
+              interrupted: !!secOAMFetchInterrupted,
+              oam20: secondaryOAM[0] & 0xFF,
+              oam24: secondaryOAM[4] & 0xFF
+            });
+          }
         } else if ((oamAddr & 3) === 2) {
           result &= 0xE3;
         }
@@ -537,6 +553,7 @@ function checkWriteOffset(address, value) {
 
 let accuracyCoinTrace654 = [];
 let accuracyCoinStressSnapshots = [];
+let accuracyCoinOAM2ReadTrace = [];
 
 // ----------------- CPU RAM helpers -----------------
 function cpuRead(addr) {
