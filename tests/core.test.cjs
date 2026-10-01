@@ -389,6 +389,34 @@ test('DMC sample low bits decode APU registers only when the CPU is halted in $4
 });
 
 
+test('OAM DMA source $40xx does not activate APU registers when halted CPU bus is elsewhere',()=>{
+ const e=emulator();
+ e.evaluate("CPUregisters.PC=0x8000;openBus.CPU=0x40;apuTiming.frameFlag=true;irqAssert.frame=true;DMA.active=true;DMA.pad=0;DMA.addr=0x4015;DMA.index=0x15;DMA.phase='get';dmaMicroStep()");
+ assert.equal(e.evaluate('DMA.tmp'),0x40);
+ assert.equal(e.evaluate('apuTiming.frameFlag'),true);
+});
+
+test('OAM DMA aliases APU status through low five source bits when halted CPU bus activates decoder',()=>{
+ const e=emulator();
+ e.evaluate("CPUregisters.PC=0x4001;openBus.CPU=0x40;apuTiming.frameFlag=true;irqAssert.frame=true;apuTiming.length[2]=1;DMA.active=true;DMA.pad=0;DMA.addr=0x5015;DMA.index=0x15;DMA.phase='get';dmaMicroStep()");
+ assert.equal(e.evaluate('DMA.tmp'),0x44);
+});
+
+test('OAM DMA put preserves external CPU bus only during active APU decode window',()=>{
+ for(const [pc,wantBus] of [[0x4001,0x40],[0x8000,0x44]]){
+  const e=emulator();
+  e.evaluate(`CPUregisters.PC=${pc};openBus.CPU=0x40;OAMADDR=0;DMA.active=true;DMA.pad=0;DMA.addr=0x5000;DMA.index=0;DMA.tmp=0x44;DMA.phase='put';dmaMicroStep()`);
+  assert.equal(e.evaluate('OAM[0]'),0x44);
+  assert.equal(e.evaluate('openBus.CPU'),wantBus);
+ }
+});
+
+test('driven OAM DMA source keeps controller alias off external data while still clocking it',()=>{
+ const e=emulator();
+ e.evaluate("CPUregisters.PC=0x4001;systemMemory[0x216]=0xff;joypad1State=0;joypad1Shift=0x55;DMA.active=true;DMA.pad=0;DMA.addr=0x0216;DMA.index=0x16;DMA.phase='get';dmaMicroStep()");
+ assert.equal(e.evaluate('DMA.tmp'),0xff);
+});
+
 test('CNROM selects 8 KiB CHR banks while PRG stays fixed',()=>{
  const e=emulator(rom(3,2,4,0,1));
  assert.deepEqual(e.evaluate('[ppuBusRead(0),ppuBusRead(0x1000),checkReadOffset(0x8000),checkReadOffset(0xc000)]'),[0,1,0,1]);
