@@ -107,10 +107,6 @@ let vFetch = 0;
 let ppuExternalLatchLow = 0;
 let ppuExternalData = 0;
 let ppuCpu2007ReadUntil = -1;
-let ppuCpu2007BufferCaptureAt = -1;
-let ppuCpu2007CaptureDelay = 4;
-function setPPU2007CaptureDelay(v) { ppuCpu2007CaptureDelay = v|0; }
-let spriteFetchOldV = 0;
 let ppuCpu2006HybridUntil = -1;
 let ppuCpu2006HybridLow = 0;
 
@@ -691,6 +687,108 @@ function ppuBackgroundRead(addr, kind) {
   return value;
 }
 
+// AccuracyCoin $2007 Stress: while rendering, PPUDATA's three-dot
+// state machine refills the CPU read buffer from the rendering fetch cadence
+// rather than directly from v. This mirrors the validated RP2C02 timing used
+// by KuroganeNES (144/144): select the fetch that will own the external bus
+// around D+3, including sprite and end-of-line dummy fetches.
+function ppuRenderingFetchRead() {
+  const D = PPUclock.dot | 0;
+  let targetDot = D + 3;
+  const v = VRAM_ADDR & 0x7FFF;
+  if (targetDot > 340) targetDot -= 341;
+
+  const incCX = (vv) => {
+    vv &= 0x7FFF;
+    if ((vv & 0x001F) === 31) { vv &= ~0x001F; vv ^= 0x0400; }
+    else vv = (vv & ~0x001F) | ((vv + 1) & 0x001F);
+    return vv & 0x7FFF;
+  };
+  const incFY = (vv) => {
+    vv &= 0x7FFF;
+    if ((vv & 0x7000) !== 0x7000) return (vv + 0x1000) & 0x7FFF;
+    vv &= ~0x7000;
+    let y=(vv & 0x03E0)>>5;
+    if (y===29) { y=0; vv^=0x0800; }
+    else if (y===31) y=0;
+    else y++;
+    return ((vv & ~0x03E0) | (y<<5)) & 0x7FFF;
+  };
+
+  let vForAddr = v;
+  if (D <= 336) {
+    let nextCZ;
+    if (D <= 256) {
+      nextCZ = D <= 0 ? 8 : (((D - 1) | 7) + 1);
+      if (nextCZ > 256) nextCZ = 328;
+    } else if (D <= 328) nextCZ = 328;
+    else nextCZ = 336;
+    if (targetDot >= D && nextCZ >= D && nextCZ <= targetDot)
+      vForAddr = incCX(vForAddr);
+  }
+
+  if (D <= 256 && targetDot >= 257 && targetDot <= 320) {
+    vForAddr = incFY(vForAddr);
+    if (targetDot > 257) {
+      const tv=((t_hi<<8)|t_lo)&0x7FFF;
+      vForAddr=(vForAddr & ~0x041F)|(tv & 0x041F);
+    }
+  }
+
+  if ((targetDot >= 1 && targetDot <= 256) ||
+      (targetDot >= 321 && targetDot <= 336)) {
+    switch (targetDot & 7) {
+      case 1:
+        return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+      case 3: {
+        const a=0x23C0|(vForAddr&0x0C00)|((vForAddr>>4)&0x38)|((vForAddr>>2)&7);
+        return ppuBusRead(a)&0xFF;
+      }
+      case 5: {
+        const base=(PPUCTRL&0x10?0x1000:0)+((background.ntByte&0xFF)<<4)+((v>>12)&7);
+        return ppuBusRead(base)&0xFF;
+      }
+      case 7: {
+        const base=(PPUCTRL&0x10?0x1000:0)+((background.ntByte&0xFF)<<4)+((v>>12)&7)+8;
+        return ppuBusRead(base)&0xFF;
+      }
+      default:
+        return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+    }
+  }
+
+  if (targetDot >= 257 && targetDot <= 320) {
+    const phase=(targetDot-257)&7;
+    const slot=((targetDot-257)>>3)&7;
+    if (phase < 4)
+      return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+
+    const y=secondaryOAM[slot*4]&0xFF;
+    const tile=secondaryOAM[slot*4+1]&0xFF;
+    const attr=secondaryOAM[slot*4+2]&0xFF;
+    const sprH=(PPUCTRL&SPRITE_SIZE_16)?16:8;
+    const effScanline=PPUclock.scanline&0xFF;
+    const row=((effScanline-y)&0xFF)&(sprH-1);
+    const addr=spritePatternAddress(tile,attr,row);
+    return ppuBusRead(phase>=6 ? addr+8 : addr)&0xFF;
+  }
+
+  if (targetDot >= 337 && targetDot <= 340) {
+    if (targetDot===340) {
+      const a=0x23C0|(vForAddr&0x0C00)|((vForAddr>>4)&0x38)|((vForAddr>>2)&7);
+      return ppuBusRead(a)&0xFF;
+    }
+    return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+  }
+
+  if (targetDot===0) {
+    const a=0x23C0|(vForAddr&0x0C00)|((vForAddr>>4)&0x38)|((vForAddr>>2)&7);
+    return ppuBusRead(a)&0xFF;
+  }
+
+  return ppuBusRead(0x2000 | (vForAddr & 0x0FFF)) & 0xFF;
+}
+
 // ---- Scanline handlers ----
 function preRenderScanline(dot) {
   const ren = renderingNow();
@@ -797,35 +895,6 @@ function visibleScanline(dot) {
   const ren   = renderingNow();
   const phase = (dot - 1) & 7;
   const inFetch = (dot >= 2 && dot <= 256) || (dot >= 321 && dot <= 336);
-
-  // Track the actual external data bus during sprite/dummy fetches. Background
-  // fetches already update ppuExternalData through ppuBackgroundRead().
-  if (ren && dot === 257) spriteFetchOldV = VRAM_ADDR & 0x7FFF;
-  if (ren && dot >= 258 && dot <= 320 && (dot & 1) === 0) {
-    const fetchPhase = (dot - 257) & 7;
-    const slot = (dot - 257) >> 3;
-    let fetchAddr;
-    if (fetchPhase === 1) {
-      // Dot 258 uses the nametable address latched before dot-257 horizontal
-      // reload; the second nametable read in each sprite slot uses live v.
-      const vv = (slot === 0) ? spriteFetchOldV : VRAM_ADDR;
-      fetchAddr = 0x2000 | (vv & 0x0FFF);
-    } else if (fetchPhase === 3) {
-      fetchAddr = 0x2000 | (VRAM_ADDR & 0x0FFF);
-    } else {
-      const address = slot < spritesNext.count
-        ? spritePatternAddress(spritesNext.tile[slot], spritesNext.attr[slot], spritesNext.row[slot])
-        : spritePatternAddress(255, 255, 0);
-      fetchAddr = address + (fetchPhase === 7 ? 8 : 0);
-    }
-    ppuExternalLatchLow = fetchAddr & 0xFF;
-    ppuExternalData = ppuBusRead(fetchAddr) & 0xFF;
-  } else if (ren && (dot === 338 || dot === 340)) {
-    // Final dummy background reads are nametable reads on the external bus.
-    const fetchAddr = 0x2000 | (VRAM_ADDR & 0x0FFF);
-    ppuExternalLatchLow = fetchAddr & 0xFF;
-    ppuExternalData = ppuBusRead(fetchAddr) & 0xFF;
-  }
 
   // Sprite-0 fetch completion follows the OAM fetch pipeline, not the
   // delayed visual-rendering state. A PPUMASK enable around dot 256 can start
@@ -1208,15 +1277,6 @@ function ppuTick() {
     }
 
   scanlineLUT[PPUclock.scanline](PPUclock.dot);
-
-  // A CPU $2007 read returns the old buffer immediately, but its external
-  // memory read completes several PPU dots later. During rendering that refill
-  // captures whatever value is on the shared PPU data bus at that time.
-  if (ppuCpu2007BufferCaptureAt >= 0 &&
-      ppuCycles >= ppuCpu2007BufferCaptureAt) {
-    VRAM_DATA = ppuExternalData & 0xFF;
-    ppuCpu2007BufferCaptureAt = -1;
-  }
 
   if (renNow2) {
     const sl = PPUclock.scanline | 0;
