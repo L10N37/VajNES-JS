@@ -39,7 +39,16 @@ for(const group of groups){
     group.startsWith('sprite_hit_tests_2005.10.05') ||
     group.startsWith('sprite_overflow_tests') ||
     group.startsWith('vbl_nmi_timing');
-   const chunks = legacyF8 ? 30 : 100;
+
+   // Several older standalone suites predate the usual $6000 status block.
+   // They report to the PPU text console instead, and a couple of them need
+   // substantially more than 20M CPU cycles to reach their terminal loop.
+   let chunks = legacyF8 ? 30 : 100;
+   if(group.startsWith('cpu_timing_test6')) chunks = 220;
+   if(group.startsWith('cpu_dummy_reads')) chunks = 220;
+   if(group.startsWith('dmc_dma_during_read4')) chunks = 220;
+   if(group.startsWith('ppu_read_buffer')) chunks = 320;
+
    for(let i=0;i<chunks;i++){
     e.run(200000);
     const data=e.evaluate('Array.from(prgRam.slice(0,4096))');
@@ -48,6 +57,21 @@ for(const group of groups){
       const z=data.indexOf(0,4);
       text=String.fromCharCode(...data.slice(4,z<0?data.length:z));
       if(status<128)break;
+    }
+
+    // Fallback for serial/PPU-console-era ROMs. Their console writes ASCII
+    // character codes directly into nametable RAM, so the terminal result can
+    // be recognized without special emulator hooks.
+    if(status===null && (i%5===4 || i===chunks-1)){
+      const screen=String.fromCharCode(...e.evaluate('Array.from(VRAM)'));
+      const pass=/\bpassed\b/i.test(screen);
+      const fail=/\bfailed\b/i.test(screen);
+      const error=screen.match(/\berror\s+(\d+)/i);
+      if(pass || fail || error){
+        status=pass?0:(error?Number(error[1]):1);
+        text=pass?'Passed':(error?'Error '+error[1]:'Failed');
+        break;
+      }
     }
    }
    // These older suites continuously update $F8 with the test currently
