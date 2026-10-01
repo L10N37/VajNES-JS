@@ -86,51 +86,6 @@ for (const [i,trace] of liveTrace654.entries()) {
     ' error='+trace.errorCode+
     ' table='+trace.table.map(x=>x.toString(16).padStart(2,'0')).join(' '));
 }
-// Temporary $2007 timing sweep: one CI run tests several PPU DATA refill
-// delays against AccuracyCoin's stable-byte answer key.
-function run2007DelayVariant(delay) {
-  const v=createEmulator(); v.load(new Uint8Array(rom));
-  v.evaluate('setPPU2007CaptureDelay('+delay+')');
-  v.run(3000000); v.buttons(8); v.run(100000); v.buttons(0);
-  let st;
-  for(let i=0;i<3000;i++) {
-    v.run(100000); st=v.state();
-    if(st.ram[0x35]===0 && st.ram[0x37]===144 &&
-       tests.every(tt=>st.ram[tt.address]!==0)) break;
-  }
-  const traces=v.evaluate('accuracyCoinTrace654');
-  const trace=[...traces].reverse().find(x=>x.errorCode===2 &&
-    x.table && x.table.length===341 && x.table[0]!==0x7F);
-  const test=tests.find(tt=>tt.name==='$2007 Stress Test');
-  const raw=test?st.ram[test.address]:0;
-  if(!trace) return {delay,raw,mismatches:-1,first:[]};
-
-  const key=('02 C0 46 46 03 C0 06 06 04 C1 6C 6C 05 C1 60 60 '+
-    '06 C1 60 60 07 C1 06 06 08 C2 66 66 09 C2 66 66 '+
-    '0A C2 24 24 0B C2 66 66 0C C3 66 66 0D C3 64 64 '+
-    '0E C3 60 60 0F C3 60 60 10 C4 66 66 11 C4 66 66 '+
-    '12 C4 18 18 13 C4 0C 0C 14 C5 6C 6C 15 C5 60 60 '+
-    '16 C5 76 76 17 C5 72 72 18 C6 66 66 19 C6 7C 7C '+
-    '1A C6 3C 3C 1B C6 7C 7C 1C C7 3C 3C 1D C7 7E 7E '+
-    '1E C7 66 66 1F C7 66 66 00 C0 3C 3C 01 C0 18 18 '+
-    '02 00 FF FF 00 00 FF FF 00 00 FF FF 00 00 FF FF '+
-    '00 00 FF FF 00 00 FF FF 00 00 FF FF 00 00 FF FF '+
-    '00 C0 66 66 01 C0 38 38 02 02').split(' ').map(x=>parseInt(x,16));
-  let stable=[];
-  for(let y=1;y<trace.table.length && stable.length<key.length;y+=2)
-    stable.push(trace.table[y]&0xFF);
-  let first=[], mismatches=0;
-  for(let i=0;i<key.length;i++) if(stable[i]!==key[i]) {
-    mismatches++;
-    if(first.length<12) first.push([i,stable[i],key[i]]);
-  }
-  return {delay,raw,mismatches,first};
-}
-for (const delay of [3,4,5,6,7,8,9,10]) {
-  const d=run2007DelayVariant(delay);
-  console.log('PPU2007SWEEP '+JSON.stringify(d));
-}
-
 const results=tests.map(t=>{
  const raw=state.ram[t.address];
  const status=raw===255?'skipped':raw===0?'not-completed':raw===3?'in-progress':raw&1?'pass':'fail';
