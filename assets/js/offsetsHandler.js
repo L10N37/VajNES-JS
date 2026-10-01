@@ -161,15 +161,13 @@ function checkReadOffset(address) {
           (current.scanline >= 0 && current.scanline <= 239);
 
         if (renderingNow() && renderLine) {
-          if (current.dot >= 1 && current.dot <= 64) {
-            result = 0xFF;
-          } else if (current.dot >= 65 && current.dot <= 320) {
-            result = ppuOAMDataBus & 0xFF;
-          } else if (current.dot >= 321 && current.dot <= 340) {
-            result = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
-          }
+          // During rendering $2004 sees the internal OAM data bus rather than
+          // a fresh primary-OAM read.  After the sprite fetch window the bus
+          // settles on secondary OAM byte zero.
+          result = current.dot >= 323
+            ? (secondaryOAM[0] & 0xFF)
+            : (ppuOAMDataBus & 0xFF);
         } else if ((oamAddr & 3) === 2) {
-          // Attribute bits 2-4 are not implemented in primary OAM.
           result &= 0xE3;
         }
 
