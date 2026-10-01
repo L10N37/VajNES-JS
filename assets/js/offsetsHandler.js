@@ -128,7 +128,20 @@ function checkReadOffset(address) {
           const obBefore = openBus.PPU & 0xFF;
           const stat = PPUSTATUS & 0xE0;
 
-          raw = (stat | (obBefore & 0x1F)) & 0xFF;
+          // $2002 is sampled across the CPU read, not at one instant. VBlank
+          // is latched near the beginning of the read, while sprite-zero and
+          // overflow reflect the end.
+          let spriteFlags = stat & 0x60;
+          if (PPUclock.scanline === 261 && PPUclock.dot === 1) spriteFlags = 0;
+
+          // If sprite overflow becomes asserted on the same PPU dot this CPU
+          // read begins, the read sees the newly-set overflow bit.
+          if (spriteOverflowSetScanline === PPUclock.scanline &&
+              spriteOverflowSetDot === PPUclock.dot) {
+            spriteFlags |= 0x20;
+          }
+
+          raw = ((stat & 0x80) | spriteFlags | (obBefore & 0x1F)) & 0xFF;
 
           PPUSTATUS &= ~0b10000000;
 
