@@ -114,6 +114,17 @@ test('DMC DAC steps saturate and disabling the reader retains DAC level',()=>{
  e.evaluate('DMC.shiftRegister=0;DMC.outputLevel=1;DMC.timer=0;clockDMC()');assert.equal(e.evaluate('DMC.outputLevel'),1);
  e.evaluate('DMC.sampleBufferFull=true;DMC.sampleBuffer=0xA5;apuWrite(0x4015,0)');assert.equal(e.evaluate('DMC.outputLevel'),1);
 });
+test('DMC rate index 13 uses the NTSC 84-cycle period',()=>{
+ const e=emulator();
+ e.evaluate('dmcSetControlFrom4010(13)');
+ assert.equal(e.evaluate('DMC.timerPeriod'),84);
+ e.evaluate('DMC.timer=83;DMC.bitsRemaining=8');
+ for(let i=0;i<83;i++)e.evaluate('clockDMC()');
+ assert.equal(e.evaluate('DMC.bitsRemaining'),8);
+ e.evaluate('clockDMC()');
+ assert.equal(e.evaluate('DMC.bitsRemaining'),7);
+});
+
 test('SHY corrupts write address high on page crossing and uses five cycles',()=>{
  const bytes=rom();bytes.set([0x9c,0xff,0x12],16);const e=emulator(bytes);
  e.evaluate('CPUregisters.PC=0x8000;CPUregisters.X=1;CPUregisters.Y=3;cpuRunning=true');
