@@ -39,7 +39,8 @@ for(const group of groups){
     group.startsWith('sprite_hit_tests_2005.10.05') ||
     group.startsWith('sprite_overflow_tests') ||
     group.startsWith('vbl_nmi_timing');
-   for(let i=0;i<100;i++){
+   const chunks = legacyF8 ? 30 : 100;
+   for(let i=0;i<chunks;i++){
     e.run(200000);
     const data=e.evaluate('Array.from(prgRam.slice(0,4096))');
     if(data[1]===0xde&&data[2]===0xb0&&data[3]===0x61){
@@ -48,13 +49,15 @@ for(const group of groups){
       text=String.fromCharCode(...data.slice(4,z<0?data.length:z));
       if(status<128)break;
     }
-    if(legacyF8){
-      const legacy=e.evaluate('systemMemory[0xF8]&0xFF');
-      if(legacy){
-        status=legacy===1?0:legacy;
-        text=legacy===1?'PASSED':'FAILED #'+legacy;
-        break;
-      }
+   }
+   // These older suites continuously update $F8 with the test currently
+   // running. Only inspect it after giving the ROM enough time to reach its
+   // terminal pass/fail loop; reading the first nonzero value is a false fail.
+   if(legacyF8 && status===null){
+    const legacy=e.evaluate('systemMemory[0xF8]&0xFF');
+    if(legacy){
+      status=legacy===1?0:legacy;
+      text=legacy===1?'PASSED':'FAILED #'+legacy;
     }
    }
   }catch(ex){error=String(ex);}
