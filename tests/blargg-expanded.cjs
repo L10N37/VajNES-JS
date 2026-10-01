@@ -1,4 +1,4 @@
-// Exploratory expanded Blargg/nes-test-roms sweep.
+// Exploratory expanded Blargg/nes-test-roms sweep. Legacy suites use delayed final-result reads.
 // Uses the standard $6000 result protocol where available. This discovery
 // script never fails CI itself; the report tells us which suites need work.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
