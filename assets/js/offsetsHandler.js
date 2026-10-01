@@ -197,56 +197,42 @@ function checkReadOffset(address) {
       }
 
       case 0x2007: {
-        if (renderingNow() && (PPUclock.scanline <= 239 || PPUclock.scanline === 261))
-          ppuCpu2007ReadUntil = ppuCycles + 8;
+        const renderRead =
+          renderingNow() &&
+          (PPUclock.scanline <= 239 || PPUclock.scanline === 261);
+
+        // Keep the already-verified ALE+Read collision path intact.
+        if (renderRead) ppuCpu2007ReadUntil = ppuCycles + 8;
 
         const vv = VRAM_ADDR & 0x3FFF;
         const bufBefore = VRAM_DATA & 0xFF;
-
         let ret = 0x00;
 
         if (vv < 0x3F00) {
-
           ret = bufBefore;
-
-          let newVal = 0;
-
-          if (vv < 0x2000) {
-
-            newVal = cartridgeChrRead(vv) & 0xFF;
-
-            VRAM_DATA = newVal;
-
+          if (renderRead) {
+            VRAM_DATA = ppuRenderingFetchRead() & 0xFF;
+          } else if (vv < 0x2000) {
+            VRAM_DATA = cartridgeChrRead(vv) & 0xFF;
           } else {
-
-            const ntAddr = mapNT(vv);
-            VRAM_DATA = VRAM[ntAddr] & 0xFF;
+            VRAM_DATA = VRAM[mapNT(vv)] & 0xFF;
           }
         } else {
-
           const p = paletteIndex(vv);
           let palVal = PALETTE_RAM[p] & 0x3F;
+          if (PPUMASK & 0x01) palVal &= 0x30;
+          ret = (openBus.PPU & 0xC0) | palVal;
 
-          // Apply greyscale mask (PPUMASK bit 0)
-          if (PPUMASK & 0x01) {
-          palVal &= 0x30; // zero lower 4 bits
+          if (renderRead) {
+            VRAM_DATA = ppuRenderingFetchRead() & 0xFF;
+          } else {
+            VRAM_DATA = VRAM[mapNT(vv & 0x2FFF)] & 0xFF;
           }
-
-          ret = (openBus.PPU & 0xC0) | palVal;
-
-          // Return palette data immediately
-          ret = (openBus.PPU & 0xC0) | palVal;
-
-          // Reload VRAM buffer from nametable mirror ($2F00-$2FFF)
-          const ntMirror = vv & 0x2FFF;
-
-          const ntAddr = mapNT(ntMirror);
-          VRAM_DATA = VRAM[ntAddr] & 0xFF;
         }
 
         incrementPPUDataAddress();
         if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
-        
+
         raw = ret & 0xFF;
         openBus.PPU = raw;
         break;
