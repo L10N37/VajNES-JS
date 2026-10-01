@@ -171,9 +171,6 @@ let secOAMOverflowDetection = false;
 let secOAMCopyBytes = 0;
 let secOAMFetchInterrupted = false;
 let frozenSecondaryFetchApplied = false;
-let accuracyCoinFrozenFetchTrace = [];
-let accuracyCoinScanline0Trace = [];
-let accuracyCoinScanline0LateTrace = [];
 let preRenderOAMEvalStarted = false; // late-enable scanline-0 gate
 let ppuOAMDataBus = 0xFF;
 let spriteOverflowSetScanline = -1;
@@ -811,27 +808,6 @@ function ppuRenderingFetchRead() {
 function preRenderScanline(dot) {
   const ren = renderingNow();
 
-  const scan0OAMSignature =
-    (OAM[0] & 0xFF) === 0x00 &&
-    (OAM[1] & 0xFF) === 0xC6 &&
-    (OAM[2] & 0xFF) === 0x00 &&
-    (OAM[3] & 0xFF) === 0x80;
-  if (scan0OAMSignature &&
-      [60,63,64,65,66,67,68,69,70,72,80,96,128,160,192,224,255,256,257,258,260,264,272,288,304,320,339,340].includes(dot) &&
-      accuracyCoinScanline0LateTrace.length < 260) {
-    accuracyCoinScanline0LateTrace.push({
-      event:'pre',
-      frame:PPUclock.frame|0,odd:!!PPUclock.oddFrame,dot:dot|0,
-      mask:PPUMASK&0x18,oamMask:ppuOAMMaskBits()&0x18,
-      visualMask:ppuEffectiveMask()&0x18,
-      evalStarted:!!preRenderOAMEvalStarted,
-      secAddr:secOAMAddr&0x1F,priAddr:secOAMPrimaryAddr&0xFF,
-      frozen:!!secOAMAddrOverflow,
-      sec:Array.from(secondaryOAM.slice(0,8)),
-      nextCount:spritesNext.count|0,nextSpr0:spritesNext.sprite0ListIndex|0
-    });
-  }
-
   if (dot === 1) preRenderOAMEvalStarted = false;
   if (dot === 65 && ppuOAMMaskBits() !== 0) preRenderOAMEvalStarted = true;
 
@@ -957,39 +933,6 @@ function visibleScanline(dot) {
   }
 
   if (dot === 1) {
-    if (PPUclock.scanline === 0 &&
-        (OAM[0]&0xFF)===0x00 && (OAM[1]&0xFF)===0xC6 &&
-        (OAM[2]&0xFF)===0x00 && (OAM[3]&0xFF)===0x80 &&
-        accuracyCoinScanline0LateTrace.length < 260) {
-      accuracyCoinScanline0LateTrace.push({
-        event:'line0',frame:PPUclock.frame|0,odd:!!PPUclock.oddFrame,dot:dot|0,
-        mask:PPUMASK&0x18,oamMask:ppuOAMMaskBits()&0x18,
-        visualMask:ppuEffectiveMask()&0x18,evalStarted:!!preRenderOAMEvalStarted,
-        secAddr:secOAMAddr&0x1F,priAddr:secOAMPrimaryAddr&0xFF,
-        frozen:!!secOAMAddrOverflow,sec:Array.from(secondaryOAM.slice(0,8)),
-        nextCount:spritesNext.count|0,nextSpr0:spritesNext.sprite0ListIndex|0,
-        curCount:spritesCur.count|0,curSpr0:spritesCur.sprite0ListIndex|0
-      });
-    }
-    if (PPUclock.scanline === 0 && accuracyCoinScanline0Trace.length < 64) {
-      accuracyCoinScanline0Trace.push({
-        event:'line0-before-swap',
-        frame:PPUclock.frame|0,
-        odd:!!PPUclock.oddFrame,
-        dot:dot|0,
-        oamMask:ppuOAMMaskBits()&0x18,
-        visualMask:ppuEffectiveMask()&0x18,
-        secAddr:secOAMAddr&0x1F,
-        frozen:!!secOAMAddrOverflow,
-        secondary:Array.from(secondaryOAM.slice(0,8)),
-        nextCount:spritesNext.count|0,
-        nextSprite0:spritesNext.sprite0ListIndex|0,
-        tile0:spritesNext.tile[0]&0xFF,
-        row0:spritesNext.row[0]&0xFF,
-        attr0:spritesNext.attr[0]&0xFF,
-        x0:spritesNext.xcnt[0]&0xFF
-      });
-    }
     if (spriteOnlyPrimePending && sprEnabledNow() && !bgEnabledNow()) {
       primeBGForSpriteOnly();
       spriteOnlyPrimePending = false;
@@ -1010,19 +953,6 @@ function visibleScanline(dot) {
     spritesCur = spritesNext;
     spritesNext = tmp;
     sprite0FetchComplete = true;
-
-    if (PPUclock.scanline === 0 &&
-        (OAM[0]&0xFF)===0x00 && (OAM[1]&0xFF)===0xC6 &&
-        spritesCur.count > 0 && spritesCur.sprite0ListIndex === 0 &&
-        accuracyCoinScanline0LateTrace.length < 260) {
-      accuracyCoinScanline0LateTrace.push({
-        event:'post-swap',frame:PPUclock.frame|0,odd:!!PPUclock.oddFrame,dot:dot|0,
-        tile:spritesCur.tile[0]&0xFF,row:spritesCur.row[0]&0xFF,
-        attr:spritesCur.attr[0]&0xFF,x:spritesCur.xcnt[0]&0xFF,
-        lo:spritesCur.lo[0]&0xFF,hi:spritesCur.hi[0]&0xFF,
-        idx:spritesCur.idx[0]&0xFF,status:PPUSTATUS&0xE0
-      });
-    }
 
     background.bgShiftLo = (nextLine.t0.lo & 0xFF) << 8;
     background.bgShiftHi = (nextLine.t0.hi & 0xFF) << 8;
@@ -1046,18 +976,6 @@ function visibleScanline(dot) {
   if (ren && phase === 0 && dot >= 9 && dot <= 257) reloadBGShifters(false);
 
   if (dot >= 1 && dot <= 256) {
-    if (PPUclock.scanline === 0 && dot >= 122 && dot <= 138 &&
-        spritesCur.count > 0 && spritesCur.sprite0ListIndex === 0 &&
-        (spritesCur.tile[0]&0xFF) === 0xC6 &&
-        accuracyCoinScanline0LateTrace.length < 260) {
-      accuracyCoinScanline0LateTrace.push({
-        event:'pixel',frame:PPUclock.frame|0,odd:!!PPUclock.oddFrame,dot:dot|0,
-        xcnt:spritesCur.xcnt[0]&0xFF,lo:spritesCur.lo[0]&0xFF,
-        hi:spritesCur.hi[0]&0xFF,row:spritesCur.row[0]&0xFF,
-        bgLo:background.bgShiftLo&0xFFFF,bgHi:background.bgShiftHi&0xFFFF,
-        fineX:fineX&7,status:PPUSTATUS&0xE0,mask:ppuEffectiveMask()&0x18
-      });
-    }
     emitPixelHardwarePalette();
 
     // On composite 2C02 odd frames the skipped pre-render dot exposes the
@@ -1227,24 +1145,6 @@ function applyFrozenSecondaryOAMFetch(scanline) {
   row &= 0x0F;
 
   const oldSprite0 = spritesNext.sprite0ListIndex;
-  if (accuracyCoinFrozenFetchTrace.length < 64) {
-    accuracyCoinFrozenFetchTrace.push({
-      scanline: scanline|0,
-      dot: PPUclock.dot|0,
-      value: v,
-      secAddr: secOAMAddr & 0x1F,
-      frozen: !!secOAMAddrOverflow,
-      oamMask: ppuOAMMaskBits() & 0x18,
-      visualMask: ppuEffectiveMask() & 0x18,
-      targetLine,
-      row,
-      oldCount: spritesNext.count|0,
-      oldSprite0: oldSprite0|0,
-      oldTile0: spritesNext.tile[0] & 0xFF,
-      oldAttr0: spritesNext.attr[0] & 0xFF,
-      oldX0: spritesNext.xcnt[0] & 0xFF
-    });
-  }
   spritesNext.count = SPR_MAX;
   for (let i = 0; i < SPR_MAX; i++) {
     spritesNext.tile[i] = v;
@@ -1294,27 +1194,6 @@ function loadLatePreRenderStaleSprites() {
 // bulk sprite evaluation are internal renderer work and must not clock A12.
 function renderingBusTick() {
   const d=PPUclock.dot+1,sl=PPUclock.scanline;
-
-  if (sl === 261 && d >= 257 && d <= 261 &&
-      accuracyCoinScanline0Trace.length < 48) {
-    accuracyCoinScanline0Trace.push({
-      event:'prerender-fetch',
-      frame:PPUclock.frame|0,
-      odd:!!PPUclock.oddFrame,
-      dot:PPUclock.dot|0,
-      oamMask:ppuOAMMaskBits()&0x18,
-      visualMask:ppuEffectiveMask()&0x18,
-      secAddr:secOAMAddr&0x1F,
-      frozen:!!secOAMAddrOverflow,
-      secondary:Array.from(secondaryOAM.slice(0,8)),
-      nextCount:spritesNext.count|0,
-      nextSprite0:spritesNext.sprite0ListIndex|0,
-      tile0:spritesNext.tile[0]&0xFF,
-      row0:spritesNext.row[0]&0xFF,
-      attr0:spritesNext.attr[0]&0xFF,
-      x0:spritesNext.xcnt[0]&0xFF
-    });
-  }
 
   // OAM fetch enable is sampled independently of the visual pipeline.
   // Arm at the start of sprite fetch, then apply the frozen secondary-OAM
