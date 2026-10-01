@@ -168,24 +168,6 @@ function checkReadOffset(address) {
             ? (secondaryOAM[secOAMAddr & 0x1F] & 0xFF)
             : (ppuOAMDataBus & 0xFF);
 
-          // Temporary AccuracyCoin diagnostic for Misaligned OAM2 tests
-          // 3/4: capture the late-scanline $2004 reads both before and after
-          // the deliberate sprite-fetch interruption.
-          if (((systemMemory[0x10] & 0xFF) === 3 ||
-               (systemMemory[0x10] & 0xFF) === 4) &&
-              current.dot >= 300 && current.dot <= 340 &&
-              accuracyCoinOAM2ReadTrace.length < 192) {
-            accuracyCoinOAM2ReadTrace.push({
-              dot: current.dot|0,
-              scanline: current.scanline|0,
-              value: result & 0xFF,
-              secAddr: secOAMAddr & 0x1F,
-              frozen: !!secOAMAddrOverflow,
-              interrupted: !!secOAMFetchInterrupted,
-              oam20: secondaryOAM[0] & 0xFF,
-              oam24: secondaryOAM[4] & 0xFF
-            });
-          }
         } else if ((oamAddr & 3) === 2) {
           result &= 0xE3;
         }
@@ -381,23 +363,6 @@ function checkWriteOffset(address, value) {
 
       // PPUMASK
       case 0x2001: {
-        if ((systemMemory[0x10] & 0xFF) === 4 &&
-            typeof accuracyCoinOAM2ReadTrace !== 'undefined' &&
-            accuracyCoinOAM2ReadTrace.length < 192) {
-          accuracyCoinOAM2ReadTrace.push({
-            event: 'mask-write',
-            mask: value & 0xFF,
-            dot: current.dot|0,
-            ppuDot: PPUclock.dot|0,
-            scanline: current.scanline|0,
-            value: 0,
-            secAddr: secOAMAddr & 0x1F,
-            frozen: !!secOAMAddrOverflow,
-            interrupted: !!secOAMFetchInterrupted,
-            oam20: secondaryOAM[0] & 0xFF,
-            oam24: secondaryOAM[4] & 0xFF
-          });
-        }
         ppuWriteMask(value & 0xFF);
         break;
       }
@@ -557,10 +522,6 @@ function checkWriteOffset(address, value) {
   cpuOpenBusFinalise(addr, value, code, true);
 }
 
-let accuracyCoinTrace654 = [];
-let accuracyCoinStressSnapshots = [];
-let accuracyCoinOAM2ReadTrace = [];
-
 // ----------------- CPU RAM helpers -----------------
 function cpuRead(addr) {
   addr &= 0xFFFF;
@@ -572,39 +533,6 @@ function cpuWrite(addr, value) {
   addr &= 0xFFFF;
   value &= 0xFF;
   systemMemory[addr & 0x7FF] = value;
-
-  // AccuracyCoin diagnostic breakpoints. $10 is ErrorCode; its transition to
-  // 3 occurs immediately after the first $2004 stress table has compared.
-  // FAIL_2004_Stress stores X to $20 before jumping to TEST_Fail, while the
-  // second completed table is still intact.
-  if (((addr & 0x7FF) === 0x10 && value === 3) ||
-      ((addr & 0x7FF) === 0x20 && (systemMemory[0x10] & 0xFF) === 3)) {
-    const first = systemMemory[0x500] & 0xFF;
-    if (first === 0x7F || first === 0x78) {
-      accuracyCoinStressSnapshots.push({
-        tag: (addr & 0x7FF) === 0x10 ? 'after-table1' : 'table2-fail',
-        errorCode: systemMemory[0x10] & 0xFF,
-        table: Array.from(systemMemory.slice(0x500, 0x655))
-      });
-      if (accuracyCoinStressSnapshots.length > 12) accuracyCoinStressSnapshots.shift();
-    }
-  }
-
-  // Temporary AccuracyCoin diagnostic: capture every completed $2004
-  // stress table while ErrorCode is in the stress-test stages. Do not filter
-  // on the expected first/final bytes: a mismatch there is exactly what this
-  // diagnostic needs to reveal.
-  if ((addr & 0x7FF) === 0x654) {
-    const errorCode = systemMemory[0x10] & 0xFF;
-    if (errorCode === 2 || errorCode === 3) {
-      accuracyCoinTrace654.push({
-        value,
-        errorCode,
-        table: Array.from(systemMemory.slice(0x500, 0x655))
-      });
-      if (accuracyCoinTrace654.length > 16) accuracyCoinTrace654.shift();
-    }
-  }
 
   openBus.internal = openBus.CPU = value;
 }
