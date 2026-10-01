@@ -745,11 +745,16 @@ function ppuRenderingFetchRead() {
         return ppuBusRead(a)&0xFF;
       }
       case 5: {
-        const base=(PPUCTRL&0x10?0x1000:0)+((background.ntByte&0xFF)<<4)+((v>>12)&7);
+        // If the target fetch lies beyond an NT fetch that has not happened
+        // yet at CPU-read time, predict that latch from the target tile's v.
+        // Using background.ntByte here makes PT-low lag one tile in VajNES.
+        const nt=ppuBusRead(0x2000|(vForAddr&0x0FFF))&0xFF;
+        const base=(PPUCTRL&0x10?0x1000:0)+(nt<<4)+((vForAddr>>12)&7);
         return ppuBusRead(base)&0xFF;
       }
       case 7: {
-        const base=(PPUCTRL&0x10?0x1000:0)+((background.ntByte&0xFF)<<4)+((v>>12)&7)+8;
+        const nt=ppuBusRead(0x2000|(vForAddr&0x0FFF))&0xFF;
+        const base=(PPUCTRL&0x10?0x1000:0)+(nt<<4)+((vForAddr>>12)&7)+8;
         return ppuBusRead(base)&0xFF;
       }
       default:
