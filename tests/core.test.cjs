@@ -234,6 +234,20 @@ test('ninth consecutive in-range sprite schedules overflow at evaluation dot 131
  assert.deepEqual(e.evaluate('[spriteOverflowSetScanline,spriteOverflowSetDot,PPUSTATUS&0x20]'),[0,131,0]);
 });
 
+test('forced blank keeps sprite X counters counting while pattern shifters pause',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=false;spritesCur.count=1;spritesCur.xcnt[0]=3;spritesCur.lo[0]=0x81;spritesCur.hi[0]=0x42;PPUclock.scanline=5;PPUclock.dot=10;visibleScanline(10)');
+ assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0]]'),[2,0x81,0x42]);
+});
+
+test('dot-339 forced-zero latch is retained through blank and applied when rendering resumes',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=true;spritesCur.count=1;spritesCur.xcnt[0]=7;PPUclock.scanline=5;PPUclock.dot=10;visibleScanline(10)');
+ assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spriteXForceZeroNextFrame]'),[6,true]);
+ e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;PPUclock.dot=11;visibleScanline(11)');
+ assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spriteXForceZeroNextFrame]'),[0,false]);
+});
+
 test('background shifter advances after pixel zero without duplicating it',()=>{
  const e=emulator();e.evaluate('spriteXForceZeroNextFrame=false;PPUMASK=0x0a;fineX=0;PPUclock.scanline=0;PPUclock.dot=1;nextLine.t0={lo:0x80,hi:0,at:0};nextLine.t1={lo:0,hi:0,at:0};PALETTE_RAM[0]=0;PALETTE_RAM[1]=0x21;visibleScanline(1);PPUclock.dot=2;visibleScanline(2)');
  assert.deepEqual(e.evaluate('Array.from(paletteIndexFrame.slice(0,2))'),[0x21,0]);
