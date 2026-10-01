@@ -248,6 +248,20 @@ test('dot-339 forced-zero latch is retained through blank and applied when rende
  assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spriteXForceZeroNextFrame]'),[0,false]);
 });
 
+test('$2007 overlap can feed external PPU data into the next pattern-low fetch',()=>{
+ const e=emulator();
+ e.evaluate('ppuExternalData=0xaa;ppuCpu2007ReadUntil=ppuCycles+8;CHR_ROM[0x1aa]=0x5a');
+ assert.equal(e.evaluate("ppuBackgroundRead(0x0103,'patternLo')"),0x5a);
+ assert.deepEqual(e.evaluate('[ppuExternalLatchLow,ppuCpu2007ReadUntil]'),[0xaa,-1]);
+});
+
+test('second $2006 write captures the external low-address latch during rendering',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUclock.scanline=4;PPUclock.dot=180;ppuExternalLatchLow=0x19;writeToggle=1;t_hi=0x2f;t_lo=0;checkWriteOffset(0x2006,0)');
+ assert.equal(e.evaluate('ppuCpu2006HybridLow'),0x19);
+ assert.ok(e.evaluate('ppuCpu2006HybridUntil>=ppuCycles'));
+});
+
 test('background shifter advances after pixel zero without duplicating it',()=>{
  const e=emulator();e.evaluate('spriteXForceZeroNextFrame=false;PPUMASK=0x0a;fineX=0;PPUclock.scanline=0;PPUclock.dot=1;nextLine.t0={lo:0x80,hi:0,at:0};nextLine.t1={lo:0,hi:0,at:0};PALETTE_RAM[0]=0;PALETTE_RAM[1]=0x21;visibleScanline(1);PPUclock.dot=2;visibleScanline(2)');
  assert.deepEqual(e.evaluate('Array.from(paletteIndexFrame.slice(0,2))'),[0x21,0]);
