@@ -138,6 +138,15 @@ let sprite0FetchComplete = true;
 let oamCorruptPending = false;
 let oamCorruptSeedRow = 0;
 let secOAMAddr = 0;
+const secondaryOAM = new Uint8Array(32);
+const secondaryOAMPrimary = new Uint8Array(8);
+let secOAMOverflowed = false;
+let evalOAMAddrOverflowed = false;
+let evalOverflowDetection = false;
+let evalCopyBytes = 0;
+let evalOAMData = 0xFF;
+let ppuOAMDataBus = 0xFF;
+let evalTargetLine = 0;
 let spriteOverflowSetScanline = -1;
 let spriteOverflowSetDot = -1;
 let ppumaskPrev = 0;
@@ -165,25 +174,155 @@ function oamCorruptDoCopyRow(seedRow) {
   }
 }
 
-// Minimal secondary OAM address model
+// Dot-driven secondary OAM / sprite-evaluation state.
+// The RP2C02 uses a real 5-bit secondary-OAM address counter.  Keeping this
+// state explicit is important because $2004 can observe it while rendering is
+// being enabled/disabled mid-scanline.
+function secondaryOAMAdvance() {
+  if (secOAMOverflowed) return;
+  secOAMAddr = (secOAMAddr + 1) & 0x1F;
+  if (secOAMAddr === 0) secOAMOverflowed = true;
+}
+
+function evalMoveToNextByte(target) {
+  const oldSec = secOAMAddr & 0x1F;
+  OAMADDR = (OAMADDR + 1) & 0xFF;
+  secondaryOAMAdvance();
+  if (OAMADDR === 0) evalOAMAddrOverflowed = true;
+
+  // A completed four-byte secondary-OAM entry is immediately usable by the
+  // existing sprite fetch/render pipeline.
+  if ((oldSec & 3) === 3 && !secOAMOverflowed) {
+    const slot = oldSec >> 2;
+    if (slot < SPR_MAX && target.count <= slot) {
+      const base = slot << 2;
+      const y = secondaryOAM[base] & 0xFF;
+      const row = (evalTargetLine - ((y + SPR_Y_OFFSET) | 0)) | 0;
+      target.count = slot + 1;
+      target.tile[slot] = secondaryOAM[base + 1] & 0xFF;
+      target.attr[slot] = secondaryOAM[base + 2] & 0xFF;
+      target.xcnt[slot] = secondaryOAM[base + 3] & 0xFF;
+      target.lo[slot] = 0;
+      target.hi[slot] = 0;
+      target.row[slot] = row & 0x0F;
+      target.idx[slot] = secondaryOAMPrimary[slot] & 0xFF;
+      if ((secondaryOAMPrimary[slot] & 0xFC) === 0)
+        target.sprite0ListIndex = slot;
+    }
+  }
+}
+
+function spriteEvaluationTick(target, targetLine, dot) {
+  const sprH = (PPUCTRL & SPRITE_SIZE_16) ? 16 : 8;
+
+  if (dot === 65) {
+    target.count = 0;
+    target.sprite0ListIndex = 0xFF;
+    evalCopyBytes = 0;
+    evalOAMAddrOverflowed = false;
+    evalOverflowDetection = false;
+    secOAMAddr = 0;
+    secOAMOverflowed = false;
+    evalTargetLine = targetLine | 0;
+  }
+
+  if (dot & 1) {
+    evalOAMData = OAM[OAMADDR & 0xFF] & 0xFF;
+    ppuOAMDataBus = evalOAMData;
+    return;
+  }
+
+  const original = evalOAMData & 0xFF;
+
+  if (!(evalOAMAddrOverflowed || secOAMOverflowed)) {
+    secondaryOAM[secOAMAddr & 0x1F] = original;
+    ppuOAMDataBus = original;
+  } else {
+    ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+  }
+
+  if (evalCopyBytes > 0) {
+    evalCopyBytes--;
+    evalMoveToNextByte(target);
+    return;
+  }
+
+  const row = (targetLine - ((original + SPR_Y_OFFSET) | 0)) | 0;
+  const inRange = row >= 0 && row < sprH;
+
+  if (inRange && !(evalOAMAddrOverflowed || secOAMOverflowed)) {
+    secondaryOAMPrimary[(secOAMAddr >> 2) & 7] = OAMADDR & 0xFC;
+    evalCopyBytes = 3;
+    evalMoveToNextByte(target);
+    return;
+  }
+
+  if (!evalOverflowDetection && !secOAMOverflowed) {
+    OAMADDR = (OAMADDR + 4) & 0xFC;
+    if (OAMADDR === 0) evalOAMAddrOverflowed = true;
+    return;
+  }
+
+  // Once eight sprites have filled secondary OAM, the primary OAM address
+  // follows the hardware's diagonal overflow-search increment.
+  evalOverflowDetection = true;
+  if (inRange && !evalOAMAddrOverflowed) {
+    spriteOverflowSetScanline = PPUclock.scanline;
+    spriteOverflowSetDot = dot;
+    evalOverflowDetection = false;
+  } else {
+    OAMADDR = (((OAMADDR + 4) & 0xFC) | ((OAMADDR + 1) & 3)) & 0xFF;
+    if ((OAMADDR & 0xFC) === 0) evalOAMAddrOverflowed = true;
+  }
+}
+
 function updateSecondaryOAMAddrForDot(scanline, dot) {
   if (!renderingNow()) return;
   if (!(scanline === 261 || (scanline >= 0 && scanline <= 239))) return;
 
   if (dot >= 1 && dot <= 64) {
-    secOAMAddr = ((dot - 1) >> 1) & 0x1F;
-    return;
-  }
-
-  if (dot >= 257 && dot <= 320) {
-    const t = dot - 257;
-    const sub = t & 7;
-    if (dot === 257) secOAMAddr = 0;
-    if (sub === 0 || sub === 1 || sub === 2 || sub === 7) {
+    if (dot === 1) {
+      secOAMAddr = 0;
+      secOAMOverflowed = false;
+    }
+    if (dot & 1) {
+      ppuOAMDataBus = 0xFF;
+    } else {
+      secondaryOAM[secOAMAddr & 0x1F] = 0xFF;
+      ppuOAMDataBus = 0xFF;
+      // Clearing wraps naturally but does not leave the fetch/evaluation
+      // overflow latch asserted.
       secOAMAddr = (secOAMAddr + 1) & 0x1F;
     }
     return;
   }
+
+  if (dot >= 65 && dot <= 256) {
+    const targetLine = scanline === 261 ? 0 : ((scanline + 1) | 0);
+    spriteEvaluationTick(spritesNext, targetLine, dot);
+    return;
+  }
+
+  if (dot >= 257 && dot <= 320) {
+    if (dot === 257) {
+      secOAMAddr = 0;
+      secOAMOverflowed = false;
+      OAMADDR = 0;
+    }
+
+    // The first four dots of each 8-dot sprite slot read Y/tile/attribute/X.
+    const sub = (dot - 257) & 7;
+    if (sub <= 3) {
+      ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
+      secondaryOAMAdvance();
+    }
+    return;
+  }
+
+  // During the final background fetches $2004 still sees the secondary-OAM
+  // byte selected by the (possibly misaligned) 5-bit counter.
+  if (dot >= 321 && dot <= 340)
+    ppuOAMDataBus = secondaryOAM[secOAMAddr & 0x1F] & 0xFF;
 }
 
 // ---- Sprite fetch ----
@@ -529,7 +668,7 @@ function preRenderScanline(dot) {
     doNotSetVblank = false;
   }
 
-  if (dot === 65) evalSpritesForScanline(spritesNext, 0);
+  // Sprite evaluation is advanced one hardware dot at a time by ppuTick().
 
   if (ren && dot === 256) incY();
   if (ren && dot === 257) copyHoriz();
@@ -667,7 +806,7 @@ function visibleScanline(dot) {
     background.atShiftHi |= atHi1;
   }
 
-  if (dot === 65) evalSpritesForScanline(spritesNext, (PPUclock.scanline + 1) | 0);
+  // Sprite evaluation is advanced one hardware dot at a time by ppuTick().
 
   if (ren && phase === 0 && dot >= 9 && dot <= 257) reloadBGShifters(false);
 
@@ -897,15 +1036,8 @@ function ppuTick() {
     const preRender = (sl === 261);
     const visOrPre  = visible || preRender;
 
-    if (visible && d >= 65 && d <= 256) {
-      if ((d & 1) === 0) {
-        OAMADDR = (OAMADDR + 1) & 0xFF;
-      }
-    }
-
-    if (visOrPre && d >= 257 && d <= 320) {
-      OAMADDR = 0;
-    }
+    // OAMADDR and the 5-bit secondary-OAM counter now advance in the
+    // dot-driven sprite evaluator/fetch path above.
   }
 
   if (PPUclock.scanline === 260 && PPUclock.dot === 340) PPUclock.frame++;
