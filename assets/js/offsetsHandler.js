@@ -550,10 +550,11 @@ function cpuWrite(addr, value) {
   // Temporary AccuracyCoin diagnostic: the second $2004 stress table is
   // complete when its final byte at $654 becomes $80. Capture it before the
   // evaluator/failure path reuses the scratch RAM.
-  if ((addr & 0x7FF) === 0x654 && value === 0x80 &&
-      systemMemory[0x541] === 0x80) {
-    console.log('TRACE2004_CASE2:' +
-      Array.from(systemMemory.slice(0x500, 0x655),
+  if ((addr & 0x7FF) === 0x654) {
+    console.log('TRACE654 value=' + value.toString(16).padStart(2,'0') +
+      ' b541=' + (systemMemory[0x541]&255).toString(16).padStart(2,'0') +
+      ' b581=' + (systemMemory[0x581]&255).toString(16).padStart(2,'0') +
+      ' table=' + Array.from(systemMemory.slice(0x500, 0x655),
         x => x.toString(16).padStart(2, '0')).join(' '));
   }
 
