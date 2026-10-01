@@ -395,6 +395,23 @@ function checkWriteOffset(address, value) {
 
       // PPUMASK
       case 0x2001: {
+        if ((systemMemory[0x10] & 0xFF) === 4 &&
+            typeof accuracyCoinOAM2ReadTrace !== 'undefined' &&
+            accuracyCoinOAM2ReadTrace.length < 192) {
+          accuracyCoinOAM2ReadTrace.push({
+            event: 'mask-write',
+            mask: value & 0xFF,
+            dot: current.dot|0,
+            ppuDot: PPUclock.dot|0,
+            scanline: current.scanline|0,
+            value: 0,
+            secAddr: secOAMAddr & 0x1F,
+            frozen: !!secOAMAddrOverflow,
+            interrupted: !!secOAMFetchInterrupted,
+            oam20: secondaryOAM[0] & 0xFF,
+            oam24: secondaryOAM[4] & 0xFF
+          });
+        }
         ppuWriteMask(value & 0xFF);
         break;
       }
