@@ -39,6 +39,22 @@ for(const group of groups){
   const rom=fs.readFileSync(path.join(dir,file)),e=createEmulator();let status=null,text='',error=null;
   try{
    e.load(new Uint8Array(rom));
+   const traceDouble2007 = group==='dmc_dma_during_read4' && file==='double_2007_read.nes';
+   if(traceDouble2007) e.evaluate(`
+     globalThis.__double2007Trace=[];
+     globalThis.__origCheckReadOffset=checkReadOffset;
+     checkReadOffset=function(address){
+       const beforeAddr=VRAM_ADDR&0x3fff,beforeBuf=VRAM_DATA&0xff;
+       const out=__origCheckReadOffset(address);
+       if((address&0x3fff)===0x2007 || (address&0x3fff)===0x2107 || (address&0xffff)===0x20f7){
+         if(__double2007Trace.length<64)__double2007Trace.push({
+           cpu:cpuCycles|0,address:address&0xffff,out:out&0xff,
+           beforeAddr,beforeBuf,afterAddr:VRAM_ADDR&0x3fff,afterBuf:VRAM_DATA&0xff
+         });
+       }
+       return out;
+     };
+   `);
    const legacyF8 =
     group.startsWith('sprite_hit_tests_2005.10.05') ||
     group.startsWith('sprite_overflow_tests') ||
@@ -120,6 +136,9 @@ for(const group of groups){
     }
    }
   }catch(ex){error=String(ex);}
+  if(group==='dmc_dma_during_read4' && file==='double_2007_read.nes'){
+    console.log('DOUBLE2007_TRACE '+JSON.stringify(e.evaluate('__double2007Trace')));
+  }
   const result={rom:group+'/'+file,sha256:crypto.createHash('sha256').update(rom).digest('hex'),status,text,error,cycles:e.state().cpuCycles};
   results.push(result);console.log('BLARGG_EXPANDED '+JSON.stringify(result));
  }
