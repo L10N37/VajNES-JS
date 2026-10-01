@@ -170,6 +170,7 @@ let secOAMOverflowDetection = false;
 let secOAMCopyBytes = 0;
 let secOAMFetchInterrupted = false;
 let frozenSecondaryFetchApplied = false;
+let accuracyCoinFrozenFetchTrace = [];
 let ppuOAMDataBus = 0xFF;
 let spriteOverflowSetScanline = -1;
 let spriteOverflowSetDot = -1;
@@ -1007,6 +1008,24 @@ function applyFrozenSecondaryOAMFetch(scanline) {
   row &= 0x0F;
 
   const oldSprite0 = spritesNext.sprite0ListIndex;
+  if (accuracyCoinFrozenFetchTrace.length < 64) {
+    accuracyCoinFrozenFetchTrace.push({
+      scanline: scanline|0,
+      dot: PPUclock.dot|0,
+      value: v,
+      secAddr: secOAMAddr & 0x1F,
+      frozen: !!secOAMAddrOverflow,
+      oamMask: ppuOAMMaskBits() & 0x18,
+      visualMask: ppuEffectiveMask() & 0x18,
+      targetLine,
+      row,
+      oldCount: spritesNext.count|0,
+      oldSprite0: oldSprite0|0,
+      oldTile0: spritesNext.tile[0] & 0xFF,
+      oldAttr0: spritesNext.attr[0] & 0xFF,
+      oldX0: spritesNext.xcnt[0] & 0xFF
+    });
+  }
   spritesNext.count = SPR_MAX;
   for (let i = 0; i < SPR_MAX; i++) {
     spritesNext.tile[i] = v;
