@@ -33,12 +33,12 @@ test('MMC1 keeps all CHR banks and PPU paths agree',()=>{
  assert.equal(e.evaluate('checkReadOffset(0x2007)'),6);
 });
 test('MMC1 8 KiB CHR ROM is not writable',()=>{
- const e=emulator(rom(1,2,1));e.evaluate('cpuCycles=30000;VRAM_ADDR=0;checkWriteOffset(0x2007,99)');
+ const e=emulator(rom(1,2,1));e.evaluate('cpuCycles=30000;VRAM_ADDR=0;checkWriteOffset(0x2007,99);for(let d=0;d<7;d++){ppuTick();ppuCycles++;}');
  assert.equal(e.evaluate('ppuBusRead(0)'),0);
 });
 test('MMC1 banked CHR RAM reads and writes agree',()=>{
  const e=emulator(rom(1,2,0));
- e.evaluate('cpuCycles=30000;mmc1Control=0x1C;mmc1CHR0=1;mmc1CHR1=0;mmc1ApplyControl();VRAM_ADDR=0;checkWriteOffset(0x2007,99)');
+ e.evaluate('cpuCycles=30000;mmc1Control=0x1C;mmc1CHR0=1;mmc1CHR1=0;mmc1ApplyControl();VRAM_ADDR=0;checkWriteOffset(0x2007,99);for(let d=0;d<7;d++){ppuTick();ppuCycles++;}');
  assert.equal(e.evaluate('CHR_ROM[0x1000]'),99);
  assert.equal(e.evaluate('ppuBusRead(0)'),99);
 });
@@ -52,7 +52,7 @@ test('MMC1 mirroring changes wiring without destroying CIRAM',()=>{
 });
 test('four-screen CPU and PPU paths retain four distinct nametables',()=>{
  const e=emulator(rom(0,2,1,8));
- e.evaluate('cpuCycles=30000;for(let i=0;i<4;i++){VRAM_ADDR=0x2000+i*0x400;checkWriteOffset(0x2007,10+i)}');
+ e.evaluate('cpuCycles=30000;for(let i=0;i<4;i++){VRAM_ADDR=0x2000+i*0x400;checkWriteOffset(0x2007,10+i);for(let d=0;d<7;d++){ppuTick();ppuCycles++;}}');
  assert.deepEqual(e.evaluate('[0,1,2,3].map(i=>ppuBusRead(0x2000+i*0x400))'),[10,11,12,13]);
 });
 test('truncated CHR image is rejected before changing cartridge',()=>{
@@ -183,13 +183,13 @@ test('AxROM maps all 32 KiB including vectors; ignores upper register bits',()=>
  const small=emulator(rom(7,4,0));small.evaluate('checkWriteOffset(0x8000,7)');assert.equal(small.evaluate('checkReadOffset(0x8000)'),2);
 });
 test('AxROM one-screen switching preserves both CIRAM pages across CPU/renderer access',()=>{
- const e=emulator(rom(7,2,0,1));e.evaluate('cpuCycles=40000;VRAM_ADDR=0x2405;checkWriteOffset(0x2007,0x35);checkWriteOffset(0x8000,0x10);VRAM_ADDR=0x2c05;checkWriteOffset(0x2007,0x72)');
+ const e=emulator(rom(7,2,0,1));e.evaluate('cpuCycles=40000;VRAM_ADDR=0x2405;checkWriteOffset(0x2007,0x35);for(let d=0;d<7;d++){ppuTick();ppuCycles++;};checkWriteOffset(0x8000,0x10);VRAM_ADDR=0x2c05;checkWriteOffset(0x2007,0x72);for(let d=0;d<7;d++){ppuTick();ppuCycles++;}');
  assert.deepEqual(e.evaluate('[0x2005,0x2405,0x2805,0x2c05].map(ppuBusRead)'),[0x72,0x72,0x72,0x72]);
  e.evaluate('checkWriteOffset(0x9000,0);VRAM_ADDR=0x2805;checkReadOffset(0x2007)');assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x35);
  assert.deepEqual(e.evaluate('[0x2005,0x2405,0x2805,0x2c05].map(ppuBusRead)'),[0x35,0x35,0x35,0x35]);
 });
 test('AxROM CHR RAM stays unbanked and has no cartridge PRG RAM',()=>{
- const e=emulator(rom(7,4,0));e.evaluate('cpuCycles=40000;VRAM_ADDR=0x1234;checkWriteOffset(0x2007,0xa5);checkWriteOffset(0x8000,0x11)');assert.equal(e.evaluate('ppuBusRead(0x1234)'),0xa5);
+ const e=emulator(rom(7,4,0));e.evaluate('cpuCycles=40000;VRAM_ADDR=0x1234;checkWriteOffset(0x2007,0xa5);for(let d=0;d<7;d++){ppuTick();ppuCycles++;};checkWriteOffset(0x8000,0x11)');assert.equal(e.evaluate('ppuBusRead(0x1234)'),0xa5);
  e.evaluate('prgRam[0]=0x99;checkWriteOffset(0x6000,0x31);openBus.CPU=0x56');assert.equal(e.evaluate('checkReadOffset(0x6000)'),0x56);assert.equal(e.evaluate('prgRam[0]'),0x99);
 });
 test('AxROM legacy/no-conflict and explicit AND-conflict board variants',()=>{
@@ -314,7 +314,7 @@ test('PPUDATA clocks both scroll counters during rendering, including wrap bound
  const e=emulator();e.evaluate('cpuCycles=40000');
  for(const write of [false,true])for(const mask of [8,16])for(const ctrl of [0,4]){
   for(const [sl,start,want] of [[0,0x2000,0x3001],[239,0x73bf,0xc00],[261,0x73ff,0x400],[240,0x2000,0x2000+(ctrl?32:1)],[241,0x7fff,ctrl?31:0]]){
-   e.evaluate(`PPUMASK=${mask};PPUCTRL=${ctrl};PPUclock.scanline=${sl};VRAM_ADDR=${start};${write?'checkWriteOffset(0x2007,0)':'checkReadOffset(0x2007)'}`);
+   e.evaluate(`PPUMASK=${mask};PPUCTRL=${ctrl};PPUclock.scanline=${sl};VRAM_ADDR=${start};${write?'checkWriteOffset(0x2007,0);for(let d=0;d<7;d++){ppuTick();ppuCycles++;}':'checkReadOffset(0x2007)'}`);
    assert.equal(e.evaluate('VRAM_ADDR'),want,`write=${write}, mask=${mask}, ctrl=${ctrl}, line=${sl}`);
   }
  }
@@ -679,7 +679,7 @@ test('PPUDATA write reaches PPU bus after the hardware delay',()=>{
    e.evaluate('[PALETTE_RAM[1],VRAM_ADDR,ppuCpu2007WritePending&&ppuCpu2007WritePending.applyAt]'),
    [0x0F,0x3F01,1006]
  );
- e.evaluate('for(let i=0;i<5;i++){ppuTick();ppuCycles++;}');
+ e.evaluate('for(let i=0;i<6;i++){ppuTick();ppuCycles++;}');
  assert.deepEqual(e.evaluate('[PALETTE_RAM[1],VRAM_ADDR]'),[0x0F,0x3F01]);
  e.evaluate('ppuTick();ppuCycles++');
  assert.deepEqual(e.evaluate('[PALETTE_RAM[1],VRAM_ADDR]'),[0x2A,0x3F02]);
