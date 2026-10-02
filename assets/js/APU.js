@@ -61,16 +61,40 @@ const APU_LENGTH_TABLE = [10,254,20,2,40,4,80,6,160,8,60,10,14,12,26,14,
 const apuTiming = {
   cycle: 0, fiveStep: false, inhibitIRQ: false, resetDelay: 0,
   pendingFiveStep: false, enabled: 0, length: [0,0,0,0],
-  halt: [false,false,false,false], clearFrameIRQ: 0, frameFlag: false
+  halt: [false,false,false,false], clearFrameIRQ: 0, frameFlag: false,
+  pendingHalt: [null,null,null,null], pendingReload: [null,null,null,null],
+  last4017: 0
 };
 function apuResetTiming() {
   apuTiming.cycle=0; apuTiming.fiveStep=false; apuTiming.inhibitIRQ=false;
   apuTiming.resetDelay=0; apuTiming.pendingFiveStep=false;
   apuTiming.enabled=0; apuTiming.length.fill(0); apuTiming.halt.fill(false);
-  apuTiming.clearFrameIRQ=0; apuTiming.frameFlag=false;
+  apuTiming.pendingHalt.fill(null); apuTiming.pendingReload.fill(null);
+  apuTiming.clearFrameIRQ=0; apuTiming.frameFlag=false; apuTiming.last4017=0;
   irqAssert.frame=false;
   if(typeof NESAudio!=="undefined") NESAudio.reset(cpuCycles);
 }
+function apuWarmResetTiming() {
+  const last4017=apuTiming.last4017&0xC0;
+
+  // RESET acts like a write of $00 to $4015.
+  apuTiming.enabled=0;
+  apuTiming.length.fill(0);
+  apuTiming.pendingHalt.fill(null);
+  apuTiming.pendingReload.fill(null);
+  irqAssert.dmcDma=false;
+  if(typeof dmcWrite4015==="function") dmcWrite4015(0);
+
+  // A pending frame IRQ is cleared. The frame counter keeps the mode/inhibit
+  // bits of the last $4017 write, as if that value were written again.
+  irqAssert.frame=false;
+  apuTiming.frameFlag=false;
+  apuTiming.clearFrameIRQ=0;
+  apuTiming.pendingFiveStep=!!(last4017&0x80);
+  apuTiming.inhibitIRQ=!!(last4017&0x40);
+  apuTiming.resetDelay=(cpuCycles&1)?4:3;
+}
+
 function apuQuarterFrame() {
   if(typeof NESAudio!=="undefined") NESAudio.quarter(cpuCycles);
 }
@@ -87,8 +111,32 @@ function apuClock() {
     return;
   }
   const c=++apuTiming.cycle;
-  if(c===7457 || c===14913 || c===22371 || c===(apuTiming.fiveStep?37281:29829)) apuQuarterFrame();
-  if(c===14913 || c===(apuTiming.fiveStep?37281:29829)) apuHalfFrame();
+  const quarter=(c===7457 || c===14913 || c===22371 || c===(apuTiming.fiveStep?37281:29829));
+  const half=(c===14913 || c===(apuTiming.fiveStep?37281:29829));
+  const preHalf=half ? apuTiming.length.slice() : null;
+
+  if(quarter) apuQuarterFrame();
+  if(half) apuHalfFrame();
+
+  // $4000/$4004/$4008/$400C halt writes and length reload writes take
+  // effect after the APU clock occurring on the CPU write cycle. This is
+  // observable when a write lands exactly on a half-frame clock.
+  for(let ch=0;ch<4;ch++) {
+    const halt=apuTiming.pendingHalt[ch];
+    if(halt!==null) {
+      apuTiming.halt[ch]=halt;
+      apuTiming.pendingHalt[ch]=null;
+    }
+    const reload=apuTiming.pendingReload[ch];
+    if(reload!==null) {
+      // If a non-zero length counter was clocked on this same cycle, the
+      // hardware ignores the reload. If it was zero, reload occurs after the
+      // clock and therefore is not decremented immediately.
+      if(!(half && preHalf[ch]>0)) apuTiming.length[ch]=reload;
+      apuTiming.pendingReload[ch]=null;
+    }
+  }
+
   // The readable latch pulses even with IRQ inhibition; the CPU line does not.
   if(!apuTiming.fiveStep && c>=29828 && c<=29830) {
     apuTiming.frameFlag=c<29830 || !apuTiming.inhibitIRQ;
@@ -98,6 +146,7 @@ function apuClock() {
 }
 function apuTimingWrite(address,value) {
   if(address===0x4017) {
+    apuTiming.last4017=value&0xC0;
     apuTiming.pendingFiveStep=!!(value&0x80);
     apuTiming.inhibitIRQ=!!(value&0x40);
     if(apuTiming.inhibitIRQ) {irqAssert.frame=false;apuTiming.frameFlag=false;}
@@ -109,8 +158,10 @@ function apuTimingWrite(address,value) {
     irqAssert.dmcDma=false;
   } else if(address>=0x4000 && address<=0x400F) {
     const channel=(address-0x4000)>>2;
-    if((address&3)===0) apuTiming.halt[channel]=!!(value&(channel===2?0x80:0x20));
-    if((address&3)===3 && (apuTiming.enabled&(1<<channel))) apuTiming.length[channel]=APU_LENGTH_TABLE[value>>3];
+    if((address&3)===0)
+      apuTiming.pendingHalt[channel]=!!(value&(channel===2?0x80:0x20));
+    if((address&3)===3 && (apuTiming.enabled&(1<<channel)))
+      apuTiming.pendingReload[channel]=APU_LENGTH_TABLE[value>>3];
   }
 }
 function apuStatusRead() {
