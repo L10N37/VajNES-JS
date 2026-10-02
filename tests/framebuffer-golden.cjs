@@ -46,14 +46,36 @@ const results=[];
 for(const [rel,expected] of tests){
   const rom=fs.readFileSync(path.join(root,rel));
   const e=createEmulator();
-  let error=null,actual=null;
+  let error=null,actual=null,diagnostics={};
   try{
     e.load(new Uint8Array(rom));
     e.runFrames(360);
-    actual=fnvRgba(e.frameIndices(),e.frameEmphasis());
+    const indices=e.frameIndices();
+    const emphasis=e.frameEmphasis();
+    actual=fnvRgba(indices,emphasis);
+
+    if(rel==='scanline/scanline.nes'){
+      // The ROM source places six '*' error markers in the rightmost six
+      // character cells of each tested text row. Correct raster timing blanks
+      // those markers. Count bright $30 pixels only inside those marker cells.
+      const rows=[6,7,8,9,10,11,15,16,17,18,19,20,24,25,26,27];
+      let starPixels=0;
+      for(const tileY of rows) for(let y=tileY*8;y<tileY*8+8;y++)
+        for(let x=26*8;x<32*8;x++)
+          if((indices[y*256+x]&0x3f)===0x30) starPixels++;
+      diagnostics.starPixels=starPixels;
+    }
+
+    if(rel==='full_palette/full_palette.nes'){
+      const combos=new Set();
+      for(let i=0;i<indices.length;i++)
+        combos.add(((emphasis[i]&7)<<6)|(indices[i]&0x3f));
+      diagnostics.uniquePaletteEmphasisPairs=combos.size;
+      diagnostics.pairs=[...combos].sort((a,b)=>a-b);
+    }
   }catch(ex){error=String(ex);}
   const pass=!error&&actual===expected;
-  const result={rom:rel,frames:360,expected,actual,pass,error};
+  const result={rom:rel,frames:360,expected,actual,pass,error,diagnostics};
   results.push(result);
   console.log('FRAMEBUFFER_GOLDEN '+JSON.stringify(result));
 }
