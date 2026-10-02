@@ -43,86 +43,104 @@ let CPUregisters = {
 let P_VARIABLES = ['C', 'Z', 'I', 'D', 'V', 'N'];
 
 
-function resetCPU() {
-
-  // reset shared PPU / mapper / timing state
-  resetSharedState();
-  apuResetTiming();
-  resetDMC();
-  irqAssert.mmc3=false; // A newly loaded non-MMC3 cartridge has no MMC3 IRQ source.
-  irqAssert.mmc5=false;
-  irqAssert.namco=false;
-  irqAssert.vrc=false;
-  if(mapperNumber===4)mmc3Reset();
-  joypadStrobe=joypadStrobeOutput=joypad1State=joypad2State=0;
-  DMA.active=false;
-
-  // clear Vblank and NMI edge on reset
-  clearNmiEdge();
-  nmiPending = 0; // clear nmi timing latch
-  irqPollCurrent=irqPollPrevious=false;
-  nmiPollCurrent=nmiPollPrevious=nmiSignalSeen=false;
-
-  writeToggle = 0;
-
-  systemMemory.fill(0x00); // may not happen on a real system, lets clear junk from RAM though
-
-  // clear CPU regs
-  CPUregisters.A = 0x00;
-  CPUregisters.X = 0x00;
-  CPUregisters.Y = 0x00;
-  CPUregisters.S = 0xFD; // unsure, should be $FC at reset, shouldn't matter
-  CPUregisters.P = {
-    C: 0,    // Carry
-    Z: 0,    // Zero
-    I: 1,    // Interrupt Disable
-    D: 0,    // Decimal Mode
-    V: 0,    // Overflow
-    N: 0     // Negative
-  };
-
-  // pull PC from reset vector
+function readResetVectorAndDelay() {
   const lo = checkReadOffset(0xFFFC);
   const hi = checkReadOffset(0xFFFD);
   CPUregisters.PC = lo | (hi << 8);
-  let resetVector = CPUregisters.PC; // Store the reset vector for debugging in a separate variable
 
-  // burn 7 cycles straight away (PPU 21 ticks in)
-  for (let index = 0; index < 7; index++) {
-    consumeCycle();
-  }
+  // RESET performs a 7-cycle interrupt-like sequence. The three stack
+  // accesses are reads, not writes; S is adjusted separately on warm reset.
+  for (let index = 0; index < 7; index++) consumeCycle();
 
   globalThis.NES_DEBUG_LOGGING && console.debug(`[Mapper] Reset Vector: $${CPUregisters.PC.toString(16).toUpperCase().padStart(4, "0")}`);
   globalThis.NES_DEBUG_LOGGING && console.debug("PC @ 0x" + CPUregisters.PC.toString(16).padStart(4, "0").toUpperCase());
+}
 
-  // ---- remaining CPU/PPU misc state NOT covered by resetSharedState/resetMMC1 ----
+function resetCommonInterruptState() {
+  DMA.active=false;
+  clearNmiEdge();
+  nmiPending=0;
+  irqPollCurrent=irqPollPrevious=false;
+  nmiPollCurrent=nmiPollPrevious=nmiSignalSeen=false;
+}
 
-  ppumaskPrev = 0;
-  ppumaskRenderHoldBits = 0;
-  ppumaskRenderApplyAt = -1;
-  renderingPrev = false;
-  spriteXForceZeroNextFrame = false;
-  sprite0FetchComplete = true;
-  ppuExternalLatchLow = 0;
-  ppuExternalData = 0;
-  ppuCpu2007ReadUntil = -1;
-  ppuCpu2006HybridUntil = -1;
-  ppuCpu2006HybridLow = 0;
+// Full power-on/cartridge-load state. Mapper initialization calls this path so
+// existing deterministic startup behavior remains unchanged.
+function powerOnCPU() {
+  resetSharedState();
+  apuResetTiming();
+  resetDMC();
+  irqAssert.mmc3=false;
+  irqAssert.mmc5=false;
+  irqAssert.namco=false;
+  irqAssert.vrc=false;
+  if(mapperNumber===4) mmc3Reset();
+  joypadStrobe=joypadStrobeOutput=joypad1State=joypad2State=0;
+  resetCommonInterruptState();
 
-  secOAMAddr = 0;
+  writeToggle=0;
+  systemMemory.fill(0x00);
+
+  CPUregisters.A=0x00;
+  CPUregisters.X=0x00;
+  CPUregisters.Y=0x00;
+  CPUregisters.S=0xFD;
+  CPUregisters.P={
+    C:0,
+    Z:0,
+    I:1,
+    D:0,
+    V:0,
+    N:0
+  };
+
+  readResetVectorAndDelay();
+
+  ppumaskPrev=0;
+  ppumaskRenderHoldBits=0;
+  ppumaskRenderApplyAt=-1;
+  ppumaskEmphasisHoldBits=0;
+  ppumaskEmphasisApplyAt=-1;
+  renderingPrev=false;
+  spriteXForceZeroNextFrame=false;
+  sprite0FetchComplete=true;
+  ppuExternalLatchLow=0;
+  ppuExternalData=0;
+  ppuCpu2007ReadUntil=-1;
+  ppuCpu2006HybridUntil=-1;
+  ppuCpu2006HybridLow=0;
+  ppuCpu2007WritePending=null;
+  forcedBlankDisplayV=0;
+  forcedBlankPendingV=0;
+  forcedBlankApplyAt=-1;
+
+  secOAMAddr=0;
   secondaryOAM.fill(0xFF);
-  secOAMPrimaryAddr = 0;
-  secOAMPrimaryOverflow = false;
-  secOAMAddrOverflow = false;
-  secOAMOverflowDetection = false;
-  secOAMCopyBytes = 0;
-  ppuOAMDataBus = 0xFF;
-  oamCorruptPending = false;
-  oamCorruptSeedRow = 0;
+  secOAMPrimaryAddr=0;
+  secOAMPrimaryOverflow=false;
+  secOAMAddrOverflow=false;
+  secOAMOverflowDetection=false;
+  secOAMCopyBytes=0;
+  ppuOAMDataBus=0xFF;
+  oamCorruptPending=false;
+  oamCorruptSeedRow=0;
 
-  openBus.internal = 0;
-  openBus.PPU = 0;
-  openBus.ppuDecayTimer = 0;
+  openBus.internal=0;
+  openBus.PPU=0;
+  openBus.ppuDecayTimer=0;
+}
+
+// Hardware-style warm CPU reset. Internal RAM and A/X/Y/C/Z/D/V/N survive;
+// RESET sets I, subtracts three from S without writing stack bytes, and reloads
+// PC from $FFFC/$FFFD. APU reset details are refined separately.
+function resetCPU() {
+  resetCommonInterruptState();
+  apuWarmResetTiming();
+
+  CPUregisters.S=(CPUregisters.S-3)&0xFF;
+  CPUregisters.P.I=1;
+
+  readResetVectorAndDelay();
 }
 
 // actually we can get a script down the track to scrap every variable in existence and reset them all / move the function to a separate file
@@ -141,8 +159,8 @@ function consumeCycle() {
 
   cpuCycles++;
   apuClock();
-  if(mapperNumber===19)namcoClockCpu();
-  if(mapperNumber===24 || mapperNumber===26)vrc6ClockCpu();
+  if(mapperNumber===19) namcoClockCpu();
+  if(mapperNumber===24 || mapperNumber===26) vrc6ClockCpu();
   nmiPollPrevious=nmiPollCurrent;
   const nmiSignal=doesNmiEdgeExist();
   if(nmiSignal && !nmiSignalSeen)nmiPollCurrent=true;
@@ -357,10 +375,8 @@ function LDA_ZPX() {
   // Effective address wraps in zero page
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read at effective address
-  
-  checkReadOffset(addr);
-  
+  // C3: dummy read from unindexed zero-page base.
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: final read
@@ -484,10 +500,9 @@ function LDA_INDX() {  // (zp,X)
   // Effective pointer address (wrap in zero page)
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read at zp+X
-  
-  checkReadOffset(ptr);
-  
+  // C3: dummy read from the unindexed zero-page operand. The X add
+  // happens internally during this cycle; the external bus still sees zp.
+  checkReadOffset(zp);
   consumeCycle();
 
   // C4: fetch low pointer byte
@@ -573,10 +588,8 @@ function STA_ZPX() {
   // Effective zero-page address
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read at effective address
-  
-  checkReadOffset(addr);
-  
+  // C3: dummy read from unindexed zero-page base.
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: final write
@@ -675,11 +688,9 @@ function STA_INDX() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle();
 
-  // C3: add X, dummy read from zp+X
+  // C3: add X internally; external bus reads original zp.
   const zpaddr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
-  
-  checkReadOffset(zpaddr); 
-  
+  checkReadOffset(zp);
   consumeCycle();
 
   // C4: fetch low pointer byte
@@ -811,7 +822,7 @@ function INC_ZP() { // 5 cycles (RMW)
 function INC_ZPX() { // 6 cycles (RMW)
   // C1
   const zp   = checkReadOffset(CPUregisters.PC + 1); consumeCycle(); // C2
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; checkReadOffset(zp); consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;          consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                       consumeCycle(); // C5 (dummy write)
@@ -847,7 +858,7 @@ function ROL_ZP() { // 5 cycles (RMW)
 function ROL_ZPX() { // 6 cycles (RMW)
   // C1
   const zp = checkReadOffset(CPUregisters.PC + 1);   consumeCycle(); // C2
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; checkReadOffset(zp); consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;          consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                       consumeCycle(); // C5 (dummy write)
@@ -885,7 +896,7 @@ function LSR_ZP() { // 5 cycles (RMW)
 function LSR_ZPX() { // 6 cycles (RMW)
   // C1
   const zp = checkReadOffset(CPUregisters.PC + 1);  consumeCycle(); // C2
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; checkReadOffset(zp); consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;         consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                      consumeCycle(); // C5 (dummy write)
@@ -961,7 +972,7 @@ function JMP_ABS() {
 function JMP_IND() {
   const pc0 = CPUregisters.PC & 0xFFFF;
 
-  const opc = checkReadOffset(pc0) & 0xFF;                   // C1
+  // C1 opcode fetch is performed by window.step().
   const ptrLo = checkReadOffset((pc0 + 1) & 0xFFFF) & 0xFF;  consumeCycle(); // C2
   const ptrHi = checkReadOffset((pc0 + 2) & 0xFFFF) & 0xFF;  consumeCycle(); // C3
   const ptr   = (ptrHi << 8) | ptrLo;
@@ -1087,10 +1098,8 @@ function LDX_ZPY() {
   // Effective zero-page address
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFF;
 
-  // C3: dummy read at addr
-  
-  checkReadOffset(addr);
-  
+  // C3: dummy read from the unindexed zero-page base.
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: final read
@@ -1187,7 +1196,8 @@ function ADC_ZPX() { // 4 cycles
   const base = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3 (internal index)
+  checkReadOffset(base);
+  consumeCycle(); // C3 dummy read/index add (internal index)
   const val = checkReadOffset(addr) & 0xFF;
   consumeCycle(); // C4
 
@@ -1338,7 +1348,8 @@ function ADC_INDX() { // 6 cycles
   const zp = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(zp);
+  consumeCycle(); // C3 dummy read/index add
 
   const lo = checkReadOffset(ptr) & 0xFF;
   consumeCycle(); // C4
@@ -1451,7 +1462,8 @@ function AND_ZPX() {
   const addr = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const effAddr = (addr + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(addr);
+  consumeCycle(); // C3 dummy read/index add
   const val = checkReadOffset(effAddr) & 0xFF;
   consumeCycle(); // C4
 
@@ -1554,7 +1566,8 @@ function AND_INDX() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(zp);
+  consumeCycle(); // C3 dummy read/index add
 
   const lo = checkReadOffset(ptr) & 0xFF;
   consumeCycle(); // C4
@@ -1650,7 +1663,8 @@ function ASL_ZP() { // 5 cycles
 function ASL_ZPX() { // 6 cycles
   // C1
   const op = checkReadOffset(CPUregisters.PC + 1);  consumeCycle(); // C2
-  const addr = (op + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (op + (CPUregisters.X & 0xFF)) & 0xFF;
+  checkReadOffset(op);                              consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;        consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                     consumeCycle(); // C5 (dummy write)
@@ -1823,7 +1837,8 @@ function ORA_ZPX() {
   const base = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(base);
+  consumeCycle(); // C3 dummy read/index add
   let value = checkReadOffset(addr) & 0xFF;
   consumeCycle(); // C4
 
@@ -1928,7 +1943,8 @@ function ORA_INDX() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(zp);
+  consumeCycle(); // C3 dummy read/index add
 
   const lo = checkReadOffset(ptr) & 0xFF;
   consumeCycle(); // C4
@@ -2022,10 +2038,8 @@ function CMP_ZPX() { // 4 cycles
 
   const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read
-  
-  checkReadOffset(addr);
-  
+  // C3: dummy read from unindexed zero-page base.
+  checkReadOffset(zp);
   consumeCycle();
 
   // C4: final read
@@ -2152,10 +2166,8 @@ function CMP_INDX() { // 6 cycles
 
   const ptr = (nn + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read
-  
-  checkReadOffset(ptr);
-  
+  // C3: dummy read from original zero-page operand.
+  checkReadOffset(nn);
   consumeCycle();
 
   // C4: fetch low pointer byte
@@ -2295,7 +2307,7 @@ function DEC_ZP() { // 5 cycles (RMW)
 function DEC_ZPX() { // 6 cycles (RMW)
   // C1
   const zp   = checkReadOffset(CPUregisters.PC + 1); consumeCycle(); // C2
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; checkReadOffset(zp); consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;          consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                       consumeCycle(); // C5 (dummy write)
@@ -2365,7 +2377,7 @@ function ROR_ZP() { // 5 cycles (RMW)
 function ROR_ZPX() { // 6 cycles (RMW)
   // C1
   const zp = checkReadOffset(CPUregisters.PC + 1);   consumeCycle(); // C2
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; checkReadOffset(zp); consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;          consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                       consumeCycle(); // C5 (dummy write)
@@ -2416,7 +2428,8 @@ function DCP_ZP() {
   let value = checkReadOffset(address) & 0xFF;
   consumeCycle();
 
-  // C4: (dummy write slot for RMW)
+  // C4: dummy write original value for RMW bus behavior.
+  checkWriteOffset(address, value);
   consumeCycle();
 
   // Decrement and write
@@ -2441,15 +2454,17 @@ function DCP_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: internal addr calc (zp+X wrap)
+  // C3: dummy read from unindexed base while X is added.
   const addressess = (base + (CPUregisters.X & 0xFF)) & 0xFF;
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: read old
   let value = checkReadOffset(addressess) & 0xFF;
   consumeCycle();
 
-  // C5: (dummy write slot for RMW)
+  // C5: dummy write old for RMW bus behavior.
+  checkWriteOffset(addressess, value);
   consumeCycle();
 
   // Decrement and final write
@@ -2520,9 +2535,13 @@ function ISC_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: calc zp+X (wrap) and read old
+  // C3: dummy read from unindexed base while X is added.
   const pointer = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  const old     = checkReadOffset(pointer) & 0xFF;
+  checkReadOffset(base);
+  consumeCycle();
+
+  // C4: read old
+  const old = checkReadOffset(pointer) & 0xFF;
   consumeCycle();
 
   // C4: dummy write old (RMW bus pattern)
@@ -2546,7 +2565,6 @@ function ISC_ZPX() {
   CPUregisters.P.N = (res >> 7) & 1;
   CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
   CPUregisters.A   = res;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -2586,7 +2604,8 @@ function EOR_ZPX() {
   const base = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(base);
+  consumeCycle(); // C3 dummy read/index add
   let value = checkReadOffset(addr) & 0xFF;
   consumeCycle(); // C4
 
@@ -2691,7 +2710,8 @@ function EOR_INDX() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(zp);
+  consumeCycle(); // C3 dummy read/index add
 
   const lo = checkReadOffset(ptr) & 0xFF;
   consumeCycle(); // C4
@@ -2790,8 +2810,9 @@ function STY_ZP() { // 3 cycles
 
 function STY_ZPX() { // 4 cycles
   // C1
-  const address = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF; consumeCycle(); // C2
-  consumeCycle(); // C3 (index add)
+  const base = checkReadOffset(CPUregisters.PC + 1) & 0xFF; consumeCycle(); // C2
+  const address = (base + CPUregisters.X) & 0xFF;
+  checkReadOffset(base); consumeCycle(); // C3 dummy read/index add
   checkWriteOffset(address, CPUregisters.Y);                                   consumeCycle(); // C4
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
@@ -2839,10 +2860,8 @@ function LDY_ZPX() { // 4 cycles
   // Effective zero-page address
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read
-  
-  checkReadOffset(addr);
-  
+  // C3: dummy read from unindexed zero-page base.
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: final read
@@ -2953,7 +2972,8 @@ function SBC_ZPX() { // 4 cycles
   const base = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3 (internal index)
+  checkReadOffset(base);
+  consumeCycle(); // C3 dummy read/index add (internal index)
   let value = checkReadOffset(addr) & 0xFF;
   consumeCycle(); // C4
 
@@ -3044,7 +3064,8 @@ function SBC_INDX() { // 6 cycles
   const zpbase = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const zpaddr = (zpbase + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(zpbase);
+  consumeCycle(); // C3 dummy read/index add
 
   const lo = checkReadOffset(zpaddr) & 0xFF;
   consumeCycle(); // C4
@@ -3323,9 +3344,10 @@ function NOP_HANDLER() {
       const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
       consumeCycle();
 
-      checkReadOffset((zp + CPUregisters.X) & 0xFF);
+      checkReadOffset(zp);
       consumeCycle();
 
+      checkReadOffset((zp + CPUregisters.X) & 0xFF);
       consumeCycle();
       CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
       return;
@@ -3624,8 +3646,9 @@ function STX_ZPY() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: internal address calc (zp wrap)
+  // C3: index add; external bus reads the unindexed base.
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFF;
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: write X
@@ -3657,11 +3680,19 @@ function STX_ABS() {
 
   //          ................. illegalOpcode functions ................. 
 
+// $AB LAX/LXA immediate is electrically unstable. The default mask matches
+// the pinned RP2A03 SingleStepTests profile. Historical test ROMs calibrated
+// against a different chip/condition can override this without changing the
+// behavior of any stable opcode.
+let unstableLaxImmediateMask = 0xEE;
+
 // LAX #imm — 2 cycles
 function LAX_IMM() {
   // C1: opcode fetch
-  // C2: fetch immediate, load A and X, set flags
-  const val = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  // C2: unstable LAX/LXA immediate on RP2A03. Like XAA, this profile
+  // combines the old accumulator with the $EE internal-bus mask.
+  const imm = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  const val = ((CPUregisters.A | unstableLaxImmediateMask) & imm) & 0xFF;
   CPUregisters.A = CPUregisters.X = val;
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val >>> 7) & 1;
@@ -3677,12 +3708,16 @@ function RRA_INDX() {
   const op = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read pointer low (zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(op);
+  consumeCycle();
+
+  // C4: read pointer low (zp+X)
   const ptr = (op + (CPUregisters.X & 0xFF)) & 0xFF;
   const lo  = checkReadOffset(ptr) & 0xFF;
   consumeCycle();
 
-  // C4: read pointer high (zp+X+1)
+  // C5: read pointer high (zp+X+1)
   const hi  = checkReadOffset((ptr + 1) & 0xFF) & 0xFF; // ZP wrap
   consumeCycle();
 
@@ -3716,8 +3751,6 @@ function RRA_INDX() {
   CPUregisters.P.N = (res >> 7) & 1;
   CPUregisters.P.V = ((~(a ^ rotated) & (a ^ res) & 0x80) !== 0) ? 1 : 0;
   CPUregisters.A   = res;
-
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -3733,13 +3766,14 @@ function RRA_ZP() {
   let val = checkReadOffset(addr) & 0xFF;
   consumeCycle();
 
-  // C4: ROR through carry (internal ALU)
+  // C4: dummy write original value.
+  checkWriteOffset(addr, val);
+  consumeCycle();
+
+  // C5: rotate and write back
   const oldCarry = CPUregisters.P.C & 1;
   CPUregisters.P.C = val & 0x01;
   val = ((val >>> 1) | (oldCarry << 7)) & 0xFF;
-  consumeCycle();
-
-  // C5: write rotated back
   checkWriteOffset(addr, val);
   consumeCycle();
 
@@ -3765,22 +3799,25 @@ function RRA_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: internal address calc (zp wrap)
+  // C3: dummy read from unindexed base while X is added.
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: read value
   let val = checkReadOffset(addr) & 0xFF;
   consumeCycle();
 
-  // C5: ROR through carry (internal), then write
+  // C5: dummy write original value.
   const oldCarry = CPUregisters.P.C & 1;
+  checkWriteOffset(addr, val);
+  consumeCycle();
+
+  // C6: rotate, final write, and ADC on the same cycle.
   CPUregisters.P.C = val & 0x01;
   val = ((val >>> 1) | (oldCarry << 7)) & 0xFF;
   checkWriteOffset(addr, val);
   consumeCycle();
-
-  // C6: ADC (internal)
   const acc     = CPUregisters.A & 0xFF;
   const carryIn = CPUregisters.P.C & 1;
   const sum     = acc + val + carryIn;
@@ -3791,8 +3828,6 @@ function RRA_ZPX() {
   CPUregisters.P.N = (res >>> 7) & 1;
   CPUregisters.P.V = ((~(acc ^ val) & (acc ^ res) & 0x80) !== 0) ? 1 : 0;
   CPUregisters.A   = res;
-
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -3932,17 +3967,18 @@ function LAX_ZPY() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: internal address calc (zp+Y wrap)
+  // C3: dummy read from unindexed base while Y is added.
   const address = (base + (CPUregisters.Y & 0xFF)) & 0xFF;
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: read, load A/X, set flags
   let value = checkReadOffset(address) & 0xFF;
+  consumeCycle();
   CPUregisters.A = value;
   CPUregisters.X = value;
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
   CPUregisters.P.N = (value >>> 7) & 1;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -3972,27 +4008,29 @@ function LAX_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read pointer low at (zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zp);
+  consumeCycle();
+
+  // C4: read pointer low at (zp+X)
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
   const lo  = checkReadOffset(ptr) & 0xFF;
   consumeCycle();
 
-  // C4: read pointer high at (zp+X+1) (wrap)
+  // C5: read pointer high at (zp+X+1) (wrap)
   const hi  = checkReadOffset((ptr + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
   const addr = ((hi << 8) | lo) & 0xFFFF;
 
-  // C5: read @EA
+  // C6: read @EA and load A/X
   let value = checkReadOffset(addr) & 0xFF;
   consumeCycle();
 
-  // C6: load A/X, set flags
   CPUregisters.A = value;
   CPUregisters.X = value;
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
   CPUregisters.P.N = (value >>> 7) & 1;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -4071,20 +4109,21 @@ function SAX_INDX() {
   const zpBase = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read pointer low at (zpBase+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zpBase);
+  consumeCycle();
+
+  // C4: read pointer low at (zpBase+X)
   const zpAddr = (zpBase + (CPUregisters.X & 0xFF)) & 0xFF;
   const low = checkReadOffset(zpAddr) & 0xFF;
   consumeCycle();
 
-  // C4: read pointer high at (zpBase+X+1) (wrap)
+  // C5: read pointer high at (zpBase+X+1) (wrap)
   const high = checkReadOffset((zpAddr + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
-  // C5: internal EA calc
-  const addr = ((high << 8) | low) & 0xFFFF;
-  consumeCycle();
-
   // C6: write (A & X)
+  const addr = ((high << 8) | low) & 0xFFFF;
   checkWriteOffset(addr, (CPUregisters.A & CPUregisters.X) & 0xFF);
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
@@ -4097,8 +4136,9 @@ function SAX_ZPY() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: internal address calc (zp+Y wrap)
+  // C3: dummy read from unindexed base while Y is added.
   const pointer = (base + (CPUregisters.Y & 0xFF)) & 0xFF;
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: write (A & X)
@@ -4234,11 +4274,15 @@ function DCP_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read pointer low @ (zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zp);
+  consumeCycle();
+
+  // C4: read pointer low @ (zp+X)
   const ptrl = checkReadOffset((zp + (CPUregisters.X & 0xFF)) & 0xFF) & 0xFF;
   consumeCycle();
 
-  // C4: read pointer high @ (zp+X+1)
+  // C5: read pointer high @ (zp+X+1)
   const ptrh = checkReadOffset((zp + (CPUregisters.X & 0xFF) + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
@@ -4261,7 +4305,6 @@ function DCP_INDX() {
   CPUregisters.P.C = (CPUregisters.A >= value) ? 1 : 0;
   CPUregisters.P.Z = (result === 0) ? 1 : 0;
   CPUregisters.P.N = (result & 0x80) ? 1 : 0;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -4361,11 +4404,15 @@ function ISC_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read ptr low @(zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zp);
+  consumeCycle();
+
+  // C4: read ptr low @(zp+X)
   const ptrl = checkReadOffset((zp + (CPUregisters.X & 0xFF)) & 0xFF) & 0xFF;
   consumeCycle();
 
-  // C4: read ptr high @(zp+X+1)
+  // C5: read ptr high @(zp+X+1)
   const ptrh = checkReadOffset((zp + (CPUregisters.X & 0xFF) + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
@@ -4395,7 +4442,6 @@ function ISC_INDX() {
   CPUregisters.P.N = (res >> 7) & 1;
   CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
   CPUregisters.A   = res;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -4588,11 +4634,15 @@ function SLO_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read low @(zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zp);
+  consumeCycle();
+
+  // C4: read low @(zp+X)
   const low = checkReadOffset((zp + (CPUregisters.X & 0xFF)) & 0xFF) & 0xFF;
   consumeCycle();
 
-  // C4: read high @(zp+X+1)
+  // C5: read high @(zp+X+1)
   const high = checkReadOffset((zp + (CPUregisters.X & 0xFF) + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
@@ -4615,7 +4665,6 @@ function SLO_INDX() {
   CPUregisters.A |= value;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -4667,9 +4716,13 @@ function SLO_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: calc zp+X and read old
+  // C3: dummy read from unindexed base while X is added.
   const pointer = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  const old     = checkReadOffset(pointer) & 0xFF;
+  checkReadOffset(base);
+  consumeCycle();
+
+  // C4: read old
+  const old = checkReadOffset(pointer) & 0xFF;
   consumeCycle();
 
   // C4: dummy write old
@@ -4686,7 +4739,6 @@ function SLO_ZPX() {
   CPUregisters.A |= value;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -4987,12 +5039,13 @@ function RLA_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
+  // C3: dummy read from unindexed base while X is added.
+  const pointer = (base + (CPUregisters.X & 0xFF)) & 0xFF;
   checkReadOffset(base);
   consumeCycle();
 
-  // C3: read old at (zp+X)
-  const pointer = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  let value     = checkReadOffset(pointer) & 0xFF;
+  // C4: read old
+  let value = checkReadOffset(pointer) & 0xFF;
   consumeCycle();
 
   // C4: dummy write old
@@ -5150,11 +5203,15 @@ function SRE_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read low @(zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zp);
+  consumeCycle();
+
+  // C4: read low @(zp+X)
   const low = checkReadOffset((zp + (CPUregisters.X & 0xFF)) & 0xFF) & 0xFF;
   consumeCycle();
 
-  // C4: read high @(zp+X+1)
+  // C5: read high @(zp+X+1)
   const high = checkReadOffset((zp + (CPUregisters.X & 0xFF) + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
@@ -5177,7 +5234,6 @@ function SRE_INDX() {
   CPUregisters.A ^= value;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -5207,9 +5263,13 @@ function SRE_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read old at (zp+X)
+  // C3: dummy read from unindexed base while X is added.
   const pointer = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  let value     = checkReadOffset(pointer) & 0xFF;
+  checkReadOffset(base);
+  consumeCycle();
+
+  // C4: read old
+  let value = checkReadOffset(pointer) & 0xFF;
   consumeCycle();
 
   // C4: dummy write old
@@ -5226,7 +5286,6 @@ function SRE_ZPX() {
   CPUregisters.A ^= value;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -5282,12 +5341,13 @@ function ARR_IMM() {
 
 function XAA_IMM() {
   // C1: opcode
-  // C2: fetch imm & compute
-  let value = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-  CPUregisters.A = CPUregisters.X & value;
+  // C2: RP2A03 unstable XAA profile used by hardware test vectors.
+  // The internal data-bus "magic" term is $EE on this CPU profile.
+  const value = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  CPUregisters.A = ((CPUregisters.A | 0xEE) & CPUregisters.X & value) & 0xFF;
 
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A >>> 7) & 1;
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
@@ -5442,8 +5502,15 @@ function SBX_IMM() {
 
 }
 
-// 0x02/0x12/… — KIL/JAM — CPU jam
-function KIL_IMP(){window.alert("KIL_IMP, CPU HALT, POSSIBLE BUG")}
+// 0x02/0x12/… — KIL/JAM — CPU jam.
+// C1 opcode fetch is performed by window.step(). Hardware then performs two
+// reads from PC+1, leaves architectural state/PC unchanged, and stops executing.
+function KIL_IMP(){
+  const jamAddress=(CPUregisters.PC+1)&0xFFFF;
+  checkReadOffset(jamAddress); consumeCycle(); // C2
+  checkReadOffset(jamAddress); consumeCycle(); // C3
+  cpuRunning=false;
+}
 
 /*
 //////////////////////// 6502 CPU opcode object ////////////////////////
