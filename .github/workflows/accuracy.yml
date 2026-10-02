@@ -89,7 +89,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/nes6502-v1"
           base="https://raw.githubusercontent.com/SingleStepTests/ProcessorTests/bb11756436da8fd16cce86aef63dc6725f48836f/nes6502/v1"
-          for op in 69 8d a9 d0; do
+          for op in 00 06 08 0a 0e 16 1e 20 28 2c 40 48 4c 60 68 69 6c 8d 91 9d a1 a9 b1 b9 bd c9 d0 e6 e9 f0 fe; do
             curl --fail --location --silent --show-error "$base/$op.json" -o "$RUNNER_TEMP/nes6502-v1/$op.json"
           done
       - name: NES 6502 single-step regression gate
