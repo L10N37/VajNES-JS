@@ -685,3 +685,20 @@ test('PPUDATA write reaches PPU bus after the hardware delay',()=>{
  e.evaluate('ppuTick();ppuCycles++');
  assert.deepEqual(e.evaluate('[PALETTE_RAM[1],VRAM_ADDR]'),[0x2A,0x3F02]);
 });
+
+
+test('PPUMASK emphasis reaches video output after three PPU dots',()=>{
+ const e=emulator();
+ e.evaluate(`
+   cpuCycles=40000;
+   ppuCycles=2000;
+   PPUMASK=0;
+   ppumaskEmphasisHoldBits=0;
+   ppumaskEmphasisApplyAt=-1;
+   ppuWriteMask(0xE0);
+ `);
+ assert.equal(e.evaluate('PPUMASK&0xE0'),0xE0);
+ assert.equal(e.evaluate('ppuEffectiveMask()&0xE0'),0);
+ e.evaluate('for(let i=0;i<3;i++){ppuTick();ppuCycles++;}');
+ assert.equal(e.evaluate('ppuEffectiveMask()&0xE0'),0xE0);
+});
