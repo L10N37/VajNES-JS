@@ -7,6 +7,7 @@ irqAssert = {
   mmc5: false,
   namco: false,
   vrc: false,
+  fme7: false,
   dmcDma: false,
   frame: false
 };
