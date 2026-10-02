@@ -84,7 +84,22 @@ for(const group of groups){
   const rom=fs.readFileSync(path.join(dir,file)),e=createEmulator();let status=null,text='',error=null,classification='passfail',resetCount=0,resetRequestLatched=false;
   try{
    e.load(new Uint8Array(rom));
-   if(group==='other' && file==='nestest.nes') e.evaluate('CPUregisters.PC=0xC000');
+   if(group==='other' && file==='nestest.nes'){
+    e.evaluate(`(()=>{
+      CPUregisters.PC=0xC000;
+      cpuRunning=true;
+      let instructions=0;
+      while(CPUregisters.PC!==0xC66E && instructions++<100000) window.step();
+      if(CPUregisters.PC!==0xC66E)
+        throw new Error('nestest did not reach automation endpoint $C66E');
+    })()`);
+    const rr=e.state().ram;
+    const lo=rr[0x0002]&0xff, hi=rr[0x0003]&0xff;
+    status=(lo===0 && hi===0)?0:(lo || hi || 1);
+    text=status===0?'Passed: reached $C66E with $0002/$0003 = $00/$00':
+      'Failed at $C66E: $0002=$'+lo.toString(16).padStart(2,'0').toUpperCase()+
+      ' $0003=$'+hi.toString(16).padStart(2,'0').toUpperCase();
+   }
    if(group==='blargg_nes_cpu_test5'){
     e.evaluate(`(()=>{
       globalThis.__testSerialText='';
@@ -142,7 +157,7 @@ for(const group of groups){
    if(group==='cpu_interrupts_v2') chunks = 300;
    if(group==='oam_stress') chunks = 400;
    if(group==='instr_test-v3') chunks = 450;
-   if(group==='other' && file==='nestest.nes') chunks = 1;
+   if(group==='other' && file==='nestest.nes') chunks = 0;
 
    for(let i=0;i<chunks;i++){
     e.run(200000);
@@ -226,15 +241,6 @@ for(const group of groups){
        status=(explicitPass||aggregatePass)?0:(errorMatch?Number(errorMatch[1]):1);
        text=serial.trim()+(aggregatePass?'\nTerminal self-loop $8003':'');
      }
-   }
-
-   if(status===null && group==='other' && file==='nestest.nes'){
-     const rr=e.state().ram;
-     const lo=rr[0x0002]&0xff, hi=rr[0x0003]&0xff;
-     status=(lo===0 && hi===0)?0:(lo || hi || 1);
-     text=status===0?'Passed: $0002/$0003 = $00/$00':
-       'Failed: $0002=$'+lo.toString(16).padStart(2,'0').toUpperCase()+
-       ' $0003=$'+hi.toString(16).padStart(2,'0').toUpperCase();
    }
 
    // read_joy3/count_errors*.nes are measurement diagnostics rather than
