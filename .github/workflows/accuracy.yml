@@ -127,3 +127,26 @@ jobs:
           name: singlestep-${{ matrix.shard }}
           path: singlestep-${{ matrix.shard }}.json
 
+  framebuffer-golden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch pinned nes-test-roms
+        run: |
+          git init "$RUNNER_TEMP/nes-test-roms"
+          git -C "$RUNNER_TEMP/nes-test-roms" remote add origin https://github.com/christopherpow/nes-test-roms.git
+          git -C "$RUNNER_TEMP/nes-test-roms" fetch --depth 1 origin 95d8f621ae55cee0d09b91519a8989ae0e64753b
+          git -C "$RUNNER_TEMP/nes-test-roms" checkout --detach FETCH_HEAD
+      - name: Independent framebuffer golden probe
+        run: node tests/framebuffer-golden.cjs "$RUNNER_TEMP/nes-test-roms" framebuffer-golden-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: framebuffer-golden-results
+          path: framebuffer-golden-report.json
+
