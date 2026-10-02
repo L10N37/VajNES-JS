@@ -1,20 +1,21 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 function fixture(){
  let pads=[];
- const events={},docEvents={},label={textContent:''};
+ const events={},docEvents={},label={textContent:''},menu={open:false},closeEvents={};
+ const closeButton={addEventListener:(k,v)=>closeEvents[k]=v};
  const env=vm.createContext({
    window:{addEventListener:(k,v)=>events[k]=v},
    document:{
      hidden:false,
-     getElementById:id=>id==='gamepad-status'?label:null,
-     querySelector:()=>null,
+     getElementById:id=>id==='gamepad-status'?label:id==='gamepad-close'?closeButton:null,
+     querySelector:sel=>sel==='.gamepad-menu'?menu:null,
      addEventListener:(k,v)=>docEvents[k]=v
    },
    navigator:{getGamepads:()=>pads},
    requestAnimationFrame:()=>{}
  });
  vm.runInContext(fs.readFileSync('assets/js/gamepads.js','utf8')+';globalThis.input=NESGamepads',env);
- return {env,events,docEvents,label,input:env.input,setPads:p=>pads=p};
+ return {env,events,docEvents,label,menu,closeEvents,input:env.input,setPads:p=>pads=p};
 }
 function pad(index=0,buttons=[],axes=[0,0]){
  return {index,id:'Xbox '+index,connected:true,mapping:'standard',axes,
@@ -62,4 +63,24 @@ test('blur, hidden tabs and API denial release held controller inputs',()=>{
 test('unmapped controllers are reported without assuming button numbers',()=>{
  const f=fixture();f.setPads([{...pad(0,[0]),mapping:''}]);f.input.update();
  assert.equal(f.input.read(0),0);assert.match(f.label.textContent,/without a standard mapping/);
+});
+
+test('new controller auto-opens the Controller menu and internal Close button closes it',()=>{
+ const f=fixture();
+ f.setPads([pad(0,[0])]);
+ f.input.update();
+ assert.equal(f.menu.open,true);
+ assert.equal(typeof f.closeEvents.click,'function');
+ f.closeEvents.click();
+ assert.equal(f.menu.open,false);
+});
+
+test('retired scanline developer test controls are not exposed in the UI',()=>{
+ const html=fs.readFileSync('index.html','utf8');
+ assert.equal(html.includes('test-rgba-checkbox'),false);
+ assert.equal(html.includes('test-index-checkbox'),false);
+ assert.equal(html.includes('test-image-checkbox'),false);
+ assert.equal(html.includes('Run testRGBAAnim()'),false);
+ assert.equal(html.includes('Run testIndexAnim()'),false);
+ assert.equal(html.includes('Show Test Image'),false);
 });

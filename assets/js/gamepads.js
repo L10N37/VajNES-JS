@@ -184,6 +184,12 @@ const NESGamepads=(()=>{
     }
   }
 
+  const closeButton=document.getElementById('gamepad-close');
+  closeButton?.addEventListener('click',()=>{
+    const menu=document.querySelector?.('.gamepad-menu');
+    if(menu)menu.open=false;
+  });
+
   window.addEventListener('gamepadconnected',update);
   window.addEventListener('gamepaddisconnected',event=>{
     const i=slots.indexOf(event.gamepad.index);

@@ -67,6 +67,7 @@
       <details class="gamepad-menu">
         <summary class="dropbtn">Controller</summary>
         <div class="gamepad-help">
+          <button type="button" id="gamepad-close" class="gamepad-close-btn" aria-label="Close controller panel">&times;</button>
           <p id="gamepad-status" role="status">Pair in your system Bluetooth settings, then press a controller button.</p>
           <div id="gamepad-assignments" aria-label="Controller player assignments"></div>
           <p>Xbox A / Y → NES A<br>B / X → NES B<br>View → Select · Menu → Start<br>D-pad or left stick → Move</p>
@@ -355,19 +356,6 @@
 
     <label for="scanline-offset">Offset:</label>
     <input type="checkbox" id="scanline-offset">
-  </div>
-
-  <!-- Live test sources (mutually exclusive) -->
-  <div>
-    <br>
-    <input type="checkbox" id="test-rgba-checkbox"  name="test-source" value="rgba">
-    <label for="test-rgba-checkbox">Run testRGBAAnim()</label><br>
-
-    <input type="checkbox" id="test-index-checkbox" name="test-source" value="index">
-    <label for="test-index-checkbox">Run testIndexAnim()</label><br>
-
-    <input type="checkbox" id="test-image-checkbox" name="test-source" value="image">
-    <label for="test-image-checkbox">Show Test Image</label>
   </div>
 
   <!-- Grille and transparency controls -->
