@@ -2554,7 +2554,6 @@ function ISC_ZPX() {
   CPUregisters.P.N = (res >> 7) & 1;
   CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
   CPUregisters.A   = res;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -3334,9 +3333,10 @@ function NOP_HANDLER() {
       const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
       consumeCycle();
 
-      checkReadOffset((zp + CPUregisters.X) & 0xFF);
+      checkReadOffset(zp);
       consumeCycle();
 
+      checkReadOffset((zp + CPUregisters.X) & 0xFF);
       consumeCycle();
       CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
       return;
@@ -3732,8 +3732,6 @@ function RRA_INDX() {
   CPUregisters.P.N = (res >> 7) & 1;
   CPUregisters.P.V = ((~(a ^ rotated) & (a ^ res) & 0x80) !== 0) ? 1 : 0;
   CPUregisters.A   = res;
-
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -3791,14 +3789,16 @@ function RRA_ZPX() {
   let val = checkReadOffset(addr) & 0xFF;
   consumeCycle();
 
-  // C5: ROR through carry (internal), then write
+  // C5: dummy write original value.
   const oldCarry = CPUregisters.P.C & 1;
+  checkWriteOffset(addr, val);
+  consumeCycle();
+
+  // C6: rotate, final write, and ADC on the same cycle.
   CPUregisters.P.C = val & 0x01;
   val = ((val >>> 1) | (oldCarry << 7)) & 0xFF;
   checkWriteOffset(addr, val);
   consumeCycle();
-
-  // C6: ADC (internal)
   const acc     = CPUregisters.A & 0xFF;
   const carryIn = CPUregisters.P.C & 1;
   const sum     = acc + val + carryIn;
@@ -3809,8 +3809,6 @@ function RRA_ZPX() {
   CPUregisters.P.N = (res >>> 7) & 1;
   CPUregisters.P.V = ((~(acc ^ val) & (acc ^ res) & 0x80) !== 0) ? 1 : 0;
   CPUregisters.A   = res;
-
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -3957,6 +3955,7 @@ function LAX_ZPY() {
 
   // C4: read, load A/X, set flags
   let value = checkReadOffset(address) & 0xFF;
+  consumeCycle();
   CPUregisters.A = value;
   CPUregisters.X = value;
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
@@ -4013,7 +4012,6 @@ function LAX_INDX() {
   CPUregisters.X = value;
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
   CPUregisters.P.N = (value >>> 7) & 1;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -4288,7 +4286,6 @@ function DCP_INDX() {
   CPUregisters.P.C = (CPUregisters.A >= value) ? 1 : 0;
   CPUregisters.P.Z = (result === 0) ? 1 : 0;
   CPUregisters.P.N = (result & 0x80) ? 1 : 0;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -4426,7 +4423,6 @@ function ISC_INDX() {
   CPUregisters.P.N = (res >> 7) & 1;
   CPUregisters.P.V = ((~(a ^ b) & (a ^ res) & 0x80) >>> 7);
   CPUregisters.A   = res;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -4650,7 +4646,6 @@ function SLO_INDX() {
   CPUregisters.A |= value;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -4725,7 +4720,6 @@ function SLO_ZPX() {
   CPUregisters.A |= value;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -5026,9 +5020,6 @@ function RLA_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  checkReadOffset(base);
-  consumeCycle();
-
   // C3: dummy read from unindexed base while X is added.
   const pointer = (base + (CPUregisters.X & 0xFF)) & 0xFF;
   checkReadOffset(base);
@@ -5224,7 +5215,6 @@ function SRE_INDX() {
   CPUregisters.A ^= value;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -5254,9 +5244,13 @@ function SRE_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read old at (zp+X)
+  // C3: dummy read from unindexed base while X is added.
   const pointer = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  let value     = checkReadOffset(pointer) & 0xFF;
+  checkReadOffset(base);
+  consumeCycle();
+
+  // C4: read old
+  let value = checkReadOffset(pointer) & 0xFF;
   consumeCycle();
 
   // C4: dummy write old
@@ -5273,7 +5267,6 @@ function SRE_ZPX() {
   CPUregisters.A ^= value;
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
   CPUregisters.P.N = ((CPUregisters.A & 0x80) !== 0) ? 1 : 0;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
