@@ -57,6 +57,9 @@ const groupsByShard={
   'read_joy3',
   'oam_read',
   'oam_stress'
+ ],
+ legacyaggregate:[
+  'instr_test-v3'
  ]
 };
 const groups=groupsByShard[shard];if(!groups)throw Error('Unknown BLARGG_SHARD '+shard);
@@ -131,6 +134,7 @@ for(const group of groups){
    if(group==='ppu_vbl_nmi') chunks = 320;
    if(group==='cpu_interrupts_v2') chunks = 300;
    if(group==='oam_stress') chunks = 400;
+   if(group==='instr_test-v3') chunks = 450;
 
    for(let i=0;i<chunks;i++){
     e.run(200000);
