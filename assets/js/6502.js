@@ -2028,7 +2028,7 @@ function CMP_ZPX() { // 4 cycles
   const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
 
   // C3: dummy read from unindexed zero-page base.
-  checkReadOffset(base);
+  checkReadOffset(zp);
   consumeCycle();
 
   // C4: final read
