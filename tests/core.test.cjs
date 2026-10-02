@@ -665,3 +665,22 @@ test('warm reset preserves RAM and registers while applying 6502 reset semantics
    [0xDB,0xBC,0x9A,0xFB,0x34,0x56,0x78,0x0F,1,1,1,1,1,1]
  );
 });
+
+
+test('PPUDATA write reaches PPU bus after the hardware delay',()=>{
+ const e=emulator();
+ e.evaluate(`
+   ppuCycles=1000;
+   VRAM_ADDR=0x3F01;
+   PALETTE_RAM[1]=0x0F;
+   checkWriteOffset(0x2007,0x2A);
+ `);
+ assert.deepEqual(
+   e.evaluate('[PALETTE_RAM[1],VRAM_ADDR,ppuCpu2007WritePending&&ppuCpu2007WritePending.applyAt]'),
+   [0x0F,0x3F01,1006]
+ );
+ e.evaluate('for(let i=0;i<5;i++){ppuTick();ppuCycles++;}');
+ assert.deepEqual(e.evaluate('[PALETTE_RAM[1],VRAM_ADDR]'),[0x0F,0x3F01]);
+ e.evaluate('ppuTick();ppuCycles++');
+ assert.deepEqual(e.evaluate('[PALETTE_RAM[1],VRAM_ADDR]'),[0x2A,0x3F02]);
+});
