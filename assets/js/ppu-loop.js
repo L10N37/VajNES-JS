@@ -154,7 +154,7 @@ function servicePpuDataWrite() {
   const value = op.value;
   if (v < 0x2000) {
     if (mmc3FamilyActive()) {
-      if (chrIsRAM) mapper4_chr_write(v, value);
+      if (chrIsRAM || mapperNumber===119) mapper4_chr_write(v, value);
     } else if (mapperNumber === 1) {
       mmc1ChrWrite(v & 0x1FFF, value);
     } else if (mapperNumber === 5) {
