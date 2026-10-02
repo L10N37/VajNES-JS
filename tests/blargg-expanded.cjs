@@ -57,6 +57,28 @@ for(const group of groups){
   const rom=fs.readFileSync(path.join(dir,file)),e=createEmulator();let status=null,text='',error=null,classification='passfail',resetCount=0,resetRequestLatched=false;
   try{
    e.load(new Uint8Array(rom));
+   if(group==='blargg_nes_cpu_test5'){
+    e.evaluate(`(()=>{
+      globalThis.__testSerialText='';
+      let state=0,byte=0,bitIndex=0;
+      const original=checkWriteOffset;
+      checkWriteOffset=(address,value)=>{
+        if((address&0xffff)===0x4016){
+          const bit=value&1;
+          if(state===0){
+            if(bit===0){state=1;byte=0;bitIndex=0;}
+          }else if(state===1){
+            byte|=bit<<bitIndex++;
+            if(bitIndex===8)state=2;
+          }else{
+            if(bit===1)globalThis.__testSerialText+=String.fromCharCode(byte);
+            state=0;
+          }
+        }
+        return original(address,value);
+      };
+    })()`);
+   }
    // The two legacy MMC3 revision ROMs intentionally target different IRQ
    // silicon. Their old iNES headers cannot encode the revision, so select it
    // explicitly just as the existing mmc3_test_2 gate does.
@@ -148,6 +170,17 @@ for(const group of groups){
       status=legacy===1?0:legacy;
       text=legacy===1?'PASSED':'FAILED #'+legacy;
     }
+   }
+
+   if(status===null && group==='blargg_nes_cpu_test5'){
+     const serial=e.evaluate('globalThis.__testSerialText||""');
+     const pass=/\bPassed\b/i.test(serial);
+     const fail=/\bFailed\b/i.test(serial);
+     const errorMatch=serial.match(/\bError\s+(\d+)/i);
+     if(pass || fail || errorMatch){
+       status=pass?0:(errorMatch?Number(errorMatch[1]):1);
+       text=serial.trim();
+     }
    }
 
    // The 2005 APU suite also predates the modern $6000 protocol and leaves
