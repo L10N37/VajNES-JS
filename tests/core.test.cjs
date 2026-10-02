@@ -1023,7 +1023,7 @@ test('TQROM mapper 119 selects CHR ROM or dedicated CHR RAM with bank bit 6',()=
 test('TQROM mapper 119 CHR RAM and MMC3 registers survive mapper save-state round trip',()=>{
  const e=emulator(rom(119,8,16));
  e.evaluate('mapper4_write_8000(2);mapper4_write_8001(0x43);mapper4_chr_write(0x1000,0x77);mapper4_write_C000(4);globalThis.__s=mmc3SaveState();tqromChrRam.fill(0);mapper4_write_8001(0);mapper4_write_C000(0);mmc3LoadState(globalThis.__s)');
- assert.deepEqual(e.evaluate('[MMC3.registers.CHR_BANK_2,mmc3_irq.latch,ppuBusRead(0x1000),globalThis.__s.length]'),[0x43,4,0x77,8216]);
+ assert.deepEqual(e.evaluate('[MMC3.registers.CHR_BANK_2,mmc3_irq.latch,ppuBusRead(0x1000),globalThis.__s.length]'),[0x43,4,0x77,8217]);
 });
 
 test('loader accepts MMC3-family mapper IDs 118 and 119',()=>{
