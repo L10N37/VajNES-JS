@@ -92,6 +92,14 @@ jobs:
             opcodes: "05 0A 11 19 21 28 2D 35 3D 45 4A 50 58 60 68 6D 75 7D 85 8C 91 98 A0 A5 AA B0 B6 BC C1 C8 CD D5 DD E4 E9 EE F6 FE"
           - shard: ss3
             opcodes: "06 0D 15 1D 24 29 2E 36 3E 46 4C 51 59 61 69 6E 76 7E 86 8D 94 99 A1 A6 AC B1 B8 BD C4 C9 CE D6 DE E5 EA F0 F8"
+          - shard: u0
+            opcodes: "03 0C 17 1F 2F 3A 43 4F 5A 63 6F 7A 80 89 97 9F AF BF CB D7 DF EB F7 FF"
+          - shard: u1
+            opcodes: "04 0F 1A 23 33 3B 44 53 5B 64 73 7B 82 8B 9B A3 B3 C2 CF DA E2 EF FA"
+          - shard: u2
+            opcodes: "07 13 1B 27 34 3C 47 54 5C 67 74 7C 83 8F 9C A7 B7 C3 D3 DB E3 F3 FB"
+          - shard: u3
+            opcodes: "0B 14 1C 2B 37 3F 4B 57 5F 6B 77 7F 87 93 9E AB BB C7 D4 DC E7 F4 FC"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
