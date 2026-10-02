@@ -149,6 +149,14 @@ function mapper(nesHeader) {
       break;
     }
 
+    case 64:
+    case 158: {
+      rambo1Init();
+      chrIsRAM = false;
+      powerOnCPU();
+      break;
+    }
+
     // ==========================================================
     // Unsupported mappers
     // ==========================================================

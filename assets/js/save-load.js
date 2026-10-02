@@ -445,6 +445,7 @@ document.addEventListener("DOMContentLoaded", () => {
       case 7: return typeof axromSaveState==="function"?axromSaveState():new Uint8Array(0);
       case 24: case 26: return typeof vrc6SaveState==="function"?vrc6SaveState():new Uint8Array(0);
       case 69: return typeof fme7SaveState==="function"?fme7SaveState():new Uint8Array(0);
+      case 64: case 158: return typeof rambo1SaveState==="function"?rambo1SaveState():new Uint8Array(0);
       default:return new Uint8Array(0);
     }
   }
@@ -461,6 +462,7 @@ document.addEventListener("DOMContentLoaded", () => {
       case 7: if(typeof axromLoadState==="function")axromLoadState(bytes);return;
       case 24: case 26: if(typeof vrc6LoadState==="function")vrc6LoadState(bytes);return;
       case 69: if(typeof fme7LoadState==="function")fme7LoadState(bytes);return;
+      case 64: case 158: if(typeof rambo1LoadState==="function")rambo1LoadState(bytes);return;
       default:return;
     }
   }

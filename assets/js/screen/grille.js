@@ -120,10 +120,17 @@
 // ===========================================================================
 (function wireOpacity() {
   const t = document.getElementById('transparency-slider');
+  const i = document.getElementById('intensity-slider');
 
-  // Transparency belongs to the emulated picture only. The hover toolbar is
-  // UI and must stay fully opaque above the CRT/scanline layers.
+  // Restore the saved CRT tuning before the first draw. Transparency belongs
+  // only to the emulated picture; the hover toolbar stays fully opaque.
+  const savedTransparency = localStorage.getItem('vajnesTransparency');
+  if (t && savedTransparency !== null) t.value = savedTransparency;
+  const savedGrilleIntensity = localStorage.getItem('vajnesGrilleIntensity');
+  if (i && savedGrilleIntensity !== null) i.value = savedGrilleIntensity;
+
   try { systemScreen.style.opacity = '1'; } catch {}
+
   if (t) {
     try { canvas.style.opacity = (t.value / 100); } catch {}
     t.addEventListener('input', () => {
@@ -131,13 +138,17 @@
         systemScreen.style.opacity = '1';
         canvas.style.opacity = (t.value / 100);
       } catch {}
+      localStorage.setItem('vajnesTransparency', String(t.value));
     });
   }
 
-  const i = document.getElementById('intensity-slider');
-  i?.addEventListener('input', () => {
+  if (i) {
     try { grilleCanvas.style.opacity = (i.value / 100); } catch {}
-  });
+    i.addEventListener('input', () => {
+      try { grilleCanvas.style.opacity = (i.value / 100); } catch {}
+      localStorage.setItem('vajnesGrilleIntensity', String(i.value));
+    });
+  }
 })();
 
 // ===========================================================================
@@ -185,13 +196,22 @@
   }
 
   const radios = document.getElementsByName('grille-type');
+  const savedGrilleType = localStorage.getItem('vajnesGrilleType');
+
   radios.forEach(r => {
+    if (savedGrilleType && r.value === savedGrilleType) r.checked = true;
     r.addEventListener('click', () => {
+      localStorage.setItem('vajnesGrilleType', r.value);
       if (r.value === 'aperture-grille')      drawApertureGrille();
       else if (r.value === 'shadow-mask')     drawShadowMask();
       else                                    clearGrilleCanvas();
     });
   });
+
+  const active = Array.from(radios).find(r => r.checked)?.value;
+  if (active === 'aperture-grille') drawApertureGrille();
+  else if (active === 'shadow-mask') drawShadowMask();
+  else clearGrilleCanvas();
 
   window._grilleDraw = { clearGrilleCanvas, drawShadowMask, drawApertureGrille };
 })();
@@ -227,6 +247,15 @@
   const gap  = document.getElementById('scanline-gap');
   const off  = document.getElementById('scanline-offset');
 
+  const restore = (el,key) => {
+    const value = localStorage.getItem(key);
+    if (el && value !== null) el.value = value;
+  };
+  restore(inten,'vajnesScanlineIntensity');
+  restore(lH,'vajnesScanlineLineHeight');
+  restore(gap,'vajnesScanlineGap');
+  if (off) off.checked = localStorage.getItem('vajnesScanlineOffset') === '1';
+
   function redraw() {
     drawScanlines(
       scanlineCanvas,
@@ -240,10 +269,22 @@
     );
   }
 
-  inten?.addEventListener('input',  redraw);
-  lH  ?.addEventListener('input',   redraw);
-  gap ?.addEventListener('input',   redraw);
-  off ?.addEventListener('change',  redraw);
+  inten?.addEventListener('input', () => {
+    localStorage.setItem('vajnesScanlineIntensity', String(inten.value));
+    redraw();
+  });
+  lH?.addEventListener('input', () => {
+    localStorage.setItem('vajnesScanlineLineHeight', String(lH.value));
+    redraw();
+  });
+  gap?.addEventListener('input', () => {
+    localStorage.setItem('vajnesScanlineGap', String(gap.value));
+    redraw();
+  });
+  off?.addEventListener('change', () => {
+    localStorage.setItem('vajnesScanlineOffset', off.checked ? '1' : '0');
+    redraw();
+  });
 
   window._scanlineRedraw = redraw;
   redraw();
