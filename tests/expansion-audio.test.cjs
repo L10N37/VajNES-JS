@@ -89,3 +89,59 @@ test('MMC5 5015 reports active pulse length and disabling clears it',()=>{
  r.write(0x5015,0);
  assert.equal(r.read(0x5015)&1,0);
 });
+
+
+test('Sunsoft 5B tone follows CPU/(32*period)',()=>{
+ const rate=48000,r=renderer('Sunsoft 5B',rate),period=100;
+ // Channel A period.
+ r.write(0xc000,0);r.write(0xe000,period&255);
+ r.write(0xc000,1);r.write(0xe000,(period>>8)&0x0f);
+ // A tone on, A noise off; B/C tone+noise off.
+ r.write(0xc000,7);r.write(0xe000,0x3e);
+ r.write(0xc000,8);r.write(0xe000,0x0f);
+ r.advance(Math.floor(1789772.7272727273*0.25));
+ const samples=drain(r),f=1789772.7272727273/(32*period);
+ assert(samples.length>11000&&samples.length<13000);
+ const fundamental=amplitude(samples.slice(2000),rate,f);
+ assert(fundamental>0.03);
+ assert(fundamental>3*amplitude(samples.slice(2000),rate,f/2));
+});
+
+test('Sunsoft 5B register select high nibble disables data writes',()=>{
+ const r=renderer('Sunsoft 5B',48000);
+ r.write(0xc000,0x08);r.write(0xe000,0x0f);
+ assert.equal(r.sunsoft5b.regs[8],0x0f);
+ r.write(0xc000,0xf8);r.write(0xe000,0x02);
+ assert.equal(r.sunsoft5b.regs[8],0x0f);
+});
+
+test('Sunsoft 5B mixer supports shared noise and envelope clocks',()=>{
+ const r=renderer('Sunsoft 5B',48000);
+ // Enable noise on A, disable tone on A; silence B/C.
+ r.write(0xc000,6);r.write(0xe000,1);
+ r.write(0xc000,7);r.write(0xe000,0x37);
+ r.write(0xc000,11);r.write(0xe000,2);
+ r.write(0xc000,12);r.write(0xe000,0);
+ r.write(0xc000,13);r.write(0xe000,0x0e);
+ r.write(0xc000,8);r.write(0xe000,0x10);
+ const before=r.sunsoft5b.noiseLfsr;
+ r.advance(5000);
+ const samples=drain(r);
+ assert.notEqual(r.sunsoft5b.noiseLfsr,before);
+ assert(samples.some(v=>v>0));
+ assert(r.sunsoft5b.envelopeLevel>=0&&r.sunsoft5b.envelopeLevel<=31);
+});
+
+test('Sunsoft 5B save-state restores PSG registers and oscillator state',()=>{
+ const r=renderer('Sunsoft 5B',48000);
+ r.write(0xc000,0);r.write(0xe000,37);
+ r.write(0xc000,8);r.write(0xe000,15);
+ r.advance(12345);
+ const state=r.saveState(),phase=r.sunsoft5b.tonePhase[0],lfsr=r.sunsoft5b.noiseLfsr;
+ r.reset(0);
+ assert.equal(r.loadState(state),true);
+ assert.equal(r.sunsoft5b.regs[0],37);
+ assert.equal(r.sunsoft5b.regs[8],15);
+ assert.equal(r.sunsoft5b.tonePhase[0],phase);
+ assert.equal(r.sunsoft5b.noiseLfsr,lfsr);
+});
