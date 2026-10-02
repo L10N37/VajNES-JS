@@ -181,12 +181,17 @@ for(const group of groups){
 
    if(status===null && group==='blargg_nes_cpu_test5'){
      const serial=e.evaluate('globalThis.__testSerialText||""');
-     const pass=/\bPassed\b/i.test(serial);
      const fail=/\bFailed\b/i.test(serial);
      const errorMatch=serial.match(/\bError\s+(\d+)/i);
-     if(pass || fail || errorMatch){
-       status=pass?0:(errorMatch?Number(errorMatch[1]):1);
-       text=serial.trim();
+     const explicitPass=/\bPassed\b/i.test(serial);
+     const st=e.state();
+     const pcOff=16+((st.pc-0x8000)&0x7fff);
+     const terminalSelfLoop=st.pc===0x8003 &&
+       rom[pcOff]===0x4c && rom[pcOff+1]===0x03 && rom[pcOff+2]===0x80;
+     const aggregatePass=/All tests complete/i.test(serial) && !fail && !errorMatch && terminalSelfLoop;
+     if(explicitPass || aggregatePass || fail || errorMatch){
+       status=(explicitPass||aggregatePass)?0:(errorMatch?Number(errorMatch[1]):1);
+       text=serial.trim()+(aggregatePass?'\nTerminal self-loop $8003':'');
      }
    }
 
