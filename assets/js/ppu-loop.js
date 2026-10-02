@@ -109,6 +109,43 @@ let ppuExternalData = 0;
 let ppuCpu2007ReadUntil = -1;
 let ppuCpu2006HybridUntil = -1;
 let ppuCpu2006HybridLow = 0;
+let ppuCpu2007WritePending = null;
+
+function queuePpuDataWrite(addr, value) {
+  ppuCpu2007WritePending = {
+    addr: addr & 0x3FFF,
+    value: value & 0xFF,
+    applyAt: ppuCycles + 6
+  };
+}
+
+function servicePpuDataWrite() {
+  const op = ppuCpu2007WritePending;
+  if (!op || ppuCycles < op.applyAt) return;
+  ppuCpu2007WritePending = null;
+
+  const v = op.addr;
+  const value = op.value;
+  if (v < 0x2000) {
+    if (mapperNumber === 4) {
+      if (chrIsRAM) mapper4_chr_write(v, value);
+    } else if (mapperNumber === 1) {
+      mmc1ChrWrite(v & 0x1FFF, value);
+    } else if (chrIsRAM) {
+      CHR_ROM[v & 0x1FFF] = value;
+    }
+  } else if (v < 0x3F00) {
+    VRAM[mapNT(v)] = value;
+  } else {
+    PALETTE_RAM[paletteIndex(v)] = value & 0x3F;
+  }
+
+  if (mapperNumber === 4) mmc3Irq(v);
+  incrementPPUDataAddress();
+  forcedBlankDisplayV = VRAM_ADDR & 0x3FFF;
+  forcedBlankApplyAt = -1;
+  if (mapperNumber === 4) mmc3Irq(VRAM_ADDR);
+}
 
 // Forced-blank palette output does not see CPU VRAM-address changes
 // immediately. Hardware measurements put a completed $2006 pair at ~5 PPU
@@ -1287,6 +1324,7 @@ function renderingBusTick() {
 
 // ---- Tick ----
 function ppuTick() {
+  servicePpuDataWrite();
   renderingBusTick();
   const maskNow = PPUMASK & 0xFF;
   const renNow  = (maskNow & 0x18) !== 0;
