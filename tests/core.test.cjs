@@ -33,12 +33,12 @@ test('MMC1 keeps all CHR banks and PPU paths agree',()=>{
  assert.equal(e.evaluate('checkReadOffset(0x2007)'),6);
 });
 test('MMC1 8 KiB CHR ROM is not writable',()=>{
- const e=emulator(rom(1,2,1));e.evaluate('cpuCycles=30000;VRAM_ADDR=0;checkWriteOffset(0x2007,99)');
+ const e=emulator(rom(1,2,1));e.evaluate('cpuCycles=30000;VRAM_ADDR=0;checkWriteOffset(0x2007,99);for(let d=0;d<7;d++){ppuTick();ppuCycles++;}');
  assert.equal(e.evaluate('ppuBusRead(0)'),0);
 });
 test('MMC1 banked CHR RAM reads and writes agree',()=>{
  const e=emulator(rom(1,2,0));
- e.evaluate('cpuCycles=30000;mmc1Control=0x1C;mmc1CHR0=1;mmc1CHR1=0;mmc1ApplyControl();VRAM_ADDR=0;checkWriteOffset(0x2007,99)');
+ e.evaluate('cpuCycles=30000;mmc1Control=0x1C;mmc1CHR0=1;mmc1CHR1=0;mmc1ApplyControl();VRAM_ADDR=0;checkWriteOffset(0x2007,99);for(let d=0;d<7;d++){ppuTick();ppuCycles++;}');
  assert.equal(e.evaluate('CHR_ROM[0x1000]'),99);
  assert.equal(e.evaluate('ppuBusRead(0)'),99);
 });
@@ -52,7 +52,7 @@ test('MMC1 mirroring changes wiring without destroying CIRAM',()=>{
 });
 test('four-screen CPU and PPU paths retain four distinct nametables',()=>{
  const e=emulator(rom(0,2,1,8));
- e.evaluate('cpuCycles=30000;for(let i=0;i<4;i++){VRAM_ADDR=0x2000+i*0x400;checkWriteOffset(0x2007,10+i)}');
+ e.evaluate('cpuCycles=30000;for(let i=0;i<4;i++){VRAM_ADDR=0x2000+i*0x400;checkWriteOffset(0x2007,10+i);for(let d=0;d<7;d++){ppuTick();ppuCycles++;}}');
  assert.deepEqual(e.evaluate('[0,1,2,3].map(i=>ppuBusRead(0x2000+i*0x400))'),[10,11,12,13]);
 });
 test('truncated CHR image is rejected before changing cartridge',()=>{
@@ -62,7 +62,7 @@ test('truncated CHR image is rejected before changing cartridge',()=>{
 test('APU enable does not load length; disable clears it',()=>{
  const e=emulator();e.evaluate('apuWrite(0x4015,1)');
  assert.equal(e.evaluate('apuRead(0x4015)&15'),0);
- e.evaluate('apuWrite(0x4003,0x18)');assert.equal(e.evaluate('apuRead(0x4015)&15'),1);
+ e.evaluate('apuWrite(0x4003,0x18);consumeCycle()');assert.equal(e.evaluate('apuRead(0x4015)&15'),1);
  e.evaluate('apuWrite(0x4015,0);apuWrite(0x4015,1)');assert.equal(e.evaluate('apuRead(0x4015)&15'),0);
 });
 test('frame IRQ is delayed and inhibited through 4017',()=>{
@@ -148,6 +148,25 @@ test('MMC3 IRQ enable and zero latch do not assert until a filtered rising edge'
  e.evaluate('mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),1);
  e.evaluate('mapper4_write_E001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');assert.equal(e.evaluate('irqAssert.mmc3'),true);
 });
+test('MMC3 Sharp and NEC zero-reload IRQ variants follow their silicon rules',()=>{
+ const sharp=emulator(rom(4));
+ sharp.evaluate('mapper4_write_C000(0);mapper4_write_C001();mapper4_write_E001();ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(sharp.evaluate('mmc3_irq.variant'),'sharp');
+ assert.equal(sharp.evaluate('irqAssert.mmc3'),true);
+ sharp.evaluate('mapper4_write_E000();mapper4_write_E001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(sharp.evaluate('irqAssert.mmc3'),true);
+
+ const nec=emulator(rom(4,2,1,0,4));
+ assert.equal(nec.evaluate('mmc3_irq.variant'),'nec');
+ nec.evaluate('mapper4_write_C000(2);mapper4_write_C001();mapper4_write_E001()');
+ nec.evaluate('ppuCycles+=9;mmc3Irq(0x1000);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(nec.evaluate('irqAssert.mmc3'),true);
+ nec.evaluate('mapper4_write_E000();mapper4_write_E001();mapper4_write_C000(0);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(nec.evaluate('irqAssert.mmc3'),false);
+ nec.evaluate('mapper4_write_C001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(nec.evaluate('irqAssert.mmc3'),true);
+});
+
 test('MMC3 rejects short/repeated A12 pulses and ignores activity on other mappers',()=>{
  const e=emulator(rom(4));e.evaluate('mmc3Reset();mapper4_write_C000(3);mapper4_write_C001();for(let i=0;i<100;i++)mmc3Irq(0);mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),0);
  e.evaluate('mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000);ppuCycles+=100;mmc3Irq(0x1000)');assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),3);
@@ -164,13 +183,13 @@ test('AxROM maps all 32 KiB including vectors; ignores upper register bits',()=>
  const small=emulator(rom(7,4,0));small.evaluate('checkWriteOffset(0x8000,7)');assert.equal(small.evaluate('checkReadOffset(0x8000)'),2);
 });
 test('AxROM one-screen switching preserves both CIRAM pages across CPU/renderer access',()=>{
- const e=emulator(rom(7,2,0,1));e.evaluate('cpuCycles=40000;VRAM_ADDR=0x2405;checkWriteOffset(0x2007,0x35);checkWriteOffset(0x8000,0x10);VRAM_ADDR=0x2c05;checkWriteOffset(0x2007,0x72)');
+ const e=emulator(rom(7,2,0,1));e.evaluate('cpuCycles=40000;VRAM_ADDR=0x2405;checkWriteOffset(0x2007,0x35);for(let d=0;d<7;d++){ppuTick();ppuCycles++;};checkWriteOffset(0x8000,0x10);VRAM_ADDR=0x2c05;checkWriteOffset(0x2007,0x72);for(let d=0;d<7;d++){ppuTick();ppuCycles++;}');
  assert.deepEqual(e.evaluate('[0x2005,0x2405,0x2805,0x2c05].map(ppuBusRead)'),[0x72,0x72,0x72,0x72]);
  e.evaluate('checkWriteOffset(0x9000,0);VRAM_ADDR=0x2805;checkReadOffset(0x2007)');assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x35);
  assert.deepEqual(e.evaluate('[0x2005,0x2405,0x2805,0x2c05].map(ppuBusRead)'),[0x35,0x35,0x35,0x35]);
 });
 test('AxROM CHR RAM stays unbanked and has no cartridge PRG RAM',()=>{
- const e=emulator(rom(7,4,0));e.evaluate('cpuCycles=40000;VRAM_ADDR=0x1234;checkWriteOffset(0x2007,0xa5);checkWriteOffset(0x8000,0x11)');assert.equal(e.evaluate('ppuBusRead(0x1234)'),0xa5);
+ const e=emulator(rom(7,4,0));e.evaluate('cpuCycles=40000;VRAM_ADDR=0x1234;checkWriteOffset(0x2007,0xa5);for(let d=0;d<7;d++){ppuTick();ppuCycles++;};checkWriteOffset(0x8000,0x11)');assert.equal(e.evaluate('ppuBusRead(0x1234)'),0xa5);
  e.evaluate('prgRam[0]=0x99;checkWriteOffset(0x6000,0x31);openBus.CPU=0x56');assert.equal(e.evaluate('checkReadOffset(0x6000)'),0x56);assert.equal(e.evaluate('prgRam[0]'),0x99);
 });
 test('AxROM legacy/no-conflict and explicit AND-conflict board variants',()=>{
@@ -180,44 +199,9 @@ test('AxROM legacy/no-conflict and explicit AND-conflict board variants',()=>{
  }
  const bytes=rom(7,8,0,0,2);bytes[16]=1;const e=emulator(bytes);e.evaluate('checkWriteOffset(0x8000,0x11)');assert.equal(e.evaluate('axromBank'),1);assert.equal(e.evaluate('MIRRORING'),'single0');
 });
-test('AxROM save-state round trip restores PRG bank and one-screen mirroring',()=>{
- const e=emulator(rom(7,8,0));
- e.evaluate("checkWriteOffset(0x8000,0x13);globalThis.__axState=axromSaveState();checkWriteOffset(0x8000,0);axromLoadState(globalThis.__axState)");
- assert.deepEqual(e.evaluate('[axromBank,MIRRORING,checkReadOffset(0x8000)]'),[3,'single1',6]);
-});
-
-test('PPU save-state round trip restores timing, shifters and sprite-zero pipeline',()=>{
- const e=emulator(rom(7,8,0));
- const expr="(()=>{"+
-   "PPUclock.dot=173;PPUclock.scanline=88;PPUclock.frame=12345;PPUclock.oddFrame=true;"+
-   "current.dot=170;current.scanline=88;current.frame=12345;"+
-   "ppuInitDone=true;nmiAtVblankEnd=true;oddSkipRendering=true;vFetch=0x2345;"+
-   "background.bgShiftLo=0x8123;background.bgShiftHi=0x4567;background.atShiftLo=0x89ab;background.atShiftHi=0xcdef;"+
-   "background.ntByte=0x44;background.atByte=3;background.tileLo=0x55;background.tileHi=0xaa;"+
-   "nextLine.t0={lo:1,hi:2,at:3};nextLine.t1={lo:4,hi:5,at:2};"+
-   "renderingPrev=true;spriteOnlyPrimePending=true;oamCorruptPending=true;oamCorruptSeedRow=7;secOAMAddr=9;ppumaskPrev=0x18;spriteXForceZeroNextFrame=true;"+
-   "spritesA.count=1;spritesA.sprite0ListIndex=0;spritesA.attr[0]=0x21;spritesA.xcnt[0]=17;spritesA.lo[0]=0x80;spritesA.hi[0]=0x40;spritesA.idx[0]=0;spritesA.tile[0]=0x33;spritesA.row[0]=5;"+
-   "spritesCur=spritesA;spritesNext=spritesB;const saved=ppuSavePipelineState();"+
-   "PPUclock.dot=0;PPUclock.scanline=261;PPUclock.frame=0;PPUclock.oddFrame=false;background.bgShiftLo=background.bgShiftHi=0;"+
-   "spritesA.count=0;spritesA.sprite0ListIndex=0xff;spritesA.lo[0]=0;spriteXForceZeroNextFrame=false;"+
-   "const ok=ppuLoadPipelineState(saved);"+
-   "return [ok,PPUclock.dot,PPUclock.scanline,PPUclock.frame,PPUclock.oddFrame,current.dot,vFetch,background.bgShiftLo,background.bgShiftHi,background.atShiftLo,background.atShiftHi,spritesCur===spritesA,spritesCur.count,spritesCur.sprite0ListIndex,spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.tile[0],spritesCur.row[0],renderingPrev,spriteOnlyPrimePending,oamCorruptPending,oamCorruptSeedRow,secOAMAddr,ppumaskPrev,spriteXForceZeroNextFrame];"+
-   "})()";
- const state=e.evaluate(expr);
- assert.deepEqual(state,[true,173,88,12345,true,170,0x2345,0x8123,0x4567,0x89ab,0xcdef,true,1,0,0x21,17,0x80,0x40,0x33,5,true,true,true,7,9,0x18,true]);
-});
 test('AxROM bank write changes the very next opcode fetch',()=>{
  const bytes=rom(7,4,0);bytes.set([0xa9,1,0x8d,0,0x80],16);bytes.set([0xa9,0x5a,0x85,0x20,0x4c,9,0x80],16+0x8000+5);bytes[16+0x7ffc]=0;bytes[16+0x7ffd]=0x80;
  const e=emulator(bytes);e.run(100);assert.equal(e.evaluate('systemMemory[0x20]'),0x5a);assert.equal(e.evaluate('axromBank'),1);
-});
-test('disassembler peek follows the active AxROM PRG bank',()=>{
- const bytes=rom(7,4,0);
- bytes[16+1]=0x11;
- bytes[16+0x8000+1]=0x77;
- const e=emulator(bytes);
- assert.equal(e.evaluate('disasmPeekByte(0x8001)'),0x11);
- e.evaluate('checkWriteOffset(0x8000,1)');
- assert.equal(e.evaluate('disasmPeekByte(0x8001)'),0x77);
 });
 test('AxROM rejects unsupported images before replacing a running cartridge',()=>{
  const e=emulator(rom(7,4,0));e.evaluate('checkWriteOffset(0x8000,0x11)');
@@ -249,12 +233,76 @@ test('odd-frame skip latch keeps its existing raw PPUMASK timing boundary',()=>{
  e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;ppuCycles=200;ppuWriteMask(0);PPUclock.scanline=261;PPUclock.dot=338;oddSkipRendering=true;ppuTick()');
  assert.deepEqual(e.evaluate('[renderingNow(),oddSkipRendering]'),[true,false]);
 });
-test('PPUMASK pending render delay survives PPU save-state round trip',()=>{
+
+test('$2002 read on pre-render dot 1 latches vblank but sees cleared sprite flags',()=>{
  const e=emulator();
- e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=200;ppuWriteMask(0x18);globalThis.__ppust=ppuSavePipelineState();ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;ppuLoadPipelineState(globalThis.__ppust)');
- assert.deepEqual(e.evaluate('[ppumaskRenderHoldBits,ppumaskRenderApplyAt,renderingNow()]'),[0,204,false]);
- e.evaluate('ppuCycles=204');assert.equal(e.evaluate('renderingNow()'),true);
+ e.evaluate('PPUSTATUS=0xe0;openBus.PPU=0;PPUclock.scanline=261;PPUclock.dot=1');
+ assert.equal(e.evaluate('checkReadOffset(0x2002)&0xe0'),0x80);
+ assert.equal(e.evaluate('PPUSTATUS&0xe0'),0x60);
 });
+
+test('$2002 read sees sprite overflow when the scheduled transition occurs on that dot',()=>{
+ const e=emulator();
+ e.evaluate('PPUSTATUS=0x40;openBus.PPU=0;spriteOverflowSetScanline=10;spriteOverflowSetDot=131;PPUclock.scanline=10;PPUclock.dot=131');
+ assert.equal(e.evaluate('checkReadOffset(0x2002)&0x60'),0x60);
+});
+
+test('ninth consecutive in-range sprite schedules overflow at evaluation dot 131',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUSTATUS=0;OAM.fill(0xff);for(let i=0;i<9;i++){OAM[i*4]=0;OAM[i*4+1]=1;OAM[i*4+2]=0;OAM[i*4+3]=0;}PPUclock.scanline=0;evalSpritesForScanline(spritesNext,1)');
+ assert.deepEqual(e.evaluate('[spriteOverflowSetScanline,spriteOverflowSetDot,PPUSTATUS&0x20]'),[0,131,0]);
+});
+
+test('forced blank keeps sprite X counters counting while pattern shifters pause',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=false;spritesCur.count=1;spritesCur.xcnt[0]=3;spritesCur.lo[0]=0x81;spritesCur.hi[0]=0x42;PPUclock.scanline=5;PPUclock.dot=10;visibleScanline(10)');
+ assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0]]'),[2,0x81,0x42]);
+});
+
+test('dot-339 forced-zero latch is retained through blank and applied when rendering resumes',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=true;spritesCur.count=1;spritesCur.xcnt[0]=7;PPUclock.scanline=5;PPUclock.dot=10;visibleScanline(10)');
+ assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spriteXForceZeroNextFrame]'),[6,true]);
+ e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;PPUclock.dot=11;visibleScanline(11)');
+ assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spriteXForceZeroNextFrame]'),[0,false]);
+});
+
+test('$2007 overlap can feed external PPU data into the next pattern-low fetch',()=>{
+ const e=emulator();
+ e.evaluate('ppuExternalData=0xaa;ppuCpu2007ReadUntil=ppuCycles+8;CHR_ROM[0x1aa]=0x5a');
+ assert.equal(e.evaluate("ppuBackgroundRead(0x0103,'patternLo')"),0x5a);
+ assert.deepEqual(e.evaluate('[ppuExternalLatchLow,ppuCpu2007ReadUntil]'),[0xaa,-1]);
+});
+
+test('second $2006 write captures the external low-address latch during rendering',()=>{
+ const e=emulator();
+ // PPUADDR writes are ignored during the hardware power-on write gate, so
+ // place this timing test after that interval before exercising the overlap.
+ e.evaluate('cpuCycles=40000;PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUclock.scanline=4;PPUclock.dot=180;VRAM_ADDR=0x2c18;writeToggle=1;t_hi=0x2f;t_lo=0;checkWriteOffset(0x2006,0)');
+ assert.equal(e.evaluate('ppuCpu2006HybridLow'),0x19);
+ assert.ok(e.evaluate('ppuCpu2006HybridUntil>=ppuCycles'));
+});
+
+test('forced blank preserves stale sprite evaluation data',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x55;evalSpritesForScanline(spritesNext,10)');
+ assert.deepEqual(e.evaluate('[spritesNext.count,spritesNext.sprite0ListIndex,spritesNext.tile[0]]'),[1,0,0x55]);
+});
+
+test('dot 339 forced-zero latch applies on visible scanlines',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=false;PPUclock.scanline=3;PPUclock.dot=339;ppuTick()');
+ assert.equal(e.evaluate('spriteXForceZeroNextFrame'),true);
+});
+
+test('interrupted sprite-zero fetch keeps the previous active shifter buffer',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesCur.count=1;spritesCur.sprite0ListIndex=0;spritesCur.attr[0]=0x21;spritesCur.xcnt[0]=0x11;spritesCur.lo[0]=0x81;spritesCur.hi[0]=0x42;spritesCur.idx[0]=0;spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x22;spritesNext.attr[0]=0x02;spritesNext.xcnt[0]=0x33;spritesNext.lo[0]=0x24;spritesNext.hi[0]=0x18;spritesNext.idx[0]=4;sprite0FetchComplete=false;PPUclock.scanline=5;PPUclock.dot=1;visibleScanline(1)');
+ assert.deepEqual(e.evaluate('[spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0],spritesCur.tile[0]]'),[0x21,0x10,0x81,0x42,0,0x22]);
+ e.evaluate('spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x44;spritesNext.attr[0]=0x03;spritesNext.xcnt[0]=0x55;spritesNext.lo[0]=0x66;spritesNext.hi[0]=0x77;spritesNext.idx[0]=8;sprite0FetchComplete=true;PPUclock.dot=1;visibleScanline(1)');
+ assert.deepEqual(e.evaluate('[spritesCur.tile[0],spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0]]'),[0x44,0x03,0x54,0x66,0x77,8]);
+});
+
 test('background shifter advances after pixel zero without duplicating it',()=>{
  const e=emulator();e.evaluate('spriteXForceZeroNextFrame=false;PPUMASK=0x0a;fineX=0;PPUclock.scanline=0;PPUclock.dot=1;nextLine.t0={lo:0x80,hi:0,at:0};nextLine.t1={lo:0,hi:0,at:0};PALETTE_RAM[0]=0;PALETTE_RAM[1]=0x21;visibleScanline(1);PPUclock.dot=2;visibleScanline(2)');
  assert.deepEqual(e.evaluate('Array.from(paletteIndexFrame.slice(0,2))'),[0x21,0]);
@@ -266,7 +314,7 @@ test('PPUDATA clocks both scroll counters during rendering, including wrap bound
  const e=emulator();e.evaluate('cpuCycles=40000');
  for(const write of [false,true])for(const mask of [8,16])for(const ctrl of [0,4]){
   for(const [sl,start,want] of [[0,0x2000,0x3001],[239,0x73bf,0xc00],[261,0x73ff,0x400],[240,0x2000,0x2000+(ctrl?32:1)],[241,0x7fff,ctrl?31:0]]){
-   e.evaluate(`PPUMASK=${mask};PPUCTRL=${ctrl};PPUclock.scanline=${sl};VRAM_ADDR=${start};${write?'checkWriteOffset(0x2007,0)':'checkReadOffset(0x2007)'}`);
+   e.evaluate(`PPUMASK=${mask};PPUCTRL=${ctrl};PPUclock.scanline=${sl};VRAM_ADDR=${start};${write?'checkWriteOffset(0x2007,0);for(let d=0;d<7;d++){ppuTick();ppuCycles++;}':'checkReadOffset(0x2007)'}`);
    assert.equal(e.evaluate('VRAM_ADDR'),want,`write=${write}, mask=${mask}, ctrl=${ctrl}, line=${sl}`);
   }
  }
@@ -410,6 +458,34 @@ test('DMC sample low bits decode APU registers only when the CPU is halted in $4
 });
 
 
+test('OAM DMA source $40xx does not activate APU registers when halted CPU bus is elsewhere',()=>{
+ const e=emulator();
+ e.evaluate("CPUregisters.PC=0x8000;openBus.CPU=0x40;apuTiming.frameFlag=true;irqAssert.frame=true;DMA.active=true;DMA.pad=0;DMA.addr=0x4015;DMA.index=0x15;DMA.phase='get';dmaMicroStep()");
+ assert.equal(e.evaluate('DMA.tmp'),0x40);
+ assert.equal(e.evaluate('apuTiming.frameFlag'),true);
+});
+
+test('OAM DMA aliases APU status through low five source bits when halted CPU bus activates decoder',()=>{
+ const e=emulator();
+ e.evaluate("CPUregisters.PC=0x4001;openBus.CPU=0x40;apuTiming.frameFlag=true;irqAssert.frame=true;apuTiming.length[2]=1;DMA.active=true;DMA.pad=0;DMA.addr=0x5015;DMA.index=0x15;DMA.phase='get';dmaMicroStep()");
+ assert.equal(e.evaluate('DMA.tmp'),0x44);
+});
+
+test('OAM DMA put preserves external CPU bus only during active APU decode window',()=>{
+ for(const [pc,wantBus] of [[0x4001,0x40],[0x8000,0x44]]){
+  const e=emulator();
+  e.evaluate(`CPUregisters.PC=${pc};openBus.CPU=0x40;OAMADDR=0;DMA.active=true;DMA.pad=0;DMA.addr=0x5000;DMA.index=0;DMA.tmp=0x44;DMA.phase='put';dmaMicroStep()`);
+  assert.equal(e.evaluate('OAM[0]'),0x44);
+  assert.equal(e.evaluate('openBus.CPU'),wantBus);
+ }
+});
+
+test('driven OAM DMA source keeps controller alias off external data while still clocking it',()=>{
+ const e=emulator();
+ e.evaluate("CPUregisters.PC=0x4001;systemMemory[0x216]=0xff;joypad1State=0;joypad1Shift=0x55;DMA.active=true;DMA.pad=0;DMA.addr=0x0216;DMA.index=0x16;DMA.phase='get';dmaMicroStep()");
+ assert.equal(e.evaluate('DMA.tmp'),0xff);
+});
+
 test('CNROM selects 8 KiB CHR banks while PRG stays fixed',()=>{
  const e=emulator(rom(3,2,4,0,1));
  assert.deepEqual(e.evaluate('[ppuBusRead(0),ppuBusRead(0x1000),checkReadOffset(0x8000),checkReadOffset(0xc000)]'),[0,1,0,1]);
@@ -460,6 +536,32 @@ test('GxROM has no PRG RAM window',()=>{
  const e=emulator(rom(66,2,1));e.evaluate('prgRam[0]=0x99;openBus.CPU=0x46;checkWriteOffset(0x6000,1);openBus.CPU=0x46');
  assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x46,0x99]);
 });
+
+test('NINA-03/06 mapper 79 decodes only its expansion-area control addresses',()=>{
+ const bytes=rom(79,4,8,1,null);
+ for(let b=0;b<2;b++) bytes.fill(b,16+b*0x8000,16+(b+1)*0x8000);
+ for(let b=0;b<8;b++) bytes.fill(b,16+0x20000+b*0x2000,16+0x20000+(b+1)*0x2000);
+ const e=emulator(bytes);
+ assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank,checkReadOffset(0x8000),ppuBusRead(0)]'),[0,0,0,0]);
+ e.evaluate('checkWriteOffset(0x4000,0x0f);checkWriteOffset(0x4200,0x0f);checkWriteOffset(0x6000,0x0f)');
+ assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank]'),[0,0]);
+ e.evaluate('checkWriteOffset(0x4100,0x0d)');
+ assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank,checkReadOffset(0x8000),ppuBusRead(0)]'),[1,5,1,10]);
+});
+
+test('NINA-03/06 mapper 79 mirrors its control decode through odd $xx00 pages to $5FFF',()=>{
+ const e=emulator(rom(79,4,8,1,null));
+ for(const addr of [0x4100,0x41ff,0x4300,0x45aa,0x5d10,0x5fff]) {
+   e.evaluate(`nina79PrgBank=0;nina79ChrBank=0;checkWriteOffset(${addr},0x0f)`);
+   assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank]'),[1,7],addr.toString(16));
+ }
+});
+
+test('NINA-03/06 mapper 79 has no PRG RAM window',()=>{
+ const e=emulator(rom(79,2,4,1,null));
+ e.evaluate('prgRam[0]=0x99;openBus.CPU=0x5a;checkWriteOffset(0x6000,1);openBus.CPU=0x5a');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x5a,0x99]);
+});
 test('MMC2 maps one selectable and three fixed 8 KiB PRG banks',()=>{
  const bytes=rom(9,8,4);for(let b=0;b<16;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);const e=emulator(bytes);
  e.evaluate('checkWriteOffset(0xa000,5)');
@@ -502,7 +604,7 @@ test('MMC4 keeps an 8 KiB PRG RAM window',()=>{
  assert.equal(e.evaluate('checkReadOffset(0x6000)'),0xa5);
 });
 test('loader accepts all newly supported mapper IDs and rejects CNROM CHR RAM',()=>{
- for(const [m,p,c] of [[3,2,1],[9,8,4],[10,8,4],[11,2,1],[66,2,1]]) {
+ for(const [m,p,c] of [[3,2,1],[9,8,4],[10,8,4],[11,2,1],[66,2,1],[79,4,8]]) {
   const e=emulator(rom(m,p,c,m===3?0:0,m===3?1:null));
   assert.equal(e.evaluate('mapperNumber'),m);
  }
@@ -543,6 +645,133 @@ test('DMC reload waits for a recent $4015 reader enable and then uses a 3-cycle 
  assert.equal(result.stolen,3);
 });
 
+test('adjacent-cycle PPUDATA reads merge into one effective strobe',()=>{
+ const e=emulator();
+ e.evaluate('cpuCycles=40000;VRAM_ADDR=1;VRAM_DATA=0x22;CHR_ROM[1]=0x33;CHR_ROM[2]=0x44');
+ assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x22);
+ assert.equal(e.evaluate('VRAM_ADDR'),2);
+ e.evaluate('cpuCycles++');
+ assert.equal(e.evaluate('checkReadOffset(0x2107)'),0x22);
+ assert.equal(e.evaluate('VRAM_ADDR'),2);
+ assert.equal(e.evaluate('VRAM_DATA'),0x33);
+ e.evaluate('cpuCycles+=2');
+ assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x33);
+ assert.equal(e.evaluate('VRAM_ADDR'),3);
+ assert.equal(e.evaluate('VRAM_DATA'),0x44);
+});
+
+
+test('warm reset preserves RAM and registers while applying 6502 reset semantics',()=>{
+ const e=emulator();
+ e.evaluate(`
+   systemMemory[0x0000]=0xDB;
+   systemMemory[0x0110]=0xBC;
+   systemMemory[0x0111]=0x9A;
+   systemMemory[0x0112]=0xFB;
+   CPUregisters.A=0x34;
+   CPUregisters.X=0x56;
+   CPUregisters.Y=0x78;
+   CPUregisters.S=0x12;
+   CPUregisters.P.C=1;
+   CPUregisters.P.Z=1;
+   CPUregisters.P.I=0;
+   CPUregisters.P.D=1;
+   CPUregisters.P.V=1;
+   CPUregisters.P.N=1;
+   resetCPU();
+ `);
+ assert.deepEqual(
+   e.evaluate(`[
+     systemMemory[0x0000],
+     systemMemory[0x0110],systemMemory[0x0111],systemMemory[0x0112],
+     CPUregisters.A,CPUregisters.X,CPUregisters.Y,CPUregisters.S,
+     CPUregisters.P.C,CPUregisters.P.Z,CPUregisters.P.I,
+     CPUregisters.P.D,CPUregisters.P.V,CPUregisters.P.N
+   ]`),
+   [0xDB,0xBC,0x9A,0xFB,0x34,0x56,0x78,0x0F,1,1,1,1,1,1]
+ );
+});
+
+
+test('PPUDATA write reaches PPU bus after the hardware delay',()=>{
+ const e=emulator();
+ e.evaluate(`
+   cpuCycles=40000;
+   ppuCycles=1000;
+   VRAM_ADDR=0x3F01;
+   PALETTE_RAM[1]=0x0F;
+   checkWriteOffset(0x2007,0x2A);
+ `);
+ assert.deepEqual(
+   e.evaluate('[PALETTE_RAM[1],VRAM_ADDR,ppuCpu2007WritePending&&ppuCpu2007WritePending.applyAt]'),
+   [0x0F,0x3F01,1006]
+ );
+ e.evaluate('for(let i=0;i<6;i++){ppuTick();ppuCycles++;}');
+ assert.deepEqual(e.evaluate('[PALETTE_RAM[1],VRAM_ADDR]'),[0x0F,0x3F01]);
+ e.evaluate('ppuTick();ppuCycles++');
+ assert.deepEqual(e.evaluate('[PALETTE_RAM[1],VRAM_ADDR]'),[0x2A,0x3F02]);
+});
+
+
+test('PPUMASK emphasis reaches video output after three PPU dots',()=>{
+ const e=emulator();
+ e.evaluate(`
+   cpuCycles=40000;
+   ppuCycles=2000;
+   PPUMASK=0;
+   ppumaskEmphasisHoldBits=0;
+   ppumaskEmphasisApplyAt=-1;
+   ppuWriteMask(0xE0);
+ `);
+ assert.equal(e.evaluate('PPUMASK&0xE0'),0xE0);
+ assert.equal(e.evaluate('ppuEffectiveMask()&0xE0'),0);
+ e.evaluate('for(let i=0;i<3;i++){ppuTick();ppuCycles++;}');
+ assert.equal(e.evaluate('ppuEffectiveMask()&0xE0'),0xE0);
+});
+
+test('AxROM save-state round trip restores PRG bank and one-screen mirroring',()=>{
+ const e=emulator(rom(7,8,0));
+ e.evaluate("checkWriteOffset(0x8000,0x13);globalThis.__axState=axromSaveState();checkWriteOffset(0x8000,0);axromLoadState(globalThis.__axState)");
+ assert.deepEqual(e.evaluate('[axromBank,MIRRORING,checkReadOffset(0x8000)]'),[3,'single1',6]);
+});
+
+test('PPU save-state round trip restores timing, shifters and sprite-zero pipeline',()=>{
+ const e=emulator(rom(7,8,0));
+ const expr="(()=>{"+
+   "PPUclock.dot=173;PPUclock.scanline=88;PPUclock.frame=12345;PPUclock.oddFrame=true;"+
+   "current.dot=170;current.scanline=88;current.frame=12345;"+
+   "ppuInitDone=true;nmiAtVblankEnd=true;oddSkipRendering=true;vFetch=0x2345;"+
+   "background.bgShiftLo=0x8123;background.bgShiftHi=0x4567;background.atShiftLo=0x89ab;background.atShiftHi=0xcdef;"+
+   "background.ntByte=0x44;background.atByte=3;background.tileLo=0x55;background.tileHi=0xaa;"+
+   "nextLine.t0={lo:1,hi:2,at:3};nextLine.t1={lo:4,hi:5,at:2};"+
+   "renderingPrev=true;spriteOnlyPrimePending=true;oamCorruptPending=true;oamCorruptSeedRow=7;secOAMAddr=9;ppumaskPrev=0x18;spriteXForceZeroNextFrame=true;"+
+   "spritesA.count=1;spritesA.sprite0ListIndex=0;spritesA.attr[0]=0x21;spritesA.xcnt[0]=17;spritesA.lo[0]=0x80;spritesA.hi[0]=0x40;spritesA.idx[0]=0;spritesA.tile[0]=0x33;spritesA.row[0]=5;"+
+   "spritesCur=spritesA;spritesNext=spritesB;const saved=ppuSavePipelineState();"+
+   "PPUclock.dot=0;PPUclock.scanline=261;PPUclock.frame=0;PPUclock.oddFrame=false;background.bgShiftLo=background.bgShiftHi=0;"+
+   "spritesA.count=0;spritesA.sprite0ListIndex=0xff;spritesA.lo[0]=0;spriteXForceZeroNextFrame=false;"+
+   "const ok=ppuLoadPipelineState(saved);"+
+   "return [ok,PPUclock.dot,PPUclock.scanline,PPUclock.frame,PPUclock.oddFrame,current.dot,vFetch,background.bgShiftLo,background.bgShiftHi,background.atShiftLo,background.atShiftHi,spritesCur===spritesA,spritesCur.count,spritesCur.sprite0ListIndex,spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.tile[0],spritesCur.row[0],renderingPrev,spriteOnlyPrimePending,oamCorruptPending,oamCorruptSeedRow,secOAMAddr,ppumaskPrev,spriteXForceZeroNextFrame];"+
+   "})()";
+ const state=e.evaluate(expr);
+ assert.deepEqual(state,[true,173,88,12345,true,170,0x2345,0x8123,0x4567,0x89ab,0xcdef,true,1,0,0x21,17,0x80,0x40,0x33,5,true,true,true,7,9,0x18,true]);
+});
+
+test('disassembler peek follows the active AxROM PRG bank',()=>{
+ const bytes=rom(7,4,0);
+ bytes[16+1]=0x11;
+ bytes[16+0x8000+1]=0x77;
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('disasmPeekByte(0x8001)'),0x11);
+ e.evaluate('checkWriteOffset(0x8000,1)');
+ assert.equal(e.evaluate('disasmPeekByte(0x8001)'),0x77);
+});
+
+test('PPUMASK pending render delay survives PPU save-state round trip',()=>{
+ const e=emulator();
+ e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;ppuCycles=200;ppuWriteMask(0x18);globalThis.__ppust=ppuSavePipelineState();ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;ppuLoadPipelineState(globalThis.__ppust)');
+ assert.deepEqual(e.evaluate('[ppumaskRenderHoldBits,ppumaskRenderApplyAt,renderingNow()]'),[0,204,false]);
+ e.evaluate('ppuCycles=204');assert.equal(e.evaluate('renderingNow()'),true);
+});
 
 test('archaic DiskDude header does not turn UxROM mapper 2 into mapper 66',()=>{
  const bytes=rom(2,8,0,1,null);
@@ -563,7 +792,6 @@ test('clean iNES mapper high nibble remains significant',()=>{
  const bytes=rom(73,8,16,0,null);
  assert.throws(()=>emulator(bytes),/Mapper 73 not yet implemented/);
 });
-
 
 test('ROM compatibility database contains the verified mapper repairs',()=>{
  const e=createEmulator();
@@ -593,34 +821,6 @@ test('ROM compatibility repair is constrained to the bad reported mapper',()=>{
  assert.throws(()=>e.load(rom(73,8,16)),/Mapper 73 not yet implemented/);
 });
 
-
-test('NINA-03/06 mapper 79 decodes only its expansion-area control addresses',()=>{
- const bytes=rom(79,4,8,1,null);
- for(let b=0;b<2;b++) bytes.fill(b,16+b*0x8000,16+(b+1)*0x8000);
- for(let b=0;b<8;b++) bytes.fill(b,16+0x20000+b*0x2000,16+0x20000+(b+1)*0x2000);
- const e=emulator(bytes);
- assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank,checkReadOffset(0x8000),ppuBusRead(0)]'),[0,0,0,0]);
- e.evaluate('checkWriteOffset(0x4000,0x0f);checkWriteOffset(0x4200,0x0f);checkWriteOffset(0x6000,0x0f)');
- assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank]'),[0,0]);
- e.evaluate('checkWriteOffset(0x4100,0x0d)');
- assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank,checkReadOffset(0x8000),ppuBusRead(0)]'),[1,5,1,10]);
-});
-
-test('NINA-03/06 mapper 79 mirrors its control decode through odd $xx00 pages to $5FFF',()=>{
- const e=emulator(rom(79,4,8,1,null));
- for(const addr of [0x4100,0x41ff,0x4300,0x45aa,0x5d10,0x5fff]) {
-   e.evaluate(`nina79PrgBank=0;nina79ChrBank=0;checkWriteOffset(${addr},0x0f)`);
-   assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank]'),[1,7],addr.toString(16));
- }
-});
-
-test('NINA-03/06 mapper 79 has no PRG RAM window',()=>{
- const e=emulator(rom(79,2,4,1,null));
- e.evaluate('prgRam[0]=0x99;openBus.CPU=0x5a;checkWriteOffset(0x6000,1);openBus.CPU=0x5a');
- assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x5a,0x99]);
-});
-
-
 test('expansion audio detector identifies unambiguous mapper families',()=>{
  const e=createEmulator();
  for(const [m,chip] of [[5,'MMC5'],[24,'Konami VRC6'],[26,'Konami VRC6']]){
@@ -648,7 +848,6 @@ test('legacy Sunsoft mapper 69 can be marked uncertain instead of assumed audio'
  const bytes=rom(69,16,16);
  assert.equal(e.detectExpansion(bytes,69,false).confidence,'possible');
 });
-
 
 test('VRC6 mapper 24 maps 16K/8K PRG banks and fixed last bank',()=>{
  const bytes=rom(24,16,32);
@@ -716,7 +915,6 @@ test('VRC6 mapper forwards canonical audio register writes',()=>{
  assert.deepEqual(writes2.slice(-1),[[0x9001,0x44]]);
 });
 
-
 test('MMC5 PRG mode 2 maps Castlevania III style 16K+8K+8K ROM windows',()=>{
  const bytes=rom(5,16,8);
  for(let bank=0;bank<32;bank++)bytes.fill(bank,16+bank*0x2000,16+(bank+1)*0x2000);
@@ -757,7 +955,6 @@ test('MMC5 multiplier returns 16-bit product',()=>{
  assert.deepEqual(e.evaluate('[mmc5CpuRead(0x5205),mmc5CpuRead(0x5206)]'),[250,0]);
 });
 
-
 test('MMC5 forwards audio registers to expansion renderer and exposes 5015 status',()=>{
  const writes=[];
  const audio={
@@ -771,7 +968,6 @@ test('MMC5 forwards audio registers to expansion renderer and exposes 5015 statu
  assert.deepEqual(writes,[[0x5000,0xdf],[0x5015,3]]);
  assert.equal(e.evaluate('checkReadOffset(0x5015)'),3);
 });
-
 
 test('UxROM save-state restores active PRG bank',()=>{
  const e=emulator(rom(2,8,0));e.evaluate('uxromBank=3;globalThis.__s=uxromSaveState();uxromBank=0;uxromLoadState(globalThis.__s)');
@@ -831,7 +1027,6 @@ test('MMC5 save-state restores banking ExRAM IRQ and multiplier',()=>{
  [2,3,0xe4,[1,2,3,4,5],0x155,0x2aa,0x66,9,true,true,true,9,7,8,true]);
 });
 
-
 test('Namco 340 mapper 210 switches 8K PRG, 1K CHR and mirroring',()=>{
  const bytes=rom(210,16,8,0,2);
  for(let b=0;b<32;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
@@ -859,135 +1054,4 @@ test('Namco mapper save-state restores banks IRQ and internal RAM',()=>{
  e.evaluate('namcoChr[0]=9;namcoPrg[0]=6;namcoNt[0]=0xe1;namcoIrqCounter=0x3456;namcoIrqEnable=true;irqAssert.namco=true;namcoRam[3]=0x77;namcoRamAddr=3;namcoRamAuto=true;globalThis.__ns=namcoSaveState();namcoInit(new Uint8Array(16));namcoLoadState(globalThis.__ns)');
  assert.deepEqual(e.evaluate('[namcoChr[0],namcoPrg[0],namcoNt[0],namcoIrqCounter,namcoIrqEnable,irqAssert.namco,namcoRam[3],namcoRamAddr,namcoRamAuto]'),
  [9,6,0xe1,0x3456,true,true,0x77,3,true]);
-});
-
-test('MMC3 Sharp and NEC zero-reload IRQ variants follow their silicon rules',()=>{
- const sharp=emulator(rom(4));
- sharp.evaluate('mapper4_write_C000(0);mapper4_write_C001();mapper4_write_E001();ppuCycles+=9;mmc3Irq(0x1000)');
- assert.equal(sharp.evaluate('mmc3_irq.variant'),'sharp');
- assert.equal(sharp.evaluate('irqAssert.mmc3'),true);
- sharp.evaluate('mapper4_write_E000();mapper4_write_E001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
- assert.equal(sharp.evaluate('irqAssert.mmc3'),true);
-
- const nec=emulator(rom(4,2,1,0,4));
- assert.equal(nec.evaluate('mmc3_irq.variant'),'nec');
- nec.evaluate('mapper4_write_C000(2);mapper4_write_C001();mapper4_write_E001()');
- nec.evaluate('ppuCycles+=9;mmc3Irq(0x1000);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
- assert.equal(nec.evaluate('irqAssert.mmc3'),true);
- nec.evaluate('mapper4_write_E000();mapper4_write_E001();mapper4_write_C000(0);mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
- assert.equal(nec.evaluate('irqAssert.mmc3'),false);
- nec.evaluate('mapper4_write_C001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
- assert.equal(nec.evaluate('irqAssert.mmc3'),true);
-});
-
-test('$2002 read on pre-render dot 1 latches vblank but sees cleared sprite flags',()=>{
- const e=emulator();
- e.evaluate('PPUSTATUS=0xe0;openBus.PPU=0;PPUclock.scanline=261;PPUclock.dot=1');
- assert.equal(e.evaluate('checkReadOffset(0x2002)&0xe0'),0x80);
- assert.equal(e.evaluate('PPUSTATUS&0xe0'),0x60);
-});
-
-test('$2002 read sees sprite overflow when the scheduled transition occurs on that dot',()=>{
- const e=emulator();
- e.evaluate('PPUSTATUS=0x40;openBus.PPU=0;spriteOverflowSetScanline=10;spriteOverflowSetDot=131;PPUclock.scanline=10;PPUclock.dot=131');
- assert.equal(e.evaluate('checkReadOffset(0x2002)&0x60'),0x60);
-});
-
-test('ninth consecutive in-range sprite schedules overflow at evaluation dot 131',()=>{
- const e=emulator();
- e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUSTATUS=0;OAM.fill(0xff);for(let i=0;i<9;i++){OAM[i*4]=0;OAM[i*4+1]=1;OAM[i*4+2]=0;OAM[i*4+3]=0;}PPUclock.scanline=0;evalSpritesForScanline(spritesNext,1)');
- assert.deepEqual(e.evaluate('[spriteOverflowSetScanline,spriteOverflowSetDot,PPUSTATUS&0x20]'),[0,131,0]);
-});
-
-test('forced blank keeps sprite X counters counting while pattern shifters pause',()=>{
- const e=emulator();
- e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=false;spritesCur.count=1;spritesCur.xcnt[0]=3;spritesCur.lo[0]=0x81;spritesCur.hi[0]=0x42;PPUclock.scanline=5;PPUclock.dot=10;visibleScanline(10)');
- assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0]]'),[2,0x81,0x42]);
-});
-
-test('dot-339 forced-zero latch is retained through blank and applied when rendering resumes',()=>{
- const e=emulator();
- e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=true;spritesCur.count=1;spritesCur.xcnt[0]=7;PPUclock.scanline=5;PPUclock.dot=10;visibleScanline(10)');
- assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spriteXForceZeroNextFrame]'),[6,true]);
- e.evaluate('PPUMASK=0x18;ppumaskRenderHoldBits=0x18;PPUclock.dot=11;visibleScanline(11)');
- assert.deepEqual(e.evaluate('[spritesCur.xcnt[0],spriteXForceZeroNextFrame]'),[0,false]);
-});
-
-test('$2007 overlap can feed external PPU data into the next pattern-low fetch',()=>{
- const e=emulator();
- e.evaluate('ppuExternalData=0xaa;ppuCpu2007ReadUntil=ppuCycles+8;CHR_ROM[0x1aa]=0x5a');
- assert.equal(e.evaluate("ppuBackgroundRead(0x0103,'patternLo')"),0x5a);
- assert.deepEqual(e.evaluate('[ppuExternalLatchLow,ppuCpu2007ReadUntil]'),[0xaa,-1]);
-});
-
-test('second $2006 write captures the external low-address latch during rendering',()=>{
- const e=emulator();
- // PPUADDR writes are ignored during the hardware power-on write gate, so
- // place this timing test after that interval before exercising the overlap.
- e.evaluate('cpuCycles=40000;PPUMASK=0x18;ppumaskRenderHoldBits=0x18;ppumaskRenderApplyAt=-1;PPUclock.scanline=4;PPUclock.dot=180;VRAM_ADDR=0x2c18;writeToggle=1;t_hi=0x2f;t_lo=0;checkWriteOffset(0x2006,0)');
- assert.equal(e.evaluate('ppuCpu2006HybridLow'),0x19);
- assert.ok(e.evaluate('ppuCpu2006HybridUntil>=ppuCycles'));
-});
-
-test('forced blank preserves stale sprite evaluation data',()=>{
- const e=emulator();
- e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x55;evalSpritesForScanline(spritesNext,10)');
- assert.deepEqual(e.evaluate('[spritesNext.count,spritesNext.sprite0ListIndex,spritesNext.tile[0]]'),[1,0,0x55]);
-});
-
-test('dot 339 forced-zero latch applies on visible scanlines',()=>{
- const e=emulator();
- e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spriteXForceZeroNextFrame=false;PPUclock.scanline=3;PPUclock.dot=339;ppuTick()');
- assert.equal(e.evaluate('spriteXForceZeroNextFrame'),true);
-});
-
-test('interrupted sprite-zero fetch keeps the previous active shifter buffer',()=>{
- const e=emulator();
- e.evaluate('PPUMASK=0;ppumaskRenderHoldBits=0;ppumaskRenderApplyAt=-1;spritesCur.count=1;spritesCur.sprite0ListIndex=0;spritesCur.attr[0]=0x21;spritesCur.xcnt[0]=0x11;spritesCur.lo[0]=0x81;spritesCur.hi[0]=0x42;spritesCur.idx[0]=0;spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x22;spritesNext.attr[0]=0x02;spritesNext.xcnt[0]=0x33;spritesNext.lo[0]=0x24;spritesNext.hi[0]=0x18;spritesNext.idx[0]=4;sprite0FetchComplete=false;PPUclock.scanline=5;PPUclock.dot=1;visibleScanline(1)');
- assert.deepEqual(e.evaluate('[spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0],spritesCur.tile[0]]'),[0x21,0x10,0x81,0x42,0,0x22]);
- e.evaluate('spritesNext.count=1;spritesNext.sprite0ListIndex=0;spritesNext.tile[0]=0x44;spritesNext.attr[0]=0x03;spritesNext.xcnt[0]=0x55;spritesNext.lo[0]=0x66;spritesNext.hi[0]=0x77;spritesNext.idx[0]=8;sprite0FetchComplete=true;PPUclock.dot=1;visibleScanline(1)');
- assert.deepEqual(e.evaluate('[spritesCur.tile[0],spritesCur.attr[0],spritesCur.xcnt[0],spritesCur.lo[0],spritesCur.hi[0],spritesCur.idx[0]]'),[0x44,0x03,0x54,0x66,0x77,8]);
-});
-
-test('OAM DMA source $40xx does not activate APU registers when halted CPU bus is elsewhere',()=>{
- const e=emulator();
- e.evaluate("CPUregisters.PC=0x8000;openBus.CPU=0x40;apuTiming.frameFlag=true;irqAssert.frame=true;DMA.active=true;DMA.pad=0;DMA.addr=0x4015;DMA.index=0x15;DMA.phase='get';dmaMicroStep()");
- assert.equal(e.evaluate('DMA.tmp'),0x40);
- assert.equal(e.evaluate('apuTiming.frameFlag'),true);
-});
-
-test('OAM DMA aliases APU status through low five source bits when halted CPU bus activates decoder',()=>{
- const e=emulator();
- e.evaluate("CPUregisters.PC=0x4001;openBus.CPU=0x40;apuTiming.frameFlag=true;irqAssert.frame=true;apuTiming.length[2]=1;DMA.active=true;DMA.pad=0;DMA.addr=0x5015;DMA.index=0x15;DMA.phase='get';dmaMicroStep()");
- assert.equal(e.evaluate('DMA.tmp'),0x44);
-});
-
-test('OAM DMA put preserves external CPU bus only during active APU decode window',()=>{
- for(const [pc,wantBus] of [[0x4001,0x40],[0x8000,0x44]]){
-  const e=emulator();
-  e.evaluate(`CPUregisters.PC=${pc};openBus.CPU=0x40;OAMADDR=0;DMA.active=true;DMA.pad=0;DMA.addr=0x5000;DMA.index=0;DMA.tmp=0x44;DMA.phase='put';dmaMicroStep()`);
-  assert.equal(e.evaluate('OAM[0]'),0x44);
-  assert.equal(e.evaluate('openBus.CPU'),wantBus);
- }
-});
-
-test('driven OAM DMA source keeps controller alias off external data while still clocking it',()=>{
- const e=emulator();
- e.evaluate("CPUregisters.PC=0x4001;systemMemory[0x216]=0xff;joypad1State=0;joypad1Shift=0x55;DMA.active=true;DMA.pad=0;DMA.addr=0x0216;DMA.index=0x16;DMA.phase='get';dmaMicroStep()");
- assert.equal(e.evaluate('DMA.tmp'),0xff);
-});
-
-test('adjacent-cycle PPUDATA reads merge into one effective strobe',()=>{
- const e=emulator();
- e.evaluate('cpuCycles=40000;VRAM_ADDR=1;VRAM_DATA=0x22;CHR_ROM[1]=0x33;CHR_ROM[2]=0x44');
- assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x22);
- assert.equal(e.evaluate('VRAM_ADDR'),2);
- e.evaluate('cpuCycles++');
- assert.equal(e.evaluate('checkReadOffset(0x2107)'),0x22);
- assert.equal(e.evaluate('VRAM_ADDR'),2);
- assert.equal(e.evaluate('VRAM_DATA'),0x33);
- e.evaluate('cpuCycles+=2');
- assert.equal(e.evaluate('checkReadOffset(0x2007)'),0x33);
- assert.equal(e.evaluate('VRAM_ADDR'),3);
- assert.equal(e.evaluate('VRAM_DATA'),0x44);
 });
