@@ -23,13 +23,19 @@ const tests=[
   ['full_palette/full_palette.nes', '6387691627853472549']
 ];
 
-function fnvRgba(indices){
+function attenuate(v,dim){return dim?Math.round(v*0.746):v;}
+function fnvRgba(indices,emphasis){
   let h=0xcbf29ce484222325n;
   const prime=0x100000001b3n, mask=0xffffffffffffffffn;
-  for(const raw of indices){
-    const rgb=palette[raw&0x3f]>>>0;
-    const bytes=[(rgb>>>16)&255,(rgb>>>8)&255,rgb&255,255];
-    for(const b of bytes) h=((h^BigInt(b))*prime)&mask;
+  for(let i=0;i<indices.length;i++){
+    const rgb=palette[indices[i]&0x3f]>>>0;
+    const e=emphasis[i]&7; // bit0 red, bit1 green, bit2 blue emphasis
+    let r=(rgb>>>16)&255,g=(rgb>>>8)&255,b=rgb&255;
+    // NESd's NTSC palette model attenuates the two channels not emphasized.
+    r=attenuate(r,(e&0x06)!==0);
+    g=attenuate(g,(e&0x05)!==0);
+    b=attenuate(b,(e&0x03)!==0);
+    for(const byte of [r,g,b,255]) h=((h^BigInt(byte))*prime)&mask;
   }
   if(h>=0x8000000000000000n)h-=0x10000000000000000n;
   return h.toString();
@@ -43,7 +49,7 @@ for(const [rel,expected] of tests){
   try{
     e.load(new Uint8Array(rom));
     e.runFrames(360);
-    actual=fnvRgba(e.frameIndices());
+    actual=fnvRgba(e.frameIndices(),e.frameEmphasis());
   }catch(ex){error=String(ex);}
   const pass=!error&&actual===expected;
   const result={rom:rel,frames:360,expected,actual,pass,error};
