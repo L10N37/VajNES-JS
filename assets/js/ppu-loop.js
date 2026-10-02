@@ -153,7 +153,7 @@ function servicePpuDataWrite() {
   const v = op.addr;
   const value = op.value;
   if (v < 0x2000) {
-    if (mapperNumber === 4) {
+    if (mmc3FamilyActive()) {
       if (chrIsRAM) mapper4_chr_write(v, value);
     } else if (mapperNumber === 1) {
       mmc1ChrWrite(v & 0x1FFF, value);
@@ -174,10 +174,10 @@ function servicePpuDataWrite() {
     PALETTE_RAM[paletteIndex(v)] = value & 0x3F;
   }
 
-  if (mapperNumber === 4) mmc3Irq(v);
+  if (mmc3FamilyActive()) mmc3Irq(v);
   incrementPPUDataAddress();
   scheduleForcedBlankV(VRAM_ADDR, 2); // +6 data commit, +8 visible address
-  if (mapperNumber === 4) mmc3Irq(VRAM_ADDR);
+  if (mmc3FamilyActive()) mmc3Irq(VRAM_ADDR);
 }
 
 // Forced-blank palette output does not see CPU VRAM-address changes
@@ -892,7 +892,7 @@ function copyVert() {
 // ---- PPU bus read ----
 function ppuBusRead(addr) {
     addr &= 0x3FFF;
-    //if (mapperNumber === 4) mmc3Irq(addr);
+    //if (mmc3FamilyActive()) mmc3Irq(addr);
 
     if (addr < 0x2000) {
         return cartridgeChrRead(addr) & 0xFF;
@@ -1458,7 +1458,7 @@ function renderingBusTick() {
     frozenSecondaryFetchApplied = true;
   }
 
-  if(mapperNumber!==4 && (d<257 || d>320))return;
+  if(!mmc3FamilyActive() && (d<257 || d>320))return;
   if(!renderingNow() || (sl>239 && sl!==261)){mmc3Irq(VRAM_ADDR);return;}
   if(PPUclock.dot>=336){
     if(PPUclock.dot===337 || PPUclock.dot===339)mmc3Irq(0x2000|(VRAM_ADDR&0xfff));
