@@ -670,6 +670,7 @@ test('warm reset preserves RAM and registers while applying 6502 reset semantics
 test('PPUDATA write reaches PPU bus after the hardware delay',()=>{
  const e=emulator();
  e.evaluate(`
+   cpuCycles=40000;
    ppuCycles=1000;
    VRAM_ADDR=0x3F01;
    PALETTE_RAM[1]=0x0F;
