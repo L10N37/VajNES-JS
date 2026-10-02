@@ -15,6 +15,7 @@ globalThis.NES_DEBUG_LOGGING = false;
 
   // NES output is 256 x 240 pixels.
   let paletteIndexFrame = new Uint8Array(256 * 240);          // 1 byte per pixel (palette index)
+  let paletteEmphasisFrame = new Uint8Array(256 * 240);       // 3-bit PPUMASK RGB emphasis per pixel
   let rgbaFrame         = new Uint8ClampedArray(256 * 240 * 4); // RGBA8888 (4 bytes per pixel)
 
   // fps display variables
@@ -94,6 +95,7 @@ function resetSharedState() {
 
   // Clear framebuffers
   paletteIndexFrame.fill(0);
+  paletteEmphasisFrame.fill(0);
   rgbaFrame.fill(0);
 
   // -----------------------------
