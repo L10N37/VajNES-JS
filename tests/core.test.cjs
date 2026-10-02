@@ -536,6 +536,32 @@ test('GxROM has no PRG RAM window',()=>{
  const e=emulator(rom(66,2,1));e.evaluate('prgRam[0]=0x99;openBus.CPU=0x46;checkWriteOffset(0x6000,1);openBus.CPU=0x46');
  assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x46,0x99]);
 });
+
+test('NINA-03/06 mapper 79 decodes only its expansion-area control addresses',()=>{
+ const bytes=rom(79,4,8,1,null);
+ for(let b=0;b<2;b++) bytes.fill(b,16+b*0x8000,16+(b+1)*0x8000);
+ for(let b=0;b<8;b++) bytes.fill(b,16+0x20000+b*0x2000,16+0x20000+(b+1)*0x2000);
+ const e=emulator(bytes);
+ assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank,checkReadOffset(0x8000),ppuBusRead(0)]'),[0,0,0,0]);
+ e.evaluate('checkWriteOffset(0x4000,0x0f);checkWriteOffset(0x4200,0x0f);checkWriteOffset(0x6000,0x0f)');
+ assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank]'),[0,0]);
+ e.evaluate('checkWriteOffset(0x4100,0x0d)');
+ assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank,checkReadOffset(0x8000),ppuBusRead(0)]'),[1,5,1,10]);
+});
+
+test('NINA-03/06 mapper 79 mirrors its control decode through odd $xx00 pages to $5FFF',()=>{
+ const e=emulator(rom(79,4,8,1,null));
+ for(const addr of [0x4100,0x41ff,0x4300,0x45aa,0x5d10,0x5fff]) {
+   e.evaluate(`nina79PrgBank=0;nina79ChrBank=0;checkWriteOffset(${addr},0x0f)`);
+   assert.deepEqual(e.evaluate('[nina79PrgBank,nina79ChrBank]'),[1,7],addr.toString(16));
+ }
+});
+
+test('NINA-03/06 mapper 79 has no PRG RAM window',()=>{
+ const e=emulator(rom(79,2,4,1,null));
+ e.evaluate('prgRam[0]=0x99;openBus.CPU=0x5a;checkWriteOffset(0x6000,1);openBus.CPU=0x5a');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x5a,0x99]);
+});
 test('MMC2 maps one selectable and three fixed 8 KiB PRG banks',()=>{
  const bytes=rom(9,8,4);for(let b=0;b<16;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);const e=emulator(bytes);
  e.evaluate('checkWriteOffset(0xa000,5)');
@@ -578,7 +604,7 @@ test('MMC4 keeps an 8 KiB PRG RAM window',()=>{
  assert.equal(e.evaluate('checkReadOffset(0x6000)'),0xa5);
 });
 test('loader accepts all newly supported mapper IDs and rejects CNROM CHR RAM',()=>{
- for(const [m,p,c] of [[3,2,1],[9,8,4],[10,8,4],[11,2,1],[66,2,1]]) {
+ for(const [m,p,c] of [[3,2,1],[9,8,4],[10,8,4],[11,2,1],[66,2,1],[79,4,8]]) {
   const e=emulator(rom(m,p,c,m===3?0:0,m===3?1:null));
   assert.equal(e.evaluate('mapperNumber'),m);
  }
