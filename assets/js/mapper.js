@@ -80,16 +80,11 @@ function mapper(nesHeader) {
     // ==========================================================
     // Mapper 4: MMC3 (TxROM family)
     // ==========================================================
-    case 4: {
-      globalThis.NES_DEBUG_LOGGING && console.debug("[Mapper4] Initializing MMC3");
-
-      // CHR type: if no CHR banks, it's CHR RAM
-      chrIsRAM = (chrSize === 0);
-
-      // NES 2.0 submapper 4 selects NEC/old MMC3 zero-reload IRQ behavior.
-      mmc3ConfigureFromHeader(nesHeader);
-
-      // Load ups of MMC3 games are handled directly in readFile
+    case 4:
+    case 118:
+    case 119: {
+      globalThis.NES_DEBUG_LOGGING && console.debug(`[Mapper${mapperNumber}] Initializing MMC3 family`);
+      mmc3FamilyInit(nesHeader);
       powerOnCPU();
       break;
     }
