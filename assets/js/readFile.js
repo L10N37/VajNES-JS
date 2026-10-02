@@ -34,6 +34,10 @@ const ROM_COMPAT_OVERRIDES = new Map([
   // elsewhere in the set with the correct licensed cartridge mapper.
   [0x8B957B50, { mapper: 3, reportedMappers: [0], title: 'Kung-Fu Heroes' }],
   [0x7A36CAD2, { mapper: 4, reportedMappers: [0], title: 'Last Armageddon' }],
+
+  // Alien Syndrome (USA): legacy iNES dumps commonly report mapper 4 even
+  // though the cartridge uses Tengen 800037, represented by mapper 158.
+  [0xCBF4366F, { mapper: 158, reportedMappers: [4], title: 'Alien Syndrome (USA)' }],
 ]);
 
 function romCompatibilityOverride(romBytes, header, reportedMapper) {
@@ -170,7 +174,7 @@ function loadRom(romBytes) {
     }
   }
 
-  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,66,69,79,118,119,155,210].includes(incomingMapper))
+  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,64,66,69,79,118,119,155,158,210].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
 
   // Never show an expansion-audio prompt for a mapper this build cannot run.
@@ -204,6 +208,8 @@ function loadRom(romBytes) {
     throw new Error('Unsupported VRC6 board: CHR ROM required');
   if (incomingMapper===69 && nesHeader[5]===0)
     throw new Error('Unsupported FME-7 board: CHR ROM required');
+  if ((incomingMapper===64 || incomingMapper===158) && nesHeader[5]===0)
+    throw new Error('Unsupported RAMBO-1 board: CHR ROM required');
   if (incomingMapper===118 && nesHeader[5]===0)
     throw new Error('Unsupported TxSROM board: CHR ROM required');
   if (incomingMapper===119 && nesHeader[5]===0)
