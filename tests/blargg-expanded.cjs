@@ -36,6 +36,12 @@ const groupsByShard={
  reset:[
   'cpu_reset',
   'apu_reset'
+ ],
+ legacy:[
+  'blargg_apu_2005.07.30',
+  'blargg_nes_cpu_test5',
+  'mmc3_test',
+  'instr_test-v3/rom_singles'
  ]
 };
 const groups=groupsByShard[shard];if(!groups)throw Error('Unknown BLARGG_SHARD '+shard);
