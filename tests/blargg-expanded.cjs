@@ -64,6 +64,10 @@ for(const group of groups){
     if(file==='5.MMC3_rev_A.nes') e.evaluate('mmc3SetIrqVariant("nec")');
     if(file==='6.MMC3_rev_B.nes') e.evaluate('mmc3SetIrqVariant("sharp")');
    }
+   if(group==='mmc3_test'){
+    if(file==='6-MMC6.nes') e.evaluate('mmc3SetIrqVariant("nec")');
+    if(file==='5-MMC3.nes') e.evaluate('mmc3SetIrqVariant("sharp")');
+   }
    const legacyF8 =
     group.startsWith('sprite_hit_tests_2005.10.05') ||
     group.startsWith('sprite_overflow_tests') ||
@@ -144,6 +148,16 @@ for(const group of groups){
       status=legacy===1?0:legacy;
       text=legacy===1?'PASSED':'FAILED #'+legacy;
     }
+   }
+
+   // The 2005 APU suite also predates the modern $6000 protocol and leaves
+   // its final result in zero-page $F0, where 1 means pass.
+   if(status===null && group==='blargg_apu_2005.07.30'){
+     const legacy=e.state().ram[0xF0]&0xFF;
+     if(legacy){
+       status=legacy===1?0:legacy;
+       text=legacy===1?'Passed':'Failed #'+legacy;
+     }
    }
 
    // The 2005 PPU suite predates the modern $6000 protocol. Its shared
