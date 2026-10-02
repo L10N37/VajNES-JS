@@ -96,6 +96,8 @@ function powerOnCPU() {
   ppumaskPrev=0;
   ppumaskRenderHoldBits=0;
   ppumaskRenderApplyAt=-1;
+  ppumaskEmphasisHoldBits=0;
+  ppumaskEmphasisApplyAt=-1;
   renderingPrev=false;
   spriteXForceZeroNextFrame=false;
   sprite0FetchComplete=true;
