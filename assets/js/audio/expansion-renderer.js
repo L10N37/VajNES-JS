@@ -39,12 +39,26 @@ class ExpansionAudioRenderer {
       pcmIrqTrip:false,
       frameClock:0
     };
+    this.sunsoft5b={
+      selected:0,
+      writeEnabled:true,
+      regs:new Array(16).fill(0),
+      tonePhase:[0,0,0],
+      noiseClock:0,
+      noiseLfsr:0x1ffff,
+      noiseOut:1,
+      envelopeClock:0,
+      envelopeLevel:0,
+      envelopeDirection:-1,
+      envelopeHolding:false
+    };
   }
 
   write(address,value) {
     value&=0xff;
     if(this.chip==='Konami VRC6') this.writeVRC6(address&0xffff,value);
     else if(this.chip==='MMC5') this.writeMMC5(address&0xffff,value);
+    else if(this.chip==='Sunsoft 5B') this.writeSunsoft5B(address&0xffff,value);
   }
 
   writeVRC6(address,value) {
@@ -105,6 +119,115 @@ class ExpansionAudioRenderer {
     }
   }
 
+  writeSunsoft5B(address,value) {
+    const a=this.sunsoft5b;
+    if(address>=0xc000 && address<0xe000){
+      a.selected=value&0x0f;
+      a.writeEnabled=(value&0xf0)===0;
+      return;
+    }
+    if(address<0xe000 || !a.writeEnabled)return;
+    const reg=a.selected&0x0f;
+    a.regs[reg]=value&0xff;
+    if(reg===13)this.resetSunsoftEnvelope(value);
+  }
+
+  resetSunsoftEnvelope(shape) {
+    const a=this.sunsoft5b;
+    const attack=!!(shape&0x04);
+    a.envelopeLevel=attack?0:31;
+    a.envelopeDirection=attack?1:-1;
+    a.envelopeClock=0;
+    a.envelopeHolding=false;
+  }
+
+  sunsoftTonePeriod(channel) {
+    const r=this.sunsoft5b.regs;
+    const p=((r[channel*2+1]&0x0f)<<8)|r[channel*2];
+    return p||1;
+  }
+
+  sunsoftNoisePeriod() {
+    return (this.sunsoft5b.regs[6]&0x1f)||1;
+  }
+
+  sunsoftEnvelopePeriod() {
+    const r=this.sunsoft5b.regs;
+    return ((r[12]<<8)|r[11])||1;
+  }
+
+  clockSunsoftEnvelopeStep() {
+    const a=this.sunsoft5b;
+    if(a.envelopeHolding)return;
+    let next=a.envelopeLevel+a.envelopeDirection;
+    if(next>=0 && next<=31){a.envelopeLevel=next;return;}
+
+    const shape=a.regs[13]&0x0f;
+    const cont=!!(shape&0x08);
+    const alternate=!!(shape&0x02);
+    const hold=!!(shape&0x01);
+    if(!cont){
+      a.envelopeLevel=0;
+      a.envelopeHolding=true;
+      return;
+    }
+    if(alternate)a.envelopeDirection=-a.envelopeDirection;
+    if(hold){
+      a.envelopeLevel=a.envelopeDirection>0?31:0;
+      a.envelopeHolding=true;
+      return;
+    }
+    a.envelopeLevel=a.envelopeDirection>0?0:31;
+  }
+
+  advanceSunsoft5B(cycles) {
+    const a=this.sunsoft5b;
+    for(let ch=0;ch<3;ch++){
+      const halfPeriod=16*this.sunsoftTonePeriod(ch);
+      a.tonePhase[ch]=(a.tonePhase[ch]+cycles/halfPeriod)%2;
+    }
+
+    const noiseStep=32*this.sunsoftNoisePeriod();
+    a.noiseClock+=cycles;
+    while(a.noiseClock>=noiseStep){
+      a.noiseClock-=noiseStep;
+      const feedback=((a.noiseLfsr>>16)^(a.noiseLfsr>>13))&1;
+      a.noiseLfsr=((a.noiseLfsr<<1)&0x1ffff)|feedback;
+      a.noiseOut=a.noiseLfsr&1;
+    }
+
+    const envStep=16*this.sunsoftEnvelopePeriod();
+    a.envelopeClock+=cycles;
+    while(a.envelopeClock>=envStep){
+      a.envelopeClock-=envStep;
+      this.clockSunsoftEnvelopeStep();
+    }
+  }
+
+  sunsoftLevelToLinear(level) {
+    level=Math.max(0,Math.min(31,level|0));
+    if(level<=1)return 0;
+    // YM2149's DAC is approximately 1.5 dB per 5-bit step.
+    return Math.pow(10,(level-31)*1.5/20);
+  }
+
+  sampleSunsoft5B() {
+    const a=this.sunsoft5b,r=a.regs,mixer=r[7];
+    let sum=0;
+    for(let ch=0;ch<3;ch++){
+      const toneDisabled=!!(mixer&(1<<ch));
+      const noiseDisabled=!!(mixer&(1<<(ch+3)));
+      const toneHigh=a.tonePhase[ch]<1;
+      const gate=(toneDisabled||toneHigh) && (noiseDisabled||!!a.noiseOut);
+      if(!gate)continue;
+      const v=r[8+ch];
+      const level=(v&0x10)?a.envelopeLevel:((v&0x0f)<<1)|((v&0x0f)?1:0);
+      sum+=this.sunsoftLevelToLinear(level);
+    }
+    // 5B is mixed loudly on original hardware, but retain headroom with 2A03.
+    return (sum/3)*0.42;
+  }
+
   read(address) {
     if(this.chip!=='MMC5')return 0;
     const m=this.mmc5;
@@ -151,6 +274,10 @@ class ExpansionAudioRenderer {
   }
 
   advanceOscillators(cycles) {
+    if(this.chip==='Sunsoft 5B'){
+      this.advanceSunsoft5B(cycles);
+      return;
+    }
     if(this.chip==='MMC5'){
       const m=this.mmc5;
       m.frameClock+=cycles;
@@ -221,6 +348,7 @@ class ExpansionAudioRenderer {
   sample() {
     if(this.chip==='Konami VRC6')return this.sampleVRC6();
     if(this.chip==='MMC5')return this.sampleMMC5();
+    if(this.chip==='Sunsoft 5B')return this.sampleSunsoft5B();
     return 0;
   }
 
@@ -246,7 +374,8 @@ class ExpansionAudioRenderer {
     return {
       chip:this.chip,cycle:this.cycle,sampleClock:this.sampleClock,
       vrc6:JSON.parse(JSON.stringify(this.vrc6)),
-      mmc5:JSON.parse(JSON.stringify(this.mmc5))
+      mmc5:JSON.parse(JSON.stringify(this.mmc5)),
+      sunsoft5b:JSON.parse(JSON.stringify(this.sunsoft5b))
     };
   }
   loadState(state){
@@ -256,6 +385,7 @@ class ExpansionAudioRenderer {
     this.queue.length=0;
     if(state.vrc6)this.vrc6=JSON.parse(JSON.stringify(state.vrc6));
     if(state.mmc5)this.mmc5=JSON.parse(JSON.stringify(state.mmc5));
+    if(state.sunsoft5b)this.sunsoft5b=JSON.parse(JSON.stringify(state.sunsoft5b));
     return true;
   }
   available(){return this.queue.length;}
