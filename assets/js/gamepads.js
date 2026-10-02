@@ -3,7 +3,7 @@
 // Player 2 from the Controller menu.
 const NESGamepads=(()=>{
   const slots=[null,null],states=[0,0];
-  let focused=true,lastStatus='',knownIndices=new Set();
+  let focused=true,lastStatus='',knownIndices=new Set(),lastAssignmentUi='';
 
   function decode(pad){
     const down=i=>!!pad.buttons[i]?.pressed || pad.buttons[i]?.value>0.5;
@@ -74,6 +74,16 @@ const NESGamepads=(()=>{
   function renderAssignments(supported){
     const root=document.getElementById('gamepad-assignments');
     if(!root)return;
+
+    // Do not rebuild clickable controls on every animation frame. Replacing
+    // them between pointer-down and pointer-up prevents the browser from ever
+    // dispatching a click event.
+    const signature=JSON.stringify({
+      pads:supported.map(p=>[p.index,p.id]),
+      slots
+    });
+    if(signature===lastAssignmentUi)return;
+    lastAssignmentUi=signature;
     root.replaceChildren();
 
     if(!supported.length){
