@@ -63,3 +63,12 @@ test('unmapped controllers are reported without assuming button numbers',()=>{
  const f=fixture();f.setPads([{...pad(0,[0]),mapping:''}]);f.input.update();
  assert.equal(f.input.read(0),0);assert.match(f.label.textContent,/without a standard mapping/);
 });
+
+test('detecting a controller never auto-opens the Controller menu',()=>{
+ const menu={open:false};
+ const f=fixture();
+ f.env.document.querySelector=sel=>sel==='.gamepad-menu'?menu:null;
+ f.setPads([pad(0,[0])]);
+ f.input.update();
+ assert.equal(menu.open,false);
+});
