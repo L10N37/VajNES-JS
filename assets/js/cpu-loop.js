@@ -98,7 +98,6 @@ function disasmPeekByte(address) {
 
 window.step = function () {
 
-  NoSignalAudio.setEnabled(false);
   if (!cpuRunning) return 0;
 
   // DMA first: returns 1 or 2 cycles per call (or 0 if finished)
@@ -191,6 +190,9 @@ window.addEventListener("keydown", (e) => {
 
 window.run = function () {
   if (cpuRunning) return;
+  if (typeof NoSignalAudio !== 'undefined' && NoSignalAudio && typeof NoSignalAudio.setEnabled === 'function') {
+    NoSignalAudio.setEnabled(false);
+  }
   cpuRunning = true;
 
   // reset loop timing state
