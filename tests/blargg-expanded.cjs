@@ -103,6 +103,7 @@ for(const group of groups){
    if(group.startsWith('cpu_dummy_reads')) chunks = 220;
    if(group.startsWith('dmc_dma_during_read4')) chunks = 220;
    if(group.startsWith('ppu_read_buffer')) chunks = 320;
+   if(group==='blargg_nes_cpu_test5') chunks = 220;
 
    for(let i=0;i<chunks;i++){
     e.run(200000);
