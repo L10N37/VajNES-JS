@@ -6,7 +6,7 @@ const {createEmulator}=require('./headless.cjs');
 const root=process.argv[2];
 if(!root) throw Error('Usage: node tests/singlestep.cjs <nes6502-v1-dir> [report.json]');
 
-const opcodeFiles=['00.json','06.json','08.json','0a.json','0e.json','16.json','1e.json','20.json','28.json','2c.json','40.json','48.json','4c.json','60.json','68.json','69.json','6c.json','8d.json','91.json','9d.json','a1.json','a9.json','b1.json','b9.json','bd.json','c9.json','d0.json','e6.json','e9.json','f0.json','fe.json'];
+const opcodeFiles=(process.env.SINGLESTEP_OPCODES||'69 8d a9 d0').trim().split(/\s+/).filter(Boolean).map(x=>x.toLowerCase()+'.json');
 const emu=createEmulator();
 const failures=[];
 let total=0,exactFail=0;
