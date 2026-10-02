@@ -1026,6 +1026,13 @@ test('TQROM mapper 119 CHR RAM and MMC3 registers survive mapper save-state roun
  assert.deepEqual(e.evaluate('[MMC3.registers.CHR_BANK_2,mmc3_irq.latch,ppuBusRead(0x1000),globalThis.__s.length]'),[0x43,4,0x77,8217]);
 });
 
+test('TQROM mapper 119 has no PRG RAM window',()=>{
+ const e=emulator(rom(119,8,16));
+ e.evaluate('prgRam[0]=0x99;openBus.CPU=0x5a;checkWriteOffset(0x6000,0x33);openBus.CPU=0x5a');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x5a,0x99]);
+});
+
+
 test('loader accepts MMC3-family mapper IDs 118 and 119',()=>{
  for(const m of [118,119]){
    const e=emulator(rom(m,8,16));
