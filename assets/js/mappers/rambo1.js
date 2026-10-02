@@ -196,7 +196,7 @@ function rambo1SaveState(){
 }
 
 function rambo1LoadState(bytes){
-  if(!(bytes instanceof Uint8Array)||bytes.length<33||bytes[0]!==1)return false;
+  if(!(bytes instanceof Uint8Array)||bytes.length<31||bytes[0]!==1)return false;
   let o=1;
   rambo1Select=bytes[o++];
   rambo1Regs.set(bytes.subarray(o,o+16));o+=16;
