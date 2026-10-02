@@ -92,6 +92,37 @@ function gxromChrRead(addr) {
 }
 
 // ---------------------------------------------------------------------------
+// Mapper 79: AVE NINA-03 / NINA-06
+// ---------------------------------------------------------------------------
+let nina79PrgBank = 0;
+let nina79ChrBank = 0;
+
+function nina79Init() {
+  nina79PrgBank = 0;
+  nina79ChrBank = 0;
+}
+
+function nina79RegisterSelected(addr) {
+  // NINA-03/06 decode: 010x xxx1 xxxx xxxx
+  return (addr & 0xE100) === 0x4100;
+}
+
+function nina79Write(addr, value) {
+  if (!nina79RegisterSelected(addr)) return false;
+  nina79PrgBank = mapperBankIndex((value >>> 3) & 0x01, mapperBankCount(prgRom, 0x8000));
+  nina79ChrBank = mapperBankIndex(value & 0x07, mapperBankCount(CHR_ROM, 0x2000));
+  return true;
+}
+
+function nina79Read(addr) {
+  return mapperReadBank(prgRom, 0x8000, nina79PrgBank, addr - 0x8000);
+}
+
+function nina79ChrRead(addr) {
+  return mapperReadBank(CHR_ROM, 0x2000, nina79ChrBank, addr & 0x1FFF);
+}
+
+// ---------------------------------------------------------------------------
 // Mapper 9/10: Nintendo MMC2 / MMC4
 // ---------------------------------------------------------------------------
 let mmc24PrgBank = 0;
@@ -161,6 +192,7 @@ function extraMapperReadPRG(addr) {
     case 10: return mmc24Read(addr);
     case 11: return colorDreamsRead(addr);
     case 66: return gxromRead(addr);
+    case 79: return nina79Read(addr);
     default: return null;
   }
 }
@@ -184,6 +216,7 @@ function cartridgeChrRead(addr) {
     case 10: return mmc24ChrRead(addr);
     case 11: return colorDreamsChrRead(addr);
     case 66: return gxromChrRead(addr);
+    case 79: return nina79ChrRead(addr);
     default: return CHR_ROM[addr % Math.max(1,CHR_ROM.length)] & 0xFF;
   }
 }
