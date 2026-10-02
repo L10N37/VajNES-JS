@@ -157,6 +157,7 @@ function createEmulator(audio) {
         }
       },
       frameIndices:()=>Uint8Array.from(paletteIndexFrame),
+      frameEmphasis:()=>Uint8Array.from(paletteEmphasisFrame),
       state:()=>({cpuCycles,pc:CPUregisters.PC,frame:PPUclock.frame,ram:Array.from(systemMemory)}),
       singleStepFlat,
       evaluate:expression=>eval(expression)
