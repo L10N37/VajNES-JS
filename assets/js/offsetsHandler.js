@@ -36,6 +36,7 @@ let ppuLastDataReadValue = 0;
 
 function mapNT(addr14) {
   if(mapperNumber===118)return mapper118NametableAddress(addr14);
+  if(mapperNumber===158)return mapper158NametableAddress(addr14);
   const v   = (addr14 - 0x2000) & 0x0FFF;
   const off = v & 0x03FF;
   const nt  = (v >>> 10) & 0x03;
@@ -242,7 +243,7 @@ function checkReadOffset(address) {
 
         incrementPPUDataAddress();
       scheduleForcedBlankV(VRAM_ADDR, 8);
-        if(mmc3FamilyActive())mmc3Irq(VRAM_ADDR);
+        if(mmc3FamilyActive()||rambo1FamilyActive())mapperChrIrqAddress(VRAM_ADDR);
 
         raw = ret & 0xFF;
         openBus.PPU = raw;
@@ -281,11 +282,13 @@ function checkReadOffset(address) {
           ? vrc6CpuRead(addr) & 0xFF
         : mapperNumber===69
           ? fme7CpuRead(addr) & 0xFF
+        : (mapperNumber===64 || mapperNumber===158)
+          ? rambo1CpuRead(addr) & 0xFF
         : mapperNumber === 1
           ? mmc1CpuRead(addr) & 0xFF
           : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
              mapperNumber===11 || mapperNumber===66 || mapperNumber===79 ||
-             mapperNumber===119 ||
+             mapperNumber===64 || mapperNumber===158 || mapperNumber===119 ||
              (mmc3FamilyActive() && !MMC3.control.prgRamEnabled))
             ? openBus.CPU & 255 : prgRam[addr - 0x6000] & 0xFF;
 
@@ -487,7 +490,7 @@ function checkWriteOffset(address, value) {
           // video output sees the new address several PPU dots later.
           VRAM_ADDR = t & 0x3FFF;
           scheduleForcedBlankV(VRAM_ADDR, 5);
-          mmc3Irq(VRAM_ADDR);
+          mapperChrIrqAddress(VRAM_ADDR);
 
           writeToggle = 0;
       }
@@ -532,6 +535,7 @@ function checkWriteOffset(address, value) {
     else if (mapperNumber === 79) nina79Write(addr, value);
     else if (mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
     else if (mapperNumber===69) fme7CpuWrite(addr,value);
+    else if (mapperNumber===64 || mapperNumber===158) rambo1CpuWrite(addr,value);
     else if(addr>=0x6000 && mapperNumber!==7 && mapperNumber!==3 &&
       mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==66 && mapperNumber!==79 &&
       ((!mmc3FamilyActive() || (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)) && mapperNumber!==119))
@@ -542,6 +546,7 @@ function checkWriteOffset(address, value) {
     if (mapperNumber === 1) mmc1CpuWrite(addr, value);
     else if (mapperNumber===19 || mapperNumber===210) namcoWrite(addr,value);
     else if (mapperNumber===69) fme7CpuWrite(addr,value);
+    else if (mapperNumber===64 || mapperNumber===158) rambo1CpuWrite(addr,value);
     else mapperWritePRG(addr, value);
   }
 
@@ -571,6 +576,7 @@ function mapperReadPRG(addr) {
   if (mapperNumber===2) return uxromRead(addr);
   if (mapperNumber===24 || mapperNumber===26) return vrc6CpuRead(addr);
   if (mapperNumber===69) return fme7CpuRead(addr);
+  if (mapperNumber===64 || mapperNumber===158) return rambo1CpuRead(addr);
   const extra = extraMapperReadPRG(addr);
   return extra === null ? prgRom[addr - 0x8000] : extra;
 }
@@ -581,6 +587,7 @@ function mapperWritePRG(addr, value) {
   else if(mapperNumber===2) uxromWrite(addr,value);
   else if(mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
   else if(mapperNumber===69) fme7CpuWrite(addr,value);
+  else if(mapperNumber===64 || mapperNumber===158) rambo1CpuWrite(addr,value);
   else extraMapperWritePRG(addr,value);
 }
 
