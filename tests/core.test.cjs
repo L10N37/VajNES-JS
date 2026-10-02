@@ -850,6 +850,107 @@ test('legacy Sunsoft mapper 69 can be marked uncertain instead of assumed audio'
 });
 
 
+
+test('Alien Syndrome legacy mapper-4 payload override routes to mapper 158',()=>{
+ const e=createEmulator();
+ assert.deepEqual(e.evaluate('(()=>{const v=ROM_COMPAT_OVERRIDES.get(0xCBF4366F);return [v.mapper,v.reportedMappers[0],v.title]})()'),
+   [158,4,'Alien Syndrome (USA)']);
+});
+
+test('RAMBO-1 mapper 64 maps three switchable 8K PRG banks plus fixed last bank',()=>{
+ const bytes=rom(64,16,16);
+ for(let b=0;b<32;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
+ bytes[16+16*0x4000-4]=0;bytes[16+16*0x4000-3]=0x80;
+ const e=emulator(bytes);
+ e.evaluate('rambo1CpuWrite(0x8000,6);rambo1CpuWrite(0x8001,3);rambo1CpuWrite(0x8000,7);rambo1CpuWrite(0x8001,5);rambo1CpuWrite(0x8000,15);rambo1CpuWrite(0x8001,7)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xa000),checkReadOffset(0xc000),checkReadOffset(0xe000)]'),[3,5,7,31]);
+ e.evaluate('rambo1CpuWrite(0x8000,0x46)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xc000)]'),[7,3]);
+});
+
+test('RAMBO-1 K mode exposes R8 and R9 as independent 1K CHR banks',()=>{
+ const bytes=rom(64,16,16);
+ for(let b=0;b<128;b++)bytes.fill(b&255,16+16*0x4000+b*0x400,16+16*0x4000+(b+1)*0x400);
+ const e=emulator(bytes);
+ e.evaluate('rambo1CpuWrite(0x8000,0x20|0);rambo1CpuWrite(0x8001,10);rambo1CpuWrite(0x8000,0x20|8);rambo1CpuWrite(0x8001,11);rambo1CpuWrite(0x8000,0x20|1);rambo1CpuWrite(0x8001,12);rambo1CpuWrite(0x8000,0x20|9);rambo1CpuWrite(0x8001,13);[2,3,4,5].forEach((r,i)=>{rambo1CpuWrite(0x8000,0x20|r);rambo1CpuWrite(0x8001,14+i)});rambo1CpuWrite(0x8000,0x20)');
+ assert.deepEqual(e.evaluate('[0,1,2,3,4,5,6,7].map(i=>ppuBusRead(i*0x400))'),[10,11,12,13,14,15,16,17]);
+});
+
+test('RAMBO-1 2K CHR mode ignores low bit and passes PPU A10',()=>{
+ const bytes=rom(64,16,16);
+ for(let b=0;b<128;b++)bytes.fill(b&255,16+16*0x4000+b*0x400,16+16*0x4000+(b+1)*0x400);
+ const e=emulator(bytes);
+ e.evaluate('rambo1CpuWrite(0x8000,0);rambo1CpuWrite(0x8001,11);rambo1CpuWrite(0x8000,1);rambo1CpuWrite(0x8001,21);rambo1CpuWrite(0x8000,0)');
+ assert.deepEqual(e.evaluate('[ppuBusRead(0),ppuBusRead(0x400),ppuBusRead(0x800),ppuBusRead(0xc00)]'),[10,11,20,21]);
+});
+
+test('RAMBO-1 CHR inversion rearranges all eight 1K windows',()=>{
+ const bytes=rom(64,16,16);
+ for(let b=0;b<128;b++)bytes.fill(b&255,16+16*0x4000+b*0x400,16+16*0x4000+(b+1)*0x400);
+ const e=emulator(bytes);
+ e.evaluate('rambo1CpuWrite(0x8000,0xa0|0);rambo1CpuWrite(0x8001,20);rambo1CpuWrite(0x8000,0xa0|8);rambo1CpuWrite(0x8001,21);rambo1CpuWrite(0x8000,0xa0|1);rambo1CpuWrite(0x8001,22);rambo1CpuWrite(0x8000,0xa0|9);rambo1CpuWrite(0x8001,23);[2,3,4,5].forEach((r,i)=>{rambo1CpuWrite(0x8000,0xa0|r);rambo1CpuWrite(0x8001,30+i)});rambo1CpuWrite(0x8000,0xa0)');
+ assert.deepEqual(e.evaluate('[0,1,2,3,4,5,6,7].map(i=>ppuBusRead(i*0x400))'),[30,31,32,33,20,21,22,23]);
+});
+
+test('RAMBO-1 mapper 64 mirroring register switches vertical and horizontal',()=>{
+ const e=emulator(rom(64,16,16));
+ e.evaluate('rambo1CpuWrite(0xa000,0)');
+ assert.equal(e.evaluate('MIRRORING'),'vertical');
+ e.evaluate('rambo1CpuWrite(0xa000,1)');
+ assert.equal(e.evaluate('MIRRORING'),'horizontal');
+});
+
+test('Mapper 158 ignores A000 mirroring and uses CHR A17 for four nametables',()=>{
+ const e=emulator(rom(158,16,16));
+ e.evaluate('rambo1CpuWrite(0x8000,0x20|0);rambo1CpuWrite(0x8001,0x00);rambo1CpuWrite(0x8000,0x20|8);rambo1CpuWrite(0x8001,0x80);rambo1CpuWrite(0x8000,0x20|1);rambo1CpuWrite(0x8001,0x00);rambo1CpuWrite(0x8000,0x20|9);rambo1CpuWrite(0x8001,0x80);rambo1CpuWrite(0x8000,0x20);MIRRORING="vertical";rambo1CpuWrite(0xa000,1)');
+ assert.equal(e.evaluate('MIRRORING'),'vertical');
+ assert.deepEqual(e.evaluate('[mapNT(0x2000),mapNT(0x2400),mapNT(0x2800),mapNT(0x2c00)]'),[0x000,0x400,0x000,0x400]);
+});
+
+test('RAMBO-1 exposes no PRG RAM at $6000-$7FFF',()=>{
+ const e=emulator(rom(64,16,16));
+ e.evaluate('prgRam[0]=0x55;openBus.CPU=0x33;checkWriteOffset(0x6000,0xaa);openBus.CPU=0x33');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x33,0x55]);
+});
+
+test('RAMBO-1 CPU-cycle IRQ clocks every four CPU cycles with delayed assertion',()=>{
+ const e=emulator(rom(64,16,16));
+ e.evaluate('rambo1CpuWrite(0xc000,1);rambo1CpuWrite(0xc001,1);rambo1CpuWrite(0xe001,0)');
+ e.evaluate('for(let i=0;i<4;i++)consumeCycle()');
+ assert.deepEqual(e.evaluate('[rambo1IrqCounter,irqAssert.rambo]'),[1,false]);
+ e.evaluate('for(let i=0;i<4;i++)consumeCycle()');
+ assert.deepEqual(e.evaluate('[rambo1IrqCounter,rambo1IrqDelay,irqAssert.rambo]'),[0,4,false]);
+ e.evaluate('for(let i=0;i<4;i++)consumeCycle()');
+ assert.equal(e.evaluate('irqAssert.rambo'),true);
+ e.evaluate('rambo1CpuWrite(0xe000,0)');
+ assert.equal(e.evaluate('irqAssert.rambo'),false);
+});
+
+test('RAMBO-1 scanline IRQ uses filtered PPU A12 edges and delayed assertion',()=>{
+ const e=emulator(rom(64,16,16));
+ e.evaluate('rambo1CpuWrite(0xc000,1);rambo1CpuWrite(0xc001,0);rambo1CpuWrite(0xe001,0);rambo1IrqAddress(0);ppuCycles+=9;rambo1IrqAddress(0x1000)');
+ assert.equal(e.evaluate('rambo1IrqCounter'),1);
+ e.evaluate('rambo1IrqAddress(0);ppuCycles+=9;rambo1IrqAddress(0x1000)');
+ assert.deepEqual(e.evaluate('[rambo1IrqCounter,rambo1IrqDelay,irqAssert.rambo]'),[0,4,false]);
+ e.evaluate('for(let i=0;i<4;i++)consumeCycle()');
+ assert.equal(e.evaluate('irqAssert.rambo'),true);
+});
+
+test('RAMBO-1 save-state restores banks IRQ mode and edge state',()=>{
+ const e=emulator(rom(158,16,16));
+ e.evaluate('rambo1Select=0xe6;rambo1Regs.set([1,2,3,4,5,6,7,8,9,10,0,0,0,0,0,11]);rambo1IrqLatch=12;rambo1IrqCounter=13;rambo1IrqReload=true;rambo1IrqCpuMode=true;rambo1IrqEnabled=true;rambo1IrqDelay=3;rambo1CpuPrescaler=2;rambo1PrevA12=1;rambo1A12LowSince=123456;irqAssert.rambo=true;globalThis.__s=rambo1SaveState();rambo1Init();rambo1LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[rambo1Select,Array.from(rambo1Regs),rambo1IrqLatch,rambo1IrqCounter,rambo1IrqReload,rambo1IrqCpuMode,rambo1IrqEnabled,rambo1IrqDelay,rambo1CpuPrescaler,rambo1PrevA12,rambo1A12LowSince,irqAssert.rambo]'),
+ [0xe6,[1,2,3,4,5,6,7,8,9,10,0,0,0,0,0,11],12,13,true,true,true,3,2,1,123456,true]);
+});
+
+test('loader accepts mapper 64 and 158 RAMBO-1 IDs',()=>{
+ for(const m of [64,158]){
+   const e=emulator(rom(m,16,16));
+   assert.equal(e.evaluate('mapperNumber'),m);
+   assert.equal(e.evaluate('rambo1FamilyActive()'),true);
+ }
+});
+
 test('FME-7 mapper 69 maps three switchable 8K PRG banks plus fixed last bank',()=>{
  const bytes=rom(69,16,16);
  for(let b=0;b<32;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
