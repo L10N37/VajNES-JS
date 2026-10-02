@@ -3669,13 +3669,19 @@ function STX_ABS() {
 
   //          ................. illegalOpcode functions ................. 
 
+// $AB LAX/LXA immediate is electrically unstable. The default mask matches
+// the pinned RP2A03 SingleStepTests profile. Historical test ROMs calibrated
+// against a different chip/condition can override this without changing the
+// behavior of any stable opcode.
+let unstableLaxImmediateMask = 0xEE;
+
 // LAX #imm — 2 cycles
 function LAX_IMM() {
   // C1: opcode fetch
   // C2: unstable LAX/LXA immediate on RP2A03. Like XAA, this profile
   // combines the old accumulator with the $EE internal-bus mask.
   const imm = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-  const val = ((CPUregisters.A | 0xEE) & imm) & 0xFF;
+  const val = ((CPUregisters.A | unstableLaxImmediateMask) & imm) & 0xFF;
   CPUregisters.A = CPUregisters.X = val;
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val >>> 7) & 1;
