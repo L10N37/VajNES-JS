@@ -235,6 +235,7 @@ function checkReadOffset(address) {
         }
 
         incrementPPUDataAddress();
+      scheduleForcedBlankV(VRAM_ADDR, 8);
         if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
 
         raw = ret & 0xFF;
@@ -462,8 +463,10 @@ function checkWriteOffset(address, value) {
             ppuCpu2006HybridUntil = ppuCycles + 8;
           }
           t = (t & 0xFF00) | value;
-          // Copy t → v
+          // Copy t → v. CPU-visible v changes now, but forced-blank
+          // video output sees the new address several PPU dots later.
           VRAM_ADDR = t & 0x3FFF;
+          scheduleForcedBlankV(VRAM_ADDR, 5);
           mmc3Irq(VRAM_ADDR);
 
           writeToggle = 0;
