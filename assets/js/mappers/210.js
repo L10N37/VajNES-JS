@@ -134,7 +134,7 @@ function namcoClockCpu(){
 }
 
 function namcoSaveState(){
-  const out=new Uint8Array(1+1+8+4+3+2+1+1+1+1+0x80);
+  const out=new Uint8Array(1+1+8+4+3+2+1+1+1+1+1+0x80);
   let o=0;out[o++]=1;out[o++]=namco210Variant&3;
   out.set(namcoChr,o);o+=8;out.set(namcoNt,o);o+=4;out.set(namcoPrg,o);o+=3;
   out[o++]=namcoIrqCounter&255;out[o++]=(namcoIrqCounter>>>8)&0x7f;
@@ -144,7 +144,7 @@ function namcoSaveState(){
   return out;
 }
 function namcoLoadState(bytes){
-  if(!(bytes instanceof Uint8Array)||bytes.length<151||bytes[0]!==1)return false;
+  if(!(bytes instanceof Uint8Array)||bytes.length<152||bytes[0]!==1)return false;
   let o=1;namco210Variant=bytes[o++]&3;namcoChr.set(bytes.subarray(o,o+8));o+=8;
   namcoNt.set(bytes.subarray(o,o+4));o+=4;namcoPrg.set(bytes.subarray(o,o+3));o+=3;
   namcoIrqCounter=bytes[o++]|(bytes[o++]<<8);const f=bytes[o++];
