@@ -120,27 +120,24 @@
 // ===========================================================================
 (function wireOpacity() {
   const t = document.getElementById('transparency-slider');
-  const i = document.getElementById('intensity-slider');
 
-  const savedTransparency = localStorage.getItem('vajnesTransparency');
-  if (t && savedTransparency !== null) t.value = savedTransparency;
-  const savedGrilleIntensity = localStorage.getItem('vajnesGrilleIntensity');
-  if (i && savedGrilleIntensity !== null) i.value = savedGrilleIntensity;
-
+  // Transparency belongs to the emulated picture only. The hover toolbar is
+  // UI and must stay fully opaque above the CRT/scanline layers.
+  try { systemScreen.style.opacity = '1'; } catch {}
   if (t) {
-    try { systemScreen.style.opacity = (t.value / 100); } catch {}
+    try { canvas.style.opacity = (t.value / 100); } catch {}
     t.addEventListener('input', () => {
-      try { systemScreen.style.opacity = (t.value / 100); } catch {}
-      localStorage.setItem('vajnesTransparency', String(t.value));
+      try {
+        systemScreen.style.opacity = '1';
+        canvas.style.opacity = (t.value / 100);
+      } catch {}
     });
   }
-  if (i) {
+
+  const i = document.getElementById('intensity-slider');
+  i?.addEventListener('input', () => {
     try { grilleCanvas.style.opacity = (i.value / 100); } catch {}
-    i.addEventListener('input', () => {
-      try { grilleCanvas.style.opacity = (i.value / 100); } catch {}
-      localStorage.setItem('vajnesGrilleIntensity', String(i.value));
-    });
-  }
+  });
 })();
 
 // ===========================================================================
@@ -152,32 +149,6 @@
   const openLink = document.getElementById('screen-option-scanlines');
   openLink?.addEventListener('click', () => { if (modal) modal.style.display = 'block'; });
   okBtn   ?.addEventListener('click', () => { if (modal) modal.style.display = 'none'; });
-})();
-
-// ===========================================================================
-// 4) Test sources — mutually exclusive: Test Image, RGBA anim, Index anim
-// ===========================================================================
-(function wireTests() {
-  const img   = document.getElementById('test-image-checkbox');
-  const rgba  = document.getElementById('test-rgba-checkbox');
-  const index = document.getElementById('test-index-checkbox');
-
-  function select(kind) {
-    const H = window._grilleHelpers;
-    H.hardStopAll();          // nuke ANY running loops (tests + emulator)
-    H.clearMainCanvas();      // clean slate
-
-    if (kind === 'image') { H.setExclusive(img);   H.drawTestImage();  return; }
-    if (kind === 'rgba')  { H.setExclusive(rgba);  try { testRGBAAnim?.(); } catch(e){ globalThis.NES_DEBUG_LOGGING && console.error(e);} return; }
-    if (kind === 'index') { H.setExclusive(index); try { testIndexAnim?.(); } catch(e){ globalThis.NES_DEBUG_LOGGING && console.error(e);} return; }
-
-    H.setExclusive(null);
-    H.resumeIfNoneSelected();
-  }
-
-  img  ?.addEventListener('change', () => select(img.checked   ? 'image' : null));
-  rgba ?.addEventListener('change', () => select(rgba.checked  ? 'rgba'  : null));
-  index?.addEventListener('change', () => select(index.checked ? 'index' : null));
 })();
 
 // ===========================================================================
@@ -214,20 +185,13 @@
   }
 
   const radios = document.getElementsByName('grille-type');
-  const savedGrilleType = localStorage.getItem('vajnesGrilleType');
   radios.forEach(r => {
-    if (savedGrilleType && r.value === savedGrilleType) r.checked = true;
     r.addEventListener('click', () => {
-      localStorage.setItem('vajnesGrilleType', r.value);
       if (r.value === 'aperture-grille')      drawApertureGrille();
       else if (r.value === 'shadow-mask')     drawShadowMask();
       else                                    clearGrilleCanvas();
     });
   });
-  const active = Array.from(radios).find(r => r.checked)?.value;
-  if (active === 'aperture-grille') drawApertureGrille();
-  else if (active === 'shadow-mask') drawShadowMask();
-  else clearGrilleCanvas();
 
   window._grilleDraw = { clearGrilleCanvas, drawShadowMask, drawApertureGrille };
 })();
@@ -263,15 +227,6 @@
   const gap  = document.getElementById('scanline-gap');
   const off  = document.getElementById('scanline-offset');
 
-  const restore = (el,key) => {
-    const value = localStorage.getItem(key);
-    if (el && value !== null) el.value = value;
-  };
-  restore(inten,'vajnesScanlineIntensity');
-  restore(lH,'vajnesScanlineLineHeight');
-  restore(gap,'vajnesScanlineGap');
-  if (off) off.checked = localStorage.getItem('vajnesScanlineOffset') === '1';
-
   function redraw() {
     drawScanlines(
       scanlineCanvas,
@@ -285,10 +240,10 @@
     );
   }
 
-  inten?.addEventListener('input',  () => { localStorage.setItem('vajnesScanlineIntensity', String(inten.value)); redraw(); });
-  lH  ?.addEventListener('input',   () => { localStorage.setItem('vajnesScanlineLineHeight', String(lH.value)); redraw(); });
-  gap ?.addEventListener('input',   () => { localStorage.setItem('vajnesScanlineGap', String(gap.value)); redraw(); });
-  off ?.addEventListener('change',  () => { localStorage.setItem('vajnesScanlineOffset', off.checked ? '1' : '0'); redraw(); });
+  inten?.addEventListener('input',  redraw);
+  lH  ?.addEventListener('input',   redraw);
+  gap ?.addEventListener('input',   redraw);
+  off ?.addEventListener('change',  redraw);
 
   window._scanlineRedraw = redraw;
   redraw();
@@ -314,11 +269,6 @@
     // Redraw code-drawn scanlines
     try { window._scanlineRedraw?.(); } catch {}
 
-    // If Test Image is active, redraw it (canvas resize cleared pixels)
-    try {
-      const imgChecked = document.getElementById('test-image-checkbox')?.checked;
-      if (imgChecked) window._grilleHelpers?.drawTestImage?.();
-    } catch {}
   }
 
   // Observe all relevant canvases for size changes
