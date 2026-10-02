@@ -41,6 +41,7 @@ function fnvRgba(indices,emphasis){
   return h.toString();
 }
 
+const phaseDiagnostics={};
 const results=[];
 for(const [rel,expected] of tests){
   const rom=fs.readFileSync(path.join(root,rel));
@@ -56,7 +57,18 @@ for(const [rel,expected] of tests){
   results.push(result);
   console.log('FRAMEBUFFER_GOLDEN '+JSON.stringify(result));
 }
+// full_palette intentionally alternates frame timing. Record nearby frame
+// hashes to distinguish a frame-phase mismatch from a rendering mismatch.
+for(const frames of [359,360,361]){
+  const rom=fs.readFileSync(path.join(root,'full_palette/full_palette.nes'));
+  const e=createEmulator();
+  e.load(new Uint8Array(rom));
+  e.runFrames(frames);
+  phaseDiagnostics[frames]=fnvRgba(e.frameIndices(),e.frameEmphasis());
+}
+console.log('FRAMEBUFFER_PHASE '+JSON.stringify(phaseDiagnostics));
+
 const summary={total:results.length,pass:results.filter(r=>r.pass).length,fail:results.filter(r=>!r.pass).length};
 console.log('FRAMEBUFFER_GOLDEN_SUMMARY '+JSON.stringify(summary));
-if(process.argv[3])fs.writeFileSync(process.argv[3],JSON.stringify({source:'jpjonte/NESd@c6a81d023e1808c5d16a7f6e0b6d020e53a21411',summary,results},null,2)+'\n');
+if(process.argv[3])fs.writeFileSync(process.argv[3],JSON.stringify({source:'jpjonte/NESd@c6a81d023e1808c5d16a7f6e0b6d020e53a21411',summary,phaseDiagnostics,results},null,2)+'\n');
 if(summary.fail)process.exitCode=1;
