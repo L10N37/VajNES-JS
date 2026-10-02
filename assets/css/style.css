@@ -398,3 +398,22 @@ registersText{
 .zip-rom-actions{display:flex;justify-content:center;gap:14px;margin-top:18px}
 .zip-rom-button{min-width:100px;padding:9px 18px;border:1px solid #6b7078;border-radius:7px;background:#2b2f35;color:#fff;font:600 15px sans-serif;cursor:pointer}
 .zip-rom-button:hover,.zip-rom-button:focus{background:#3a4048;outline:2px solid #8ab4f8;outline-offset:2px}
+
+
+/* Accuracy details */
+.accuracy-card{width:min(860px,calc(100vw - 36px))}
+.accuracy-hero{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid #5f6368;border-radius:9px;background:#22252a}
+.accuracy-hero strong{font-size:18px}
+.accuracy-hero span{color:#bdc1c6;font-size:13px}
+.accuracy-score{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:10px 12px;border-left:4px solid #8ab4f8;background:#202328}
+.accuracy-score strong{font-size:22px}
+.accuracy-score span{color:#bdc1c6}
+.accuracy-grid{display:grid;grid-template-columns:minmax(180px,1fr) minmax(170px,auto);gap:7px 18px;padding:8px 0}
+.accuracy-grid strong{text-align:right}
+.accuracy-list{line-height:1.65}
+@media(max-width:620px){
+  .about-card{padding:22px 18px}
+  .about-grid,.accuracy-grid{grid-template-columns:1fr}
+  .about-grid span:nth-child(odd){margin-top:5px}
+  .accuracy-grid strong{text-align:left;margin-bottom:5px}
+}
