@@ -364,10 +364,8 @@ function LDA_ZPX() {
   // Effective address wraps in zero page
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read at effective address
-  
-  checkReadOffset(addr);
-  
+  // C3: dummy read from unindexed zero-page base.
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: final read
@@ -579,10 +577,8 @@ function STA_ZPX() {
   // Effective zero-page address
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read at effective address
-  
-  checkReadOffset(addr);
-  
+  // C3: dummy read from unindexed zero-page base.
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: final write
@@ -815,7 +811,7 @@ function INC_ZP() { // 5 cycles (RMW)
 function INC_ZPX() { // 6 cycles (RMW)
   // C1
   const zp   = checkReadOffset(CPUregisters.PC + 1); consumeCycle(); // C2
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; checkReadOffset(zp); consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;          consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                       consumeCycle(); // C5 (dummy write)
@@ -851,7 +847,7 @@ function ROL_ZP() { // 5 cycles (RMW)
 function ROL_ZPX() { // 6 cycles (RMW)
   // C1
   const zp = checkReadOffset(CPUregisters.PC + 1);   consumeCycle(); // C2
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; checkReadOffset(zp); consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;          consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                       consumeCycle(); // C5 (dummy write)
@@ -889,7 +885,7 @@ function LSR_ZP() { // 5 cycles (RMW)
 function LSR_ZPX() { // 6 cycles (RMW)
   // C1
   const zp = checkReadOffset(CPUregisters.PC + 1);  consumeCycle(); // C2
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; checkReadOffset(zp); consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;         consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                      consumeCycle(); // C5 (dummy write)
@@ -1091,10 +1087,8 @@ function LDX_ZPY() {
   // Effective zero-page address
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFF;
 
-  // C3: dummy read at addr
-  
-  checkReadOffset(addr);
-  
+  // C3: dummy read from the unindexed zero-page base.
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: final read
@@ -1191,7 +1185,8 @@ function ADC_ZPX() { // 4 cycles
   const base = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3 (internal index)
+  checkReadOffset(base);
+  consumeCycle(); // C3 dummy read/index add (internal index)
   const val = checkReadOffset(addr) & 0xFF;
   consumeCycle(); // C4
 
@@ -1456,7 +1451,8 @@ function AND_ZPX() {
   const addr = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const effAddr = (addr + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(addr);
+  consumeCycle(); // C3 dummy read/index add
   const val = checkReadOffset(effAddr) & 0xFF;
   consumeCycle(); // C4
 
@@ -1830,7 +1826,8 @@ function ORA_ZPX() {
   const base = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(base);
+  consumeCycle(); // C3 dummy read/index add
   let value = checkReadOffset(addr) & 0xFF;
   consumeCycle(); // C4
 
@@ -2030,10 +2027,8 @@ function CMP_ZPX() { // 4 cycles
 
   const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read
-  
-  checkReadOffset(addr);
-  
+  // C3: dummy read from unindexed zero-page base.
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: final read
@@ -2301,7 +2296,7 @@ function DEC_ZP() { // 5 cycles (RMW)
 function DEC_ZPX() { // 6 cycles (RMW)
   // C1
   const zp   = checkReadOffset(CPUregisters.PC + 1); consumeCycle(); // C2
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; checkReadOffset(zp); consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;          consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                       consumeCycle(); // C5 (dummy write)
@@ -2371,7 +2366,7 @@ function ROR_ZP() { // 5 cycles (RMW)
 function ROR_ZPX() { // 6 cycles (RMW)
   // C1
   const zp = checkReadOffset(CPUregisters.PC + 1);   consumeCycle(); // C2
-  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (zp + (CPUregisters.X & 0xFF)) & 0xFF; checkReadOffset(zp); consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;          consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                       consumeCycle(); // C5 (dummy write)
@@ -2592,7 +2587,8 @@ function EOR_ZPX() {
   const base = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(base);
+  consumeCycle(); // C3 dummy read/index add
   let value = checkReadOffset(addr) & 0xFF;
   consumeCycle(); // C4
 
@@ -2797,8 +2793,9 @@ function STY_ZP() { // 3 cycles
 
 function STY_ZPX() { // 4 cycles
   // C1
-  const address = (checkReadOffset(CPUregisters.PC + 1) + CPUregisters.X) & 0xFF; consumeCycle(); // C2
-  consumeCycle(); // C3 (index add)
+  const base = checkReadOffset(CPUregisters.PC + 1) & 0xFF; consumeCycle(); // C2
+  const address = (base + CPUregisters.X) & 0xFF;
+  checkReadOffset(base); consumeCycle(); // C3 dummy read/index add
   checkWriteOffset(address, CPUregisters.Y);                                   consumeCycle(); // C4
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
@@ -2846,10 +2843,8 @@ function LDY_ZPX() { // 4 cycles
   // Effective zero-page address
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read
-  
-  checkReadOffset(addr);
-  
+  // C3: dummy read from unindexed zero-page base.
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: final read
@@ -2960,7 +2955,8 @@ function SBC_ZPX() { // 4 cycles
   const base = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3 (internal index)
+  checkReadOffset(base);
+  consumeCycle(); // C3 dummy read/index add (internal index)
   let value = checkReadOffset(addr) & 0xFF;
   consumeCycle(); // C4
 
@@ -3632,8 +3628,9 @@ function STX_ZPY() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: internal address calc (zp wrap)
+  // C3: index add; external bus reads the unindexed base.
   const addr = (base + (CPUregisters.Y & 0xFF)) & 0xFF;
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: write X
