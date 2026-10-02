@@ -91,14 +91,13 @@ function disasmPeekByte(address) {
   // The live trace must follow the active cartridge bank without performing a
   // normal CPU-bus read (which could perturb open bus or DMA/debug state).
   if(addr<0x8000)return undefined;
-  if(mmc3FamilyActive())return mapper4_prg_read(addr)&0xff;
+  if(mapperNumber===4)return mapper4_prg_read(addr)&0xff;
   if(mapperNumber===1)return mmc1CpuRead(addr)&0xff;
   return mapperReadPRG(addr)&0xff;
 }
 
 window.step = function () {
 
-  NoSignalAudio.setEnabled(false);
   if (!cpuRunning) return 0;
 
   // DMA first: returns 1 or 2 cycles per call (or 0 if finished)
@@ -191,6 +190,9 @@ window.addEventListener("keydown", (e) => {
 
 window.run = function () {
   if (cpuRunning) return;
+  if (typeof NoSignalAudio !== 'undefined' && NoSignalAudio && typeof NoSignalAudio.setEnabled === 'function') {
+    NoSignalAudio.setEnabled(false);
+  }
   cpuRunning = true;
 
   // reset loop timing state
