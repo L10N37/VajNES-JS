@@ -43,6 +43,19 @@ let MMC3 = {
 
 };
 
+// Mapper 4/118/119 share the MMC3 ASIC. TxSROM (118) reroutes CIRAM A10
+// through CHR A17; TQROM (119) adds a dedicated 8 KiB CHR RAM selected by
+// CHR bank bit 6.
+const tqromChrRam = new Uint8Array(0x2000);
+function mmc3FamilyActive() {
+  return mapperNumber===4 || mapperNumber===118 || mapperNumber===119;
+}
+function mmc3FamilyInit(nesHeader) {
+  chrIsRAM = mapperNumber===4 && nesHeader[5]===0;
+  if(mapperNumber===119)tqromChrRam.fill(0);
+  mmc3ConfigureFromHeader(nesHeader);
+}
+
 
 // -----------------------------------------------------
 // MMC3 $A000 write
@@ -57,6 +70,7 @@ let MMC3 = {
 
 function mapper4_write_A000(value)
 {
+    if(mapperNumber===118)return;
     const mirrorBit = value & 1;
 
     // Do not override four-screen boards
@@ -219,231 +233,68 @@ function mapper4_prg_read(address)
 // Returns data directly from FULL_CHR_ROM
 // -----------------------------------------------------
 
+function mmc3ChrBankForAddress(address) {
+  address &= 0x1FFF;
+  const r=MMC3.registers;
+
+  if(MMC3.control.chrMode==="CHR_NORMAL") {
+    if(address<0x0800)return (r.CHR_BANK_0&0xFE)+((address>>>10)&1);
+    if(address<0x1000)return (r.CHR_BANK_1&0xFE)+(((address-0x0800)>>>10)&1);
+    if(address<0x1400)return r.CHR_BANK_2&0xFF;
+    if(address<0x1800)return r.CHR_BANK_3&0xFF;
+    if(address<0x1C00)return r.CHR_BANK_4&0xFF;
+    return r.CHR_BANK_5&0xFF;
+  }
+
+  if(address<0x0400)return r.CHR_BANK_2&0xFF;
+  if(address<0x0800)return r.CHR_BANK_3&0xFF;
+  if(address<0x0C00)return r.CHR_BANK_4&0xFF;
+  if(address<0x1000)return r.CHR_BANK_5&0xFF;
+  if(address<0x1800)return (r.CHR_BANK_0&0xFE)+(((address-0x1000)>>>10)&1);
+  return (r.CHR_BANK_1&0xFE)+(((address-0x1800)>>>10)&1);
+}
+
+// TxSROM feeds MMC3 CHR A17 directly to CIRAM A10. The MMC3 CHR banking
+// circuit ignores PPU A13, so nametable $2000-$2FFF behaves like $0000-$0FFF
+// for choosing the CHR register whose bit 7 selects CIRAM page 0/1.
+function mapper118NametableAddress(addr) {
+  const bank=mmc3ChrBankForAddress(addr&0x0FFF);
+  return (addr&0x03FF)|((bank&0x80)?0x0400:0);
+}
+
 function mapper4_chr_read(address)
 {
-    const bankSize = 0x0400; // 1KB
-    const chrBankCount = FULL_CHR_ROM_SIZE / bankSize;
+  address &= 0x1FFF;
+  const bank=mmc3ChrBankForAddress(address);
+  const offset=address&0x03FF;
 
-    let bank;
-    let offset;
+  if(mapperNumber===119 && (bank&0x40))
+    return tqromChrRam[((bank&7)<<10)|offset]&0xFF;
 
-    address &= 0x1FFF;
-
-    if (MMC3.control.chrMode === "CHR_NORMAL")
-    {
-        // $0000-$07FF -> R0/R0+1 (2KB)
-        if (address < 0x0800)
-        {
-            const base = MMC3.registers.CHR_BANK_0 & 0xFE;
-            bank = base + ((address >> 10) & 1);
-            offset = address & 0x03FF;
-        }
-
-        // $0800-$0FFF -> R1/R1+1 (2KB)
-        else if (address < 0x1000)
-        {
-            const base = MMC3.registers.CHR_BANK_1 & 0xFE;
-            bank = base + (((address - 0x0800) >> 10) & 1);
-            offset = address & 0x03FF;
-        }
-
-        // $1000-$13FF -> R2
-        else if (address < 0x1400)
-        {
-            bank = MMC3.registers.CHR_BANK_2;
-            offset = address & 0x03FF;
-        }
-
-        // $1400-$17FF -> R3
-        else if (address < 0x1800)
-        {
-            bank = MMC3.registers.CHR_BANK_3;
-            offset = address & 0x03FF;
-        }
-
-        // $1800-$1BFF -> R4
-        else if (address < 0x1C00)
-        {
-            bank = MMC3.registers.CHR_BANK_4;
-            offset = address & 0x03FF;
-        }
-
-        // $1C00-$1FFF -> R5
-        else
-        {
-            bank = MMC3.registers.CHR_BANK_5;
-            offset = address & 0x03FF;
-        }
-    }
-    else
-    {
-        // $0000-$03FF -> R2
-        if (address < 0x0400)
-        {
-            bank = MMC3.registers.CHR_BANK_2;
-            offset = address & 0x03FF;
-        }
-
-        // $0400-$07FF -> R3
-        else if (address < 0x0800)
-        {
-            bank = MMC3.registers.CHR_BANK_3;
-            offset = address & 0x03FF;
-        }
-
-        // $0800-$0BFF -> R4
-        else if (address < 0x0C00)
-        {
-            bank = MMC3.registers.CHR_BANK_4;
-            offset = address & 0x03FF;
-        }
-
-        // $0C00-$0FFF -> R5
-        else if (address < 0x1000)
-        {
-            bank = MMC3.registers.CHR_BANK_5;
-            offset = address & 0x03FF;
-        }
-
-        // $1000-$17FF -> R0/R0+1 (2KB)
-        else if (address < 0x1800)
-        {
-            const base = MMC3.registers.CHR_BANK_0 & 0xFE;
-            bank = base + (((address - 0x1000) >> 10) & 1);
-            offset = address & 0x03FF;
-        }
-
-        // $1800-$1FFF -> R1/R1+1 (2KB)
-        else
-        {
-            const base = MMC3.registers.CHR_BANK_1 & 0xFE;
-            bank = base + (((address - 0x1800) >> 10) & 1);
-            offset = address & 0x03FF;
-        }
-    }
-
-    bank &= (chrBankCount - 1);
-
-    const romIndex = (bank * bankSize) + offset;
-    const result = FULL_CHR_ROM[romIndex] & 0xFF;
-
-    return result;
+  const chrBankCount=Math.max(1,FULL_CHR_ROM_SIZE>>>10);
+  // TQROM CHR A16 (bank bit 6) is chip select rather than a ROM address bit.
+  // Bit 7 may still address a second 64 KiB ROM half on compatible boards.
+  const romBank=mapperNumber===119?(bank&0xBF):bank;
+  const normalized=((romBank%chrBankCount)+chrBankCount)%chrBankCount;
+  return FULL_CHR_ROM[(normalized<<10)|offset]&0xFF;
 }
 
 function mapper4_chr_write(address, value)
 {
-    if (!chrIsRAM) return; // CHR ROM ignores writes
+  address &= 0x1FFF;
+  value &= 0xFF;
+  const bank=mmc3ChrBankForAddress(address);
+  const offset=address&0x03FF;
 
-    const bankSize = 0x0400; // 1KB
-    const chrBankCount = FULL_CHR_ROM_SIZE / bankSize;
+  if(mapperNumber===119) {
+    if(bank&0x40)tqromChrRam[((bank&7)<<10)|offset]=value;
+    return;
+  }
 
-    let bank;
-    let offset;
-
-    address &= 0x1FFF;
-    value &= 0xFF;
-
-    if (MMC3.control.chrMode === "CHR_NORMAL")
-    {
-        // $0000-$07FF -> R0/R0+1 (2KB)
-        if (address < 0x0800)
-        {
-            const base = MMC3.registers.CHR_BANK_0 & 0xFE;
-            bank = base + ((address >> 10) & 1);
-            offset = address & 0x03FF;
-        }
-
-        // $0800-$0FFF -> R1/R1+1 (2KB)
-        else if (address < 0x1000)
-        {
-            const base = MMC3.registers.CHR_BANK_1 & 0xFE;
-            bank = base + (((address - 0x0800) >> 10) & 1);
-            offset = address & 0x03FF;
-        }
-
-        // $1000-$13FF -> R2
-        else if (address < 0x1400)
-        {
-            bank = MMC3.registers.CHR_BANK_2;
-            offset = address & 0x03FF;
-        }
-
-        // $1400-$17FF -> R3
-        else if (address < 0x1800)
-        {
-            bank = MMC3.registers.CHR_BANK_3;
-            offset = address & 0x03FF;
-        }
-
-        // $1800-$1BFF -> R4
-        else if (address < 0x1C00)
-        {
-            bank = MMC3.registers.CHR_BANK_4;
-            offset = address & 0x03FF;
-        }
-
-        // $1C00-$1FFF -> R5
-        else
-        {
-            bank = MMC3.registers.CHR_BANK_5;
-            offset = address & 0x03FF;
-        }
-    }
-    else
-    {
-        // $0000-$03FF -> R2
-        if (address < 0x0400)
-        {
-            bank = MMC3.registers.CHR_BANK_2;
-            offset = address & 0x03FF;
-        }
-
-        // $0400-$07FF -> R3
-        else if (address < 0x0800)
-        {
-            bank = MMC3.registers.CHR_BANK_3;
-            offset = address & 0x03FF;
-        }
-
-        // $0800-$0BFF -> R4
-        else if (address < 0x0C00)
-        {
-            bank = MMC3.registers.CHR_BANK_4;
-            offset = address & 0x03FF;
-        }
-
-        // $0C00-$0FFF -> R5
-        else if (address < 0x1000)
-        {
-            bank = MMC3.registers.CHR_BANK_5;
-            offset = address & 0x03FF;
-        }
-
-        // $1000-$17FF -> R0/R0+1 (2KB)
-        else if (address < 0x1800)
-        {
-            const base = MMC3.registers.CHR_BANK_0 & 0xFE;
-            bank = base + (((address - 0x1000) >> 10) & 1);
-            offset = address & 0x03FF;
-        }
-
-        // $1800-$1FFF -> R1/R1+1 (2KB)
-        else
-        {
-            const base = MMC3.registers.CHR_BANK_1 & 0xFE;
-            bank = base + (((address - 0x1800) >> 10) & 1);
-            offset = address & 0x03FF;
-        }
-    }
-
-    bank &= (chrBankCount - 1);
-
-    const romIndex = (bank * bankSize) + offset;
-
-    if (romIndex >= 0 && romIndex < FULL_CHR_ROM.length)
-    {
-        FULL_CHR_ROM[romIndex] = value;
-    }
+  if(!chrIsRAM)return;
+  const chrBankCount=Math.max(1,FULL_CHR_ROM_SIZE>>>10);
+  const normalized=((bank%chrBankCount)+chrBankCount)%chrBankCount;
+  FULL_CHR_ROM[(normalized<<10)|offset]=value;
 }
 
 // ============================ //
@@ -474,7 +325,7 @@ function mmc3Reset() {
   irqAssert.mmc3=false;
 }
 function mmc3Irq(addr) {
-  if(mapperNumber!==4)return;
+  if(!mmc3FamilyActive())return;
   const high=(addr>>>12)&1;
   if(!high && mmc3_irq.prevA12)mmc3_irq.lowSince=ppuCycles;
   // Approximate three M2 periods with nine PPU dots; short nametable
@@ -639,9 +490,9 @@ function openMMC3DebugModal()
     {
         let out="";
 
-        if(mapperNumber!==4)
+        if(!mmc3FamilyActive())
         {
-            ta.value="MMC3 DEBUGGER\n\nGame is not mapper 4.";
+            ta.value="MMC3 DEBUGGER\n\nGame is not an MMC3-family mapper (4/118/119).";
             return;
         }
 
@@ -724,7 +575,7 @@ function openMMC3DebugModal()
 
 function mmc3SaveState(){
   const r=MMC3.registers,c=MMC3.control,q=mmc3_irq;
-  return new Uint8Array([
+  const base=new Uint8Array([
     1,
     c.prgMode==="PRG_SWAP_C000"?1:0,
     c.chrMode==="CHR_INVERTED"?1:0,
@@ -737,9 +588,16 @@ function mmc3SaveState(){
     irqAssert.mmc3?1:0,
     MIRRORING==='horizontal'?1:MIRRORING==='vertical'?0:2
   ]);
+  if(mapperNumber!==119)return base;
+  const out=new Uint8Array(base.length+tqromChrRam.length);
+  out.set(base);
+  out[0]=2;
+  out.set(tqromChrRam,base.length);
+  return out;
 }
 function mmc3LoadState(bytes){
-  if(!(bytes instanceof Uint8Array)||bytes.length<24||bytes[0]!==1)return false;
+  if(!(bytes instanceof Uint8Array)||bytes.length<24||(bytes[0]!==1&&bytes[0]!==2))return false;
+  const version=bytes[0];
   let o=1;const names=["CHR_BANK_0","CHR_BANK_1","CHR_BANK_2","CHR_BANK_3","CHR_BANK_4","CHR_BANK_5","PRG_BANK_0","PRG_BANK_1"];
   MMC3.control.prgMode=bytes[o++]?"PRG_SWAP_C000":"PRG_SWAP_8000";
   MMC3.control.chrMode=bytes[o++]?"CHR_INVERTED":"CHR_NORMAL";
@@ -753,5 +611,7 @@ function mmc3LoadState(bytes){
   mmc3_irq.lowSince=(bytes[o++]|(bytes[o++]<<8)|(bytes[o++]<<16)|(bytes[o++]<<24))>>>0;
   irqAssert.mmc3=!!bytes[o++];
   const m=bytes[o++];if(m===0)MIRRORING='vertical';else if(m===1)MIRRORING='horizontal';
+  if(mapperNumber===119&&version>=2&&bytes.length>=o+tqromChrRam.length)
+    tqromChrRam.set(bytes.subarray(o,o+tqromChrRam.length));
   return true;
 }

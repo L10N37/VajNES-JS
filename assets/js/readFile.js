@@ -170,7 +170,7 @@ function loadRom(romBytes) {
     }
   }
 
-  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,66,79,155,210].includes(incomingMapper))
+  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,66,79,118,119,155,210].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
 
   // Never show an expansion-audio prompt for a mapper this build cannot run.
@@ -202,6 +202,10 @@ function loadRom(romBytes) {
     throw new Error(`Unsupported Namco mapper ${incomingMapper}: CHR ROM required`);
   if ((incomingMapper===24 || incomingMapper===26) && nesHeader[5]===0)
     throw new Error('Unsupported VRC6 board: CHR ROM required');
+  if (incomingMapper===118 && nesHeader[5]===0)
+    throw new Error('Unsupported TxSROM board: CHR ROM required');
+  if (incomingMapper===119 && nesHeader[5]===0)
+    throw new Error('Unsupported TQROM board: CHR ROM required');
 
   // Header fields
   const prgBanks = nesHeader[4];  // PRG banks (16KB units)
@@ -250,7 +254,7 @@ function loadRom(romBytes) {
   // Header and trainer are skipped
   // ------------------------------------------------------------
 
-  if (mapperNumber === 4) {
+  if (mapperNumber === 4 || mapperNumber === 118 || mapperNumber === 119) {
 
     // Entire PRG ROM (header removed)
     FULL_PRG_ROM = romBytes.slice(prgStart, prgStart + prgSize);
@@ -265,8 +269,8 @@ function loadRom(romBytes) {
     FULL_PRG_BANKS_16K = prgBanks;
     FULL_CHR_BANKS_8K  = chrBanks;
 
-    globalThis.NES_DEBUG_LOGGING && console.debug(`[Mapper4] Full PRG ROM stored (${FULL_PRG_ROM_SIZE} bytes)`);
-    globalThis.NES_DEBUG_LOGGING && console.debug(`[Mapper4] Full CHR ROM stored (${FULL_CHR_ROM_SIZE} bytes)`);
+    globalThis.NES_DEBUG_LOGGING && console.debug(`[Mapper${mapperNumber}] Full PRG ROM stored (${FULL_PRG_ROM_SIZE} bytes)`);
+    globalThis.NES_DEBUG_LOGGING && console.debug(`[Mapper${mapperNumber}] Full CHR ROM stored (${FULL_CHR_ROM_SIZE} bytes)`);
   }
 
   // ------------------------------------------------------------

@@ -212,7 +212,9 @@ function cartridgeChrRead(addr) {
   switch (mapperNumber) {
     case 1: return mmc1ChrRead(addr) & 0xFF;
     case 3: return cnromChrRead(addr);
-    case 4: return mapper4_chr_read(addr) & 0xFF;
+    case 4:
+    case 118:
+    case 119: return mapper4_chr_read(addr) & 0xFF;
     case 5: return mmc5ChrRead(addr,false) & 0xFF;
     case 9:
     case 10: return mmc24ChrRead(addr);

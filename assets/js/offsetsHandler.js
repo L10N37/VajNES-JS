@@ -35,6 +35,7 @@ let ppuLastDataReadValue = 0;
 // https://www.nesdev.org/wiki/PPU_registers#Rendering_control
 
 function mapNT(addr14) {
+  if(mapperNumber===118)return mapper118NametableAddress(addr14);
   const v   = (addr14 - 0x2000) & 0x0FFF;
   const off = v & 0x03FF;
   const nt  = (v >>> 10) & 0x03;
@@ -66,7 +67,7 @@ function checkReadOffset(address) {
   let raw = 0x00;
 
   // MMC3 PRG read
-  if (mapperNumber === 4 && addr >= 0x8000) {
+  if (mmc3FamilyActive() && addr >= 0x8000) {
     openBus.CPU=mapper4_prg_read(addr);
     if(!DMC.dmaBusy && !DMA.active)openBus.internal=openBus.CPU;
     return openBus.CPU;
@@ -241,7 +242,7 @@ function checkReadOffset(address) {
 
         incrementPPUDataAddress();
       scheduleForcedBlankV(VRAM_ADDR, 8);
-        if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
+        if(mmc3FamilyActive())mmc3Irq(VRAM_ADDR);
 
         raw = ret & 0xFF;
         openBus.PPU = raw;
@@ -282,7 +283,8 @@ function checkReadOffset(address) {
           ? mmc1CpuRead(addr) & 0xFF
           : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
              mapperNumber===11 || mapperNumber===66 || mapperNumber===79 ||
-             (mapperNumber===4 && !MMC3.control.prgRamEnabled))
+             mapperNumber===119 ||
+             (mmc3FamilyActive() && !MMC3.control.prgRamEnabled))
             ? openBus.CPU & 255 : prgRam[addr - 0x6000] & 0xFF;
 
   } else {
@@ -317,7 +319,7 @@ function checkWriteOffset(address, value) {
   value &= 0xFF;
   
   
-  if (mapperNumber === 4 && address >= 0x8000)
+  if (mmc3FamilyActive() && address >= 0x8000)
   {
       switch (addr & 0xE001)
       {
@@ -529,7 +531,7 @@ function checkWriteOffset(address, value) {
     else if (mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
     else if(addr>=0x6000 && mapperNumber!==7 && mapperNumber!==3 &&
       mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==66 && mapperNumber!==79 &&
-      (mapperNumber!==4 || (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)))
+      ((!mmc3FamilyActive() || (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)) && mapperNumber!==119))
       prgRam[addr - 0x6000] = value & 0xFF;
 
   } else {

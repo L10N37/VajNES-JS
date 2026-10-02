@@ -74,7 +74,7 @@ function powerOnCPU() {
   irqAssert.mmc5=false;
   irqAssert.namco=false;
   irqAssert.vrc=false;
-  if(mapperNumber===4) mmc3Reset();
+  if(mmc3FamilyActive()) mmc3Reset();
   joypadStrobe=joypadStrobeOutput=joypad1State=joypad2State=0;
   resetCommonInterruptState();
 

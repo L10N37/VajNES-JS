@@ -980,6 +980,75 @@ test('MMC1 save-state restores serial latch and bank registers',()=>{
  assert.deepEqual(e.evaluate('[shiftRegister,shiftCount,mmc1Control,mmc1CHR0,mmc1CHR1,mmc1PRG,prgRamEnable,MIRRORING]'),[0x12,3,0x1f,2,3,4,false,'horizontal']);
 });
 
+
+test('TxSROM mapper 118 uses CHR bank bit 7 for per-nametable CIRAM selection',()=>{
+ const e=emulator(rom(118,8,16));
+ // Normal CHR mode maps NT0/1 through R0, NT2/3 through R1. Bit 7 selects CIRAM page.
+ e.evaluate('mapper4_write_8000(0);mapper4_write_8001(0x00);mapper4_write_8000(1);mapper4_write_8001(0x80)');
+ assert.deepEqual(e.evaluate('[mapNT(0x2000),mapNT(0x2400),mapNT(0x2800),mapNT(0x2c00)]'),[0x000,0x000,0x400,0x400]);
+ // $A000 is disconnected on TxSROM.
+ e.evaluate('MIRRORING="vertical";mapper4_write_A000(1)');
+ assert.equal(e.evaluate('MIRRORING'),'vertical');
+});
+
+test('TxSROM mapper 118 inherits MMC3 PRG banking and IRQ counter',()=>{
+ const e=emulator(rom(118,8,16));
+ e.evaluate('mapper4_write_8000(6);mapper4_write_8001(3)');
+ assert.equal(e.evaluate('checkReadOffset(0x8000)'),1); // rom() fills each 16K, bank 3 is in 16K block 1
+ e.evaluate('mapper4_write_C000(1);mapper4_write_C001();mapper4_write_E001();mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(e.evaluate('mmc3_irq.scanlineCounter'),1);
+ e.evaluate('mmc3Irq(0);ppuCycles+=9;mmc3Irq(0x1000)');
+ assert.equal(e.evaluate('irqAssert.mmc3'),true);
+});
+
+test('TQROM mapper 119 selects CHR ROM or dedicated CHR RAM with bank bit 6',()=>{
+ const bytes=rom(119,8,16);
+ const chrStart=16+8*0x4000;
+ // Give every 1K CHR ROM bank a distinct byte.
+ for(let bank=0;bank<128;bank++)bytes.fill(bank,chrStart+bank*0x400,chrStart+(bank+1)*0x400);
+ const e=emulator(bytes);
+ // R2 -> $1000-$13FF in normal CHR mode.
+ e.evaluate('mapper4_write_8000(2);mapper4_write_8001(5)');
+ assert.equal(e.evaluate('ppuBusRead(0x1000)'),5);
+ // Bit 6 switches the same window to TQROM RAM bank 5.
+ e.evaluate('mapper4_write_8001(0x45);mapper4_chr_write(0x1000,0xa5)');
+ assert.equal(e.evaluate('ppuBusRead(0x1000)'),0xa5);
+ // Switching back to ROM exposes ROM again and ROM writes are ignored.
+ e.evaluate('mapper4_write_8001(5);mapper4_chr_write(0x1000,0x33)');
+ assert.equal(e.evaluate('ppuBusRead(0x1000)'),5);
+ e.evaluate('mapper4_write_8001(0x45)');
+ assert.equal(e.evaluate('ppuBusRead(0x1000)'),0xa5);
+});
+
+
+test('TQROM mapper 119 accepts CHR-RAM writes through the real PPU $2007 path',()=>{
+ const e=emulator(rom(119,8,16));
+ // Select R2 -> $1000-$13FF and choose CHR-RAM bank 5 with bit 6.
+ e.evaluate('mapper4_write_8000(2);mapper4_write_8001(0x45);VRAM_ADDR=0x1000;queuePpuDataWrite(0xa5);ppuCycles+=6;servicePpuDataWrite()');
+ assert.equal(e.evaluate('ppuBusRead(0x1000)'),0xa5);
+});
+
+test('TQROM mapper 119 CHR RAM and MMC3 registers survive mapper save-state round trip',()=>{
+ const e=emulator(rom(119,8,16));
+ e.evaluate('mapper4_write_8000(2);mapper4_write_8001(0x43);mapper4_chr_write(0x1000,0x77);mapper4_write_C000(4);globalThis.__s=mmc3SaveState();tqromChrRam.fill(0);mapper4_write_8001(0);mapper4_write_C000(0);mmc3LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[MMC3.registers.CHR_BANK_2,mmc3_irq.latch,ppuBusRead(0x1000),globalThis.__s.length]'),[0x43,4,0x77,8217]);
+});
+
+test('TQROM mapper 119 has no PRG RAM window',()=>{
+ const e=emulator(rom(119,8,16));
+ e.evaluate('prgRam[0]=0x99;openBus.CPU=0x5a;checkWriteOffset(0x6000,0x33);openBus.CPU=0x5a');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x5a,0x99]);
+});
+
+
+test('loader accepts MMC3-family mapper IDs 118 and 119',()=>{
+ for(const m of [118,119]){
+   const e=emulator(rom(m,8,16));
+   assert.equal(e.evaluate('mapperNumber'),m);
+   assert.equal(e.evaluate('mmc3FamilyActive()'),true);
+ }
+});
+
 test('MMC3 save-state restores bank select and IRQ edge state',()=>{
  const e=emulator(rom(4,8,4));
  e.evaluate('mapper4_write_8000(0xc6);mapper4_write_8001(7);mapper4_write_C000(5);mapper4_write_C001();mapper4_write_E001();mmc3_irq.scanlineCounter=3;mmc3_irq.prevA12=true;mmc3_irq.lowSince=123456;irqAssert.mmc3=true;globalThis.__s=mmc3SaveState();mmc3Reset();mmc3LoadState(globalThis.__s)');

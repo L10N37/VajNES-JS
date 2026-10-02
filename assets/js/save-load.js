@@ -439,7 +439,7 @@ document.addEventListener("DOMContentLoaded", () => {
       case 2: return typeof uxromSaveState==="function"?uxromSaveState():new Uint8Array(0);
       case 3: case 9: case 10: case 11: case 66: case 79:
         return typeof extraMapperSaveState==="function"?extraMapperSaveState(mapperIdValue):new Uint8Array(0);
-      case 4: return typeof mmc3SaveState==="function"?mmc3SaveState():new Uint8Array(0);
+      case 4: case 118: case 119: return typeof mmc3SaveState==="function"?mmc3SaveState():new Uint8Array(0);
       case 19: case 210: return typeof namcoSaveState==="function"?namcoSaveState():new Uint8Array(0);
       case 5: return typeof mmc5SaveState==="function"?mmc5SaveState():new Uint8Array(0);
       case 7: return typeof axromSaveState==="function"?axromSaveState():new Uint8Array(0);
@@ -454,7 +454,7 @@ document.addEventListener("DOMContentLoaded", () => {
       case 2: if(typeof uxromLoadState==="function")uxromLoadState(bytes);return;
       case 3: case 9: case 10: case 11: case 66: case 79:
         if(typeof extraMapperLoadState==="function")extraMapperLoadState(mapperIdValue,bytes);return;
-      case 4: if(typeof mmc3LoadState==="function")mmc3LoadState(bytes);return;
+      case 4: case 118: case 119: if(typeof mmc3LoadState==="function")mmc3LoadState(bytes);return;
       case 19: case 210: if(typeof namcoLoadState==="function")namcoLoadState(bytes);return;
       case 5: if(typeof mmc5LoadState==="function")mmc5LoadState(bytes);return;
       case 7: if(typeof axromLoadState==="function")axromLoadState(bytes);return;
