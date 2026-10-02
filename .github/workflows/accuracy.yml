@@ -77,3 +77,25 @@ jobs:
           name: blargg-expanded-${{ matrix.shard }}
           path: blargg-expanded-${{ matrix.shard }}.json
 
+  singlestep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch pinned NES 6502 SingleStepTests
+        run: |
+          git init "$RUNNER_TEMP/processor-tests"
+          git -C "$RUNNER_TEMP/processor-tests" remote add origin https://github.com/SingleStepTests/ProcessorTests.git
+          git -C "$RUNNER_TEMP/processor-tests" fetch --depth 1 origin bb11756436da8fd16cce86aef63dc6725f48836f
+          git -C "$RUNNER_TEMP/processor-tests" checkout --detach FETCH_HEAD
+      - name: NES 6502 single-step regression gate
+        run: node tests/singlestep.cjs "$RUNNER_TEMP/processor-tests/nes6502/v1" singlestep-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: singlestep-results
+          path: singlestep-report.json
+
