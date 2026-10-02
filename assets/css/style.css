@@ -347,6 +347,15 @@ registersText{
 .gamepad-help { position:absolute; right:0; top:100%; width:min(320px,85vw); padding:12px 16px; background:#202124; color:#fff; border:1px solid #555; border-radius:8px; z-index:10000; font:14px/1.5 sans-serif; text-align:left; }
 .gamepad-help p { margin:0 0 10px; }
 .gamepad-help p:last-child { margin-bottom:0; }
+.gamepad-assignment { padding:9px 0; border-top:1px solid #444; }
+.gamepad-assignment:first-child { border-top:0; padding-top:0; }
+.gamepad-name { margin-bottom:6px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gamepad-assignment-buttons { display:flex; gap:6px; flex-wrap:wrap; }
+.gamepad-player-btn,.gamepad-unassign-btn { border:1px solid #666; border-radius:5px; background:#303134; color:#fff; padding:5px 8px; cursor:pointer; }
+.gamepad-player-btn:hover,.gamepad-unassign-btn:hover { background:#3c4043; }
+.gamepad-player-btn.is-assigned { background:#e8eaed; color:#202124; border-color:#e8eaed; font-weight:700; }
+.gamepad-unassign-btn:disabled { opacity:.45; cursor:default; }
+.gamepad-empty { margin:0 0 10px; color:#bdc1c6; }
 
 
 /* VAJNES ad placement */
