@@ -283,6 +283,7 @@ function checkReadOffset(address) {
           ? mmc1CpuRead(addr) & 0xFF
           : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
              mapperNumber===11 || mapperNumber===66 || mapperNumber===79 ||
+             mapperNumber===119 ||
              (mmc3FamilyActive() && !MMC3.control.prgRamEnabled))
             ? openBus.CPU & 255 : prgRam[addr - 0x6000] & 0xFF;
 
@@ -530,7 +531,7 @@ function checkWriteOffset(address, value) {
     else if (mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
     else if(addr>=0x6000 && mapperNumber!==7 && mapperNumber!==3 &&
       mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==66 && mapperNumber!==79 &&
-      (mapperNumber!==4 || (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)))
+      ((!mmc3FamilyActive() || (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)) && mapperNumber!==119))
       prgRam[addr - 0x6000] = value & 0xFF;
 
   } else {
