@@ -480,40 +480,12 @@ function checkWriteOffset(address, value) {
 
   // PPUDATA
   case 0x2007: {
-      const v = VRAM_ADDR & 0x3FFF;
-
-      if (v < 0x2000)
-      {
-          if (mapperNumber === 4)
-          {
-              if (chrIsRAM)
-                  mapper4_chr_write(v, value);
-          }
-          else if (mapperNumber === 1)
-          {
-              mmc1ChrWrite(v & 0x1FFF, value);
-          }
-          else if (chrIsRAM)
-          {
-              CHR_ROM[v & 0x1FFF] = value;
-          }
-      }
-      else if (v < 0x3F00)
-      {
-          const ntAddr = mapNT(v);
-          VRAM[ntAddr] = value;
-      }
-      else
-      {
-          const p = paletteIndex(v);
-          PALETTE_RAM[p] = value & 0x3F;
-      }
-
-      incrementPPUDataAddress();
-        if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
-
+      // CPU register write is visible now. The external PPU memory write and
+      // associated v increment occur several PPU dots later.
+      queuePpuDataWrite(VRAM_ADDR, value);
       break;
   }
+
 
   }
   openBus.PPU = value & 0xFF;
