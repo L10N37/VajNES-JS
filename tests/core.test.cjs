@@ -1020,6 +1020,14 @@ test('TQROM mapper 119 selects CHR ROM or dedicated CHR RAM with bank bit 6',()=
  assert.equal(e.evaluate('ppuBusRead(0x1000)'),0xa5);
 });
 
+
+test('TQROM mapper 119 accepts CHR-RAM writes through the real PPU $2007 path',()=>{
+ const e=emulator(rom(119,8,16));
+ // Select R2 -> $1000-$13FF and choose CHR-RAM bank 5 with bit 6.
+ e.evaluate('mapper4_write_8000(2);mapper4_write_8001(0x45);VRAM_ADDR=0x1000;queuePpuDataWrite(0xa5);ppuCycles+=6;applyQueuedPpuDataWrite()');
+ assert.equal(e.evaluate('ppuBusRead(0x1000)'),0xa5);
+});
+
 test('TQROM mapper 119 CHR RAM and MMC3 registers survive mapper save-state round trip',()=>{
  const e=emulator(rom(119,8,16));
  e.evaluate('mapper4_write_8000(2);mapper4_write_8001(0x43);mapper4_chr_write(0x1000,0x77);mapper4_write_C000(4);globalThis.__s=mmc3SaveState();tqromChrRam.fill(0);mapper4_write_8001(0);mapper4_write_C000(0);mmc3LoadState(globalThis.__s)');
