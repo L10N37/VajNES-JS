@@ -88,7 +88,8 @@ for(const group of groups){
    // deterministic $AB ATX/LAX-immediate model (equivalent to mask $FF).
    // Keep the emulator default on the RP2A03 $EE profile used by the modern
    // hardware-vector oracle; only these legacy CRC suites opt into $FF.
-   if(group.startsWith('instr_test-v5') || group.startsWith('instr_test-v3') || group==='blargg_nes_cpu_test5')
+   if(group.startsWith('instr_test-v5') || group.startsWith('instr_test-v3') ||
+      group.startsWith('nes_instr_test') || group==='blargg_nes_cpu_test5')
      e.evaluate('unstableLaxImmediateMask=0xFF');
    if(group==='other' && file==='nestest.nes'){
     e.evaluate(`(()=>{
