@@ -216,6 +216,24 @@ for(const group of groups){
      }
    }
 
+   // read_joy3/count_errors*.nes are measurement diagnostics rather than
+   // assertion ROMs. They return success after printing a counter; non-zero
+   // conflict/error counts are the phenomenon being measured. Classify only
+   // when the terminal result line is visible and no failure text was printed.
+   if(status===null && group==='read_joy3' &&
+      (file==='count_errors.nes' || file==='count_errors_fast.nes')){
+     const screen=String.fromCharCode(...e.evaluate('Array.from(VRAM)'));
+     const line=file==='count_errors.nes'
+       ? screen.match(/Conflicts:\s*(\d+)\/1000/i)
+       : screen.match(/Errors:\s*(\d+)\/1000/i);
+     const failed=/\bFailed\b|\bError\s+\d+/i.test(screen);
+     if(line && !failed){
+       classification='diagnostic';
+       status=0;
+       text=(file==='count_errors.nes'?'Conflicts: ':'Errors: ')+line[1]+'/1000 (diagnostic complete)';
+     }
+   }
+
    // The 2005 APU suite also predates the modern $6000 protocol and leaves
    // its final result in zero-page $F0, where 1 means pass.
    if(status===null && group==='blargg_apu_2005.07.30'){
