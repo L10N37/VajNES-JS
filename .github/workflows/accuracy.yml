@@ -100,6 +100,8 @@ jobs:
             opcodes: "07 13 1B 27 34 3C 47 54 5C 67 74 7C 83 8F 9C A7 B7 C3 D3 DB E3 F3 FB"
           - shard: u3
             opcodes: "0B 14 1C 2B 37 3F 4B 57 5F 6B 77 7F 87 93 9E AB BB C7 D4 DC E7 F4 FC"
+          - shard: jam
+            opcodes: "02 12 22 32 42 52 62 72 92 B2 D2 F2"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
