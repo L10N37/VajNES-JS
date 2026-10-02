@@ -174,10 +174,10 @@ function servicePpuDataWrite() {
     PALETTE_RAM[paletteIndex(v)] = value & 0x3F;
   }
 
-  if (mmc3FamilyActive()) mmc3Irq(v);
+  if (mmc3FamilyActive() || rambo1FamilyActive()) mapperChrIrqAddress(v);
   incrementPPUDataAddress();
   scheduleForcedBlankV(VRAM_ADDR, 2); // +6 data commit, +8 visible address
-  if (mmc3FamilyActive()) mmc3Irq(VRAM_ADDR);
+  if (mmc3FamilyActive() || rambo1FamilyActive()) mapperChrIrqAddress(VRAM_ADDR);
 }
 
 // Forced-blank palette output does not see CPU VRAM-address changes
@@ -1458,22 +1458,22 @@ function renderingBusTick() {
     frozenSecondaryFetchApplied = true;
   }
 
-  if(!mmc3FamilyActive() && (d<257 || d>320))return;
-  if(!renderingNow() || (sl>239 && sl!==261)){mmc3Irq(VRAM_ADDR);return;}
+  if(!(mmc3FamilyActive()||rambo1FamilyActive()) && (d<257 || d>320))return;
+  if(!renderingNow() || (sl>239 && sl!==261)){mapperChrIrqAddress(VRAM_ADDR);return;}
   if(PPUclock.dot>=336){
-    if(PPUclock.dot===337 || PPUclock.dot===339)mmc3Irq(0x2000|(VRAM_ADDR&0xfff));
+    if(PPUclock.dot===337 || PPUclock.dot===339)mapperChrIrqAddress(0x2000|(VRAM_ADDR&0xfff));
     return;
   }
   if(!(d&1) || d===0)return;
   if(d>=257 && d<=320) {
     const slot=(d-257)>>3,phase=(d-257)&7;
-    if(phase<4)mmc3Irq(0x2000|(VRAM_ADDR&0xfff));
+    if(phase<4)mapperChrIrqAddress(0x2000|(VRAM_ADDR&0xfff));
     else {
       const address=slot<spritesNext.count?
         spritePatternAddress(spritesNext.tile[slot],spritesNext.attr[slot],spritesNext.row[slot]):
         spritePatternAddress(255,255,0);
       const fetchAddress=address+(phase===6?8:0);
-      mmc3Irq(fetchAddress);
+      mapperChrIrqAddress(fetchAddress);
       if(slot<spritesNext.count) {
         let data=mapperNumber===5?mmc5ChrRead(fetchAddress,true):ppuBusRead(fetchAddress);
         if(spritesNext.attr[slot]&0x40)data=reverseByte(data);
@@ -1482,8 +1482,8 @@ function renderingBusTick() {
     }
   } else if(d<=256 || d>=321) {
     const phase=(d-1)&7;
-    if(d>=337 || phase<4)mmc3Irq(0x2000|(VRAM_ADDR&0xfff));
-    else mmc3Irq((PPUCTRL&16?0x1000:0)+(background.ntByte<<4)+
+    if(d>=337 || phase<4)mapperChrIrqAddress(0x2000|(VRAM_ADDR&0xfff));
+    else mapperChrIrqAddress((PPUCTRL&16?0x1000:0)+(background.ntByte<<4)+
       ((VRAM_ADDR>>12)&7)+(phase===6?8:0));
   }
 }
