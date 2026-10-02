@@ -279,6 +279,8 @@ function checkReadOffset(address) {
           ? namcoPrgRead(addr) & 0xFF
         : (mapperNumber===24 || mapperNumber===26)
           ? vrc6CpuRead(addr) & 0xFF
+        : mapperNumber===69
+          ? fme7CpuRead(addr) & 0xFF
         : mapperNumber === 1
           ? mmc1CpuRead(addr) & 0xFF
           : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
@@ -538,6 +540,7 @@ function checkWriteOffset(address, value) {
     // Mapper registers decode writes across the full $8000–$FFFF range.
     if (mapperNumber === 1) mmc1CpuWrite(addr, value);
     else if (mapperNumber===19 || mapperNumber===210) namcoWrite(addr,value);
+    else if (mapperNumber===69) fme7CpuWrite(addr,value);
     else mapperWritePRG(addr, value);
   }
 
@@ -566,6 +569,7 @@ function mapperReadPRG(addr) {
   if (mapperNumber===7) return axromRead(addr);
   if (mapperNumber===2) return uxromRead(addr);
   if (mapperNumber===24 || mapperNumber===26) return vrc6CpuRead(addr);
+  if (mapperNumber===69) return fme7CpuRead(addr);
   const extra = extraMapperReadPRG(addr);
   return extra === null ? prgRom[addr - 0x8000] : extra;
 }
@@ -575,6 +579,7 @@ function mapperWritePRG(addr, value) {
   else if(mapperNumber===7) axromWrite(addr,value);
   else if(mapperNumber===2) uxromWrite(addr,value);
   else if(mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
+  else if(mapperNumber===69) fme7CpuWrite(addr,value);
   else extraMapperWritePRG(addr,value);
 }
 
