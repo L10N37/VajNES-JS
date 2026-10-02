@@ -39,9 +39,11 @@ const groupsByShard={
  ],
  legacy:[
   'blargg_apu_2005.07.30',
-  'blargg_nes_cpu_test5',
   'mmc3_test',
   'instr_test-v3/rom_singles'
+ ],
+ legacycpu:[
+  'blargg_nes_cpu_test5'
  ]
 };
 const groups=groupsByShard[shard];if(!groups)throw Error('Unknown BLARGG_SHARD '+shard);
@@ -60,11 +62,15 @@ for(const group of groups){
    if(group==='blargg_nes_cpu_test5'){
     e.evaluate(`(()=>{
       globalThis.__testSerialText='';
+      globalThis.__testSerialWrites=0;
+      globalThis.__testSerialRaw='';
       let state=0,byte=0,bitIndex=0;
       const original=checkWriteOffset;
       checkWriteOffset=(address,value)=>{
         if((address&0xffff)===0x4016){
           const bit=value&1;
+          globalThis.__testSerialWrites++;
+          if(globalThis.__testSerialRaw.length<512)globalThis.__testSerialRaw+=String(bit);
           if(state===0){
             if(bit===0){state=1;byte=0;bitIndex=0;}
           }else if(state===1){
@@ -240,6 +246,13 @@ for(const group of groups){
   const result={rom:group+'/'+file,sha256:crypto.createHash('sha256').update(rom).digest('hex'),status,text,error,classification,cycles:st.cpuCycles};
   if(status===null&&!error){
    result.pc=st.pc;result.f0=st.ram[0xF0];result.f8=st.ram[0xF8];
+   if(group==='blargg_nes_cpu_test5'){
+    const pcOff=16+((st.pc-0x8000)&0x7fff);
+    result.pcBytes=Array.from(rom.slice(Math.max(16,pcOff-8),Math.min(16+0x8000,pcOff+16))).map(v=>v.toString(16).padStart(2,'0')).join(' ');
+    result.serialWrites=e.evaluate('globalThis.__testSerialWrites||0');
+    result.serialRaw=e.evaluate('globalThis.__testSerialRaw||""');
+    result.serialText=e.evaluate('globalThis.__testSerialText||""');
+   }
    if(group==='dmc_tests'){
     const prgBanks=rom[4], prgSize=prgBanks*0x4000;
     const cpuBase=prgSize===0x4000?0xC000:0x8000;
