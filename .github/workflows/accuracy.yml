@@ -55,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [cpu, ppu, apu, extra, reset, legacy]
+        shard: [cpu, ppu, apu, extra, reset, legacy, legacycpu]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
