@@ -144,6 +144,19 @@ function createEmulator(audio) {
         }
       },
       buttons(value) {joypad1Buttons=value;},
+      runFrames(count) {
+        cpuRunning=true;
+        const target=PPUclock.frame+count;
+        let idleSteps=0;
+        while(cpuRunning && PPUclock.frame<target) {
+          const before=cpuCycles;
+          window.step();
+          if(cpuCycles===before) {
+            if(!cpuRunning || ++idleSteps>2) throw new Error('CPU made no progress');
+          } else idleSteps=0;
+        }
+      },
+      frameIndices:()=>Uint8Array.from(paletteIndexFrame),
       state:()=>({cpuCycles,pc:CPUregisters.PC,frame:PPUclock.frame,ram:Array.from(systemMemory)}),
       singleStepFlat,
       evaluate:expression=>eval(expression)
