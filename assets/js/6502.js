@@ -3672,8 +3672,10 @@ function STX_ABS() {
 // LAX #imm — 2 cycles
 function LAX_IMM() {
   // C1: opcode fetch
-  // C2: fetch immediate, load A and X, set flags
-  const val = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  // C2: unstable LAX/LXA immediate on RP2A03. Like XAA, this profile
+  // combines the old accumulator with the $EE internal-bus mask.
+  const imm = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  const val = ((CPUregisters.A | 0xEE) & imm) & 0xFF;
   CPUregisters.A = CPUregisters.X = val;
   CPUregisters.P.Z = (val === 0) ? 1 : 0;
   CPUregisters.P.N = (val >>> 7) & 1;
@@ -5322,12 +5324,13 @@ function ARR_IMM() {
 
 function XAA_IMM() {
   // C1: opcode
-  // C2: fetch imm & compute
-  let value = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
-  CPUregisters.A = CPUregisters.X & value;
+  // C2: RP2A03 unstable XAA profile used by hardware test vectors.
+  // The internal data-bus "magic" term is $EE on this CPU profile.
+  const value = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
+  CPUregisters.A = ((CPUregisters.A | 0xEE) & CPUregisters.X & value) & 0xFF;
 
   CPUregisters.P.Z = (CPUregisters.A === 0) ? 1 : 0;
-  CPUregisters.P.N = (CPUregisters.A & 0x80) ? 1 : 0;
+  CPUregisters.P.N = (CPUregisters.A >>> 7) & 1;
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
