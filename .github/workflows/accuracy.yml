@@ -87,12 +87,13 @@ jobs:
           node-version: '22'
       - name: Fetch pinned NES 6502 SingleStepTests
         run: |
-          git init "$RUNNER_TEMP/processor-tests"
-          git -C "$RUNNER_TEMP/processor-tests" remote add origin https://github.com/SingleStepTests/ProcessorTests.git
-          git -C "$RUNNER_TEMP/processor-tests" fetch --depth 1 origin bb11756436da8fd16cce86aef63dc6725f48836f
-          git -C "$RUNNER_TEMP/processor-tests" checkout --detach FETCH_HEAD
+          mkdir -p "$RUNNER_TEMP/nes6502-v1"
+          base="https://raw.githubusercontent.com/SingleStepTests/ProcessorTests/bb11756436da8fd16cce86aef63dc6725f48836f/nes6502/v1"
+          for op in 69 8d a9 d0; do
+            curl --fail --location --silent --show-error "$base/$op.json" -o "$RUNNER_TEMP/nes6502-v1/$op.json"
+          done
       - name: NES 6502 single-step regression gate
-        run: node tests/singlestep.cjs "$RUNNER_TEMP/processor-tests/nes6502/v1" singlestep-report.json
+        run: node tests/singlestep.cjs "$RUNNER_TEMP/nes6502-v1" singlestep-report.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
