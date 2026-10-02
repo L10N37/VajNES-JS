@@ -681,11 +681,9 @@ function STA_INDX() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle();
 
-  // C3: add X, dummy read from zp+X
+  // C3: add X internally; external bus reads original zp.
   const zpaddr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
-  
-  checkReadOffset(zpaddr); 
-  
+  checkReadOffset(zp);
   consumeCycle();
 
   // C4: fetch low pointer byte
@@ -1344,7 +1342,8 @@ function ADC_INDX() { // 6 cycles
   const zp = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(zp);
+  consumeCycle(); // C3 dummy read/index add
 
   const lo = checkReadOffset(ptr) & 0xFF;
   consumeCycle(); // C4
@@ -1560,7 +1559,8 @@ function AND_INDX() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(zp);
+  consumeCycle(); // C3 dummy read/index add
 
   const lo = checkReadOffset(ptr) & 0xFF;
   consumeCycle(); // C4
@@ -1935,7 +1935,8 @@ function ORA_INDX() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(zp);
+  consumeCycle(); // C3 dummy read/index add
 
   const lo = checkReadOffset(ptr) & 0xFF;
   consumeCycle(); // C4
@@ -2159,10 +2160,8 @@ function CMP_INDX() { // 6 cycles
 
   const ptr = (nn + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read
-  
-  checkReadOffset(ptr);
-  
+  // C3: dummy read from original zero-page operand.
+  checkReadOffset(nn);
   consumeCycle();
 
   // C4: fetch low pointer byte
@@ -2698,7 +2697,8 @@ function EOR_INDX() {
   const zp = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(zp);
+  consumeCycle(); // C3 dummy read/index add
 
   const lo = checkReadOffset(ptr) & 0xFF;
   consumeCycle(); // C4
@@ -3051,7 +3051,8 @@ function SBC_INDX() { // 6 cycles
   const zpbase = checkReadOffset(CPUregisters.PC + 1);
   consumeCycle(); // C2
   const zpaddr = (zpbase + (CPUregisters.X & 0xFF)) & 0xFF;
-  consumeCycle(); // C3
+  checkReadOffset(zpbase);
+  consumeCycle(); // C3 dummy read/index add
 
   const lo = checkReadOffset(zpaddr) & 0xFF;
   consumeCycle(); // C4
