@@ -360,3 +360,35 @@ registersText{
 @media (min-width:1500px){body>main{padding-right:188px}}
 @media (max-width:1499px){.ad-slot-rail{display:none}}
 @media (max-width:760px){.ad-slot-horizontal{display:none}}
+
+/* About / accuracy project status */
+.about-modal{display:none;position:fixed;inset:0;z-index:20000;background:rgba(0,0,0,.76);padding:28px;overflow:auto}
+.about-modal.is-open{display:flex;align-items:flex-start;justify-content:center}
+.about-card{position:relative;width:min(760px,calc(100vw - 36px));margin:auto;background:#17191d;color:#f1f3f4;border:1px solid #4b4f56;border-radius:14px;padding:26px 30px;box-shadow:0 18px 60px rgba(0,0,0,.55);font:15px/1.55 sans-serif}
+.about-card h1{margin:0;font-size:34px}
+.about-card h2{margin:22px 0 8px;font-size:19px}
+.about-card ul{margin:8px 0;padding-left:22px}
+.about-card a{color:#8ab4f8}
+.about-tagline{margin:3px 0 16px;font-size:18px;font-weight:600}
+.about-status{display:inline-block;padding:7px 11px;border:1px solid #5f6368;border-radius:8px;background:#22252a}
+.about-grid{display:grid;grid-template-columns:max-content 1fr;gap:7px 14px;align-items:center}
+.about-grid kbd{display:inline-block;min-width:24px;padding:2px 6px;border:1px solid #777;border-bottom-width:2px;border-radius:5px;background:#2c3036;color:#fff;text-align:center;font:13px monospace}
+.about-note{color:#bdc1c6;font-size:13px}
+.about-close{position:absolute;right:14px;top:10px;border:0;background:transparent;color:#fff;font-size:32px;cursor:pointer}
+.accuracy-card{width:min(860px,calc(100vw - 36px))}
+.accuracy-hero{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid #5f6368;border-radius:9px;background:#22252a}
+.accuracy-hero strong{font-size:18px}
+.accuracy-hero span{color:#bdc1c6;font-size:13px}
+.accuracy-score{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:10px 12px;border-left:4px solid #8ab4f8;background:#202328}
+.accuracy-score strong{font-size:22px}
+.accuracy-score span{color:#bdc1c6}
+.accuracy-grid{display:grid;grid-template-columns:minmax(180px,1fr) minmax(170px,auto);gap:7px 18px;padding:8px 0}
+.accuracy-grid strong{text-align:right}
+.accuracy-list{line-height:1.65}
+@media(max-width:620px){
+  .about-card{padding:22px 18px}
+  .about-grid,.accuracy-grid{grid-template-columns:1fr}
+  .about-grid span:nth-child(odd){margin-top:5px}
+  .accuracy-grid strong{text-align:left;margin-bottom:5px}
+}
+
