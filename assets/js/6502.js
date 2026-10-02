@@ -104,6 +104,9 @@ function powerOnCPU() {
   ppuCpu2007ReadUntil=-1;
   ppuCpu2006HybridUntil=-1;
   ppuCpu2006HybridLow=0;
+  forcedBlankDisplayV=0;
+  forcedBlankPendingV=0;
+  forcedBlankApplyAt=-1;
 
   secOAMAddr=0;
   secondaryOAM.fill(0xFF);
