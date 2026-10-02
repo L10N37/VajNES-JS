@@ -23,8 +23,8 @@ function fme7Init(){
 
 function fme7SetMirroring(value){
   switch(value&3){
-    case 0:MIRRORING='horizontal';break;
-    case 1:MIRRORING='vertical';break;
+    case 0:MIRRORING='vertical';break;
+    case 1:MIRRORING='horizontal';break;
     case 2:MIRRORING='single0';break;
     case 3:MIRRORING='single1';break;
   }
