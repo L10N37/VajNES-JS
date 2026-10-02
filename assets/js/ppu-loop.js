@@ -110,6 +110,24 @@ let ppuCpu2007ReadUntil = -1;
 let ppuCpu2006HybridUntil = -1;
 let ppuCpu2006HybridLow = 0;
 
+// Forced-blank palette output does not see CPU VRAM-address changes
+// immediately. Hardware measurements put a completed $2006 pair at ~5 PPU
+// dots and a $2007 increment at ~8 dots from the CPU access start.
+let forcedBlankDisplayV = 0;
+let forcedBlankPendingV = 0;
+let forcedBlankApplyAt = -1;
+function scheduleForcedBlankV(v, delayDots) {
+  forcedBlankPendingV = v & 0x3FFF;
+  forcedBlankApplyAt = ppuCycles + delayDots;
+}
+function visibleForcedBlankV() {
+  if (forcedBlankApplyAt >= 0 && ppuCycles >= forcedBlankApplyAt) {
+    forcedBlankDisplayV = forcedBlankPendingV & 0x3FFF;
+    forcedBlankApplyAt = -1;
+  }
+  return forcedBlankDisplayV & 0x3FFF;
+}
+
 function presentFrame() {
   if(typeof NESAudio!=="undefined") NESAudio.frame(cpuCycles);
   blitNESFramePaletteIndex(paletteIndexFrame, NES_W, NES_H);
@@ -589,8 +607,9 @@ function emitPixelHardwarePalette() {
   // universal backdrop color. A hardware quirk used by palette test ROMs
   // outputs the palette RAM entry addressed by v when v is in $3F00-$3FFF.
   const renderingDisabled = (ppuEffectiveMask() & 0x18) === 0;
-  if (renderingDisabled && (VRAM_ADDR & 0x3F00) === 0x3F00) {
-    bgPalIndex6 = ppuBusRead(0x3F00 | (VRAM_ADDR & 0x1F)) & 0x3F;
+  const forcedV = visibleForcedBlankV();
+  if (renderingDisabled && (forcedV & 0x3F00) === 0x3F00) {
+    bgPalIndex6 = ppuBusRead(0x3F00 | (forcedV & 0x1F)) & 0x3F;
   } else if (bgColor2 === 0) {
     bgPalIndex6 = PALETTE_RAM[0] & 0x3F;
   } else {
