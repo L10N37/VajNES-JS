@@ -29,16 +29,31 @@ let ppumaskRenderHoldBits = 0;
 let ppumaskRenderApplyAt = -1;
 let ppumaskOAMHoldBits = 0;
 let ppumaskOAMApplyAt = -1;
+let ppumaskEmphasisHoldBits = 0;
+let ppumaskEmphasisApplyAt = -1;
 
 function ppuEffectiveMask() {
+  let mask = PPUMASK & 0xFF;
+
   if (ppumaskRenderApplyAt >= 0) {
     if (ppuCycles < ppumaskRenderApplyAt)
-      return (PPUMASK & ~0x18) | (ppumaskRenderHoldBits & 0x18);
-
-    ppumaskRenderApplyAt = -1;
-    ppumaskRenderHoldBits = PPUMASK & 0x18;
+      mask = (mask & ~0x18) | (ppumaskRenderHoldBits & 0x18);
+    else {
+      ppumaskRenderApplyAt = -1;
+      ppumaskRenderHoldBits = PPUMASK & 0x18;
+    }
   }
-  return PPUMASK & 0xFF;
+
+  if (ppumaskEmphasisApplyAt >= 0) {
+    if (ppuCycles < ppumaskEmphasisApplyAt)
+      mask = (mask & ~0xE0) | (ppumaskEmphasisHoldBits & 0xE0);
+    else {
+      ppumaskEmphasisApplyAt = -1;
+      ppumaskEmphasisHoldBits = PPUMASK & 0xE0;
+    }
+  }
+
+  return mask & 0xFF;
 }
 
 function ppuOAMMaskBits() {
@@ -53,10 +68,13 @@ function ppuOAMMaskBits() {
 }
 
 function ppuWriteMask(value) {
-  const effectiveBefore = ppuEffectiveMask() & 0x18;
+  const effectiveMaskBefore = ppuEffectiveMask();
+  const effectiveBefore = effectiveMaskBefore & 0x18;
+  const emphasisBefore = effectiveMaskBefore & 0xE0;
   const oamBefore = ppuOAMMaskBits();
   PPUMASK = value & 0xFF;
   const requested = PPUMASK & 0x18;
+  const requestedEmphasis = PPUMASK & 0xE0;
 
   if (requested === oamBefore) {
     ppumaskOAMHoldBits = requested;
@@ -74,6 +92,14 @@ function ppuWriteMask(value) {
   } else {
     ppumaskRenderHoldBits = effectiveBefore;
     ppumaskRenderApplyAt = ppuCycles + 4;
+  }
+
+  if (requestedEmphasis === emphasisBefore) {
+    ppumaskEmphasisHoldBits = requestedEmphasis;
+    ppumaskEmphasisApplyAt = -1;
+  } else {
+    ppumaskEmphasisHoldBits = emphasisBefore;
+    ppumaskEmphasisApplyAt = ppuCycles + 3;
   }
 }
 
@@ -142,8 +168,7 @@ function servicePpuDataWrite() {
 
   if (mapperNumber === 4) mmc3Irq(v);
   incrementPPUDataAddress();
-  forcedBlankDisplayV = VRAM_ADDR & 0x3FFF;
-  forcedBlankApplyAt = -1;
+  scheduleForcedBlankV(VRAM_ADDR, 2); // +6 data commit, +8 visible address
   if (mapperNumber === 4) mmc3Irq(VRAM_ADDR);
 }
 
@@ -675,7 +700,7 @@ function emitPixelHardwarePalette() {
 
   const idx = (y << 8) + x;
   paletteIndexFrame[idx] = finalIndex6 & 0x3F;
-  paletteEmphasisFrame[idx] = (PPUMASK >>> 5) & 0x07;
+  paletteEmphasisFrame[idx] = (ppuEffectiveMask() >>> 5) & 0x07;
 }
 
 // ---- Scroll / VRAM address ops ----
