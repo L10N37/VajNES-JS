@@ -491,10 +491,9 @@ function LDA_INDX() {  // (zp,X)
   // Effective pointer address (wrap in zero page)
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
 
-  // C3: dummy read at zp+X
-  
-  checkReadOffset(ptr);
-  
+  // C3: dummy read from the unindexed zero-page operand. The X add
+  // happens internally during this cycle; the external bus still sees zp.
+  checkReadOffset(zp);
   consumeCycle();
 
   // C4: fetch low pointer byte
@@ -968,7 +967,7 @@ function JMP_ABS() {
 function JMP_IND() {
   const pc0 = CPUregisters.PC & 0xFFFF;
 
-  const opc = checkReadOffset(pc0) & 0xFF;                   // C1
+  // C1 opcode fetch is performed by window.step().
   const ptrLo = checkReadOffset((pc0 + 1) & 0xFFFF) & 0xFF;  consumeCycle(); // C2
   const ptrHi = checkReadOffset((pc0 + 2) & 0xFFFF) & 0xFF;  consumeCycle(); // C3
   const ptr   = (ptrHi << 8) | ptrLo;
@@ -1657,7 +1656,8 @@ function ASL_ZP() { // 5 cycles
 function ASL_ZPX() { // 6 cycles
   // C1
   const op = checkReadOffset(CPUregisters.PC + 1);  consumeCycle(); // C2
-  const addr = (op + (CPUregisters.X & 0xFF)) & 0xFF; consumeCycle(); // C3 (index add)
+  const addr = (op + (CPUregisters.X & 0xFF)) & 0xFF;
+  checkReadOffset(op);                              consumeCycle(); // C3 dummy read/index add
 
   const old = checkReadOffset(addr) & 0xFF;        consumeCycle(); // C4 (read)
   checkWriteOffset(addr, old);                     consumeCycle(); // C5 (dummy write)
