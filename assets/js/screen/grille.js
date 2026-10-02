@@ -146,7 +146,7 @@
 (function wireModal() {
   const modal = document.querySelector('.scanlinesModal');
   const okBtn = document.querySelector('#ok-button');
-  const openLink = document.querySelector('li:nth-child(2)'); // if you have a menu link
+  const openLink = systemScreen && systemScreen.querySelector('.optionsBar li:nth-child(2)');
   openLink?.addEventListener('click', () => { if (modal) modal.style.display = 'block'; });
   okBtn   ?.addEventListener('click', () => { if (modal) modal.style.display = 'none'; });
 })();
