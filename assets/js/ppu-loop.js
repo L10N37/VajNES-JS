@@ -584,7 +584,14 @@ function emitPixelHardwarePalette() {
   if (bgOn && x < 8 && (PPUMASK & MASK_BG_SHOW_LEFT8) === 0) bgColor2 = 0;
 
   let bgPalIndex6;
-  if (bgColor2 === 0) {
+
+  // With both background and sprites disabled, the PPU normally outputs the
+  // universal backdrop color. A hardware quirk used by palette test ROMs
+  // outputs the palette RAM entry addressed by v when v is in $3F00-$3FFF.
+  const renderingDisabled = (PPUMASK & 0x18) === 0;
+  if (renderingDisabled && (VRAM_ADDR & 0x3F00) === 0x3F00) {
+    bgPalIndex6 = ppuBusRead(0x3F00 | (VRAM_ADDR & 0x1F)) & 0x3F;
+  } else if (bgColor2 === 0) {
     bgPalIndex6 = PALETTE_RAM[0] & 0x3F;
   } else {
     const palLow5 = ((bgAttr2 << 2) | bgColor2) & 0x1F;
@@ -612,6 +619,7 @@ function emitPixelHardwarePalette() {
 
   const idx = (y << 8) + x;
   paletteIndexFrame[idx] = finalIndex6 & 0x3F;
+  paletteEmphasisFrame[idx] = (PPUMASK >>> 5) & 0x07;
 }
 
 // ---- Scroll / VRAM address ops ----
