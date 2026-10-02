@@ -849,6 +849,76 @@ test('legacy Sunsoft mapper 69 can be marked uncertain instead of assumed audio'
  assert.equal(e.detectExpansion(bytes,69,false).confidence,'possible');
 });
 
+
+test('FME-7 mapper 69 maps three switchable 8K PRG banks plus fixed last bank',()=>{
+ const bytes=rom(69,16,16);
+ for(let b=0;b<32;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
+ bytes[16+16*0x4000-4]=0;bytes[16+16*0x4000-3]=0x80;
+ const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,9);checkWriteOffset(0xa000,3);checkWriteOffset(0x8000,10);checkWriteOffset(0xa000,5);checkWriteOffset(0x8000,11);checkWriteOffset(0xa000,7)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xa000),checkReadOffset(0xc000),checkReadOffset(0xe000)]'),[3,5,7,31]);
+});
+
+test('FME-7 mapper 69 maps eight independent 1K CHR banks',()=>{
+ const bytes=rom(69,16,16);
+ for(let b=0;b<128;b++)bytes.fill(b&255,16+16*0x4000+b*0x400,16+16*0x4000+(b+1)*0x400);
+ const e=emulator(bytes);
+ e.evaluate('[0,1,2,3,4,5,6,7].forEach((cmd,i)=>{checkWriteOffset(0x8000,cmd);checkWriteOffset(0xa000,17+i)})');
+ assert.deepEqual(e.evaluate('[0,1,2,3,4,5,6,7].map(i=>ppuBusRead(i*0x400))'),[17,18,19,20,21,22,23,24]);
+});
+
+test('FME-7 $6000 window switches ROM, enabled RAM and disabled open bus',()=>{
+ const bytes=rom(69,16,16);
+ for(let b=0;b<32;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
+ bytes[16+16*0x4000-4]=0;bytes[16+16*0x4000-3]=0x80;
+ const e=emulator(bytes);
+ // command 8, ROM bank 6
+ e.evaluate('checkWriteOffset(0x8000,8);checkWriteOffset(0xa000,6)');
+ assert.equal(e.evaluate('checkReadOffset(0x6000)'),6);
+ // RAM selected + enabled
+ e.evaluate('checkWriteOffset(0xa000,0xc0);checkWriteOffset(0x6000,0x5a)');
+ assert.equal(e.evaluate('checkReadOffset(0x6000)'),0x5a);
+ // RAM selected but disabled: open bus and no write
+ e.evaluate('checkWriteOffset(0xa000,0x40);openBus.CPU=0x33;checkWriteOffset(0x6000,0xaa);openBus.CPU=0x33');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x33,0x5a]);
+});
+
+test('FME-7 mirroring command selects vertical horizontal and both single screens',()=>{
+ const e=emulator(rom(69,16,16));
+ for(const [value,want] of [[0,'vertical'],[1,'horizontal'],[2,'single0'],[3,'single1']]){
+  e.evaluate(`checkWriteOffset(0x8000,12);checkWriteOffset(0xa000,${value})`);
+  assert.equal(e.evaluate('MIRRORING'),want);
+ }
+});
+
+test('FME-7 IRQ decrements each CPU cycle, asserts on 0000 to FFFF and acknowledges on command D',()=>{
+ const e=emulator(rom(69,16,16));
+ e.evaluate('checkWriteOffset(0x8000,14);checkWriteOffset(0xa000,1);checkWriteOffset(0x8000,15);checkWriteOffset(0xa000,0);checkWriteOffset(0x8000,13);checkWriteOffset(0xa000,0x81)');
+ assert.deepEqual(e.evaluate('[fme7IrqCounter,fme7IrqCounterEnable,fme7IrqEnable,irqAssert.fme7]'),[1,true,true,false]);
+ e.evaluate('consumeCycle()');
+ assert.deepEqual(e.evaluate('[fme7IrqCounter,irqAssert.fme7]'),[0,false]);
+ e.evaluate('consumeCycle()');
+ assert.deepEqual(e.evaluate('[fme7IrqCounter,irqAssert.fme7]'),[0xffff,true]);
+ e.evaluate('checkWriteOffset(0x8000,13);checkWriteOffset(0xa000,0x00)');
+ assert.deepEqual(e.evaluate('[fme7IrqCounterEnable,fme7IrqEnable,irqAssert.fme7]'),[false,false,false]);
+});
+
+test('FME-7 mapper forwards Sunsoft 5B register select and data writes',()=>{
+ const writes=[];
+ const audio={reset(){},unlock(){},write(){},quarter(){},half(){},dmc(){},frame(){},pause(){},setExpansion(){},
+   expansionWrite(cycle,address,value){writes.push([address,value]);}};
+ const e=createEmulator(audio);e.load(rom(69,16,16));
+ e.evaluate('checkWriteOffset(0xc000,0x08);checkWriteOffset(0xe000,0x0f)');
+ assert.deepEqual(writes.slice(-2),[[0xc000,0x08],[0xe000,0x0f]]);
+});
+
+test('FME-7 save-state restores banking mirroring and IRQ state',()=>{
+ const e=emulator(rom(69,16,16));
+ e.evaluate('fme7Command=7;fme7Chr.set([1,2,3,4,5,6,7,8]);fme7Prg.set([9,10,11]);fme7Bank6000=0xc0;fme7IrqCounter=0x3456;fme7IrqCounterEnable=true;fme7IrqEnable=true;irqAssert.fme7=true;MIRRORING="single1";globalThis.__s=fme7SaveState();fme7Init();fme7LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[fme7Command,Array.from(fme7Chr),Array.from(fme7Prg),fme7Bank6000,fme7IrqCounter,fme7IrqCounterEnable,fme7IrqEnable,irqAssert.fme7,MIRRORING]'),
+ [7,[1,2,3,4,5,6,7,8],[9,10,11],0xc0,0x3456,true,true,true,'single1']);
+});
+
 test('VRC6 mapper 24 maps 16K/8K PRG banks and fixed last bank',()=>{
  const bytes=rom(24,16,32);
  for(let b=0;b<32;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
@@ -1024,7 +1094,7 @@ test('TQROM mapper 119 selects CHR ROM or dedicated CHR RAM with bank bit 6',()=
 test('TQROM mapper 119 accepts CHR-RAM writes through the real PPU $2007 path',()=>{
  const e=emulator(rom(119,8,16));
  // Select R2 -> $1000-$13FF and choose CHR-RAM bank 5 with bit 6.
- e.evaluate('mapper4_write_8000(2);mapper4_write_8001(0x45);VRAM_ADDR=0x1000;queuePpuDataWrite(0xa5);ppuCycles+=6;servicePpuDataWrite()');
+ e.evaluate('mapper4_write_8000(2);mapper4_write_8001(0x45);VRAM_ADDR=0x1000;queuePpuDataWrite(VRAM_ADDR,0xa5);ppuCycles+=6;servicePpuDataWrite()');
  assert.equal(e.evaluate('ppuBusRead(0x1000)'),0xa5);
 });
 
