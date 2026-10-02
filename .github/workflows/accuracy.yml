@@ -115,7 +115,7 @@ jobs:
           base="https://raw.githubusercontent.com/SingleStepTests/ProcessorTests/bb11756436da8fd16cce86aef63dc6725f48836f/nes6502/v1"
           for op in $SINGLESTEP_OPCODES; do
             op=$(echo "$op" | tr '[:upper:]' '[:lower:]')
-            curl --fail --location --silent --show-error "$base/$op.json" -o "$RUNNER_TEMP/nes6502-v1/$op.json"
+            curl --fail --location --silent --show-error --retry 5 --retry-all-errors --retry-delay 1 "$base/$op.json" -o "$RUNNER_TEMP/nes6502-v1/$op.json"
           done
       - name: NES 6502 single-step regression gate
         env:
