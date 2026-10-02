@@ -178,10 +178,6 @@ const NESGamepads=(()=>{
       status('No controller detected. Pair in system Bluetooth settings, then press a button.');
     }
 
-    if(newlyConnected){
-      const menu=document.querySelector?.('.gamepad-menu');
-      if(menu)menu.open=true;
-    }
   }
 
   window.addEventListener('gamepadconnected',update);
