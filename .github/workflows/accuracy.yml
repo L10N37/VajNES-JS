@@ -80,23 +80,40 @@ jobs:
   singlestep:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: ss0
+            opcodes: "00 08 0E 16 1E 25 2A 30 38 40 48 4D 55 5D 65 6A 70 78 81 88 8E 95 9A A2 A8 AD B4 B9 BE C5 CA D0 D8 E0 E6 EC F1 F9"
+          - shard: ss1
+            opcodes: "01 09 10 18 20 26 2C 31 39 41 49 4E 56 5E 66 6C 71 79 84 8A 90 96 9D A4 A9 AE B5 BA C0 C6 CC D1 D9 E1 E8 ED F5 FD"
+          - shard: ss2
+            opcodes: "05 0A 11 19 21 28 2D 35 3D 45 4A 50 58 60 68 6D 75 7D 85 8C 91 98 A0 A5 AA B0 B6 BC C1 C8 CD D5 DD E4 E9 EE F6 FE"
+          - shard: ss3
+            opcodes: "06 0D 15 1D 24 29 2E 36 3E 46 4C 51 59 61 69 6E 76 7E 86 8D 94 99 A1 A6 AC B1 B8 BD C4 C9 CE D6 DE E5 EA F0 F8"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - name: Fetch pinned NES 6502 SingleStepTests
+        env:
+          SINGLESTEP_OPCODES: ${{ matrix.opcodes }}
         run: |
           mkdir -p "$RUNNER_TEMP/nes6502-v1"
           base="https://raw.githubusercontent.com/SingleStepTests/ProcessorTests/bb11756436da8fd16cce86aef63dc6725f48836f/nes6502/v1"
-          for op in 00 06 08 0a 0e 16 1e 20 28 2c 40 48 4c 60 68 69 6c 8d 91 9d a1 a9 b1 b9 bd c9 d0 e6 e9 f0 fe; do
+          for op in $SINGLESTEP_OPCODES; do
+            op=$(echo "$op" | tr '[:upper:]' '[:lower:]')
             curl --fail --location --silent --show-error "$base/$op.json" -o "$RUNNER_TEMP/nes6502-v1/$op.json"
           done
       - name: NES 6502 single-step regression gate
-        run: node tests/singlestep.cjs "$RUNNER_TEMP/nes6502-v1" singlestep-report.json
+        env:
+          SINGLESTEP_OPCODES: ${{ matrix.opcodes }}
+        run: node tests/singlestep.cjs "$RUNNER_TEMP/nes6502-v1" "singlestep-${{ matrix.shard }}.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: singlestep-results
-          path: singlestep-report.json
+          name: singlestep-${{ matrix.shard }}
+          path: singlestep-${{ matrix.shard }}.json
 
