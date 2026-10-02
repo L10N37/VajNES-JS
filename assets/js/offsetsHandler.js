@@ -219,8 +219,8 @@ function checkReadOffset(address) {
           } else if (vv < 0x2000) {
             VRAM_DATA = cartridgeChrRead(vv) & 0xFF;
           } else {
-            if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(vv)&0xff;
-            else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(vv)&0xff;
+            if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(vv)&0xFF;
+            else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(vv)&0xFF;
             else VRAM_DATA = VRAM[mapNT(vv)] & 0xFF;
           }
         } else {
@@ -232,14 +232,15 @@ function checkReadOffset(address) {
           if (renderRead) {
             VRAM_DATA = ppuRenderingFetchRead() & 0xFF;
           } else {
-            const ntMirror = vv & 0x2FFF;
-            if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(ntMirror)&0xff;
-            else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(ntMirror)&0xff;
+            const ntMirror=vv&0x2FFF;
+            if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(ntMirror)&0xFF;
+            else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(ntMirror)&0xFF;
             else VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
           }
         }
 
         incrementPPUDataAddress();
+      scheduleForcedBlankV(VRAM_ADDR, 8);
         if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
 
         raw = ret & 0xFF;
@@ -266,7 +267,7 @@ function checkReadOffset(address) {
   } else if (addr < 0x6000) {
 
     raw = mapperNumber===5 ? mmc5CpuRead(addr)&0xFF :
-      mapperNumber===19 ? namcoReadLow(addr)&0xff : openBus.CPU & 0xFF;
+      mapperNumber===19 ? namcoReadLow(addr)&0xFF : openBus.CPU & 0xFF;
 
   } else if (addr < 0x8000) {
 
@@ -274,7 +275,7 @@ function checkReadOffset(address) {
       mapperNumber===5
         ? mmc5CpuRead(addr) & 0xFF
         : (mapperNumber===19 || mapperNumber===210)
-          ? namcoPrgRead(addr) & 0xff
+          ? namcoPrgRead(addr) & 0xFF
         : (mapperNumber===24 || mapperNumber===26)
           ? vrc6CpuRead(addr) & 0xFF
         : mapperNumber === 1
@@ -292,8 +293,12 @@ function checkReadOffset(address) {
         : mapperReadPRG(addr) & 0xFF;
   }
 
-  const out =
-    cpuOpenBusFinalise(addr, raw, code, false) & 0xFF;
+  const mapperDrivesExpansion =
+    (mapperNumber===5 && addr>=0x4020 && addr<0x6000) ||
+    (mapperNumber===19 && addr>=0x4800 && addr<0x6000);
+  const out = mapperDrivesExpansion
+    ? ((openBus.CPU = raw & 0xFF), raw & 0xFF)
+    : cpuOpenBusFinalise(addr, raw, code, false) & 0xFF;
 
   if(!DMC.dmaBusy && !DMA.active)openBus.internal=out;
   return out;
@@ -474,8 +479,10 @@ function checkWriteOffset(address, value) {
             ppuCpu2006HybridUntil = ppuCycles + 8;
           }
           t = (t & 0xFF00) | value;
-          // Copy t → v
+          // Copy t → v. CPU-visible v changes now, but forced-blank
+          // video output sees the new address several PPU dots later.
           VRAM_ADDR = t & 0x3FFF;
+          scheduleForcedBlankV(VRAM_ADDR, 5);
           mmc3Irq(VRAM_ADDR);
 
           writeToggle = 0;
@@ -489,47 +496,12 @@ function checkWriteOffset(address, value) {
 
   // PPUDATA
   case 0x2007: {
-      const v = VRAM_ADDR & 0x3FFF;
-
-      if (v < 0x2000)
-      {
-          if (mapperNumber === 4)
-          {
-              if (chrIsRAM)
-                  mapper4_chr_write(v, value);
-          }
-          else if (mapperNumber === 1)
-          {
-              mmc1ChrWrite(v & 0x1FFF, value);
-          }
-          else if (mapperNumber===5) {
-              // MMC5 commercial boards use CHR ROM; no write here.
-          }
-          else if (chrIsRAM)
-          {
-              CHR_ROM[v & 0x1FFF] = value;
-          }
-      }
-      else if (v < 0x3F00)
-      {
-          if(mapperNumber===5) mmc5NametableWrite(v,value);
-          else if(mapperNumber===19 || mapperNumber===210) namcoNtWrite(v,value);
-          else {
-            const ntAddr = mapNT(v);
-            VRAM[ntAddr] = value;
-          }
-      }
-      else
-      {
-          const p = paletteIndex(v);
-          PALETTE_RAM[p] = value & 0x3F;
-      }
-
-      incrementPPUDataAddress();
-        if(mapperNumber===4)mmc3Irq(VRAM_ADDR);
-
+      // CPU register write is visible now. The external PPU memory write and
+      // associated v increment occur several PPU dots later.
+      queuePpuDataWrite(VRAM_ADDR, value);
       break;
   }
+
 
   }
   openBus.PPU = value & 0xFF;
