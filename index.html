@@ -48,6 +48,8 @@
       <button class="dropbtn" id="SRAM">SRAM</button>
       <button class="dropbtn" id="saveState">States</button>
       <button class="dropbtn" id="resetButton">Reset</button>
+      <button class="dropbtn" id="aboutButton">About</button>
+      <button class="dropbtn" id="accuracyButton">Accuracy</button>
       <details class="gamepad-menu">
         <summary class="dropbtn">Controller</summary>
         <div class="gamepad-help">
@@ -93,6 +95,106 @@
       <script src="https://www.highrevenueformat.com/0cdf162c47350c8574f5237c2f50b440/invoke.js"></script>
     </div>
   </aside>
+
+  <div id="about-modal" class="about-modal" aria-hidden="true">
+    <div class="about-card" role="dialog" aria-modal="true" aria-labelledby="about-title">
+      <button id="about-close" class="about-close" aria-label="Close About">&times;</button>
+      <h1 id="about-title">VajNES</h1>
+      <p class="about-tagline">A high-accuracy NES emulator running directly in your browser.</p>
+
+      <div class="about-status">
+        <strong>AccuracyCoin:</strong> <span>144 / 144 tests passing</span><br>
+        <strong>Automated accuracy suite:</strong> <span>All release gates passing</span>
+      </div>
+
+      <h2>Features</h2>
+      <ul>
+        <li>Runs NES ROMs and ZIP archives directly in the browser — no install required.</li>
+        <li>Cycle-focused CPU, PPU, DMA and APU accuracy with automated regression testing.</li>
+        <li>Save states, SRAM support, ROM header information, disassembler, memory/debug views and tile viewer.</li>
+        <li>Scanlines, pixel effects, palettes, scaling and display customisation.</li>
+        <li>Automatic keyboard plus USB/Bluetooth controller support through the browser Gamepad API.</li>
+        <li>Expansion-audio support for compatible games.</li>
+      </ul>
+
+      <h2>Keyboard shortcuts</h2>
+      <div class="about-grid">
+        <span><kbd>R</kbd></span><span>Run / Pause the loaded ROM</span>
+        <span><kbd>F2</kbd></span><span>Open screen-size / scale settings</span>
+        <span><kbd>F11</kbd></span><span>Recommended browser fullscreen shortcut</span>
+        <span><kbd>~</kbd></span><span>Single-step / debugging mode</span>
+        <span><kbd>X</kbd> / <kbd>Z</kbd></span><span>NES A / B</span>
+        <span><kbd>Enter</kbd></span><span>Start</span>
+        <span><kbd>Backspace</kbd></span><span>Select</span>
+        <span><kbd>Arrow keys</kbd></span><span>D-pad</span>
+      </div>
+
+      <h2>Supported mappers</h2>
+      <p class="mapper-list">0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 5 MMC5 · 7 AxROM · 9 MMC2 · 10 MMC4 · 11 Color Dreams · 19 Namco 163 · 24/26 Konami VRC6 · 66 GxROM · 79 NINA-03/06 · 155 MMC1 variant · 210 Namco 175/340</p>
+      <p class="about-note">Mapper support is actively expanding. Passing accuracy tests does not guarantee every commercial game on every mapper is compatible.</p>
+
+      <h2>Bug reports</h2>
+      <p>If a game fails, shows a grey screen, has broken graphics/audio, or behaves incorrectly, email <a href="mailto:vajskids@gmail.com">vajskids@gmail.com</a>. Please include the game title/region and, if known, the ROM hash.</p>
+    </div>
+  </div>
+
+  <div id="accuracy-modal" class="about-modal" aria-hidden="true">
+    <div class="about-card accuracy-card" role="dialog" aria-modal="true" aria-labelledby="accuracy-title">
+      <button id="accuracy-close" class="about-close" aria-label="Close Accuracy">&times;</button>
+      <h1 id="accuracy-title">VajNES Accuracy</h1>
+      <p class="about-tagline">Automated release-candidate verification</p>
+
+      <div class="accuracy-hero">
+        <strong>All blocking accuracy gates passing</strong>
+        <span>CPU · PPU · APU · DMA · OAM · reset · controller · mapper timing · rendered output</span>
+      </div>
+
+      <h2>AccuracyCoin</h2>
+      <div class="accuracy-score"><strong>144 / 144</strong><span>tests passing</span></div>
+
+      <h2>RP2A03 CPU — exhaustive opcode vectors</h2>
+      <div class="accuracy-score"><strong>2,560,000 / 2,560,000</strong><span>exact single-step vectors passing</span></div>
+      <ul class="accuracy-list">
+        <li><strong>151 official opcodes:</strong> 1,510,000 / 1,510,000</li>
+        <li><strong>93 completing undocumented opcodes:</strong> 930,000 / 930,000</li>
+        <li><strong>12 JAM/KIL opcodes:</strong> 120,000 / 120,000</li>
+        <li>Final registers, flags, RAM, cycle counts and ordered bus reads/writes are checked.</li>
+      </ul>
+
+      <h2>Blargg / nes-test-roms regression matrix</h2>
+      <div class="accuracy-score"><strong>145 deterministic passes</strong><span>0 failures · 0 unclassified · 0 harness errors</span></div>
+      <div class="accuracy-grid">
+        <span>CPU</span><strong>24 / 24</strong>
+        <span>PPU</span><strong>25 / 25</strong>
+        <span>APU</span><strong>15 / 15</strong>
+        <span>CPU + APU reset</span><strong>8 / 8</strong>
+        <span>Legacy deterministic</span><strong>32 / 32</strong>
+        <span>Aggregate suites</span><strong>7 / 7</strong>
+        <span>Legacy aggregate</span><strong>2 / 2</strong>
+        <span>Legacy CPU aggregate</span><strong>2 / 2</strong>
+        <span>nestest</span><strong>PASS</strong>
+      </div>
+      <p class="about-note">An additional 6 diagnostic-complete ROMs and 1 informational hardware-specific ROM are tracked separately and are not counted as deterministic passes.</p>
+
+      <h2>Independent visual accuracy gate</h2>
+      <div class="accuracy-grid">
+        <span>scanline.nes</span><strong>PASS — 0 error-star pixels</strong>
+        <span>spritecans-2011</span><strong>PASS — exact framebuffer reference</strong>
+        <span>full_palette.nes</span><strong>PASS — 456 / 456 intended palette/emphasis combinations</strong>
+      </div>
+
+      <h2>Timing behaviour covered</h2>
+      <ul class="accuracy-list">
+        <li>PPU VBlank/NMI timing, sprite-zero hit and sprite overflow timing.</li>
+        <li>OAM DMA + DMC DMA interaction, DMA aborts and CPU bus behavior.</li>
+        <li>PPUDATA read buffering, open bus, delayed PPU-side writes and rendering-time address increments.</li>
+        <li>Mid-scanline PPUMASK rendering changes, forced-blank direct palette output and emphasis timing.</li>
+        <li>MMC3 IRQ behavior, legacy MMC3/MMC6 timing, controller reads and reset behavior.</li>
+      </ul>
+
+      <p class="about-note">These figures describe the automated suites currently wired into VajNES CI. They are accuracy evidence, not a claim that every NES ROM or every hardware edge case in existence has been tested.</p>
+    </div>
+  </div>
 
   <!-- Tile Viewer Modal -->
   <div id="tileModal" class="TileViewModal" aria-hidden="true">
@@ -348,6 +450,29 @@
 <script src="assets/js/cpu-loop.js"></script>
 <script src="assets/js/ppu-loop.js"></script>
 
+
+<script>
+(() => {
+  const bindModal = (modalId, openId, closeId) => {
+    const modal = document.getElementById(modalId);
+    const open = document.getElementById(openId);
+    const close = document.getElementById(closeId);
+    if (!modal || !open || !close) return;
+    const setOpen = (value) => {
+      modal.classList.toggle('is-open', value);
+      modal.setAttribute('aria-hidden', value ? 'false' : 'true');
+    };
+    open.addEventListener('click', () => setOpen(true));
+    close.addEventListener('click', () => setOpen(false));
+    modal.addEventListener('click', (e) => { if (e.target === modal) setOpen(false); });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modal.classList.contains('is-open')) setOpen(false);
+    });
+  };
+  bindModal('about-modal', 'aboutButton', 'about-close');
+  bindModal('accuracy-modal', 'accuracyButton', 'accuracy-close');
+})();
+</script>
 
 <!-- actual JS code, LAST to run after JS includes - loads last loaded ROM on page refresh/ site re-launch -->
 <script>
