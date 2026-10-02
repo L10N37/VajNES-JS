@@ -52,6 +52,11 @@ const groupsByShard={
   'cpu_interrupts_v2',
   'ppu_vbl_nmi',
   'apu_test'
+ ],
+ edge:[
+  'read_joy3',
+  'oam_read',
+  'oam_stress'
  ]
 };
 const groups=groupsByShard[shard];if(!groups)throw Error('Unknown BLARGG_SHARD '+shard);
@@ -59,11 +64,14 @@ const observationalCrc={
  'dmc_dma_during_read4/dma_2007_read.nes':new Set(['159A7A8F','5E3DF9C4']),
  'dmc_dma_during_read4/double_2007_read.nes':new Set(['85CFD627','F018C287','440EF923','E52F41A5'])
 };
+const excludeByGroup={
+ 'read_joy3':new Set(['test_buttons.nes'])
+};
 const results=[];
 for(const group of groups){
  const dir=path.join(root,group);
  if(!fs.existsSync(dir)){results.push({rom:group,status:null,error:'missing directory'});continue;}
- for(const file of fs.readdirSync(dir).filter(p=>p.endsWith('.nes')).sort()){
+ for(const file of fs.readdirSync(dir).filter(p=>p.endsWith('.nes')&&!(excludeByGroup[group]?.has(p))).sort()){
   const rom=fs.readFileSync(path.join(dir,file)),e=createEmulator();let status=null,text='',error=null,classification='passfail',resetCount=0,resetRequestLatched=false;
   try{
    e.load(new Uint8Array(rom));
@@ -122,6 +130,7 @@ for(const group of groups){
    if(group==='instr_timing') chunks = 240;
    if(group==='ppu_vbl_nmi') chunks = 320;
    if(group==='cpu_interrupts_v2') chunks = 300;
+   if(group==='oam_stress') chunks = 400;
 
    for(let i=0;i<chunks;i++){
     e.run(200000);
