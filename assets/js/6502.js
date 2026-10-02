@@ -104,6 +104,7 @@ function powerOnCPU() {
   ppuCpu2007ReadUntil=-1;
   ppuCpu2006HybridUntil=-1;
   ppuCpu2006HybridLow=0;
+  ppuCpu2007WritePending=null;
   forcedBlankDisplayV=0;
   forcedBlankPendingV=0;
   forcedBlankApplyAt=-1;
