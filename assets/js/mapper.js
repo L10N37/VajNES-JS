@@ -142,6 +142,13 @@ function mapper(nesHeader) {
       break;
     }
 
+    case 69: {
+      fme7Init();
+      chrIsRAM = false;
+      powerOnCPU();
+      break;
+    }
+
     // ==========================================================
     // Unsupported mappers
     // ==========================================================
