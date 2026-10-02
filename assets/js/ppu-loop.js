@@ -588,7 +588,7 @@ function emitPixelHardwarePalette() {
   // With both background and sprites disabled, the PPU normally outputs the
   // universal backdrop color. A hardware quirk used by palette test ROMs
   // outputs the palette RAM entry addressed by v when v is in $3F00-$3FFF.
-  const renderingDisabled = (PPUMASK & 0x18) === 0;
+  const renderingDisabled = (ppuEffectiveMask() & 0x18) === 0;
   if (renderingDisabled && (VRAM_ADDR & 0x3F00) === 0x3F00) {
     bgPalIndex6 = ppuBusRead(0x3F00 | (VRAM_ADDR & 0x1F)) & 0x3F;
   } else if (bgColor2 === 0) {
