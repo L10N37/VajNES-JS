@@ -1,0 +1,56 @@
+// Independent framebuffer cross-check against NESd deterministic goldens.
+// NESd source commit: c6a81d023e1808c5d16a7f6e0b6d020e53a21411
+// Golden algorithm: FNV-1a 64-bit over 256x240 RGBA bytes after 360 frames.
+const fs=require('node:fs'),path=require('node:path');
+const {createEmulator}=require('./headless.cjs');
+const root=process.argv[2];
+if(!root)throw Error('Usage: node tests/framebuffer-golden.cjs <nes-test-roms-dir> [report.json]');
+
+const palette=[
+  0x626262,0x001fb2,0x2404c8,0x5200b2,0x730076,0x800024,0x730b00,0x522800,
+  0x244400,0x005700,0x005c00,0x005324,0x003c76,0x000000,0x000000,0x000000,
+  0xababab,0x0d57ff,0x4b30ff,0x8a13ff,0xbc08d6,0xd21269,0xc72e00,0x9d5400,
+  0x607b00,0x209800,0x00a300,0x009942,0x007db4,0x000000,0x000000,0x000000,
+  0xffffff,0x53aeff,0x9085ff,0xd365ff,0xff57ff,0xff5dcf,0xff7757,0xfa9e00,
+  0xbdc700,0x7ae700,0x43f611,0x26ef7e,0x2cd5f6,0x4e4e4e,0x000000,0x000000,
+  0xffffff,0xb6e1ff,0xced1ff,0xe9c3ff,0xffbcff,0xffbdf4,0xffc6c3,0xffd59a,
+  0xe9e681,0xcef481,0xb6fb9a,0xa9fac3,0xa9f0f4,0xb8b8b8,0x000000,0x000000
+];
+
+const tests=[
+  ['scanline/scanline.nes', '-5071674518877676179'],
+  ['spritecans-2011/spritecans.nes', '6027694824722942956'],
+  ['full_palette/full_palette.nes', '6387691627853472549']
+];
+
+function fnvRgba(indices){
+  let h=0xcbf29ce484222325n;
+  const prime=0x100000001b3n, mask=0xffffffffffffffffn;
+  for(const raw of indices){
+    const rgb=palette[raw&0x3f]>>>0;
+    const bytes=[(rgb>>>16)&255,(rgb>>>8)&255,rgb&255,255];
+    for(const b of bytes) h=((h^BigInt(b))*prime)&mask;
+  }
+  if(h>=0x8000000000000000n)h-=0x10000000000000000n;
+  return h.toString();
+}
+
+const results=[];
+for(const [rel,expected] of tests){
+  const rom=fs.readFileSync(path.join(root,rel));
+  const e=createEmulator();
+  let error=null,actual=null;
+  try{
+    e.load(new Uint8Array(rom));
+    e.runFrames(360);
+    actual=fnvRgba(e.frameIndices());
+  }catch(ex){error=String(ex);}
+  const pass=!error&&actual===expected;
+  const result={rom:rel,frames:360,expected,actual,pass,error};
+  results.push(result);
+  console.log('FRAMEBUFFER_GOLDEN '+JSON.stringify(result));
+}
+const summary={total:results.length,pass:results.filter(r=>r.pass).length,fail:results.filter(r=>!r.pass).length};
+console.log('FRAMEBUFFER_GOLDEN_SUMMARY '+JSON.stringify(summary));
+if(process.argv[3])fs.writeFileSync(process.argv[3],JSON.stringify({source:'jpjonte/NESd@c6a81d023e1808c5d16a7f6e0b6d020e53a21411',summary,results},null,2)+'\n');
+if(summary.fail)process.exitCode=1;
