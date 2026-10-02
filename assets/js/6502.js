@@ -2417,7 +2417,8 @@ function DCP_ZP() {
   let value = checkReadOffset(address) & 0xFF;
   consumeCycle();
 
-  // C4: (dummy write slot for RMW)
+  // C4: dummy write original value for RMW bus behavior.
+  checkWriteOffset(address, value);
   consumeCycle();
 
   // Decrement and write
@@ -2442,15 +2443,17 @@ function DCP_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: internal addr calc (zp+X wrap)
+  // C3: dummy read from unindexed base while X is added.
   const addressess = (base + (CPUregisters.X & 0xFF)) & 0xFF;
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: read old
   let value = checkReadOffset(addressess) & 0xFF;
   consumeCycle();
 
-  // C5: (dummy write slot for RMW)
+  // C5: dummy write old for RMW bus behavior.
+  checkWriteOffset(addressess, value);
   consumeCycle();
 
   // Decrement and final write
@@ -2521,9 +2524,13 @@ function ISC_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: calc zp+X (wrap) and read old
+  // C3: dummy read from unindexed base while X is added.
   const pointer = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  const old     = checkReadOffset(pointer) & 0xFF;
+  checkReadOffset(base);
+  consumeCycle();
+
+  // C4: read old
+  const old = checkReadOffset(pointer) & 0xFF;
   consumeCycle();
 
   // C4: dummy write old (RMW bus pattern)
@@ -3682,12 +3689,16 @@ function RRA_INDX() {
   const op = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read pointer low (zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(op);
+  consumeCycle();
+
+  // C4: read pointer low (zp+X)
   const ptr = (op + (CPUregisters.X & 0xFF)) & 0xFF;
   const lo  = checkReadOffset(ptr) & 0xFF;
   consumeCycle();
 
-  // C4: read pointer high (zp+X+1)
+  // C5: read pointer high (zp+X+1)
   const hi  = checkReadOffset((ptr + 1) & 0xFF) & 0xFF; // ZP wrap
   consumeCycle();
 
@@ -3738,13 +3749,14 @@ function RRA_ZP() {
   let val = checkReadOffset(addr) & 0xFF;
   consumeCycle();
 
-  // C4: ROR through carry (internal ALU)
+  // C4: dummy write original value.
+  checkWriteOffset(addr, val);
+  consumeCycle();
+
+  // C5: rotate and write back
   const oldCarry = CPUregisters.P.C & 1;
   CPUregisters.P.C = val & 0x01;
   val = ((val >>> 1) | (oldCarry << 7)) & 0xFF;
-  consumeCycle();
-
-  // C5: write rotated back
   checkWriteOffset(addr, val);
   consumeCycle();
 
@@ -3770,8 +3782,9 @@ function RRA_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: internal address calc (zp wrap)
+  // C3: dummy read from unindexed base while X is added.
   const addr = (base + (CPUregisters.X & 0xFF)) & 0xFF;
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: read value
@@ -3937,8 +3950,9 @@ function LAX_ZPY() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: internal address calc (zp+Y wrap)
+  // C3: dummy read from unindexed base while Y is added.
   const address = (base + (CPUregisters.Y & 0xFF)) & 0xFF;
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: read, load A/X, set flags
@@ -3947,7 +3961,6 @@ function LAX_ZPY() {
   CPUregisters.X = value;
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
   CPUregisters.P.N = (value >>> 7) & 1;
-  consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
 
 }
@@ -3977,22 +3990,25 @@ function LAX_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read pointer low at (zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zp);
+  consumeCycle();
+
+  // C4: read pointer low at (zp+X)
   const ptr = (zp + (CPUregisters.X & 0xFF)) & 0xFF;
   const lo  = checkReadOffset(ptr) & 0xFF;
   consumeCycle();
 
-  // C4: read pointer high at (zp+X+1) (wrap)
+  // C5: read pointer high at (zp+X+1) (wrap)
   const hi  = checkReadOffset((ptr + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
   const addr = ((hi << 8) | lo) & 0xFFFF;
 
-  // C5: read @EA
+  // C6: read @EA and load A/X
   let value = checkReadOffset(addr) & 0xFF;
   consumeCycle();
 
-  // C6: load A/X, set flags
   CPUregisters.A = value;
   CPUregisters.X = value;
   CPUregisters.P.Z = (value === 0) ? 1 : 0;
@@ -4076,20 +4092,21 @@ function SAX_INDX() {
   const zpBase = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read pointer low at (zpBase+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zpBase);
+  consumeCycle();
+
+  // C4: read pointer low at (zpBase+X)
   const zpAddr = (zpBase + (CPUregisters.X & 0xFF)) & 0xFF;
   const low = checkReadOffset(zpAddr) & 0xFF;
   consumeCycle();
 
-  // C4: read pointer high at (zpBase+X+1) (wrap)
+  // C5: read pointer high at (zpBase+X+1) (wrap)
   const high = checkReadOffset((zpAddr + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
-  // C5: internal EA calc
-  const addr = ((high << 8) | low) & 0xFFFF;
-  consumeCycle();
-
   // C6: write (A & X)
+  const addr = ((high << 8) | low) & 0xFFFF;
   checkWriteOffset(addr, (CPUregisters.A & CPUregisters.X) & 0xFF);
   consumeCycle();
   CPUregisters.PC = (CPUregisters.PC + 2) & 0xFFFF;
@@ -4102,8 +4119,9 @@ function SAX_ZPY() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: internal address calc (zp+Y wrap)
+  // C3: dummy read from unindexed base while Y is added.
   const pointer = (base + (CPUregisters.Y & 0xFF)) & 0xFF;
+  checkReadOffset(base);
   consumeCycle();
 
   // C4: write (A & X)
@@ -4239,11 +4257,15 @@ function DCP_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read pointer low @ (zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zp);
+  consumeCycle();
+
+  // C4: read pointer low @ (zp+X)
   const ptrl = checkReadOffset((zp + (CPUregisters.X & 0xFF)) & 0xFF) & 0xFF;
   consumeCycle();
 
-  // C4: read pointer high @ (zp+X+1)
+  // C5: read pointer high @ (zp+X+1)
   const ptrh = checkReadOffset((zp + (CPUregisters.X & 0xFF) + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
@@ -4366,11 +4388,15 @@ function ISC_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read ptr low @(zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zp);
+  consumeCycle();
+
+  // C4: read ptr low @(zp+X)
   const ptrl = checkReadOffset((zp + (CPUregisters.X & 0xFF)) & 0xFF) & 0xFF;
   consumeCycle();
 
-  // C4: read ptr high @(zp+X+1)
+  // C5: read ptr high @(zp+X+1)
   const ptrh = checkReadOffset((zp + (CPUregisters.X & 0xFF) + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
@@ -4593,11 +4619,15 @@ function SLO_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read low @(zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zp);
+  consumeCycle();
+
+  // C4: read low @(zp+X)
   const low = checkReadOffset((zp + (CPUregisters.X & 0xFF)) & 0xFF) & 0xFF;
   consumeCycle();
 
-  // C4: read high @(zp+X+1)
+  // C5: read high @(zp+X+1)
   const high = checkReadOffset((zp + (CPUregisters.X & 0xFF) + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
@@ -4672,9 +4702,13 @@ function SLO_ZPX() {
   const base = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: calc zp+X and read old
+  // C3: dummy read from unindexed base while X is added.
   const pointer = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  const old     = checkReadOffset(pointer) & 0xFF;
+  checkReadOffset(base);
+  consumeCycle();
+
+  // C4: read old
+  const old = checkReadOffset(pointer) & 0xFF;
   consumeCycle();
 
   // C4: dummy write old
@@ -4995,9 +5029,13 @@ function RLA_ZPX() {
   checkReadOffset(base);
   consumeCycle();
 
-  // C3: read old at (zp+X)
+  // C3: dummy read from unindexed base while X is added.
   const pointer = (base + (CPUregisters.X & 0xFF)) & 0xFF;
-  let value     = checkReadOffset(pointer) & 0xFF;
+  checkReadOffset(base);
+  consumeCycle();
+
+  // C4: read old
+  let value = checkReadOffset(pointer) & 0xFF;
   consumeCycle();
 
   // C4: dummy write old
@@ -5155,11 +5193,15 @@ function SRE_INDX() {
   const zp = checkReadOffset((CPUregisters.PC + 1) & 0xFFFF) & 0xFF;
   consumeCycle();
 
-  // C3: read low @(zp+X)
+  // C3: dummy read from original zero-page operand while X is added.
+  checkReadOffset(zp);
+  consumeCycle();
+
+  // C4: read low @(zp+X)
   const low = checkReadOffset((zp + (CPUregisters.X & 0xFF)) & 0xFF) & 0xFF;
   consumeCycle();
 
-  // C4: read high @(zp+X+1)
+  // C5: read high @(zp+X+1)
   const high = checkReadOffset((zp + (CPUregisters.X & 0xFF) + 1) & 0xFF) & 0xFF;
   consumeCycle();
 
