@@ -5485,8 +5485,15 @@ function SBX_IMM() {
 
 }
 
-// 0x02/0x12/… — KIL/JAM — CPU jam
-function KIL_IMP(){window.alert("KIL_IMP, CPU HALT, POSSIBLE BUG")}
+// 0x02/0x12/… — KIL/JAM — CPU jam.
+// C1 opcode fetch is performed by window.step(). Hardware then performs two
+// reads from PC+1, leaves architectural state/PC unchanged, and stops executing.
+function KIL_IMP(){
+  const jamAddress=(CPUregisters.PC+1)&0xFFFF;
+  checkReadOffset(jamAddress); consumeCycle(); // C2
+  checkReadOffset(jamAddress); consumeCycle(); // C3
+  cpuRunning=false;
+}
 
 /*
 //////////////////////// 6502 CPU opcode object ////////////////////////
