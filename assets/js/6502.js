@@ -74,6 +74,7 @@ function powerOnCPU() {
   irqAssert.mmc5=false;
   irqAssert.namco=false;
   irqAssert.vrc=false;
+  irqAssert.fme7=false;
   if(mmc3FamilyActive()) mmc3Reset();
   joypadStrobe=joypadStrobeOutput=joypad1State=joypad2State=0;
   resetCommonInterruptState();
@@ -161,12 +162,13 @@ function consumeCycle() {
   apuClock();
   if(mapperNumber===19) namcoClockCpu();
   if(mapperNumber===24 || mapperNumber===26) vrc6ClockCpu();
+  if(mapperNumber===69) fme7ClockCpu();
   nmiPollPrevious=nmiPollCurrent;
   const nmiSignal=doesNmiEdgeExist();
   if(nmiSignal && !nmiSignalSeen)nmiPollCurrent=true;
   nmiSignalSeen=nmiSignal;
   irqPollPrevious=irqPollCurrent;
-  irqPollCurrent=(irqAssert.frame || irqAssert.mmc3 || irqAssert.mmc5 || irqAssert.namco || irqAssert.vrc || irqAssert.dmcDma) && !CPUregisters.P.I;
+  irqPollCurrent=(irqAssert.frame || irqAssert.mmc3 || irqAssert.mmc5 || irqAssert.namco || irqAssert.vrc || irqAssert.fme7 || irqAssert.dmcDma) && !CPUregisters.P.I;
   clockJoypadStrobe();
 
   clockDMC();
