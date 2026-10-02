@@ -62,7 +62,7 @@ test('truncated CHR image is rejected before changing cartridge',()=>{
 test('APU enable does not load length; disable clears it',()=>{
  const e=emulator();e.evaluate('apuWrite(0x4015,1)');
  assert.equal(e.evaluate('apuRead(0x4015)&15'),0);
- e.evaluate('apuWrite(0x4003,0x18)');assert.equal(e.evaluate('apuRead(0x4015)&15'),1);
+ e.evaluate('apuWrite(0x4003,0x18);consumeCycle()');assert.equal(e.evaluate('apuRead(0x4015)&15'),1);
  e.evaluate('apuWrite(0x4015,0);apuWrite(0x4015,1)');assert.equal(e.evaluate('apuRead(0x4015)&15'),0);
 });
 test('frame IRQ is delayed and inhibited through 4017',()=>{
