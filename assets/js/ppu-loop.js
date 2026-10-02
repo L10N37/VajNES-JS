@@ -29,16 +29,31 @@ let ppumaskRenderHoldBits = 0;
 let ppumaskRenderApplyAt = -1;
 let ppumaskOAMHoldBits = 0;
 let ppumaskOAMApplyAt = -1;
+let ppumaskEmphasisHoldBits = 0;
+let ppumaskEmphasisApplyAt = -1;
 
 function ppuEffectiveMask() {
+  let mask = PPUMASK & 0xFF;
+
   if (ppumaskRenderApplyAt >= 0) {
     if (ppuCycles < ppumaskRenderApplyAt)
-      return (PPUMASK & ~0x18) | (ppumaskRenderHoldBits & 0x18);
-
-    ppumaskRenderApplyAt = -1;
-    ppumaskRenderHoldBits = PPUMASK & 0x18;
+      mask = (mask & ~0x18) | (ppumaskRenderHoldBits & 0x18);
+    else {
+      ppumaskRenderApplyAt = -1;
+      ppumaskRenderHoldBits = PPUMASK & 0x18;
+    }
   }
-  return PPUMASK & 0xFF;
+
+  if (ppumaskEmphasisApplyAt >= 0) {
+    if (ppuCycles < ppumaskEmphasisApplyAt)
+      mask = (mask & ~0xE0) | (ppumaskEmphasisHoldBits & 0xE0);
+    else {
+      ppumaskEmphasisApplyAt = -1;
+      ppumaskEmphasisHoldBits = PPUMASK & 0xE0;
+    }
+  }
+
+  return mask & 0xFF;
 }
 
 function ppuOAMMaskBits() {
@@ -53,10 +68,13 @@ function ppuOAMMaskBits() {
 }
 
 function ppuWriteMask(value) {
-  const effectiveBefore = ppuEffectiveMask() & 0x18;
+  const effectiveMaskBefore = ppuEffectiveMask();
+  const effectiveBefore = effectiveMaskBefore & 0x18;
+  const emphasisBefore = effectiveMaskBefore & 0xE0;
   const oamBefore = ppuOAMMaskBits();
   PPUMASK = value & 0xFF;
   const requested = PPUMASK & 0x18;
+  const requestedEmphasis = PPUMASK & 0xE0;
 
   if (requested === oamBefore) {
     ppumaskOAMHoldBits = requested;
@@ -74,6 +92,14 @@ function ppuWriteMask(value) {
   } else {
     ppumaskRenderHoldBits = effectiveBefore;
     ppumaskRenderApplyAt = ppuCycles + 4;
+  }
+
+  if (requestedEmphasis === emphasisBefore) {
+    ppumaskEmphasisHoldBits = requestedEmphasis;
+    ppumaskEmphasisApplyAt = -1;
+  } else {
+    ppumaskEmphasisHoldBits = emphasisBefore;
+    ppumaskEmphasisApplyAt = ppuCycles + 3;
   }
 }
 
@@ -109,6 +135,68 @@ let ppuExternalData = 0;
 let ppuCpu2007ReadUntil = -1;
 let ppuCpu2006HybridUntil = -1;
 let ppuCpu2006HybridLow = 0;
+let ppuCpu2007WritePending = null;
+
+function queuePpuDataWrite(addr, value) {
+  ppuCpu2007WritePending = {
+    addr: addr & 0x3FFF,
+    value: value & 0xFF,
+    applyAt: ppuCycles + 6
+  };
+}
+
+function servicePpuDataWrite() {
+  const op = ppuCpu2007WritePending;
+  if (!op || ppuCycles < op.applyAt) return;
+  ppuCpu2007WritePending = null;
+
+  const v = op.addr;
+  const value = op.value;
+  if (v < 0x2000) {
+    if (mapperNumber === 4) {
+      if (chrIsRAM) mapper4_chr_write(v, value);
+    } else if (mapperNumber === 1) {
+      mmc1ChrWrite(v & 0x1FFF, value);
+    } else if (mapperNumber === 5) {
+      if (chrIsRAM) mmc5ChrWrite(v, value);
+    } else if (mapperNumber === 19 || mapperNumber === 210) {
+      if (chrIsRAM) namcoChrWrite(v, value);
+    } else if (mapperNumber === 24 || mapperNumber === 26) {
+      if (chrIsRAM) vrc6ChrWrite(v, value);
+    } else if (chrIsRAM) {
+      CHR_ROM[v & 0x1FFF] = value;
+    }
+  } else if (v < 0x3F00) {
+    if (mapperNumber===5) mmc5NametableWrite(v,value);
+    else if (mapperNumber===19 || mapperNumber===210) namcoNtWrite(v,value);
+    else VRAM[mapNT(v)] = value;
+  } else {
+    PALETTE_RAM[paletteIndex(v)] = value & 0x3F;
+  }
+
+  if (mapperNumber === 4) mmc3Irq(v);
+  incrementPPUDataAddress();
+  scheduleForcedBlankV(VRAM_ADDR, 2); // +6 data commit, +8 visible address
+  if (mapperNumber === 4) mmc3Irq(VRAM_ADDR);
+}
+
+// Forced-blank palette output does not see CPU VRAM-address changes
+// immediately. Hardware measurements put a completed $2006 pair at ~5 PPU
+// dots and a $2007 increment at ~8 dots from the CPU access start.
+let forcedBlankDisplayV = 0;
+let forcedBlankPendingV = 0;
+let forcedBlankApplyAt = -1;
+function scheduleForcedBlankV(v, delayDots) {
+  forcedBlankPendingV = v & 0x3FFF;
+  forcedBlankApplyAt = ppuCycles + delayDots;
+}
+function visibleForcedBlankV() {
+  if (forcedBlankApplyAt >= 0 && ppuCycles >= forcedBlankApplyAt) {
+    forcedBlankDisplayV = forcedBlankPendingV & 0x3FFF;
+    forcedBlankApplyAt = -1;
+  }
+  return forcedBlankDisplayV & 0x3FFF;
+}
 
 function presentFrame() {
   if(typeof NESAudio!=="undefined") NESAudio.frame(cpuCycles);
@@ -177,135 +265,6 @@ let spriteOverflowSetScanline = -1;
 let spriteOverflowSetDot = -1;
 let ppumaskPrev = 0;
 let oamRenderPrev = false;
-
-function ppuSavePipelineState() {
-  const out=new Uint8Array(160);
-  const dv=new DataView(out.buffer);
-  out[0]=2;
-  let flags=0;
-  if(ppuInitDone)flags|=1;
-  if(nmiAtVblankEnd)flags|=2;
-  if(oddSkipRendering)flags|=4;
-  if(PPUclock.oddFrame)flags|=8;
-  if(renderingPrev)flags|=16;
-  if(spriteOnlyPrimePending)flags|=32;
-  if(oamCorruptPending)flags|=64;
-  if(typeof spriteXForceZeroNextFrame!=='undefined' && spriteXForceZeroNextFrame)flags|=128;
-  out[1]=flags;
-  dv.setUint16(2,PPUclock.dot&0xffff,true);
-  dv.setUint16(4,PPUclock.scanline&0xffff,true);
-  dv.setUint32(6,PPUclock.frame>>>0,true);
-  dv.setUint16(10,vFetch&0xffff,true);
-  dv.setUint16(12,background.bgShiftLo&0xffff,true);
-  dv.setUint16(14,background.bgShiftHi&0xffff,true);
-  dv.setUint16(16,background.atShiftLo&0xffff,true);
-  dv.setUint16(18,background.atShiftHi&0xffff,true);
-  out[20]=background.ntByte&0xff;
-  out[21]=background.atByte&0xff;
-  out[22]=background.tileLo&0xff;
-  out[23]=background.tileHi&0xff;
-  out[24]=nextLine.t0.lo&0xff;
-  out[25]=nextLine.t0.hi&0xff;
-  out[26]=nextLine.t0.at&0xff;
-  out[27]=nextLine.t1.lo&0xff;
-  out[28]=nextLine.t1.hi&0xff;
-  out[29]=nextLine.t1.at&0xff;
-  out[30]=oamCorruptSeedRow&0xff;
-  out[31]=secOAMAddr&0xff;
-  out[32]=ppumaskPrev&0xff;
-  out[33]=spritesCur===spritesA?0:1;
-  if(typeof current!=='undefined'){
-    dv.setUint16(34,current.dot&0xffff,true);
-    dv.setUint16(36,current.scanline&0xffff,true);
-    dv.setUint32(38,current.frame>>>0,true);
-  }
-
-  const writeSprite=(buf,off)=>{
-    out[off++]=buf.count&0xff;
-    out[off++]=buf.sprite0ListIndex&0xff;
-    for(const field of ['attr','xcnt','lo','hi','idx','tile','row']){
-      out.set(buf[field].subarray(0,SPR_MAX),off);
-      off+=SPR_MAX;
-    }
-    return off;
-  };
-  let off=42;
-  off=writeSprite(spritesA,off);
-  off=writeSprite(spritesB,off);
-  out[158]=ppumaskRenderHoldBits&0x18;
-  out[159]=ppumaskRenderApplyAt>=0
-    ? Math.max(0,Math.min(255,Math.ceil(ppumaskRenderApplyAt-ppuCycles)))
-    : 0;
-  return out;
-}
-
-function ppuLoadPipelineState(bytes) {
-  if(!(bytes instanceof Uint8Array) || bytes.length<158 || (bytes[0]!==1 && bytes[0]!==2))return false;
-  const dv=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
-  const flags=bytes[1];
-  ppuInitDone=!!(flags&1);
-  nmiAtVblankEnd=!!(flags&2);
-  oddSkipRendering=!!(flags&4);
-  PPUclock.dot=dv.getUint16(2,true);
-  PPUclock.scanline=dv.getUint16(4,true);
-  PPUclock.frame=dv.getUint32(6,true);
-  PPUclock.oddFrame=!!(flags&8);
-  vFetch=dv.getUint16(10,true);
-  background.bgShiftLo=dv.getUint16(12,true);
-  background.bgShiftHi=dv.getUint16(14,true);
-  background.atShiftLo=dv.getUint16(16,true);
-  background.atShiftHi=dv.getUint16(18,true);
-  background.ntByte=bytes[20]&0xff;
-  background.atByte=bytes[21]&0xff;
-  background.tileLo=bytes[22]&0xff;
-  background.tileHi=bytes[23]&0xff;
-  nextLine.t0={lo:bytes[24]&0xff,hi:bytes[25]&0xff,at:bytes[26]&3};
-  nextLine.t1={lo:bytes[27]&0xff,hi:bytes[28]&0xff,at:bytes[29]&3};
-  oamCorruptSeedRow=bytes[30]&0xff;
-  secOAMAddr=bytes[31]&0xff;
-  ppumaskPrev=bytes[32]&0xff;
-  renderingPrev=!!(flags&16);
-  spriteOnlyPrimePending=!!(flags&32);
-  oamCorruptPending=!!(flags&64);
-  spriteXForceZeroNextFrame=!!(flags&128);
-
-  if(typeof current!=='undefined'){
-    current.dot=dv.getUint16(34,true);
-    current.scanline=dv.getUint16(36,true);
-    current.frame=dv.getUint32(38,true);
-  }
-
-  const readSprite=(buf,off)=>{
-    buf.count=Math.min(SPR_MAX,bytes[off++]&0xff);
-    buf.sprite0ListIndex=bytes[off++]&0xff;
-    for(const field of ['attr','xcnt','lo','hi','idx','tile','row']){
-      buf[field].set(bytes.subarray(off,off+SPR_MAX));
-      off+=SPR_MAX;
-    }
-    return off;
-  };
-  let off=42;
-  off=readSprite(spritesA,off);
-  readSprite(spritesB,off);
-  spritesCur=bytes[33]===0?spritesA:spritesB;
-  spritesNext=bytes[33]===0?spritesB:spritesA;
-
-  if(bytes[0]>=2 && bytes.length>=160) {
-    ppumaskRenderHoldBits=bytes[158]&0x18;
-    const remaining=bytes[159]&0xff;
-    ppumaskRenderApplyAt=remaining?ppuCycles+remaining:-1;
-  } else {
-    ppumaskRenderHoldBits=PPUMASK&0x18;
-    ppumaskRenderApplyAt=-1;
-  }
-
-  // Keep the debug/fetch mirror globals coherent with the restored pipeline.
-  BG_ntByte=background.ntByte;
-  BG_atByte=background.atByte;
-  BG_tileLo=background.tileLo;
-  BG_tileHi=background.tileHi;
-  return true;
-}
 
 // ---- Debug offsets ----
 let BG_DEBUG_X_OFFSET = 0;
@@ -713,7 +672,15 @@ function emitPixelHardwarePalette() {
   if (bgOn && x < 8 && (PPUMASK & MASK_BG_SHOW_LEFT8) === 0) bgColor2 = 0;
 
   let bgPalIndex6;
-  if (bgColor2 === 0) {
+
+  // With both background and sprites disabled, the PPU normally outputs the
+  // universal backdrop color. A hardware quirk used by palette test ROMs
+  // outputs the palette RAM entry addressed by v when v is in $3F00-$3FFF.
+  const renderingDisabled = (ppuEffectiveMask() & 0x18) === 0;
+  const forcedV = visibleForcedBlankV();
+  if (renderingDisabled && (forcedV & 0x3F00) === 0x3F00) {
+    bgPalIndex6 = ppuBusRead(0x3F00 | (forcedV & 0x1F)) & 0x3F;
+  } else if (bgColor2 === 0) {
     bgPalIndex6 = PALETTE_RAM[0] & 0x3F;
   } else {
     const palLow5 = ((bgAttr2 << 2) | bgColor2) & 0x1F;
@@ -741,6 +708,7 @@ function emitPixelHardwarePalette() {
 
   const idx = (y << 8) + x;
   paletteIndexFrame[idx] = finalIndex6 & 0x3F;
+  paletteEmphasisFrame[idx] = (ppuEffectiveMask() >>> 5) & 0x07;
 }
 
 // ---- Scroll / VRAM address ops ----
@@ -803,7 +771,7 @@ function ppuBusRead(addr) {
 
     if (addr < 0x3F00) {
         if(mapperNumber===5)return mmc5NametableRead(0x2000 | (addr & 0x0FFF)) & 0xFF;
-        if(mapperNumber===19 || mapperNumber===210)return namcoNtRead(0x2000 | (addr & 0x0FFF)) & 0xff;
+        if(mapperNumber===19 || mapperNumber===210)return namcoNtRead(0x2000 | (addr & 0x0FFF)) & 0xFF;
         const mapped = mapNametableAddr(0x2000 | (addr & 0x0FFF));
         return VRAM[mapped] & 0xFF;
     }
@@ -1393,6 +1361,7 @@ function renderingBusTick() {
 
 // ---- Tick ----
 function ppuTick() {
+  servicePpuDataWrite();
   renderingBusTick();
   const maskNow = PPUMASK & 0xFF;
   const renNow  = (maskNow & 0x18) !== 0;
