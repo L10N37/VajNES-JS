@@ -233,7 +233,10 @@ for(const group of groups){
      const lo=rr[0x0002]&0xff, hi=rr[0x0003]&0xff;
      status=(lo===0 && hi===0)?0:(lo || hi || 1);
      text=status===0?'Passed: $0002/$0003 = $00/$00':
-       'Failed: $0002=
+       'Failed: $0002=$'+lo.toString(16).padStart(2,'0').toUpperCase()+
+       ' $0003=$'+hi.toString(16).padStart(2,'0').toUpperCase();
+   }
+
    // assertion ROMs. They return success after printing a counter; non-zero
    // conflict/error counts are the phenomenon being measured. Classify only
    // when the terminal result line is visible and no failure text was printed.
