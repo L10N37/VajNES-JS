@@ -769,21 +769,26 @@
 
   window.addEventListener('vajnes-rom-loaded',e=>run(()=>onGame(e.detail)));
 
-  document.addEventListener('keydown',e=>{
+  function cloudShortcutKeydown(e) {
+    const editing=e.target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(e.target?.tagName||'');
+    if(editing) return;
+
     if(e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       const n=e.code==='Digit0'?10:
         /^Digit[1-9]$/.test(e.code)?Number(e.code.slice(5)):0;
       if(n){e.preventDefault();run(()=>setSlot(n));return;}
     }
 
-    // Match the proven F2 shortcut style used by screen.js.
-    if(model.signedIn && model.game && !e.repeat) {
-      if(e.key==='F8') {
+    // Cloud Saves are local-first: these shortcuts work whenever a ROM is
+    // loaded, and saveLocal() syncs to Drive automatically when connected.
+    if(model.game && !e.repeat) {
+      const key=e.key || e.code;
+      if(key==='F8' || e.code==='F8') {
         e.preventDefault();
         run(()=>saveLocal(model.slot));
         return;
       }
-      if(e.key==='F9') {
+      if(key==='F9' || e.code==='F9') {
         e.preventDefault();
         if(model.slots[model.slot-1]?.bytes) run(()=>loadLocal(model.slot));
         else toast(`Cloud Slot ${model.slot} is empty`);
@@ -792,7 +797,10 @@
     }
 
     if(e.key==='Escape' && root?.classList.contains('is-open')) close();
-  });
+  }
+
+  // Capture phase makes this as reliable as possible alongside emulator input.
+  window.addEventListener('keydown',cloudShortcutKeydown,{capture:true,passive:false});
 
   document.addEventListener('DOMContentLoaded',()=>{
     buildUi();
