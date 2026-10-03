@@ -74,3 +74,19 @@ test('maintain-aspect fullscreen computes a fitted rectangle while stretch uses 
   assert.match(screen,/height = width \/ pictureAspect/);
   assert.match(screen,/let width = viewportW;\s*let height = viewportH;/);
 });
+
+
+test('fullscreen UI gives F11 exit guidance and stretched mode auto-hides toolbar after idle',()=>{
+  const html=fs.readFileSync('index.html','utf8');
+  const screen=fs.readFileSync('assets/js/screen/screen.js','utf8');
+  const css=fs.readFileSync('assets/css/screen.css','utf8');
+
+  assert.match(html,/Press F11 to exit Full Screen\./);
+  assert.match(screen,/ev\.key !== 'F11' \|\| !emulatorFullscreenActive\(\)/);
+  assert.match(screen,/setTimeout\(\(\) => \{/);
+  assert.match(screen,/\}, 5000\)/);
+  assert.match(screen,/fullscreenMode === 'stretch'/);
+  assert.match(screen,/addEventListener\('pointermove', armFullscreenUiIdleTimer/);
+  assert.match(css,/fullscreen-ui-idle[^\{]*#system-screen-modal \.optionsBar/);
+  assert.match(css,/display:\s*none !important/);
+});
