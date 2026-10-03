@@ -84,3 +84,25 @@ test('manual Game Genie patches honor compare values and disable-all',()=>{
   g.disableAll();
   assert.equal(g.patchRomRead(0x91d9,0xce),0xce);
 });
+
+
+test('filters no-op public database codes such as Mach Rider AENIPPAA',()=>{
+  const g=genie();
+  const decoded=g.decode('AENIPPAA');
+  assert.equal(decoded.address,0xd1f1);
+  assert.equal(decoded.data,0x00);
+  assert.equal(decoded.compare,0x00);
+
+  const parsed=JSON.parse(JSON.stringify(g.parseCht([
+    'cheats = 2',
+    'cheat0_desc = "Start Any Game With 100,000 Points"',
+    'cheat0_code = "AENIPPAA"',
+    'cheat0_enable = false',
+    'cheat1_desc = "Real code"',
+    'cheat1_code = "SXIOPO"',
+    'cheat1_enable = false'
+  ].join('\n'))));
+
+  assert.deepEqual(parsed,[{description:'Real code',code:'SXIOPO'}]);
+  assert.throws(()=>g.addManual('AENIPPAA'),/no-op/);
+});
