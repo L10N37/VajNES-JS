@@ -82,6 +82,33 @@
   </div>
 </header>
 
+  <script>
+  // Reserve Cloud-account interactions for Google OAuth before any ad script
+  // can consume the browser user-activation needed for Google's popup.
+  (() => {
+    const isCloudAccount = target =>
+      target instanceof Element && !!target.closest('#cloud-account-button');
+
+    for (const type of ['pointerdown','mousedown','pointerup','mouseup','touchstart','touchend']) {
+      window.addEventListener(type, event => {
+        if (!isCloudAccount(event.target)) return;
+        event.stopImmediatePropagation();
+      }, true);
+    }
+
+    window.addEventListener('click', event => {
+      if (!isCloudAccount(event.target)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      const cloud = window.VajNESCloudSaves;
+      if (!cloud) return;
+      if (cloud.connected) cloud.signOut();
+      else cloud.signIn();
+    }, true);
+  })();
+  </script>
+
   <!-- Advertising: kept outside the emulator canvas and controls. -->
   <div class="ad-slot ad-slot-horizontal" aria-label="Advertisement">
     <span class="ad-label">Advertisement</span>
