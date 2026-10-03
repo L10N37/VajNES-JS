@@ -162,6 +162,7 @@ function consumeCycle() {
   cpuCycles++;
   apuClock();
   if(mapperNumber===19) namcoClockCpu();
+  if(vrc24FamilyActive()) vrc24ClockCpu();
   if(mapperNumber===24 || mapperNumber===26) vrc6ClockCpu();
   if(mapperNumber===69) fme7ClockCpu();
   if(rambo1FamilyActive()) rambo1ClockCpu();
