@@ -163,6 +163,8 @@ function servicePpuDataWrite() {
       if (chrIsRAM) namcoChrWrite(v, value);
     } else if (mapperNumber === 24 || mapperNumber === 26) {
       if (chrIsRAM) vrc6ChrWrite(v, value);
+    } else if (mapperNumber === 85) {
+      if (chrIsRAM) vrc7ChrWrite(v, value);
     } else if (chrIsRAM) {
       CHR_ROM[v & 0x1FFF] = value;
     }

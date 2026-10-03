@@ -6,6 +6,28 @@ class ExpansionAudioRenderer {
   static MMC5_LENGTH = [10,254,20,2,40,4,80,6,160,8,60,10,14,12,26,14,
                         12,16,24,18,48,20,96,22,192,24,72,26,16,28,32,30];
 
+  // VRC7's fixed instrument ROM. Instrument 0 is the writable custom patch.
+  static VRC7_PATCHES = [
+    [0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00],
+    [0x03,0x21,0x05,0x06,0xe8,0x81,0x42,0x27],
+    [0x13,0x41,0x14,0x0d,0xd8,0xf6,0x23,0x12],
+    [0x11,0x11,0x08,0x08,0xfa,0xb2,0x20,0x12],
+    [0x31,0x61,0x0c,0x07,0xa8,0x64,0x61,0x27],
+    [0x32,0x21,0x1e,0x06,0xe1,0x76,0x01,0x28],
+    [0x02,0x01,0x06,0x00,0xa3,0xe2,0xf4,0xf4],
+    [0x21,0x61,0x1d,0x07,0x82,0x81,0x11,0x07],
+    [0x23,0x21,0x22,0x17,0xa2,0x72,0x01,0x17],
+    [0x35,0x11,0x25,0x00,0x40,0x73,0x72,0x01],
+    [0xb5,0x01,0x0f,0x0f,0xa8,0xa5,0x51,0x02],
+    [0x17,0xc1,0x24,0x07,0xf8,0xf8,0x22,0x12],
+    [0x71,0x23,0x11,0x06,0x65,0x74,0x18,0x16],
+    [0x01,0x02,0xd3,0x05,0xc9,0x95,0x03,0x02],
+    [0x61,0x63,0x0c,0x00,0x94,0xc0,0x33,0xf6],
+    [0x21,0x72,0x0d,0x00,0xc1,0xd5,0x56,0x06]
+  ];
+  static VRC7_MUL = [0.5,1,2,3,4,5,6,7,8,9,10,10,12,12,15,15];
+  static VRC7_CLOCK = 3579545;
+
   constructor(chip, sampleRate=48000) {
     this.sampleRate=sampleRate;
     this.setChip(chip);
@@ -52,13 +74,222 @@ class ExpansionAudioRenderer {
       envelopeDirection:-1,
       envelopeHolding:false
     };
+    this.vrc7=this.makeVRC7State();
   }
 
   write(address,value) {
     value&=0xff;
     if(this.chip==='Konami VRC6') this.writeVRC6(address&0xffff,value);
+    else if(this.chip==='Konami VRC7') this.writeVRC7(address&0xffff,value);
     else if(this.chip==='MMC5') this.writeMMC5(address&0xffff,value);
     else if(this.chip==='Sunsoft 5B') this.writeSunsoft5B(address&0xffff,value);
+  }
+
+  makeVRC7State() {
+    const channel=()=>({
+      fnum:0,block:0,key:false,sustain:false,instrument:0,volume:15,
+      modPhase:0,carPhase:0,modEnv:0,carEnv:0,
+      modStage:'off',carStage:'off',feedback:0,lastMod:0
+    });
+    return {
+      selected:0,
+      reset:false,
+      custom:new Array(8).fill(0),
+      regs:new Array(0x40).fill(0),
+      channels:Array.from({length:6},channel),
+      pmPhase:0,
+      amPhase:0
+    };
+  }
+
+  resetVRC7Sound() {
+    const selected=this.vrc7?.selected||0;
+    const reset=this.vrc7?.reset||false;
+    this.vrc7=this.makeVRC7State();
+    this.vrc7.selected=selected;
+    this.vrc7.reset=reset;
+  }
+
+  writeVRC7(address,value) {
+    const v=this.vrc7;
+    if(address===0xe000){
+      const nextReset=!!(value&0x40);
+      if(nextReset && !v.reset){
+        v.reset=true;
+        this.resetVRC7Sound();
+        this.vrc7.reset=true;
+      } else {
+        v.reset=nextReset;
+      }
+      return;
+    }
+    if(address===0x9010){
+      if(!v.reset)v.selected=value&0xff;
+      return;
+    }
+    if(address!==0x9030 || v.reset)return;
+
+    const reg=v.selected&0x3f;
+    v.regs[reg]=value&0xff;
+    if(reg<=0x07){
+      v.custom[reg]=value&0xff;
+      return;
+    }
+    if(reg>=0x10&&reg<=0x15){
+      const ch=v.channels[reg-0x10];
+      ch.fnum=(ch.fnum&0x100)|value;
+      return;
+    }
+    if(reg>=0x20&&reg<=0x25){
+      const ch=v.channels[reg-0x20];
+      const wasKey=ch.key;
+      ch.fnum=(ch.fnum&0xff)|((value&1)<<8);
+      ch.block=(value>>>1)&7;
+      ch.key=!!(value&0x10);
+      ch.sustain=!!(value&0x20);
+      if(ch.key&&!wasKey)this.vrc7KeyOn(ch);
+      else if(!ch.key&&wasKey)this.vrc7KeyOff(ch);
+      return;
+    }
+    if(reg>=0x30&&reg<=0x35){
+      const ch=v.channels[reg-0x30];
+      ch.instrument=(value>>>4)&0x0f;
+      ch.volume=value&0x0f;
+    }
+  }
+
+  vrc7KeyOn(ch) {
+    ch.modPhase=0;
+    ch.carPhase=0;
+    ch.modEnv=0;
+    ch.carEnv=0;
+    ch.modStage='attack';
+    ch.carStage='attack';
+    ch.feedback=0;
+    ch.lastMod=0;
+  }
+
+  vrc7KeyOff(ch) {
+    if(ch.modStage!=='off')ch.modStage='release';
+    if(ch.carStage!=='off')ch.carStage='release';
+  }
+
+  vrc7PatchBytes(ch) {
+    return ch.instrument===0 ? this.vrc7.custom : ExpansionAudioRenderer.VRC7_PATCHES[ch.instrument];
+  }
+
+  vrc7PatchOperator(ch,carrier) {
+    const p=this.vrc7PatchBytes(ch);
+    const b=carrier?p[1]:p[0];
+    const egByte=carrier?p[5]:p[4];
+    const srByte=carrier?p[7]:p[6];
+    return {
+      am:!!(b&0x80),pm:!!(b&0x40),eg:!!(b&0x20),kr:!!(b&0x10),ml:b&0x0f,
+      kl:carrier?((p[3]>>>6)&3):((p[2]>>>6)&3),
+      tl:carrier?0:(p[2]&0x3f),
+      wf:carrier?((p[3]>>>4)&1):((p[3]>>>3)&1),
+      fb:carrier?0:(p[3]&7),
+      ar:(egByte>>>4)&0x0f,dr:egByte&0x0f,sl:(srByte>>>4)&0x0f,rr:srByte&0x0f
+    };
+  }
+
+  vrc7RateTime(rate,kind) {
+    rate&=15;
+    if(rate===0)return Infinity;
+    if(kind==='attack'&&rate===15)return 0.0015;
+    const base=kind==='attack'?0.0025:0.018;
+    return base*Math.pow(2,(15-rate)/1.55);
+  }
+
+  vrc7AdvanceEnvelope(ch,op,which,dt) {
+    const stageKey=which+'Stage',envKey=which+'Env';
+    let stage=ch[stageKey],env=ch[envKey];
+    if(stage==='off'){ch[envKey]=0;return;}
+    if(stage==='attack'){
+      const t=this.vrc7RateTime(op.ar,'attack');
+      if(!Number.isFinite(t))return;
+      env+=dt/t;
+      if(env>=1){env=1;stage='decay';}
+    } else if(stage==='decay'){
+      const target=Math.pow(10,-(op.sl===15?48:op.sl*3)/20);
+      const t=this.vrc7RateTime(op.dr,'decay');
+      if(Number.isFinite(t)){
+        env-=dt*(1-target)/t;
+        if(env<=target){
+          env=target;
+          stage=op.eg?'sustain':'sustainDecay';
+        }
+      }
+    } else if(stage==='sustainDecay'){
+      const t=this.vrc7RateTime(op.rr,'decay');
+      if(Number.isFinite(t))env-=dt/t;
+      if(env<=0){env=0;stage='off';}
+    } else if(stage==='release'){
+      const rr=ch.sustain?5:(op.eg?op.rr:7);
+      const t=this.vrc7RateTime(rr,'decay');
+      if(Number.isFinite(t))env-=dt/Math.max(t,0.001);
+      if(env<=0){env=0;stage='off';}
+    }
+    ch[stageKey]=stage;
+    ch[envKey]=Math.max(0,Math.min(1,env));
+  }
+
+  vrc7OperatorWave(phase,wf) {
+    const x=Math.sin(phase);
+    return wf ? Math.max(0,x) : x;
+  }
+
+  vrc7BaseFrequency(ch) {
+    return ExpansionAudioRenderer.VRC7_CLOCK*ch.fnum*Math.pow(2,ch.block)/(72*524288);
+  }
+
+  advanceVRC7(cycles) {
+    const v=this.vrc7;
+    if(v.reset)return;
+    const dt=cycles/ExpansionAudioRenderer.CPU_HZ;
+    v.pmPhase=(v.pmPhase+2*Math.PI*6.4*dt)%(2*Math.PI);
+    v.amPhase=(v.amPhase+2*Math.PI*3.7*dt)%(2*Math.PI);
+
+    for(const ch of v.channels){
+      if(ch.modStage==='off'&&ch.carStage==='off')continue;
+      const mod=this.vrc7PatchOperator(ch,false);
+      const car=this.vrc7PatchOperator(ch,true);
+      this.vrc7AdvanceEnvelope(ch,mod,'mod',dt);
+      this.vrc7AdvanceEnvelope(ch,car,'car',dt);
+
+      const base=this.vrc7BaseFrequency(ch);
+      const pm=Math.pow(2,(13.75*Math.sin(v.pmPhase))/1200);
+      const mf=base*ExpansionAudioRenderer.VRC7_MUL[mod.ml]*(mod.pm?pm:1);
+      const cf=base*ExpansionAudioRenderer.VRC7_MUL[car.ml]*(car.pm?pm:1);
+      ch.modPhase=(ch.modPhase+2*Math.PI*mf*dt)%(2*Math.PI);
+      ch.carPhase=(ch.carPhase+2*Math.PI*cf*dt)%(2*Math.PI);
+    }
+  }
+
+  sampleVRC7() {
+    const v=this.vrc7;
+    if(v.reset)return 0;
+    let sum=0;
+    for(const ch of v.channels){
+      if(ch.carStage==='off')continue;
+      const mod=this.vrc7PatchOperator(ch,false);
+      const car=this.vrc7PatchOperator(ch,true);
+      const amDb=2.4*(1+Math.sin(v.amPhase));
+      const modAmp=ch.modEnv*Math.pow(10,-(mod.tl*0.75+(mod.am?amDb:0))/20);
+      const carAmp=ch.carEnv*Math.pow(10,-(ch.volume*3+(car.am?amDb:0))/20);
+
+      const fbScale=mod.fb?Math.pow(2,mod.fb-4)*0.25:0;
+      const modWave=this.vrc7OperatorWave(ch.modPhase+ch.feedback*fbScale,mod.wf);
+      const modSignal=modWave*modAmp;
+      ch.feedback=(ch.feedback+ch.lastMod)*0.5;
+      ch.lastMod=modSignal;
+
+      // VRC7 is phase modulation: the modulator bends the carrier phase.
+      const modulationIndex=5.5;
+      const carWave=this.vrc7OperatorWave(ch.carPhase+modSignal*modulationIndex,car.wf);
+      sum+=carWave*carAmp;
+    }
+    return (sum/6)*0.55;
   }
 
   writeVRC6(address,value) {
@@ -274,6 +505,10 @@ class ExpansionAudioRenderer {
   }
 
   advanceOscillators(cycles) {
+    if(this.chip==='Konami VRC7'){
+      this.advanceVRC7(cycles);
+      return;
+    }
     if(this.chip==='Sunsoft 5B'){
       this.advanceSunsoft5B(cycles);
       return;
@@ -347,6 +582,7 @@ class ExpansionAudioRenderer {
 
   sample() {
     if(this.chip==='Konami VRC6')return this.sampleVRC6();
+    if(this.chip==='Konami VRC7')return this.sampleVRC7();
     if(this.chip==='MMC5')return this.sampleMMC5();
     if(this.chip==='Sunsoft 5B')return this.sampleSunsoft5B();
     return 0;
@@ -374,6 +610,7 @@ class ExpansionAudioRenderer {
     return {
       chip:this.chip,cycle:this.cycle,sampleClock:this.sampleClock,
       vrc6:JSON.parse(JSON.stringify(this.vrc6)),
+      vrc7:JSON.parse(JSON.stringify(this.vrc7)),
       mmc5:JSON.parse(JSON.stringify(this.mmc5)),
       sunsoft5b:JSON.parse(JSON.stringify(this.sunsoft5b))
     };
@@ -384,6 +621,7 @@ class ExpansionAudioRenderer {
     this.sampleClock=Number(state.sampleClock)||0;
     this.queue.length=0;
     if(state.vrc6)this.vrc6=JSON.parse(JSON.stringify(state.vrc6));
+    if(state.vrc7)this.vrc7=JSON.parse(JSON.stringify(state.vrc7));
     if(state.mmc5)this.mmc5=JSON.parse(JSON.stringify(state.mmc5));
     if(state.sunsoft5b)this.sunsoft5b=JSON.parse(JSON.stringify(state.sunsoft5b));
     return true;
