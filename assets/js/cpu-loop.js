@@ -91,9 +91,13 @@ function disasmPeekByte(address) {
   // The live trace must follow the active cartridge bank without performing a
   // normal CPU-bus read (which could perturb open bus or DMA/debug state).
   if(addr<0x8000)return undefined;
-  if(mapperNumber===4)return mapper4_prg_read(addr)&0xff;
-  if(mapperNumber===1)return mmc1CpuRead(addr)&0xff;
-  return mapperReadPRG(addr)&0xff;
+  let value;
+  if(mapperNumber===4)value=mapper4_prg_read(addr)&0xff;
+  else if(mapperNumber===1)value=mmc1CpuRead(addr)&0xff;
+  else value=mapperReadPRG(addr)&0xff;
+  return (typeof VajNESGenie!=='undefined' && VajNESGenie.patchRomRead)
+    ? VajNESGenie.patchRomRead(addr,value)&0xff
+    : value;
 }
 
 window.step = function () {
