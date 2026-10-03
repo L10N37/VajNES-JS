@@ -1504,10 +1504,10 @@ test('mapper 68 exposes WRAM at 6000-7FFF and restores mapper state',()=>{
 test('VRC2/VRC4 family decodes PRG banking on mappers 21 22 23 25',()=>{
  for(const mapperId of [21,22,23,25]){
   const bytes=rom(mapperId,8,16);
-  for(let b=0;b<8;b++)bytes.fill(b,16+b*0x4000,16+(b+1)*0x4000);
+  for(let b=0;b<16;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
   const e=emulator(bytes);
   e.evaluate('checkWriteOffset(0x8000,3);checkWriteOffset(0xa000,4)');
-  assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xa000),checkReadOffset(0xe000)]'),[3,4,7]);
+  assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xa000),checkReadOffset(0xe000)]'),[3,4,15]);
  }
 });
 
@@ -1534,7 +1534,8 @@ test('mapper 22 shifts CHR bank numbers right by one and has no WRAM',()=>{
 
 test('VRC4 IRQ latch/control/ack works in cycle mode',()=>{
  const e=emulator(rom(25,8,16));
- e.evaluate('checkWriteOffset(0xf000,0x0e);checkWriteOffset(0xf001,0x0f);checkWriteOffset(0xf002,0x06)');
+ // Mapper 25 swaps the physical low address lines for canonical F001/F002.
+ e.evaluate('checkWriteOffset(0xf000,0x0e);checkWriteOffset(0xf002,0x0f);checkWriteOffset(0xf001,0x06)');
  assert.deepEqual(e.evaluate('[vrc24IrqLatch,vrc24IrqCounter,vrc24IrqEnabled,vrc24IrqCycleMode]'),[0xfe,0xfe,true,true]);
  e.evaluate('vrc24ClockCpu()');
  assert.equal(e.evaluate('irqAssert.vrc'),false);
