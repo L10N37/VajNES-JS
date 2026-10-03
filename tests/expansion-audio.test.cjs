@@ -145,3 +145,54 @@ test('Sunsoft 5B save-state restores PSG registers and oscillator state',()=>{
  assert.equal(r.sunsoft5b.tonePhase[0],phase);
  assert.equal(r.sunsoft5b.noiseLfsr,lfsr);
 });
+
+
+test('VRC7 FM channel produces audible output from register writes',()=>{
+ const r=renderer('Konami VRC7',48000);
+ // Use built-in instrument 1, medium volume, A4-ish tone.
+ r.write(0x9010,0x10);r.write(0x9030,0x80);
+ r.write(0x9010,0x20);r.write(0x9030,0x15);
+ r.write(0x9010,0x30);r.write(0x9030,0x10);
+ r.advance(Math.floor(1789772.7272727273*0.25));
+ const samples=drain(r);
+ assert(samples.length>11000&&samples.length<13000);
+ assert(samples.some(v=>Math.abs(v)>1e-4));
+});
+
+test('VRC7 key off releases channel instead of leaving a stuck tone',()=>{
+ const r=renderer('Konami VRC7',48000);
+ r.write(0x9010,0x10);r.write(0x9030,0x90);
+ r.write(0x9010,0x20);r.write(0x9030,0x15);
+ r.write(0x9010,0x30);r.write(0x9030,0x10);
+ r.advance(50000);drain(r);
+ r.write(0x9010,0x20);r.write(0x9030,0x05);
+ r.advance(Math.floor(1789772.7272727273*2));
+ const samples=drain(r);
+ const tail=samples.slice(-2000);
+ assert(tail.every(v=>Math.abs(v)<0.03));
+});
+
+test('VRC7 reset bit silences FM core and register writes while asserted',()=>{
+ const r=renderer('Konami VRC7',48000);
+ r.write(0x9010,0x10);r.write(0x9030,0x80);
+ r.write(0x9010,0x20);r.write(0x9030,0x15);
+ r.write(0x9010,0x30);r.write(0x9030,0x10);
+ r.advance(30000);assert(drain(r).some(v=>Math.abs(v)>1e-4));
+ r.write(0xe000,0x40);
+ r.advance(30000);
+ assert(drain(r).every(v=>v===0));
+});
+
+test('VRC7 save-state restores FM registers and oscillator state',()=>{
+ const r=renderer('Konami VRC7',48000);
+ r.write(0x9010,0x10);r.write(0x9030,0xa0);
+ r.write(0x9010,0x20);r.write(0x9030,0x17);
+ r.write(0x9010,0x30);r.write(0x9030,0x20);
+ r.advance(12345);
+ const state=r.saveState();
+ const phase=r.vrc7.channels[0].carPhase;
+ r.reset(0);
+ assert.equal(r.loadState(state),true);
+ assert.equal(r.vrc7.regs[0x10],0xa0);
+ assert.equal(r.vrc7.channels[0].carPhase,phase);
+});
