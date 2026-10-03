@@ -45,7 +45,10 @@
   function syncOverlaySizes() {
     try {
       if (!grilleCanvas || !scanlineCanvas || !canvas) return;
-      const w = canvas.width, h = canvas.height;
+      // Effects live in display space, not the NES/WebGL backing resolution.
+      // clientWidth/clientHeight already include the selected pixel aspect.
+      const w = Math.max(1, Math.round(canvas.clientWidth || canvas.width));
+      const h = Math.max(1, Math.round(canvas.clientHeight || canvas.height));
       if (grilleCanvas.width !== w || grilleCanvas.height !== h) {
         grilleCanvas.width = w; grilleCanvas.height = h;
       }
@@ -335,10 +338,12 @@
         if (scanlineCanvas.height !== h) scanlineCanvas.height = h;
         window._setScanlineFullscreenPresentation?.(true, normalDisplayH);
       } else {
-        if (grilleCanvas.width !== canvas.width) grilleCanvas.width = canvas.width;
-        if (grilleCanvas.height !== canvas.height) grilleCanvas.height = canvas.height;
-        if (scanlineCanvas.width !== canvas.width) scanlineCanvas.width = canvas.width;
-        if (scanlineCanvas.height !== canvas.height) scanlineCanvas.height = canvas.height;
+        const w = Math.max(1, Math.round(canvas.clientWidth || canvas.width));
+        const h = Math.max(1, Math.round(canvas.clientHeight || canvas.height));
+        if (grilleCanvas.width !== w) grilleCanvas.width = w;
+        if (grilleCanvas.height !== h) grilleCanvas.height = h;
+        if (scanlineCanvas.width !== w) scanlineCanvas.width = w;
+        if (scanlineCanvas.height !== h) scanlineCanvas.height = h;
         window._setScanlineFullscreenPresentation?.(false, 0);
       }
 
