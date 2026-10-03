@@ -90,3 +90,12 @@ test('fullscreen UI gives F11 exit guidance and stretched mode auto-hides toolba
   assert.match(css,/fullscreen-ui-idle[^\{]*#system-screen-modal \.optionsBar/);
   assert.match(css,/display:\s*none !important/);
 });
+
+
+test('fullscreen CSS resize does not regenerate tuned CRT overlays',()=>{
+  const grille=fs.readFileSync('assets/js/screen/grille.js','utf8');
+  assert.match(grille,/let lastBackingW = canvas\?\.width \|\| 0/);
+  assert.match(grille,/if \(backingW === lastBackingW && backingH === lastBackingH\) return/);
+  assert.match(grille,/_scanlineRedraw\?\.\(\)/);
+  assert.match(grille,/_resyncScanlineOverlayAfterScale/);
+});
