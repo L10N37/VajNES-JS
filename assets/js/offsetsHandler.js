@@ -541,6 +541,8 @@ function checkWriteOffset(address, value) {
     if (mapperNumber === 5) mmc5CpuWrite(addr,value);
     else if (mapperNumber===19 || mapperNumber===210) namcoWrite(addr,value);
     else if (mapperNumber === 1) mmc1CpuWrite(addr, value);
+    else if (mapperNumber === 34 && mapper34Mode==='nina' && addr>=0x6000 && addr<=0x7ffc)
+      prgRam[addr - 0x6000] = value & 0xFF;
     else if (mapperNumber === 34 && mapper34Mode==='nina' && addr>=0x7ffd) mapper34Write(addr,value);
     else if (mapperNumber === 79) nina79Write(addr, value);
     else if (mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
