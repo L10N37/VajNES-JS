@@ -111,6 +111,12 @@ function mapper(nesHeader) {
       break;
     }
 
+    case 34: {
+      mapper34Init(nesHeader);
+      powerOnCPU();
+      break;
+    }
+
     case 66: {
       gxromInit();
       chrIsRAM = false;
