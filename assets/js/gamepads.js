@@ -46,8 +46,8 @@ const NESGamepads=(()=>{
 
     // Player 1 only. Fire once on the rising edge so held analogue triggers
     // never spam save/load every animation frame.
-    if(lt && !cloudLt) Promise.resolve(cloud.quickSave()).catch(()=>{});
-    if(rt && !cloudRt) Promise.resolve(cloud.quickLoad()).catch(()=>{});
+    if(lt && !cloudLt) Promise.resolve(cloud.quickSave()).catch(err=>console.warn('[Cloud Saves] controller quick save failed',err));
+    if(rt && !cloudRt) Promise.resolve(cloud.quickLoad()).catch(err=>console.warn('[Cloud Saves] controller quick load failed',err));
 
     cloudLt=lt;
     cloudRt=rt;

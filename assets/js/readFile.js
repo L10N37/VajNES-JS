@@ -385,9 +385,13 @@ function loadRom(romBytes, fileName = '') {
     payloadCrcHex,
     mapper: mapperNumber | 0
   });
-  window.dispatchEvent(new CustomEvent('vajnes-rom-loaded', {
-    detail: window.VajNESCurrentGame
-  }));
+  // Browser-only notification for cloud/UI integrations. Headless regression
+  // harnesses intentionally provide a minimal window without dispatchEvent.
+  if (typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('vajnes-rom-loaded', {
+      detail: window.VajNESCurrentGame
+    }));
+  }
 
   // ------------------------------------------------------------
   // UI: Header info popup
