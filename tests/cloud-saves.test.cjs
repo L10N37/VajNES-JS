@@ -48,3 +48,14 @@ test('cloud save slots expose direct Save and Load controls',()=>{
   assert.match(css,/\.cloud-slot-actions/);
   assert.match(css,/\.cloud-slot-action/);
 });
+
+test('cloud shortcuts are fullscreen-friendly and cloud-only',()=>{
+  const cloud=fs.readFileSync('assets/js/cloud-saves.js','utf8');
+  const index=fs.readFileSync('index.html','utf8');
+  assert.match(cloud,/e\.code==='F8'/);
+  assert.match(cloud,/e\.code==='F9'/);
+  assert.match(cloud,/model\.signedIn && model\.game/);
+  assert.match(index,/F8<\/kbd><\/span><span>Cloud Quick Save/);
+  assert.match(index,/F9<\/kbd><\/span><span>Cloud Quick Load/);
+  assert.match(index,/Cloud users only/);
+});
