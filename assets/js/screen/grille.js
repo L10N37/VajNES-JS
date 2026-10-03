@@ -271,34 +271,38 @@
 
   inten?.addEventListener('input', () => {
     localStorage.setItem('vajnesScanlineIntensity', String(inten.value));
+    localStorage.setItem('vajnesScanlineEffectMode','computed');
+    window._scanlineEffectMode = 'computed';
     redraw();
   });
   lH?.addEventListener('input', () => {
     localStorage.setItem('vajnesScanlineLineHeight', String(lH.value));
+    localStorage.setItem('vajnesScanlineEffectMode','computed');
+    window._scanlineEffectMode = 'computed';
     redraw();
   });
   gap?.addEventListener('input', () => {
     localStorage.setItem('vajnesScanlineGap', String(gap.value));
+    localStorage.setItem('vajnesScanlineEffectMode','computed');
+    window._scanlineEffectMode = 'computed';
     redraw();
   });
   off?.addEventListener('change', () => {
     localStorage.setItem('vajnesScanlineOffset', off.checked ? '1' : '0');
+    localStorage.setItem('vajnesScanlineEffectMode','computed');
+    window._scanlineEffectMode = 'computed';
     redraw();
   });
 
   window._scanlineRedraw = redraw;
-  redraw();
+  if (localStorage.getItem('vajnesScanlineEffectMode') !== 'image') redraw();
 })();
 
 // ===========================================================================
 // 7) Resync after scale (redraw overlays + test image if active)
 // ===========================================================================
 (function wireResync() {
-  function resync() {
-    // If your scaling code resized the main canvas, match overlays
-    try { window._syncOverlaySizes?.(); } catch {}
-
-    // Redraw grille overlays
+  function redrawActiveCrtEffects() {
     try {
       const val = Array.from(document.getElementsByName('grille-type'))
                        .find(r => r.checked)?.value;
@@ -307,19 +311,60 @@
       else                                window._grilleDraw?.clearGrilleCanvas();
     } catch {}
 
-    // Redraw code-drawn scanlines
-    try { window._scanlineRedraw?.(); } catch {}
-
+    try {
+      if (window._scanlineEffectMode === 'image')
+        window._drawSelectedScanlineImage?.();
+      else
+        window._scanlineRedraw?.();
+    } catch {}
   }
 
-  // Observe all relevant canvases for size changes
+  // Fullscreen must NOT scale the already-rendered CRT overlay. Resize only
+  // the overlay backing canvases to the actual displayed picture size, then
+  // render the user's same scanline/grille settings in physical screen pixels.
+  window._setCrtFullscreenPresentation = function(active, displayW, displayH, normalDisplayH) {
+    try {
+      if (!grilleCanvas || !scanlineCanvas || !canvas) return;
+
+      if (active) {
+        const w = Math.max(1, Math.round(Number(displayW) || 1));
+        const h = Math.max(1, Math.round(Number(displayH) || 1));
+        if (grilleCanvas.width !== w) grilleCanvas.width = w;
+        if (grilleCanvas.height !== h) grilleCanvas.height = h;
+        if (scanlineCanvas.width !== w) scanlineCanvas.width = w;
+        if (scanlineCanvas.height !== h) scanlineCanvas.height = h;
+        window._setScanlineFullscreenPresentation?.(true, normalDisplayH);
+      } else {
+        if (grilleCanvas.width !== canvas.width) grilleCanvas.width = canvas.width;
+        if (grilleCanvas.height !== canvas.height) grilleCanvas.height = canvas.height;
+        if (scanlineCanvas.width !== canvas.width) scanlineCanvas.width = canvas.width;
+        if (scanlineCanvas.height !== canvas.height) scanlineCanvas.height = canvas.height;
+        window._setScanlineFullscreenPresentation?.(false, 0);
+      }
+
+      try { grilleCanvas.getContext('2d').imageSmoothingEnabled = false; } catch {}
+      try { scanlineCanvas.getContext('2d').imageSmoothingEnabled = false; } catch {}
+      redrawActiveCrtEffects();
+    } catch {}
+  };
+
+  // Normal scale changes still resize the backing canvases through applyScale().
+  // Redraw at those new dimensions, but CSS-only ResizeObserver events are
+  // irrelevant to CRT pitch and therefore intentionally ignored.
+  let lastW = canvas?.width || 0;
+  let lastH = canvas?.height || 0;
+  function resync() {
+    const w = canvas?.width || 0, h = canvas?.height || 0;
+    if (w === lastW && h === lastH) return;
+    lastW = w; lastH = h;
+    try { window._syncOverlaySizes?.(); } catch {}
+    redrawActiveCrtEffects();
+  }
+
   try {
     const ro = new ResizeObserver(resync);
-    ro.observe(grilleCanvas);
-    ro.observe(scanlineCanvas);
     ro.observe(canvas);
   } catch {
-    // Fallback
     window.addEventListener('resize', resync);
   }
 })();

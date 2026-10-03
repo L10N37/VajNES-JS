@@ -90,3 +90,27 @@ test('fullscreen UI gives F11 exit guidance and stretched mode auto-hides toolba
   assert.match(css,/fullscreen-ui-idle[^\{]*#system-screen-modal \.optionsBar/);
   assert.match(css,/display:\s*none !important/);
 });
+
+
+test('fullscreen CSS resize does not blindly rescale tuned CRT overlays',()=>{
+  const grille=fs.readFileSync('assets/js/screen/grille.js','utf8');
+  assert.match(grille,/window\._setCrtFullscreenPresentation = function\(active, displayW, displayH, normalDisplayH\)/);
+  assert.match(grille,/if \(w === lastW && h === lastH\) return/);
+  assert.match(grille,/redrawActiveCrtEffects\(\)/);
+  assert.match(grille,/ro\.observe\(canvas\)/);
+});
+
+
+test('fullscreen CRT overlays render at display resolution instead of scaling tuned scanlines',()=>{
+  const screen=fs.readFileSync('assets/js/screen/screen.js','utf8');
+  const grille=fs.readFileSync('assets/js/screen/grille.js','utf8');
+  const scanlines=fs.readFileSync('assets/js/screen/scanlines.js','utf8');
+
+  assert.match(screen,/_setCrtFullscreenPresentation\?\.\(\s*true,\s*width,\s*height,\s*canvas\.height/);
+  assert.match(grille,/scanlineCanvas\.width !== w/);
+  assert.match(grille,/scanlineCanvas\.height !== h/);
+  assert.match(grille,/_scanlineEffectMode === 'image'/);
+  assert.match(scanlines,/_scanlineFullscreenPresentation\.normalDisplayHeight/);
+  assert.match(scanlines,/for \(let y = 0; y < scanlineCanvas\.height; y \+= tileH\)/);
+  assert.match(scanlines,/vajnesScanlineEffectMode/);
+});

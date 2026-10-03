@@ -946,6 +946,15 @@ function applyFullscreenPresentation() {
     el.style.setProperty('padding','0','important');
     el.style.setProperty('border','0','important');
   }
+
+  // The NES picture may be CSS-scaled, but CRT overlays are regenerated at
+  // display resolution so line height/gap/image pitch stay exactly as tuned.
+  window._setCrtFullscreenPresentation?.(
+    true,
+    width,
+    height,
+    canvas.height
+  );
 }
 
 function setFullscreenModalOpen(open) {
@@ -1040,6 +1049,7 @@ function fullscreenPresentationChanged() {
     }
     setFullscreenUiIdle(false);
     if (fullscreenShell) fullscreenShell.removeAttribute('data-fullscreen-mode');
+    window._setCrtFullscreenPresentation?.(false,0,0,0);
     clearFullscreenPresentationStyles();
     applyScale();
   }
