@@ -294,7 +294,12 @@
     // This call happens directly inside the button click handler. Do not await
     // script loading here: Firefox may otherwise treat the OAuth popup as no
     // longer user-initiated.
-    model.tokenClient.requestAccessToken();
+    //
+    // Firefox can block the GIS default select_account -> consent popup
+    // transition as a second popup. Request consent directly there so Google
+    // stays in a single authorization popup. Other browsers keep GIS defaults.
+    const isFirefox=/Firefox\//.test(navigator.userAgent);
+    model.tokenClient.requestAccessToken(isFirefox ? {prompt:'consent'} : {});
   }
 
   function signOut() {
