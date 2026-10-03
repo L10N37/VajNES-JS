@@ -852,6 +852,26 @@ document.addEventListener("DOMContentLoaded", () => {
     return true;
   }
 
+  // Public in-memory save-state API used by the 10-slot local/cloud manager.
+  // The existing file import/export UI below stays available as a manual backup.
+  window.VajNESStateIO = {
+    build() {
+      const bytes = buildStateBytes();
+      return bytes instanceof Uint8Array ? bytes : null;
+    },
+    apply(bytes) {
+      if (bytes instanceof ArrayBuffer) bytes = new Uint8Array(bytes);
+      if (ArrayBuffer.isView(bytes) && !(bytes instanceof Uint8Array))
+        bytes = new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      if (!(bytes instanceof Uint8Array)) return false;
+      return !!applyStateBytes(bytes);
+    },
+    magic: MAGIC
+  };
+  window.dispatchEvent(new CustomEvent('vajnes-state-io-ready', {
+    detail: window.VajNESStateIO
+  }));
+
   // ==========================================================
   // UI: SAVE (.state)
   // ==========================================================
