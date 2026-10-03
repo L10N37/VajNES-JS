@@ -1452,3 +1452,50 @@ test('mapper 34 save-state restores board mode and banks',()=>{
  e.evaluate('mapper34PrgBank=1;mapper34Chr0=2;mapper34Chr1=3;globalThis.__s=mapper34SaveState();mapper34PrgBank=0;mapper34Chr0=0;mapper34Chr1=1;mapper34LoadState(globalThis.__s)');
  assert.deepEqual(e.evaluate('[mapper34Mode,mapper34PrgBank,mapper34Chr0,mapper34Chr1]'),['nina',1,2,3]);
 });
+
+
+test('mapper 68 switches 16K PRG and four 2K CHR banks',()=>{
+ const bytes=rom(68,8,16);
+ for(let b=0;b<8;b++)bytes.fill(b,16+b*0x4000,16+(b+1)*0x4000);
+ const chrStart=16+8*0x4000;
+ for(let b=0;b<64;b++)bytes.fill(b,chrStart+b*0x800,chrStart+(b+1)*0x800);
+ bytes[16+8*0x4000-4]=0;bytes[16+8*0x4000-3]=0x80;
+ const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0xf000,3);checkWriteOffset(0x8000,4);checkWriteOffset(0x9000,5);checkWriteOffset(0xa000,6);checkWriteOffset(0xb000,7)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xc000)]'),[3,7]);
+ assert.deepEqual(e.evaluate('[0,0x800,0x1000,0x1800].map(ppuBusRead)'),[4,5,6,7]);
+});
+
+test('mapper 68 supports all four CIRAM mirroring modes',()=>{
+ const e=emulator(rom(68,8,16));
+ for(const [value,want] of [[0,'vertical'],[1,'horizontal'],[2,'single0'],[3,'single1']]){
+  e.evaluate(`checkWriteOffset(0xe000,${value})`);
+  assert.equal(e.evaluate('MIRRORING'),want);
+ }
+});
+
+test('mapper 68 can source nametables from CHR ROM',()=>{
+ const bytes=rom(68,8,16);
+ const chrStart=16+8*0x4000;
+ for(let b=0;b<128;b++)bytes.fill(b,chrStart+b*0x400,chrStart+(b+1)*0x400);
+ const e=emulator(bytes);
+ // Vertical mode: NT0/2 use C000 bank, NT1/3 use D000 bank.
+ e.evaluate('checkWriteOffset(0xc000,2);checkWriteOffset(0xd000,3);checkWriteOffset(0xe000,0x10)');
+ assert.deepEqual(e.evaluate('[ppuBusRead(0x2000),ppuBusRead(0x2400),ppuBusRead(0x2800),ppuBusRead(0x2c00)]'),[2,3,2,3]);
+});
+
+test('mapper 68 CHR-backed nametables ignore writes while CIRAM mode remains writable',()=>{
+ const e=emulator(rom(68,8,16));
+ e.evaluate('checkWriteOffset(0xc000,2);checkWriteOffset(0xe000,0x10);mapper68NtWrite(0x2000,0x55)');
+ assert.notEqual(e.evaluate('mapper68NtRead(0x2000)'),0x55);
+ e.evaluate('checkWriteOffset(0xe000,0x00);mapper68NtWrite(0x2000,0x66)');
+ assert.equal(e.evaluate('mapper68NtRead(0x2000)'),0x66);
+});
+
+test('mapper 68 exposes WRAM at 6000-7FFF and restores mapper state',()=>{
+ const e=emulator(rom(68,8,16));
+ e.evaluate('checkWriteOffset(0x6000,0x55);checkWriteOffset(0x7fff,0x66)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),checkReadOffset(0x7fff)]'),[0x55,0x66]);
+ e.evaluate('mapper68Chr.set([4,5,6,7]);mapper68Prg=3;mapper68Nt1=2;mapper68Nt2=3;mapper68Mirror=0x11;globalThis.__s=mapper68SaveState();mapper68Init();mapper68LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[Array.from(mapper68Chr),mapper68Prg,mapper68Nt1,mapper68Nt2,mapper68Mirror,MIRRORING]'),[[4,5,6,7],3,2,3,0x11,'horizontal']);
+});
