@@ -337,7 +337,7 @@
           <li id="screen-option-palette">Palette</li>
           <li id="screen-option-pixel">Pixel</li>
           <li id="screen-option-fps">FPS</li>
-          <li id="screen-option-fullscreen">Fullscreen</li>
+          <li id="screen-option-fullscreen">Full Screen</li>
           <li id="screen-option-exit">Exit</li>
         </ul>
       </div>
@@ -425,6 +425,17 @@
   <!-- OK button -->
   <div>
     <button id="ok-button">OK</button>
+  </div>
+</div>
+
+<!-- Full-screen presentation options. F11 remains browser fullscreen. -->
+<div id="fullscreen-modal" class="modal" aria-hidden="true">
+  <div class="modal-content fullscreen-modal-content" role="dialog" aria-modal="true" aria-labelledby="fullscreen-title">
+    <span id="fullscreen-close" class="closeModal" aria-label="Close Full Screen options">&times;</span>
+    <h2 id="fullscreen-title">Full Screen</h2>
+    <p>Choose how the NES picture fills the display.</p>
+    <button type="button" class="fullscreen-choice" data-fullscreen-mode="aspect">Maintain aspect ratio</button>
+    <button type="button" class="fullscreen-choice" data-fullscreen-mode="stretch">Full screen stretched</button>
   </div>
 </div>
 
