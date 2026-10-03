@@ -169,6 +169,7 @@ function servicePpuDataWrite() {
   } else if (v < 0x3F00) {
     if (mapperNumber===5) mmc5NametableWrite(v,value);
     else if (mapperNumber===19 || mapperNumber===210) namcoNtWrite(v,value);
+    else if (mapperNumber===68) mapper68NtWrite(v,value);
     else VRAM[mapNT(v)] = value;
   } else {
     PALETTE_RAM[paletteIndex(v)] = value & 0x3F;
@@ -901,6 +902,7 @@ function ppuBusRead(addr) {
     if (addr < 0x3F00) {
         if(mapperNumber===5)return mmc5NametableRead(0x2000 | (addr & 0x0FFF)) & 0xFF;
         if(mapperNumber===19 || mapperNumber===210)return namcoNtRead(0x2000 | (addr & 0x0FFF)) & 0xFF;
+        if(mapperNumber===68)return mapper68NtRead(0x2000 | (addr & 0x0FFF)) & 0xFF;
         const mapped = mapNametableAddr(0x2000 | (addr & 0x0FFF));
         return VRAM[mapped] & 0xFF;
     }
