@@ -25,6 +25,9 @@
     driveGameId: '',
     driveGameKey: '',
     tokenClient: null,
+    googleAccountHint: '',
+    googleAccountLabel: '',
+    googleIdentityReady: false,
     slots: Array.from({length:SLOT_COUNT},()=>null)
   };
 
@@ -177,6 +180,63 @@
     return id;
   }
 
+  function decodeJwtPayload(token) {
+    const part=String(token||'').split('.')[1] || '';
+    if(!part) throw new Error('Google returned an invalid identity token.');
+    const padded=part.replace(/-/g,'+').replace(/_/g,'/') + '='.repeat((4-part.length%4)%4);
+    const bytes=atob(padded);
+    const utf8=decodeURIComponent(Array.from(bytes,ch =>
+      '%'+ch.charCodeAt(0).toString(16).padStart(2,'0')
+    ).join(''));
+    return JSON.parse(utf8);
+  }
+
+  function handleGoogleIdentity(response) {
+    try {
+      const payload=decodeJwtPayload(response?.credential);
+      const hint=String(payload.email || payload.sub || '').trim();
+      if(!hint) throw new Error('Google account identity did not contain a usable login hint.');
+      model.googleAccountHint=hint;
+      model.googleAccountLabel=String(payload.email || 'Google account');
+      model.authError='';
+      render();
+      toast('Google account selected — connect Drive');
+    } catch(err) {
+      model.googleAccountHint='';
+      model.googleAccountLabel='';
+      model.authError=err?.message || String(err);
+      render();
+      toast(model.authError,5000);
+      console.error('[Cloud Saves] Google identity selection failed',err);
+    }
+  }
+
+  function initGoogleIdentity() {
+    if(model.googleIdentityReady) return;
+    if(!window.google?.accounts?.id?.initialize) return;
+    google.accounts.id.initialize({
+      client_id:cfg.googleClientId,
+      callback:handleGoogleIdentity,
+      auto_select:false
+    });
+    model.googleIdentityReady=true;
+  }
+
+  function renderGoogleIdentityButton() {
+    if(!googleSignInHost || !model.googleIdentityReady) return;
+    if(googleSignInHost.dataset.rendered==='1') return;
+    google.accounts.id.renderButton(googleSignInHost,{
+      type:'standard',
+      theme:'outline',
+      size:'large',
+      text:'signin_with',
+      shape:'rectangular',
+      logo_alignment:'left',
+      width:220
+    });
+    googleSignInHost.dataset.rendered='1';
+  }
+
   let authWatchdogTimer=0;
 
   function clearAuthWatchdog() {
@@ -257,6 +317,7 @@
     try {
       requireClientId();
       await loadGoogleIdentity();
+      initGoogleIdentity();
       if(!model.tokenClient) {
         model.tokenClient=google.accounts.oauth2.initTokenClient({
           client_id:cfg.googleClientId,
@@ -268,6 +329,7 @@
       model.googleReady=true;
       model.authError='';
       render();
+      renderGoogleIdentityButton();
     } catch(err) {
       model.googleReady=false;
       model.authError=err?.message || String(err);
@@ -285,21 +347,23 @@
       void prepareGoogleSignIn();
       return;
     }
+    if(!model.googleAccountHint) {
+      model.authError='Choose a Google account first.';
+      render();
+      return;
+    }
 
     model.authBusy=true;
     model.authError='';
     render();
     startAuthWatchdog();
 
-    // This call happens directly inside the button click handler. Do not await
-    // script loading here: Firefox may otherwise treat the OAuth popup as no
-    // longer user-initiated.
-    //
-    // Firefox can block the GIS default select_account -> consent popup
-    // transition as a second popup. Request consent directly there so Google
-    // stays in a single authorization popup. Other browsers keep GIS defaults.
-    const isFirefox=/Firefox\//.test(navigator.userAgent);
-    model.tokenClient.requestAccessToken(isFirefox ? {prompt:'consent'} : {});
+    // The Google account was selected separately above. Supplying login_hint
+    // skips the failing account-chooser stage and opens Drive consent directly.
+    model.tokenClient.requestAccessToken({
+      prompt:'consent',
+      login_hint:model.googleAccountHint
+    });
   }
 
   function signOut() {
@@ -308,6 +372,7 @@
     clearAuthWatchdog();
     model.token='';model.tokenExpiresAt=0;model.signedIn=false;
     model.authBusy=false;model.authError='';
+    model.googleAccountHint='';model.googleAccountLabel='';
     model.driveRootId='';model.driveGameId='';model.driveGameKey='';
     render();
     toast('Google Drive disconnected');
@@ -477,7 +542,7 @@
     }
   }
 
-  let root,slotGrid,statusText,gameText,accountBtn,syncBtn;
+  let root,slotGrid,statusText,gameText,googleSignInHost,accountBtn,syncBtn;
   function buildUi() {
     const wrap=document.createElement('div');
     wrap.id='cloud-save-modal';
@@ -493,7 +558,8 @@
         </div>
         <div class="cloud-save-game" id="cloud-save-game">Load a ROM to start</div>
         <div class="cloud-save-toolbar">
-          <button type="button" id="cloud-account-button">Sign in with Google</button>
+          <div id="cloud-google-signin" aria-label="Choose Google account"></div>
+          <button type="button" id="cloud-account-button">Connect Google Drive</button>
           <button type="button" id="cloud-sync-button">Sync now</button>
         </div>
         <div class="cloud-save-slots" id="cloud-save-slots"></div>
@@ -508,16 +574,15 @@
     slotGrid=wrap.querySelector('#cloud-save-slots');
     statusText=wrap.querySelector('#cloud-save-status');
     gameText=wrap.querySelector('#cloud-save-game');
+    googleSignInHost=wrap.querySelector('#cloud-google-signin');
     accountBtn=wrap.querySelector('#cloud-account-button');
     syncBtn=wrap.querySelector('#cloud-sync-button');
 
     wrap.querySelector('.cloud-save-close').addEventListener('click',close);
     wrap.addEventListener('click',e=>{if(e.target===wrap)close();});
-    // On local development this is the canonical Google GIS path: invoke
-    // requestAccessToken() directly from the user's button click. On production
-    // the early capture guard handles this click before ad scripts can consume it.
+    // Drive authorization remains a direct user gesture. Account selection is
+    // handled separately by Google's own Sign in with Google button above.
     accountBtn.addEventListener('click',()=>{
-      if(window.VAJNES_ADS_ENABLED) return;
       if(model.signedIn) signOut();
       else signIn();
     });
@@ -541,20 +606,25 @@
       ? `${model.game.name} · ${model.game.payloadCrcHex}`
       : 'Load a ROM to start';
     statusText.textContent=model.authBusy
-      ? 'Signing in…'
+      ? 'Connecting Google Drive…'
       : model.authError
         ? model.authError
         : model.syncBusy
           ? 'Syncing…'
           : model.signedIn ? 'Google Drive connected'
-          : model.googleReady ? 'Google sign-in ready'
+          : model.googleAccountHint ? `Account selected: ${model.googleAccountLabel}`
+          : model.googleReady ? 'Choose a Google account'
           : 'Loading Google sign-in…';
     accountBtn.textContent=model.authBusy
-      ? 'Signing in…'
+      ? 'Connecting…'
       : model.signedIn ? 'Disconnect Google Drive'
-      : model.googleReady ? 'Sign in with Google'
-      : 'Loading Google…';
-    accountBtn.disabled=model.authBusy || (!model.googleReady && !model.signedIn);
+      : model.googleAccountHint ? 'Connect Google Drive'
+      : 'Choose Google account first';
+    accountBtn.disabled=model.authBusy || (!model.signedIn && (!model.googleReady || !model.googleAccountHint));
+    if(googleSignInHost) {
+      googleSignInHost.style.display=(model.signedIn || model.googleAccountHint) ? 'none' : '';
+      if(!model.signedIn && !model.googleAccountHint) renderGoogleIdentityButton();
+    }
     syncBtn.disabled=!model.signedIn || !model.game || model.syncBusy || model.authBusy;
     slotGrid.innerHTML='';
     for(let slot=1;slot<=SLOT_COUNT;slot++) {
