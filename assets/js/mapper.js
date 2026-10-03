@@ -154,6 +154,12 @@ function mapper(nesHeader) {
       break;
     }
 
+    case 68: {
+      mapper68Init();
+      powerOnCPU();
+      break;
+    }
+
     case 69: {
       fme7Init();
       chrIsRAM = false;
