@@ -1330,3 +1330,46 @@ test('Game Genie disassembly peek reports the patched byte',()=>{
  e.evaluate("VajNESGenie.addManual('SXIOPO')");
  assert.equal(e.evaluate('disasmPeekByte(0x91d9)'),0xad);
 });
+
+
+test('mapper 206 banks 8K PRG and 2K/1K CHR through Namco 108 registers',()=>{
+ const bytes=rom(206,8,8);
+ for(let b=0;b<16;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
+ const chrStart=16+8*0x4000;
+ for(let b=0;b<64;b++)bytes.fill(b,chrStart+b*0x400,chrStart+(b+1)*0x400);
+ // Restore reset vector after the bank markers.
+ bytes[16+8*0x4000-4]=0;bytes[16+8*0x4000-3]=0x80;
+ const e=emulator(bytes);
+
+ // Namco 108 decodes only CPU A15/A0, so A000/A001 mirrors 8000/8001.
+ e.evaluate('checkWriteOffset(0xa000,6);checkWriteOffset(0xa001,3);checkWriteOffset(0xc000,7);checkWriteOffset(0xc001,4)');
+ assert.deepEqual(e.evaluate('[0x8000,0xa000,0xc000,0xe000].map(checkReadOffset)'),[3,4,14,15]);
+
+ e.evaluate('checkWriteOffset(0x8000,0);checkWriteOffset(0x8001,7);checkWriteOffset(0x8000,1);checkWriteOffset(0x8001,9);checkWriteOffset(0x8000,2);checkWriteOffset(0x8001,10)');
+ assert.deepEqual(e.evaluate('[0,0x400,0x800,0xc00,0x1000].map(ppuBusRead)'),[6,7,8,9,10]);
+});
+
+test('mapper 206 keeps cartridge mirroring fixed and exposes no PRG RAM',()=>{
+ const e=emulator(rom(206,8,8,1));
+ assert.equal(e.evaluate('MIRRORING'),'vertical');
+ e.evaluate('checkWriteOffset(0xa000,0xff);checkWriteOffset(0xa001,0xff)');
+ assert.equal(e.evaluate('MIRRORING'),'vertical');
+ e.evaluate('prgRam[0]=0x55;openBus.CPU=0x33;checkWriteOffset(0x6000,0xaa);openBus.CPU=0x33');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x33,0x55]);
+});
+
+test('mapper 206 NES 2.0 submapper 1 leaves 32K PRG unbanked',()=>{
+ const bytes=rom(206,2,8,0,1);
+ for(let b=0;b<4;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
+ bytes[16+2*0x4000-4]=0;bytes[16+2*0x4000-3]=0x80;
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('mapper206Unbanked32'),true);
+ e.evaluate('checkWriteOffset(0x8000,6);checkWriteOffset(0x8001,3);checkWriteOffset(0x8000,7);checkWriteOffset(0x8001,2)');
+ assert.deepEqual(e.evaluate('[0x8000,0xa000,0xc000,0xe000].map(checkReadOffset)'),[0,1,2,3]);
+});
+
+test('mapper 206 save-state restores selector and bank registers',()=>{
+ const e=emulator(rom(206,8,8));
+ e.evaluate('mapper206Select=5;mapper206Regs.set([2,4,6,8,10,12,3,4]);mapper206Unbanked32=false;globalThis.__s=mapper206SaveState();mapper206Init(new Uint8Array(16));mapper206LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[mapper206Select,Array.from(mapper206Regs),mapper206Unbanked32]'),[5,[2,4,6,8,10,12,3,4],false]);
+});
