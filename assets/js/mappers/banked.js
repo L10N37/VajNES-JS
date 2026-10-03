@@ -228,6 +228,7 @@ function cartridgeChrRead(addr) {
     case 69: return fme7ChrRead(addr);
     case 64:
     case 158: return rambo1ChrRead(addr);
+    case 206: return mapper206ChrRead(addr);
     default: return CHR_ROM[addr % Math.max(1,CHR_ROM.length)] & 0xFF;
   }
 }

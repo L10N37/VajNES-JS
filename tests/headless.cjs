@@ -4,7 +4,7 @@ const root = path.resolve(__dirname, '..');
 // Run the unchanged browser core with only presentation/event APIs stubbed.
 function createEmulator(audio) {
   const files = ['shared-assets.js','mapper.js','memory.js','6502.js',
-    'mappers/uxrom.js','mappers/axrom.js','mappers/mmc1.js','mappers/mmc3.js','mappers/mmc5.js','mappers/banked.js','mappers/210.js','mappers/vrc6.js','mappers/fme7.js','mappers/rambo1.js','audio/expansion-audio.js','cheats/game-genie.js','readFile.js','disasm.js',
+    'mappers/uxrom.js','mappers/axrom.js','mappers/mmc1.js','mappers/mmc3.js','mappers/mmc5.js','mappers/banked.js','mappers/210.js','mappers/vrc6.js','mappers/fme7.js','mappers/rambo1.js','mappers/206.js','audio/expansion-audio.js','cheats/game-genie.js','readFile.js','disasm.js',
     'cpu-open-bus.js','dma/oam-dma.js','dma/dmc-dma.js','helpers.js',
     'interrupts.js','memoryMaps.js','offsetsHandler.js','APU.js','cpu-loop.js','ppu-loop.js'];
   const source = files.map(f => fs.readFileSync(path.join(root,'assets/js',f),'utf8')).join('\n;\n');

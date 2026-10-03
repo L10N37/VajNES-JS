@@ -157,6 +157,13 @@ function mapper(nesHeader) {
       break;
     }
 
+    case 206: {
+      mapper206Init(nesHeader);
+      chrIsRAM = false;
+      powerOnCPU();
+      break;
+    }
+
     // ==========================================================
     // Unsupported mappers
     // ==========================================================
