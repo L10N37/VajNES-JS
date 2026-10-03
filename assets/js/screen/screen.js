@@ -867,38 +867,99 @@ document.addEventListener('keydown', (ev) => {
   }
 );
 
-// Emulator fullscreen option. This deliberately stretches the picture to the
-// viewport, like a video player's fullscreen control. F11 remains untouched and
-// continues to be the browser's own fullscreen shortcut.
+// Emulator full-screen presentation. F11 remains untouched: that key is still
+// owned by the browser. The on-screen Full Screen item opens two presentation
+// choices: preserve the selected picture aspect, or stretch edge-to-edge.
 const fullscreenShell = document.getElementById('emulator-fullscreen-shell');
 const fullscreenOption = document.getElementById('screen-option-fullscreen');
+const fullscreenModal = document.getElementById('fullscreen-modal');
+const fullscreenClose = document.getElementById('fullscreen-close');
+const fullscreenChoices = fullscreenModal
+  ? fullscreenModal.querySelectorAll('[data-fullscreen-mode]')
+  : [];
+let fullscreenMode = localStorage.getItem('vajnesFullscreenMode') || 'aspect';
+if (fullscreenMode !== 'aspect' && fullscreenMode !== 'stretch') fullscreenMode = 'aspect';
 
-async function toggleEmulatorFullscreen() {
-  if (!fullscreenShell) return;
-  const active = document.fullscreenElement === fullscreenShell ||
+function emulatorFullscreenActive() {
+  return document.fullscreenElement === fullscreenShell ||
     document.webkitFullscreenElement === fullscreenShell;
+}
+
+function applyFullscreenPresentation() {
+  if (!fullscreenShell || !emulatorFullscreenActive()) return;
+
+  let width = window.innerWidth;
+  let height = window.innerHeight;
+
+  if (fullscreenMode === 'aspect') {
+    const pictureAspect = (BASE_W * pixelAspectX) / BASE_H;
+    height = width / pictureAspect;
+    if (height > window.innerHeight) {
+      height = window.innerHeight;
+      width = height * pictureAspect;
+    }
+  }
+
+  fullscreenShell.dataset.fullscreenMode = fullscreenMode;
+  fullscreenShell.style.setProperty('--vajnes-fullscreen-width', `${Math.round(width)}px`);
+  fullscreenShell.style.setProperty('--vajnes-fullscreen-height', `${Math.round(height)}px`);
+}
+
+function setFullscreenModalOpen(open) {
+  if (!fullscreenModal) return;
+  fullscreenModal.style.display = open ? 'block' : 'none';
+  fullscreenModal.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
+async function enterEmulatorFullscreen(mode) {
+  if (!fullscreenShell) return;
+  fullscreenMode = mode === 'stretch' ? 'stretch' : 'aspect';
+  localStorage.setItem('vajnesFullscreenMode', fullscreenMode);
+  setFullscreenModalOpen(false);
+
   try {
-    if (active) {
-      if (document.exitFullscreen) await document.exitFullscreen();
-      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-    } else {
+    if (!emulatorFullscreenActive()) {
       if (fullscreenShell.requestFullscreen) await fullscreenShell.requestFullscreen();
       else if (fullscreenShell.webkitRequestFullscreen) fullscreenShell.webkitRequestFullscreen();
     }
+    applyFullscreenPresentation();
   } catch (err) {
     globalThis.NES_DEBUG_LOGGING && console.warn('[fullscreen] request failed', err);
   }
 }
 
-if (fullscreenOption) fullscreenOption.addEventListener('click', toggleEmulatorFullscreen);
-
-function restoreScaledPresentationAfterFullscreen() {
-  const active = document.fullscreenElement === fullscreenShell ||
-    document.webkitFullscreenElement === fullscreenShell;
-  if (!active) applyScale();
+if (fullscreenOption) {
+  fullscreenOption.addEventListener('click', () => setFullscreenModalOpen(true));
 }
-document.addEventListener('fullscreenchange', restoreScaledPresentationAfterFullscreen);
-document.addEventListener('webkitfullscreenchange', restoreScaledPresentationAfterFullscreen);
+if (fullscreenClose) {
+  fullscreenClose.addEventListener('click', () => setFullscreenModalOpen(false));
+}
+if (fullscreenModal) {
+  fullscreenModal.addEventListener('click', (ev) => {
+    if (ev.target === fullscreenModal) setFullscreenModalOpen(false);
+  });
+}
+for (const choice of fullscreenChoices) {
+  choice.addEventListener('click', () => enterEmulatorFullscreen(choice.dataset.fullscreenMode));
+}
+
+function fullscreenPresentationChanged() {
+  if (emulatorFullscreenActive()) {
+    applyFullscreenPresentation();
+  } else {
+    if (fullscreenShell) {
+      fullscreenShell.removeAttribute('data-fullscreen-mode');
+      fullscreenShell.style.removeProperty('--vajnes-fullscreen-width');
+      fullscreenShell.style.removeProperty('--vajnes-fullscreen-height');
+    }
+    applyScale();
+  }
+}
+document.addEventListener('fullscreenchange', fullscreenPresentationChanged);
+document.addEventListener('webkitfullscreenchange', fullscreenPresentationChanged);
+window.addEventListener('resize', () => {
+  if (emulatorFullscreenActive()) applyFullscreenPresentation();
+});
 
 // FPS toggle option (li:nth-child(5))
 const fpsOption = document.getElementById('screen-option-fps');
