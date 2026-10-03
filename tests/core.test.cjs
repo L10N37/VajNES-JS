@@ -789,8 +789,8 @@ test('archaic DiskDude header does not turn MMC2 mapper 9 into mapper 73',()=>{
 });
 
 test('clean iNES mapper high nibble remains significant',()=>{
- const bytes=rom(73,8,16,0,null);
- assert.throws(()=>emulator(bytes),/Mapper 73 not yet implemented/);
+ const bytes=rom(89,8,16,0,null);
+ assert.throws(()=>emulator(bytes),/Mapper 89 not yet implemented/);
 });
 
 test('ROM compatibility database contains the verified mapper repairs',()=>{
@@ -818,7 +818,7 @@ test('ROM compatibility repair is applied before unsupported-mapper rejection',(
 test('ROM compatibility repair is constrained to the bad reported mapper',()=>{
  const e=createEmulator();
  e.evaluate('crc32Bytes=()=>0x5DBD6099');
- assert.throws(()=>e.load(rom(73,8,16)),/Mapper 73 not yet implemented/);
+ assert.throws(()=>e.load(rom(89,8,16)),/Mapper 89 not yet implemented/);
 });
 
 test('expansion audio detector identifies unambiguous mapper families',()=>{
@@ -1605,4 +1605,53 @@ test('mapper 85 VRC7 accepts and banks CHR RAM cartridges',()=>{
  assert.equal(e.evaluate('vrc7ChrRead(0x0000)'),0x5a);
  e.evaluate('checkWriteOffset(0xa000,0)');
  assert.notEqual(e.evaluate('vrc7ChrRead(0x0000)'),0x5a);
+});
+
+
+test('mapper 73 VRC3 switches 16K PRG and fixes the last bank',()=>{
+ const bytes=rom(73,8,0);
+ for(let b=0;b<8;b++)bytes.fill(b,16+b*0x4000,16+(b+1)*0x4000);
+ const e=emulator(bytes);
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xc000)]'),[0,7]);
+ e.evaluate('checkWriteOffset(0xf000,3)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xc000)]'),[3,7]);
+});
+
+test('mapper 73 VRC3 exposes 8K WRAM and CHR RAM',()=>{
+ const e=emulator(rom(73,8,0));
+ assert.equal(e.evaluate('chrIsRAM'),true);
+ e.evaluate('checkWriteOffset(0x6000,0x55);checkWriteOffset(0x7fff,0x66);CHR_ROM[0x123]=0x77');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),checkReadOffset(0x7fff),ppuBusRead(0x123)]'),[0x55,0x66,0x77]);
+});
+
+test('mapper 73 VRC3 assembles 16-bit IRQ reload from four nibble registers',()=>{
+ const e=emulator(rom(73,8,0));
+ e.evaluate('checkWriteOffset(0x8000,0x0a);checkWriteOffset(0x9000,0x0b);checkWriteOffset(0xa000,0x0c);checkWriteOffset(0xb000,0x0d)');
+ assert.equal(e.evaluate('vrc3IrqReload'),0xdcba);
+});
+
+test('mapper 73 VRC3 16-bit IRQ reloads and asserts on overflow',()=>{
+ const e=emulator(rom(73,8,0));
+ e.evaluate('vrc3IrqReload=0xfffe;checkWriteOffset(0xc000,0x02)');
+ assert.deepEqual(e.evaluate('[vrc3IrqCounter,vrc3IrqEnabled,irqAssert.vrc]'),[0xfffe,true,false]);
+ e.evaluate('vrc3ClockCpu()');
+ assert.equal(e.evaluate('irqAssert.vrc'),false);
+ e.evaluate('vrc3ClockCpu()');
+ assert.deepEqual(e.evaluate('[vrc3IrqCounter,irqAssert.vrc]'),[0xfffe,true]);
+});
+
+test('mapper 73 VRC3 8-bit IRQ and acknowledge auto-enable behavior',()=>{
+ const e=emulator(rom(73,8,0));
+ e.evaluate('vrc3IrqReload=0x12fe;vrc3IrqCounter=0xab00;checkWriteOffset(0xc000,0x07)');
+ assert.deepEqual(e.evaluate('[vrc3IrqCounter,vrc3IrqEnabled,vrc3Irq8BitMode,vrc3IrqAutoEnable]'),[0xabfe,true,true,true]);
+ e.evaluate('vrc3ClockCpu();vrc3ClockCpu()');
+ assert.deepEqual(e.evaluate('[vrc3IrqCounter,irqAssert.vrc]'),[0xabfe,true]);
+ e.evaluate('checkWriteOffset(0xd000,0)');
+ assert.deepEqual(e.evaluate('[vrc3IrqEnabled,irqAssert.vrc]'),[true,false]);
+});
+
+test('mapper 73 VRC3 save-state restores banking and IRQ state',()=>{
+ const e=emulator(rom(73,8,0));
+ e.evaluate('vrc3PrgBank=3;vrc3IrqReload=0x4567;vrc3IrqCounter=0x89ab;vrc3IrqAutoEnable=true;vrc3Irq8BitMode=true;vrc3IrqEnabled=true;irqAssert.vrc=true;globalThis.__s=vrc3SaveState();vrc3Init();vrc3LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[vrc3PrgBank,vrc3IrqReload,vrc3IrqCounter,vrc3IrqAutoEnable,vrc3Irq8BitMode,vrc3IrqEnabled,irqAssert.vrc]'),[3,0x4567,0x89ab,true,true,true,true]);
 });
