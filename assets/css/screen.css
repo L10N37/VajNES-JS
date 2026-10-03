@@ -478,23 +478,15 @@ canvas {
   background: #000;
   overflow: hidden;
 }
+/* Exact picture rectangle is assigned inline by screen.js. This avoids
+   fullscreen viewport/custom-property differences between Firefox and Chromium. */
 #emulator-fullscreen-shell:fullscreen #system-screen-modal,
 #emulator-fullscreen-shell:fullscreen #grille-screen-modal,
 #emulator-fullscreen-shell:fullscreen #scanline-simulation-modal,
 #emulator-fullscreen-shell:-webkit-full-screen #system-screen-modal,
 #emulator-fullscreen-shell:-webkit-full-screen #grille-screen-modal,
 #emulator-fullscreen-shell:-webkit-full-screen #scanline-simulation-modal {
-  position: fixed !important;
-  left: 50% !important;
-  top: 50% !important;
-  right: auto !important;
-  bottom: auto !important;
-  transform: translate(-50%, -50%) !important;
-  width: var(--vajnes-fullscreen-width, 100vw) !important;
-  height: var(--vajnes-fullscreen-height, 100vh) !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
+  position: fixed;
 }
 #emulator-fullscreen-shell:fullscreen #screen-canvas,
 #emulator-fullscreen-shell:fullscreen #grille-canvas,
@@ -502,11 +494,7 @@ canvas {
 #emulator-fullscreen-shell:-webkit-full-screen #screen-canvas,
 #emulator-fullscreen-shell:-webkit-full-screen #grille-canvas,
 #emulator-fullscreen-shell:-webkit-full-screen #scanline-canvas {
-  width: var(--vajnes-fullscreen-width, 100vw) !important;
-  height: var(--vajnes-fullscreen-height, 100vh) !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
+  border: 0;
 }
 
 .fullscreen-modal-content {
