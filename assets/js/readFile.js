@@ -179,7 +179,7 @@ function loadRom(romBytes, fileName = '') {
     }
   }
 
-  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,34,64,66,68,69,71,79,118,119,155,158,206,210].includes(incomingMapper))
+  if (typeof isMapperSupported !== 'function' || !isMapperSupported(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
 
   // Never show an expansion-audio prompt for a mapper this build cannot run.
