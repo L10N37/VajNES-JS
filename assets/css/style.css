@@ -526,15 +526,21 @@ header,
 .cloud-save-toolbar button:hover,.cloud-save-actions button:hover{background:#343941}
 .cloud-save-toolbar button:disabled{opacity:.45;cursor:not-allowed}
 .cloud-save-slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}
-.cloud-slot{display:grid;grid-template-columns:72px 1fr;grid-template-areas:"n t" "n s";align-items:center;gap:2px 9px;min-height:54px;padding:8px 10px;text-align:left;border:1px solid #454b54;border-radius:8px;background:#20242a;color:#e9edf2;cursor:pointer}
+.cloud-slot{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;gap:8px;min-height:62px;padding:8px;border:1px solid #454b54;border-radius:8px;background:#20242a;color:#e9edf2}
 .cloud-slot:hover{background:#292e35}
 .cloud-slot.is-selected{outline:2px solid #8ab4f8;outline-offset:1px}
 .cloud-slot.has-save{border-color:#647286}
+.cloud-slot-select{display:grid;grid-template-columns:72px minmax(0,1fr);grid-template-areas:"n t" "n s";align-items:center;gap:2px 9px;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;min-width:0}
+.cloud-slot-select:focus-visible{outline:2px solid #8ab4f8;outline-offset:2px;border-radius:5px}
 .cloud-slot-number{grid-area:n;font-weight:700;font-size:15px}
 .cloud-slot-time{grid-area:t;color:#e6e9ed;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cloud-slot-state{grid-area:s;color:#99a1ab;font-size:12px}
+.cloud-slot-actions{display:flex;flex-direction:column;gap:6px;justify-content:center}
+.cloud-slot-action{min-width:72px;padding:6px 8px;border:1px solid #626873;border-radius:6px;background:#292d34;color:#fff;font:600 12px sans-serif;cursor:pointer}
+.cloud-slot-action:hover:not(:disabled){background:#3a4048}
+.cloud-slot-action:disabled{opacity:.42;cursor:not-allowed}
 .cloud-save-actions{justify-content:flex-end;margin-top:12px}
 .cloud-save-hint{margin-top:12px;color:#9da4ad;font-size:12px}
 .cloud-save-toast{position:fixed;left:50%;bottom:34px;z-index:33000;transform:translate(-50%,14px);opacity:0;pointer-events:none;padding:8px 13px;border-radius:7px;background:rgba(24,27,32,.96);color:#fff;border:1px solid #666;box-shadow:0 8px 26px rgba(0,0,0,.42);transition:opacity .15s ease,transform .15s ease}
 .cloud-save-toast.is-visible{opacity:1;transform:translate(-50%,0)}
-@media(max-width:620px){.cloud-save-head{display:block}.cloud-save-status{display:inline-block}.cloud-save-slots{grid-template-columns:1fr}.cloud-save-actions{justify-content:stretch}.cloud-save-actions button{flex:1}}
+@media(max-width:620px){.cloud-save-head{display:block}.cloud-save-status{display:inline-block}.cloud-save-slots{grid-template-columns:1fr}.cloud-save-actions{justify-content:stretch}.cloud-save-actions button{flex:1}.cloud-slot{grid-template-columns:minmax(0,1fr) auto}.cloud-slot-action{min-width:64px}}
