@@ -367,7 +367,7 @@ registersText{
 .ad-frame-728x90{width:728px;min-height:90px}
 .ad-frame-160x600{width:160px;min-height:600px}
 .ad-slot-horizontal{width:100%;min-height:110px;padding:8px 0 12px;text-align:center;background:rgba(0,0,0,.12)}
-.ad-slot-rail{position:fixed;top:58px;right:12px;width:172px;min-height:620px;padding:4px 6px 8px;z-index:2;background:rgba(0,0,0,.20);border-radius:4px}
+.ad-slot-rail{position:fixed;top:165px;right:12px;width:172px;min-height:620px;padding:4px 6px 8px;z-index:2;background:rgba(0,0,0,.20);border-radius:4px}
 @media (min-width:1500px){body>main{padding-right:188px}}
 @media (max-width:1499px){.ad-slot-rail{display:none}}
 @media (max-width:760px){.ad-slot-horizontal{display:none}}
@@ -454,7 +454,7 @@ registersText{
 /* HilltopAds placements */
 .hilltop-slot-left{
   position:fixed;
-  top:58px;
+  top:165px;
   left:12px;
   width:312px;
   min-height:272px;
@@ -498,6 +498,17 @@ registersText{
   }
 }
 
+
+/* Keep navigation and dropdowns above ads */
+header,
+.windows-bar,
+.file-dropdown,
+.dropdown-content,
+.gamepad-menu,
+.gamepad-help {
+  position: relative;
+  z-index: 10050;
+}
 
 /* VajNES local + Google Drive save slots */
 .cloud-save-modal{position:fixed;inset:0;z-index:32000;display:none;align-items:flex-start;justify-content:center;padding:54px 18px 24px;background:rgba(0,0,0,.72);overflow:auto}
