@@ -17,6 +17,9 @@ function mapper78Init(header){
   mapper78ChrBank=0;
   const sub=headerVersion===2 ? (header[8]>>>4) : 0;
   mapper78HolyDiver=headerVersion===2 ? sub===3 : !!(header[6]&0x08);
+  // Legacy Holy Diver dumps use the iNES four-screen flag to identify the
+  // H/V-wired variant; the board itself still uses ordinary 2 KiB CIRAM.
+  if(mapper78HolyDiver && VRAM.length!==0x800)VRAM=new Uint8Array(0x800);
   mapper78ApplyMirroring(0);
 }
 
@@ -39,6 +42,9 @@ function mapper78Write(addr,value){
   addr&=0xffff;
   if(addr<0x8000)return;
   value&=0xff;
+  // Discrete 74HC161/32 boards resolve ROM bus conflicts by ANDing the CPU
+  // write with the byte currently driven by PRG ROM.
+  value&=mapper78Read(addr);
   mapper78PrgBank=mapperBankIndex(value&0x07,mapperBankCount(prgRom,0x4000));
   mapper78ChrBank=mapperBankIndex((value>>>4)&0x0f,mapperBankCount(CHR_ROM,0x2000));
   mapper78ApplyMirroring((value>>>3)&1);
