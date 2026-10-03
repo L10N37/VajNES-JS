@@ -497,3 +497,33 @@ registersText{
     display:none;
   }
 }
+
+
+/* VajNES local + Google Drive save slots */
+.cloud-save-modal{position:fixed;inset:0;z-index:32000;display:none;align-items:flex-start;justify-content:center;padding:54px 18px 24px;background:rgba(0,0,0,.72);overflow:auto}
+.cloud-save-modal.is-open{display:flex}
+.cloud-save-card{position:relative;width:min(720px,calc(100vw - 36px));background:#17191d;color:#f1f3f4;border:1px solid #4b4f56;border-radius:14px;padding:24px;box-shadow:0 18px 60px rgba(0,0,0,.58);font:14px/1.45 sans-serif}
+.cloud-save-close{position:absolute;top:10px;right:12px;border:0;background:transparent;color:#ddd;font-size:28px;line-height:1;cursor:pointer}
+.cloud-save-head{display:flex;gap:18px;align-items:flex-start;justify-content:space-between;padding-right:30px}
+.cloud-save-head h2{margin:0 0 3px;font-size:28px}
+.cloud-save-sub{color:#aeb4bc;font-size:13px}
+.cloud-save-status{flex:0 0 auto;margin-top:5px;padding:5px 9px;border:1px solid #4b4f56;border-radius:999px;background:#24282e;color:#cfd4dc;font-size:12px}
+.cloud-save-game{margin:18px 0 12px;padding:9px 11px;border-radius:7px;background:#111318;border:1px solid #383d45;font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cloud-save-toolbar,.cloud-save-actions{display:flex;gap:10px;flex-wrap:wrap}
+.cloud-save-toolbar{margin-bottom:14px}
+.cloud-save-toolbar button,.cloud-save-actions button{border:1px solid #626873;border-radius:7px;padding:8px 13px;background:#292d34;color:#fff;cursor:pointer}
+.cloud-save-toolbar button:hover,.cloud-save-actions button:hover{background:#343941}
+.cloud-save-toolbar button:disabled{opacity:.45;cursor:not-allowed}
+.cloud-save-slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:14px 0}
+.cloud-slot{display:grid;grid-template-columns:72px 1fr;grid-template-areas:"n t" "n s";align-items:center;gap:2px 9px;min-height:54px;padding:8px 10px;text-align:left;border:1px solid #454b54;border-radius:8px;background:#20242a;color:#e9edf2;cursor:pointer}
+.cloud-slot:hover{background:#292e35}
+.cloud-slot.is-selected{outline:2px solid #8ab4f8;outline-offset:1px}
+.cloud-slot.has-save{border-color:#647286}
+.cloud-slot-number{grid-area:n;font-weight:700;font-size:15px}
+.cloud-slot-time{grid-area:t;color:#e6e9ed;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cloud-slot-state{grid-area:s;color:#99a1ab;font-size:12px}
+.cloud-save-actions{justify-content:flex-end;margin-top:12px}
+.cloud-save-hint{margin-top:12px;color:#9da4ad;font-size:12px}
+.cloud-save-toast{position:fixed;left:50%;bottom:34px;z-index:33000;transform:translate(-50%,14px);opacity:0;pointer-events:none;padding:8px 13px;border-radius:7px;background:rgba(24,27,32,.96);color:#fff;border:1px solid #666;box-shadow:0 8px 26px rgba(0,0,0,.42);transition:opacity .15s ease,transform .15s ease}
+.cloud-save-toast.is-visible{opacity:1;transform:translate(-50%,0)}
+@media(max-width:620px){.cloud-save-head{display:block}.cloud-save-status{display:inline-block}.cloud-save-slots{grid-template-columns:1fr}.cloud-save-actions{justify-content:stretch}.cloud-save-actions button{flex:1}}
