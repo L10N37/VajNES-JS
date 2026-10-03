@@ -501,6 +501,19 @@ canvas {
   width: 320px;
   max-width: calc(100vw - 32px);
 }
+.fullscreen-exit-hint {
+  margin: 8px 0 12px;
+  font-size: 14px;
+  color: #ddd;
+}
+
+/* In stretched application fullscreen the pointer can remain over the screen
+   indefinitely (especially on single-monitor setups). Pointer movement reveals
+   the options bar; inactivity hides it again after the JS five-second timer. */
+#emulator-fullscreen-shell.fullscreen-ui-idle #system-screen-modal .optionsBar {
+  display: none !important;
+}
+
 .fullscreen-choice {
   display: block;
   width: 100%;
