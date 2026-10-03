@@ -2,9 +2,10 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),vm=requir
 function fixture(){
  let pads=[];
  const events={},docEvents={},label={textContent:''},menu={open:false},closeEvents={};
+ const cloud={game:{key:'TEST'},saves:0,loads:0,quickSave(){this.saves++;return Promise.resolve(true)},quickLoad(){this.loads++;return Promise.resolve(true)}};
  const closeButton={addEventListener:(k,v)=>closeEvents[k]=v};
  const env=vm.createContext({
-   window:{addEventListener:(k,v)=>events[k]=v},
+   window:{addEventListener:(k,v)=>events[k]=v,VajNESCloudSaves:cloud},
    document:{
      hidden:false,
      getElementById:id=>id==='gamepad-status'?label:id==='gamepad-close'?closeButton:null,
@@ -15,7 +16,7 @@ function fixture(){
    requestAnimationFrame:()=>{}
  });
  vm.runInContext(fs.readFileSync('assets/js/gamepads.js','utf8')+';globalThis.input=NESGamepads',env);
- return {env,events,docEvents,label,menu,closeEvents,input:env.input,setPads:p=>pads=p};
+ return {env,events,docEvents,label,menu,closeEvents,cloud,input:env.input,setPads:p=>pads=p};
 }
 function pad(index=0,buttons=[],axes=[0,0]){
  return {index,id:'Xbox '+index,connected:true,mapping:'standard',axes,
@@ -83,4 +84,35 @@ test('retired scanline developer test controls are not exposed in the UI',()=>{
  assert.equal(html.includes('Run testRGBAAnim()'),false);
  assert.equal(html.includes('Run testIndexAnim()'),false);
  assert.equal(html.includes('Show Test Image'),false);
+});
+
+
+test('Player 1 LT and RT trigger cloud quick save/load once per press',async()=>{
+ const f=fixture();
+ f.setPads([pad(0)]);f.input.update();f.input.assign(0,0);
+
+ f.setPads([pad(0,[6])]);f.input.update();
+ f.input.update();
+ await Promise.resolve();
+ assert.equal(f.cloud.saves,1);
+
+ f.setPads([pad(0)]);f.input.update();
+ f.setPads([pad(0,[6])]);f.input.update();
+ await Promise.resolve();
+ assert.equal(f.cloud.saves,2);
+
+ f.setPads([pad(0)]);f.input.update();
+ f.setPads([pad(0,[7])]);f.input.update();
+ f.input.update();
+ await Promise.resolve();
+ assert.equal(f.cloud.loads,1);
+});
+
+test('Player 2 triggers do not operate cloud save shortcuts',async()=>{
+ const f=fixture();
+ f.setPads([pad(0)]);f.input.update();f.input.assign(0,1);
+ f.setPads([pad(0,[6,7])]);f.input.update();
+ await Promise.resolve();
+ assert.equal(f.cloud.saves,0);
+ assert.equal(f.cloud.loads,0);
 });
