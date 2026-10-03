@@ -105,15 +105,18 @@
     const isCloudAccount = target =>
       target instanceof Element && !!target.closest('#cloud-account-button');
 
+    // This capture guard is only needed when third-party ads are active.
+    // Local development has no ad scripts, so let the Cloud button's own
+    // click handler call Google directly from the user's gesture.
     for (const type of ['pointerdown','mousedown','pointerup','mouseup','touchstart','touchend']) {
       window.addEventListener(type, event => {
-        if (!isCloudAccount(event.target)) return;
+        if (!window.VAJNES_ADS_ENABLED || !isCloudAccount(event.target)) return;
         event.stopImmediatePropagation();
       }, true);
     }
 
     window.addEventListener('click', event => {
-      if (!isCloudAccount(event.target)) return;
+      if (!window.VAJNES_ADS_ENABLED || !isCloudAccount(event.target)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
 
