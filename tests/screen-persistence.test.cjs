@@ -92,12 +92,12 @@ test('fullscreen UI gives F11 exit guidance and stretched mode auto-hides toolba
 });
 
 
-test('fullscreen CSS resize does not regenerate tuned CRT overlays',()=>{
+test('fullscreen CSS resize does not blindly rescale tuned CRT overlays',()=>{
   const grille=fs.readFileSync('assets/js/screen/grille.js','utf8');
-  assert.match(grille,/let lastBackingW = canvas\?\.width \|\| 0/);
-  assert.match(grille,/if \(backingW === lastBackingW && backingH === lastBackingH\) return/);
-  assert.match(grille,/_scanlineRedraw\?\.\(\)/);
-  assert.match(grille,/_resyncScanlineOverlayAfterScale/);
+  assert.match(grille,/window\._setCrtFullscreenPresentation = function\(active, displayW, displayH, normalDisplayH\)/);
+  assert.match(grille,/if \(w === lastW && h === lastH\) return/);
+  assert.match(grille,/redrawActiveCrtEffects\(\)/);
+  assert.match(grille,/ro\.observe\(canvas\)/);
 });
 
 
