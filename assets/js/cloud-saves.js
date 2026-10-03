@@ -508,8 +508,14 @@
 
     wrap.querySelector('.cloud-save-close').addEventListener('click',close);
     wrap.addEventListener('click',e=>{if(e.target===wrap)close();});
-    // Account clicks are handled by the early window capture listener above so
-    // advertising scripts cannot consume the OAuth popup's user activation.
+    // On local development this is the canonical Google GIS path: invoke
+    // requestAccessToken() directly from the user's button click. On production
+    // the early capture guard handles this click before ad scripts can consume it.
+    accountBtn.addEventListener('click',()=>{
+      if(window.VAJNES_ADS_ENABLED) return;
+      if(model.signedIn) signOut();
+      else signIn();
+    });
     syncBtn.addEventListener('click',()=>run(syncFromDrive));
     wrap.querySelector('#cloud-quick-save').addEventListener('click',()=>run(()=>saveLocal()));
     wrap.querySelector('#cloud-quick-load').addEventListener('click',()=>run(()=>loadLocal()));
