@@ -13,7 +13,7 @@ test('screen preferences persist across refresh through stable localStorage keys
     assert.match(palette,new RegExp("setItem\\('"+key+"'"));
   }
 
-  for(const key of ['scaleFactor','pixelAspectMode','vajnesFpsEnabled','vajnesCompositeBlur']){
+  for(const key of ['scaleFactor','pixelAspectMode','vajnesFpsEnabled','vajnesCompositeBlur','vajnesFullscreenMode']){
     assert.match(screen,new RegExp("getItem\\('"+key+"'\\)"));
     assert.match(screen,new RegExp("setItem\\('"+key+"'"));
   }
@@ -43,4 +43,21 @@ test('CRT tuning restores saved values before attaching live controls',()=>{
   assert(grille.includes("restore(lH,'vajnesScanlineLineHeight')"));
   assert(grille.includes("restore(gap,'vajnesScanlineGap')"));
   assert(grille.includes("off.checked = localStorage.getItem('vajnesScanlineOffset') === '1'"));
+});
+
+
+test('application full screen offers fitted and stretched modes without binding F11',()=>{
+  const html=fs.readFileSync('index.html','utf8');
+  const screen=fs.readFileSync('assets/js/screen/screen.js','utf8');
+  const css=fs.readFileSync('assets/css/screen.css','utf8');
+
+  assert.match(html,/data-fullscreen-mode="aspect"[^>]*>Maintain aspect ratio</);
+  assert.match(html,/data-fullscreen-mode="stretch"[^>]*>Full screen stretched</);
+  assert.match(screen,/requestFullscreen/);
+  assert.match(screen,/fullscreenMode === 'aspect'/);
+  assert.match(screen,/window\.innerWidth/);
+  assert.match(screen,/window\.innerHeight/);
+  assert.doesNotMatch(screen,/ev\.key\s*===?\s*['"]F11['"]/);
+  assert.match(css,/--vajnes-fullscreen-width/);
+  assert.match(css,/border:\s*0/);
 });
