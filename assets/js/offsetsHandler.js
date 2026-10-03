@@ -69,7 +69,10 @@ function checkReadOffset(address) {
 
   // MMC3 PRG read
   if (mmc3FamilyActive() && addr >= 0x8000) {
-    openBus.CPU=mapper4_prg_read(addr);
+    const mapped=mapper4_prg_read(addr)&0xFF;
+    openBus.CPU=(typeof VajNESGenie!=='undefined' && VajNESGenie.patchRomRead)
+      ? VajNESGenie.patchRomRead(addr,mapped)&0xFF
+      : mapped;
     if(!DMC.dmaBusy && !DMA.active)openBus.internal=openBus.CPU;
     return openBus.CPU;
   }
@@ -299,6 +302,9 @@ function checkReadOffset(address) {
         ? mmc1CpuRead(addr) & 0xFF
         : mapperReadPRG(addr) & 0xFF;
   }
+
+  if (addr>=0x8000 && typeof VajNESGenie!=='undefined' && VajNESGenie.patchRomRead)
+    raw=VajNESGenie.patchRomRead(addr,raw)&0xFF;
 
   const mapperDrivesExpansion =
     (mapperNumber===5 && addr>=0x4020 && addr<0x6000) ||
