@@ -177,50 +177,39 @@
     return id;
   }
 
-  let popupClosePending=false;
-  let popupCloseTimer=0;
+  let authWatchdogTimer=0;
 
-  function clearPopupCloseWatch() {
-    popupClosePending=false;
-    clearTimeout(popupCloseTimer);
-    popupCloseTimer=0;
+  function clearAuthWatchdog() {
+    clearTimeout(authWatchdogTimer);
+    authWatchdogTimer=0;
   }
 
-  function confirmPopupClosed(error=null) {
-    if(!popupClosePending || !model.authBusy || model.token) {
-      clearPopupCloseWatch();
-      return;
-    }
-    clearPopupCloseWatch();
-    model.authBusy=false;
-    model.signedIn=false;
-    model.authError='Google sign-in popup closed before authorization completed.';
-    render();
-    toast(model.authError,5000);
-    console.error('[Cloud Saves]',model.authError,error || {type:'popup_closed'});
+  function startAuthWatchdog() {
+    clearAuthWatchdog();
+    authWatchdogTimer=setTimeout(()=>{
+      if(!model.authBusy || model.token) return;
+      model.authBusy=false;
+      model.signedIn=false;
+      model.authError='Google sign-in did not complete. Try again.';
+      render();
+      toast(model.authError,5000);
+      console.warn('[Cloud Saves] Google sign-in watchdog expired.');
+    },120000);
   }
 
   function oauthFailure(error) {
     const type=error?.type || error?.error || 'unknown error';
 
-    // Google Identity Services can report popup_closed in Firefox while its
-    // account chooser is still visibly open. Treat that signal as provisional:
-    // if this page does not have focus, the popup is still active and we keep
-    // waiting for the normal token callback. A true close returns focus here.
+    // Firefox can receive GIS popup_closed while Google's account chooser is
+    // still visibly open. There is no reliable popup Window handle exposed by
+    // the token client, and opener focus events can also fire while it remains
+    // open. Do not turn popup_closed into a failure; wait for the token callback.
     if(type==='popup_closed') {
-      popupClosePending=true;
-      model.authError='';
-      render();
-      clearTimeout(popupCloseTimer);
-      popupCloseTimer=setTimeout(()=>{
-        if(!popupClosePending || !model.authBusy || model.token) return;
-        if(document.hasFocus()) confirmPopupClosed(error);
-      },750);
-      console.warn('[Cloud Saves] GIS reported popup_closed; waiting for popup/token callback.',error);
+      console.warn('[Cloud Saves] Ignoring premature GIS popup_closed; still waiting for Google authorization.',error);
       return;
     }
 
-    clearPopupCloseWatch();
+    clearAuthWatchdog();
     model.authBusy=false;
     model.signedIn=false;
     model.authError='Google sign-in failed: '+type;
@@ -230,7 +219,7 @@
   }
 
   async function finishSignIn(response) {
-    clearPopupCloseWatch();
+    clearAuthWatchdog();
     try {
       if(response?.error) throw new Error(response.error);
       if(!response?.access_token) throw new Error('Google returned no access token.');
@@ -289,7 +278,7 @@
   function signIn() {
     requireClientId();
     if(model.authBusy) return;
-    clearPopupCloseWatch();
+    clearAuthWatchdog();
     if(!model.googleReady || !model.tokenClient) {
       model.authError='Google sign-in is still loading. Try again in a moment.';
       render();
@@ -300,6 +289,7 @@
     model.authBusy=true;
     model.authError='';
     render();
+    startAuthWatchdog();
 
     // This call happens directly inside the button click handler. Do not await
     // script loading here: Firefox may otherwise treat the OAuth popup as no
@@ -310,7 +300,7 @@
   function signOut() {
     // Disconnect this browser session only. Do not revoke the user's whole
     // Google authorization grant every time they disconnect from VajNES.
-    clearPopupCloseWatch();
+    clearAuthWatchdog();
     model.token='';model.tokenExpiresAt=0;model.signedIn=false;
     model.authBusy=false;model.authError='';
     model.driveRootId='';model.driveGameId='';model.driveGameKey='';
@@ -603,19 +593,6 @@
   };
 
   window.addEventListener('vajnes-rom-loaded',e=>run(()=>onGame(e.detail)));
-
-  // A genuine popup close normally returns focus to the opener. Give the GIS
-  // success callback a moment to run first; if no token arrived, then surface
-  // the close as an actual cancellation.
-  window.addEventListener('focus',()=>{
-    if(!popupClosePending || !model.authBusy) return;
-    clearTimeout(popupCloseTimer);
-    popupCloseTimer=setTimeout(()=>{
-      if(popupClosePending && model.authBusy && !model.token && document.hasFocus()) {
-        confirmPopupClosed();
-      }
-    },1000);
-  });
 
   document.addEventListener('keydown',e=>{
     if(e.altKey && !e.ctrlKey && !e.metaKey) {
