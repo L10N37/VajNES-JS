@@ -12,17 +12,23 @@ let _scanlineFullscreenPresentation = {
   normalDisplayHeight: 0
 };
 
-const SCANLINE_IMAGE_REF_KEY = 'vajnesScanlineImageReferenceHeight';
-let _scanlineImageReferenceHeight =
-  Number(localStorage.getItem(SCANLINE_IMAGE_REF_KEY) || 0);
+const CRT_REFERENCE_SCALE = 3;
+let _scanlineCanonical3x = null;
 
-function captureScanlineImageReferenceHeight() {
-  const h = Math.max(
-    1,
-    Math.round(scanlineCanvas.clientHeight || scanlineCanvas.height || 1)
+function rebuildScanlineCanonical3x() {
+  if (!_scanlineImage) return;
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(BASE_W * CRT_REFERENCE_SCALE * pixelAspectX));
+  c.height = Math.max(1, Math.round(BASE_H * CRT_REFERENCE_SCALE));
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, c.width, c.height);
+  g.drawImage(
+    _scanlineImage,
+    0, 0, _scanlineImage.width, _scanlineImage.height,
+    0, 0, c.width, c.height
   );
-  _scanlineImageReferenceHeight = h;
-  localStorage.setItem(SCANLINE_IMAGE_REF_KEY, String(h));
+  _scanlineCanonical3x = c;
 }
 
 function setScanlinesImage() {
@@ -43,6 +49,7 @@ function setScanlinesImage() {
   const img = new Image();
   img.onload = () => {
     _scanlineImage = img;
+    rebuildScanlineCanonical3x();
     drawScanlineImage();
   };
   img.src = src;
@@ -56,18 +63,26 @@ function drawScanlineImage() {
   scanlineCtx.clearRect(0, 0, scanlineCanvas.width, scanlineCanvas.height);
   if (!_scanlineImage) return;
 
-  // Preserve the physical scanline pitch at the scale where the user chose
-  // this image. Scaling the whole 1080-line PNG to every emulator size creates
-  // beat/alias patterns (2x/4x/5x looked visibly different from 3x/5.4x).
-  if (!(_scanlineImageReferenceHeight > 0)) {
-    captureScanlineImageReferenceHeight();
-  }
+  // First normalize every supplied PNG to the known-good 3x presentation,
+  // then scale that canonical texture proportionally with the emulated picture.
+  // This avoids the bad 1080->480/960/1200 sampling ratios while keeping the
+  // scanline pitch relative to NES pixels (2x=2/3 of 3x, 4x=4/3, etc).
+  if (!_scanlineCanonical3x) rebuildScanlineCanonical3x();
+  const source = _scanlineCanonical3x || _scanlineImage;
+  const tileH = Math.max(
+    1,
+    Math.round(
+      _scanlineFullscreenPresentation.active &&
+      _scanlineFullscreenPresentation.normalDisplayHeight > 0
+        ? _scanlineFullscreenPresentation.normalDisplayHeight
+        : scanlineCanvas.height
+    )
+  );
 
-  const tileH = Math.max(1, Math.round(_scanlineImageReferenceHeight));
   for (let y = 0; y < scanlineCanvas.height; y += tileH) {
     scanlineCtx.drawImage(
-      _scanlineImage,
-      0, 0, _scanlineImage.width, _scanlineImage.height,
+      source,
+      0, 0, source.width, source.height,
       0, y, scanlineCanvas.width, tileH
     );
   }
@@ -77,6 +92,7 @@ function drawScanlineImage() {
 // screen.js calls applyScale(); quick hook to re-draw without window.*.
 function _resyncScanlineOverlayAfterScale() {
   if (window._scanlineEffectMode === 'computed') return;
+  rebuildScanlineCanonical3x();
   drawScanlineImage();
 }
 
@@ -102,7 +118,6 @@ document.querySelectorAll('input[name="scanlines"]').forEach((b) => {
     localStorage.setItem('vajnesScanlineImage', b.value);
     window._scanlineEffectMode = 'image';
     localStorage.setItem('vajnesScanlineEffectMode','image');
-    captureScanlineImageReferenceHeight();
     setScanlinesImage();
   });
 });
@@ -113,7 +128,4 @@ const savedEffectMode = localStorage.getItem('vajnesScanlineEffectMode');
 window._scanlineEffectMode = savedEffectMode === 'computed'
   ? 'computed'
   : (savedScanlineImage ? 'image' : 'computed');
-if (window._scanlineEffectMode === 'image') {
-  if (!(_scanlineImageReferenceHeight > 0)) captureScanlineImageReferenceHeight();
-  setScanlinesImage();
-}
+if (window._scanlineEffectMode === 'image') setScanlinesImage();
