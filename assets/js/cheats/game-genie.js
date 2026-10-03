@@ -106,6 +106,11 @@ const VajNESGenie = (() => {
     return parts.map(decode);
   }
 
+  function isNoOpChain(decoded) {
+    return decoded.length > 0 &&
+      decoded.every(patch => patch.compare !== null && patch.compare === patch.data);
+  }
+
   function crcText(value) {
     return (value >>> 0).toString(16).toUpperCase().padStart(8, '0');
   }
@@ -198,7 +203,11 @@ const VajNESGenie = (() => {
     for (const index of [...codes.keys()].sort((a, b) => a - b)) {
       const code = String(codes.get(index) || '').trim().toUpperCase();
       try {
-        decodeChain(code);
+        const decoded = decodeChain(code);
+        // Some public databases contain codes whose compare and replacement
+        // bytes are identical. Those can never change the cartridge bus, so
+        // don't present them as working cheats.
+        if (isNoOpChain(decoded)) continue;
       } catch {
         continue;
       }
@@ -342,7 +351,9 @@ const VajNESGenie = (() => {
 
   function addManual(code, description = 'Manual Game Genie code') {
     const cleaned = String(code || '').trim().toUpperCase();
-    decodeChain(cleaned);
+    const decoded = decodeChain(cleaned);
+    if (isNoOpChain(decoded))
+      throw new Error('This Game Genie code is a no-op: its compare and replacement bytes are identical');
     manual.push({
       description: String(description || 'Manual Game Genie code'),
       code: cleaned,
