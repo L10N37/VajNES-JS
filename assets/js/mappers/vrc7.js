@@ -92,6 +92,8 @@ function vrc7CpuWrite(addr,value){
     case 0xe000:
       vrc7Mirror=value&3;
       vrc7ApplyMirroring();
+      if(typeof NESAudio!=='undefined'&&NESAudio.expansionWrite)
+        NESAudio.expansionWrite(cpuCycles,reg,value);
       return;
     case 0xe010:
       vrc7IrqLatch=value;
