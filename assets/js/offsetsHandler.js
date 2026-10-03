@@ -226,6 +226,7 @@ function checkReadOffset(address) {
           } else {
             if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(vv)&0xFF;
             else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(vv)&0xFF;
+            else if(mapperNumber===68) VRAM_DATA=mapper68NtRead(vv)&0xFF;
             else VRAM_DATA = VRAM[mapNT(vv)] & 0xFF;
           }
         } else {
@@ -240,6 +241,7 @@ function checkReadOffset(address) {
             const ntMirror=vv&0x2FFF;
             if(mapperNumber===5) VRAM_DATA=mmc5NametableRead(ntMirror)&0xFF;
             else if(mapperNumber===19 || mapperNumber===210) VRAM_DATA=namcoNtRead(ntMirror)&0xFF;
+            else if(mapperNumber===68) VRAM_DATA=mapper68NtRead(ntMirror)&0xFF;
             else VRAM_DATA = VRAM[mapNT(ntMirror)] & 0xFF;
           }
         }
@@ -284,6 +286,8 @@ function checkReadOffset(address) {
         : (mapperNumber===24 || mapperNumber===26)
           ? vrc6CpuRead(addr) & 0xFF
         : mapperNumber===34 && mapper34Mode==='nina' && addr<=0x7ffc
+          ? prgRam[addr - 0x6000] & 0xFF
+        : mapperNumber===68
           ? prgRam[addr - 0x6000] & 0xFF
         : mapperNumber===69
           ? fme7CpuRead(addr) & 0xFF
@@ -543,6 +547,8 @@ function checkWriteOffset(address, value) {
     else if (mapperNumber === 1) mmc1CpuWrite(addr, value);
     else if (mapperNumber === 34 && mapper34Mode==='nina' && addr>=0x6000 && addr<=0x7ffc)
       prgRam[addr - 0x6000] = value & 0xFF;
+    else if (mapperNumber===68 && addr>=0x6000)
+      prgRam[addr - 0x6000] = value & 0xFF;
     else if (mapperNumber === 34 && mapper34Mode==='nina' && addr>=0x7ffd) mapper34Write(addr,value);
     else if (mapperNumber === 79) nina79Write(addr, value);
     else if (mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
@@ -590,6 +596,7 @@ function mapperReadPRG(addr) {
   if (mapperNumber===34) return mapper34Read(addr);
   if (mapperNumber===71) return mapper71Read(addr);
   if (mapperNumber===24 || mapperNumber===26) return vrc6CpuRead(addr);
+  if (mapperNumber===68) return mapper68CpuRead(addr);
   if (mapperNumber===69) return fme7CpuRead(addr);
   if (mapperNumber===64 || mapperNumber===158) return rambo1CpuRead(addr);
   if (mapperNumber===206) return mapper206PrgRead(addr);
@@ -604,6 +611,7 @@ function mapperWritePRG(addr, value) {
   else if(mapperNumber===34) mapper34Write(addr,value);
   else if(mapperNumber===71) mapper71Write(addr,value);
   else if(mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
+  else if(mapperNumber===68) mapper68CpuWrite(addr,value);
   else if(mapperNumber===69) fme7CpuWrite(addr,value);
   else if(mapperNumber===64 || mapperNumber===158) rambo1CpuWrite(addr,value);
   else if(mapperNumber===206) mapper206Write(addr,value);

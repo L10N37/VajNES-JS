@@ -35,15 +35,19 @@ const mimeTypes = {
 http
   .createServer(async (req, res) => {
     try {
-      const filePath = join(
-        cwd(),
-        decodeURIComponent(req.url === "/" ? "/index.html" : req.url)
-      );
+      const requestUrl = new URL(req.url, "http://127.0.0.1");
+      const pathname = requestUrl.pathname === "/" ? "/index.html" : requestUrl.pathname;
+      const filePath = join(cwd(), decodeURIComponent(pathname));
       const data = await readFile(filePath);
 
       // MIME type based on extension
       const ext = extname(filePath).toLowerCase();
       res.setHeader("Content-Type", mimeTypes[ext] || "application/octet-stream");
+      // Development branches change core mapper scripts frequently. Never let
+      // the browser silently reuse an older mapper/loader file at the same URL.
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
 
       // === Required for SharedArrayBuffer ===
       res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
