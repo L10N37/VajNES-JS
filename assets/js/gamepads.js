@@ -4,7 +4,7 @@
 const NESGamepads=(()=>{
   const slots=[null,null],states=[0,0];
   let focused=true,lastStatus='',knownIndices=new Set(),lastAssignmentUi='';
-  let cloudLt=false,cloudRt=false;
+  let cloudLb=false,cloudRb=false;
 
   function decode(pad){
     const down=i=>!!pad.buttons[i]?.pressed || pad.buttons[i]?.value>0.5;
@@ -28,31 +28,29 @@ const NESGamepads=(()=>{
 
   function clear(){
     states.fill(0);
-    cloudLt=false;
-    cloudRt=false;
+    cloudLb=false;
+    cloudRb=false;
   }
 
   function updateCloudShortcuts(pad){
     const cloud=window.VajNESCloudSaves;
     if(!pad || !cloud?.game){
-      cloudLt=false;
-      cloudRt=false;
+      cloudLb=false;
+      cloudRb=false;
       return;
     }
 
-    // Firefox/Linux can report Xbox triggers as pressed at rest with a
-    // midpoint-ish value (~0.49). For analogue triggers, trust value only.
-    const triggerDown=i=>Number(pad.buttons[i]?.value||0)>0.75;
-    const lt=triggerDown(6); // Standard Gamepad: Left Trigger
-    const rt=triggerDown(7); // Standard Gamepad: Right Trigger
+    const down=i=>!!pad.buttons[i]?.pressed || Number(pad.buttons[i]?.value||0)>0.5;
+    const lb=down(4); // Standard Gamepad: LB / L1
+    const rb=down(5); // Standard Gamepad: RB / R1
 
-    // Player 1 only. Fire once on the rising edge so held analogue triggers
-    // never spam save/load every animation frame.
-    if(lt && !cloudLt) Promise.resolve(cloud.quickSave()).catch(err=>console.warn('[Cloud Saves] controller quick save failed',err));
-    if(rt && !cloudRt) Promise.resolve(cloud.quickLoad()).catch(err=>console.warn('[Cloud Saves] controller quick load failed',err));
+    // Player 1 only. Fire once on the rising edge so holding a shoulder
+    // button never repeats save/load every animation frame.
+    if(lb && !cloudLb) Promise.resolve(cloud.quickSave()).catch(err=>console.warn('[Cloud Saves] controller quick save failed',err));
+    if(rb && !cloudRb) Promise.resolve(cloud.quickLoad()).catch(err=>console.warn('[Cloud Saves] controller quick load failed',err));
 
-    cloudLt=lt;
-    cloudRt=rt;
+    cloudLb=lb;
+    cloudRb=rb;
   }
 
   function connectedStandardPads(){

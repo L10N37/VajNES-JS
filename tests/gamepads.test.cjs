@@ -87,22 +87,22 @@ test('retired scanline developer test controls are not exposed in the UI',()=>{
 });
 
 
-test('Player 1 LT and RT trigger cloud quick save/load once per press',async()=>{
+test('Player 1 LB and RB trigger cloud quick save/load once per press',async()=>{
  const f=fixture();
  f.setPads([pad(0)]);f.input.update();f.input.assign(0,0);
 
- f.setPads([pad(0,[6])]);f.input.update();
+ f.setPads([pad(0,[4])]);f.input.update();
  f.input.update();
  await Promise.resolve();
  assert.equal(f.cloud.saves,1);
 
  f.setPads([pad(0)]);f.input.update();
- f.setPads([pad(0,[6])]);f.input.update();
+ f.setPads([pad(0,[4])]);f.input.update();
  await Promise.resolve();
  assert.equal(f.cloud.saves,2);
 
  f.setPads([pad(0)]);f.input.update();
- f.setPads([pad(0,[7])]);f.input.update();
+ f.setPads([pad(0,[5])]);f.input.update();
  f.input.update();
  await Promise.resolve();
  assert.equal(f.cloud.loads,1);
@@ -111,35 +111,10 @@ test('Player 1 LT and RT trigger cloud quick save/load once per press',async()=>
 test('Player 2 triggers do not operate cloud save shortcuts',async()=>{
  const f=fixture();
  f.setPads([pad(0)]);f.input.update();f.input.assign(0,1);
- f.setPads([pad(0,[6,7])]);f.input.update();
+ f.setPads([pad(0,[4,5])]);f.input.update();
  await Promise.resolve();
  assert.equal(f.cloud.saves,0);
  assert.equal(f.cloud.loads,0);
 });
 
 
-test('half-rest Xbox trigger values do not fire cloud shortcuts',async()=>{
- const f=fixture();
- f.setPads([pad(0)]);f.input.update();f.input.assign(0,0);
-
- const half=pad(0);
- half.buttons[6]={pressed:true,value:0.4885};
- half.buttons[7]={pressed:true,value:0.4885};
- f.setPads([half]);f.input.update();
- await Promise.resolve();
- assert.equal(f.cloud.saves,0);
- assert.equal(f.cloud.loads,0);
-
- const lt=pad(0);lt.buttons[6]={pressed:true,value:1};
- f.setPads([lt]);f.input.update();
- await Promise.resolve();
- assert.equal(f.cloud.saves,1);
-
- const released=pad(0);released.buttons[6]={pressed:true,value:0.4885};
- f.setPads([released]);f.input.update();
-
- const rt=pad(0);rt.buttons[7]={pressed:true,value:1};
- f.setPads([rt]);f.input.update();
- await Promise.resolve();
- assert.equal(f.cloud.loads,1);
-});
