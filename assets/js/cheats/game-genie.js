@@ -17,6 +17,31 @@ const VajNESGenie = (() => {
       path: 'Alien Syndrome (USA, Japan) (Game Genie).cht'
     }
   });
+  const learnedPayloadStorage = 'vajnesGeniePayloadAliasesV1';
+
+  function loadLearnedPayloadAliases() {
+    if (typeof localStorage === 'undefined') return {};
+    try {
+      const parsed = JSON.parse(localStorage.getItem(learnedPayloadStorage) || '{}');
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  let learnedPayloadAliases = loadLearnedPayloadAliases();
+
+  function rememberPayloadAlias(payloadCrc, entry) {
+    if (!entry?.path) return;
+    const key = crcText(payloadCrc);
+    if (key === '00000000') return;
+    learnedPayloadAliases[key] = { title: entry.title, path: entry.path };
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(learnedPayloadStorage, JSON.stringify(learnedPayloadAliases));
+      } catch {}
+    }
+  }
 
   let current = {
     title: 'No ROM loaded',
@@ -127,13 +152,20 @@ const VajNESGenie = (() => {
 
   function identify(fullCrc, payloadCrc, fileName) {
     const exact = indexObject()[crcText(fullCrc)];
-    if (exact) return { entry: exact, source: 'exact ROM CRC' };
+    if (exact) {
+      rememberPayloadAlias(payloadCrc, exact);
+      return { entry: exact, source: 'exact ROM CRC' };
+    }
 
-    const payload = payloadAliases[crcText(payloadCrc)];
+    const payloadKey = crcText(payloadCrc);
+    const payload = payloadAliases[payloadKey] || learnedPayloadAliases[payloadKey];
     if (payload) return { entry: payload, source: 'PRG+CHR payload CRC' };
 
     const byName = findByFileName(fileName);
-    if (byName) return { entry: byName, source: 'ROM filename fallback' };
+    if (byName) {
+      rememberPayloadAlias(payloadCrc, byName);
+      return { entry: byName, source: 'ROM filename fallback' };
+    }
 
     return { entry: null, source: '' };
   }
