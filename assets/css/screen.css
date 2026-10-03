@@ -463,3 +463,36 @@ canvas {
   background: #2e2e2e; 
   border-color: #888; 
 }
+
+
+/* Application fullscreen: intentionally stretches the emulated picture edge-to-edge.
+   This is separate from F11/browser fullscreen and deliberately ignores the saved
+   pixel-aspect/scale choice while active. */
+#emulator-fullscreen-shell:fullscreen,
+#emulator-fullscreen-shell:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  overflow: hidden;
+}
+#emulator-fullscreen-shell:fullscreen #system-screen-modal,
+#emulator-fullscreen-shell:fullscreen #grille-screen-modal,
+#emulator-fullscreen-shell:fullscreen #scanline-simulation-modal,
+#emulator-fullscreen-shell:-webkit-full-screen #system-screen-modal,
+#emulator-fullscreen-shell:-webkit-full-screen #grille-screen-modal,
+#emulator-fullscreen-shell:-webkit-full-screen #scanline-simulation-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  transform: none !important;
+  width: 100vw !important;
+  height: 100vh !important;
+}
+#emulator-fullscreen-shell:fullscreen #screen-canvas,
+#emulator-fullscreen-shell:fullscreen #grille-canvas,
+#emulator-fullscreen-shell:fullscreen #scanline-canvas,
+#emulator-fullscreen-shell:-webkit-full-screen #screen-canvas,
+#emulator-fullscreen-shell:-webkit-full-screen #grille-canvas,
+#emulator-fullscreen-shell:-webkit-full-screen #scanline-canvas {
+  width: 100vw !important;
+  height: 100vh !important;
+}
