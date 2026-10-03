@@ -506,31 +506,83 @@
   async function syncFromDrive() {
     if(!model.game || !model.signedIn) return;
     model.syncBusy=true;render();
+    let uploaded=0;
+    let downloaded=0;
     try {
       const parentId=await ensureDriveFolders();
       for(let slot=1;slot<=SLOT_COUNT;slot++) {
-        const remote=await findSlotFile(slot,parentId);
-        if(!remote) continue;
         const local=model.slots[slot-1];
-        const remoteTime=Date.parse(remote.modifiedTime)||0;
-        const localTime=Number(local?.updatedAt)||0;
-        if(local && local.dirty && localTime>=remoteTime) {
-          await uploadSlot(slot,local);
+        const remote=await findSlotFile(slot,parentId);
+
+        // Local-only saves must be created in Drive. The old logic skipped
+        // these slots entirely, which made "Sync now" appear to do nothing.
+        if(!remote) {
+          if(local?.bytes) {
+            await uploadSlot(slot,local);
+            uploaded++;
+          }
           continue;
         }
-        if(!local || remoteTime>localTime) {
+
+        const remoteModifiedTime=Date.parse(remote.modifiedTime)||0;
+        const remoteStateTime=Number(remote.appProperties?.updatedAt)||remoteModifiedTime;
+        const localTime=Number(local?.updatedAt)||0;
+
+        // Remote-only save: bring it down to this browser.
+        if(!local?.bytes) {
           const bytes=await downloadDriveFile(remote);
-          const updatedAt=Number(remote.appProperties?.updatedAt)||remoteTime||Date.now();
           const rec={
             id:slotKey(model.game,slot),gameKey:model.game.key,gameName:model.game.name,slot,
-            updatedAt,bytes:new Blob([bytes],{type:MIME_STATE}),size:bytes.byteLength,
-            cloudUpdatedAt:remoteTime||Date.now(),dirty:false,driveFileId:remote.id
+            updatedAt:remoteStateTime||Date.now(),
+            bytes:new Blob([bytes],{type:MIME_STATE}),size:bytes.byteLength,
+            cloudUpdatedAt:remoteModifiedTime||Date.now(),dirty:false,driveFileId:remote.id
           };
-          await dbPut(STORE,rec);model.slots[slot-1]=rec;
+          await dbPut(STORE,rec);
+          model.slots[slot-1]=rec;
+          downloaded++;
+          continue;
+        }
+
+        // Both sides exist. Compare the save-state timestamp stored in Drive's
+        // appProperties rather than only Drive's server-side modifiedTime.
+        if(localTime > remoteStateTime) {
+          await uploadSlot(slot,local);
+          uploaded++;
+          continue;
+        }
+
+        if(remoteStateTime > localTime) {
+          const bytes=await downloadDriveFile(remote);
+          const rec={
+            id:slotKey(model.game,slot),gameKey:model.game.key,gameName:model.game.name,slot,
+            updatedAt:remoteStateTime,
+            bytes:new Blob([bytes],{type:MIME_STATE}),size:bytes.byteLength,
+            cloudUpdatedAt:remoteModifiedTime||Date.now(),dirty:false,driveFileId:remote.id
+          };
+          await dbPut(STORE,rec);
+          model.slots[slot-1]=rec;
+          downloaded++;
+          continue;
+        }
+
+        // Same logical save on both sides: mark the local copy clean and retain
+        // the Drive file id so the next save can update it efficiently.
+        if(local.dirty || local.driveFileId!==remote.id) {
+          const rec={
+            ...local,
+            dirty:false,
+            cloudUpdatedAt:remoteModifiedTime||local.cloudUpdatedAt||Date.now(),
+            driveFileId:remote.id
+          };
+          await dbPut(STORE,rec);
+          model.slots[slot-1]=rec;
         }
       }
       render();
-      toast('Drive saves synced');
+      const detail=[];
+      if(uploaded) detail.push(`${uploaded} uploaded`);
+      if(downloaded) detail.push(`${downloaded} downloaded`);
+      toast(detail.length ? `Drive sync complete — ${detail.join(', ')}` : 'Drive saves already up to date');
     } finally { model.syncBusy=false;render(); }
   }
 
