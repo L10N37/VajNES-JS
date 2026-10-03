@@ -17,6 +17,9 @@
     token: '',
     tokenExpiresAt: 0,
     signedIn: false,
+    googleReady: false,
+    authBusy: false,
+    authError: '',
     syncBusy: false,
     driveRootId: '',
     driveGameId: '',
@@ -174,39 +177,95 @@
     return id;
   }
 
-  async function signIn() {
-    requireClientId();
-    await loadGoogleIdentity();
-    if(!model.tokenClient) {
-      model.tokenClient=google.accounts.oauth2.initTokenClient({
-        client_id:cfg.googleClientId,
-        scope:DRIVE_SCOPE,
-        callback:()=>{}
-      });
-    }
-    const token=await new Promise((resolve,reject)=>{
-      model.tokenClient.callback=response=>{
-        if(response?.error) reject(new Error(response.error));
-        else resolve(response);
-      };
-      model.tokenClient.requestAccessToken({prompt:model.token ? '' : 'consent'});
-    });
-    model.token=token.access_token || '';
-    model.tokenExpiresAt=Date.now()+(Number(token.expires_in)||3600)*1000-60000;
-    model.signedIn=!!model.token;
-    model.driveRootId='';
-    model.driveGameId='';
-    model.driveGameKey='';
+  function oauthFailure(error) {
+    model.authBusy=false;
+    model.signedIn=false;
+    model.authError='Google sign-in failed: '+(error?.type || error?.error || 'unknown error');
     render();
-    toast('Google Drive connected');
-    if(model.game) await syncFromDrive();
+    toast(model.authError,5000);
+    console.error('[Cloud Saves]',model.authError,error);
+  }
+
+  async function finishSignIn(response) {
+    try {
+      if(response?.error) throw new Error(response.error);
+      if(!response?.access_token) throw new Error('Google returned no access token.');
+
+      model.token=response.access_token;
+      model.tokenExpiresAt=Date.now()+(Number(response.expires_in)||3600)*1000-60000;
+
+      // Confirm the token really works with Drive before saying we're connected.
+      await driveJson('https://www.googleapis.com/drive/v3/about?fields=kind');
+
+      model.signedIn=true;
+      model.authError='';
+      model.driveRootId='';
+      model.driveGameId='';
+      model.driveGameKey='';
+      render();
+      toast('Google Drive connected');
+
+      if(model.game) await syncFromDrive();
+    } catch(err) {
+      model.token='';
+      model.tokenExpiresAt=0;
+      model.signedIn=false;
+      model.authError=err?.message || String(err);
+      render();
+      toast(model.authError,5000);
+      console.error('[Cloud Saves]',err);
+    } finally {
+      model.authBusy=false;
+      render();
+    }
+  }
+
+  async function prepareGoogleSignIn() {
+    try {
+      requireClientId();
+      await loadGoogleIdentity();
+      if(!model.tokenClient) {
+        model.tokenClient=google.accounts.oauth2.initTokenClient({
+          client_id:cfg.googleClientId,
+          scope:DRIVE_SCOPE,
+          callback:response=>{ void finishSignIn(response); },
+          error_callback:oauthFailure
+        });
+      }
+      model.googleReady=true;
+      model.authError='';
+      render();
+    } catch(err) {
+      model.googleReady=false;
+      model.authError=err?.message || String(err);
+      render();
+    }
+  }
+
+  function signIn() {
+    requireClientId();
+    if(!model.googleReady || !model.tokenClient) {
+      model.authError='Google sign-in is still loading. Try again in a moment.';
+      render();
+      void prepareGoogleSignIn();
+      return;
+    }
+
+    model.authBusy=true;
+    model.authError='';
+    render();
+
+    // This call happens directly inside the button click handler. Do not await
+    // script loading here: Firefox may otherwise treat the OAuth popup as no
+    // longer user-initiated.
+    model.tokenClient.requestAccessToken();
   }
 
   function signOut() {
-    if(model.token && googleReady()) {
-      try { google.accounts.oauth2.revoke(model.token,()=>{}); } catch {}
-    }
+    // Disconnect this browser session only. Do not revoke the user's whole
+    // Google authorization grant every time they disconnect from VajNES.
     model.token='';model.tokenExpiresAt=0;model.signedIn=false;
+    model.authBusy=false;model.authError='';
     model.driveRootId='';model.driveGameId='';model.driveGameKey='';
     render();
     toast('Google Drive disconnected');
@@ -432,11 +491,22 @@
     gameText.textContent=model.game
       ? `${model.game.name} · ${model.game.payloadCrcHex}`
       : 'Load a ROM to start';
-    statusText.textContent=model.syncBusy
-      ? 'Syncing…'
-      : model.signedIn ? 'Google Drive connected' : 'Local saves ready';
-    accountBtn.textContent=model.signedIn ? 'Disconnect Google Drive' : 'Sign in with Google';
-    syncBtn.disabled=!model.signedIn || !model.game || model.syncBusy;
+    statusText.textContent=model.authBusy
+      ? 'Signing in…'
+      : model.authError
+        ? model.authError
+        : model.syncBusy
+          ? 'Syncing…'
+          : model.signedIn ? 'Google Drive connected'
+          : model.googleReady ? 'Google sign-in ready'
+          : 'Loading Google sign-in…';
+    accountBtn.textContent=model.authBusy
+      ? 'Signing in…'
+      : model.signedIn ? 'Disconnect Google Drive'
+      : model.googleReady ? 'Sign in with Google'
+      : 'Loading Google…';
+    accountBtn.disabled=model.authBusy || (!model.googleReady && !model.signedIn);
+    syncBtn.disabled=!model.signedIn || !model.game || model.syncBusy || model.authBusy;
     slotGrid.innerHTML='';
     for(let slot=1;slot<=SLOT_COUNT;slot++) {
       const rec=model.slots[slot-1];
@@ -454,11 +524,11 @@
   function close(){ root?.classList.remove('is-open');root?.setAttribute('aria-hidden','true'); }
 
   let toastTimer=0;
-  function toast(message) {
+  function toast(message,duration=1800) {
     let el=document.getElementById('cloud-save-toast');
     if(!el){el=document.createElement('div');el.id='cloud-save-toast';el.className='cloud-save-toast';document.body.appendChild(el);}
     el.textContent=message;el.classList.add('is-visible');
-    clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('is-visible'),1800);
+    clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('is-visible'),duration);
   }
 
   async function run(fn) {
@@ -496,6 +566,7 @@
 
   document.addEventListener('DOMContentLoaded',()=>{
     buildUi();
+    void prepareGoogleSignIn();
     if(window.VajNESCurrentGame) run(()=>onGame(window.VajNESCurrentGame));
   });
 })();
