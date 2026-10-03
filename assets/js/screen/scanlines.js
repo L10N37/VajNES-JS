@@ -12,6 +12,19 @@ let _scanlineFullscreenPresentation = {
   normalDisplayHeight: 0
 };
 
+const SCANLINE_IMAGE_REF_KEY = 'vajnesScanlineImageReferenceHeight';
+let _scanlineImageReferenceHeight =
+  Number(localStorage.getItem(SCANLINE_IMAGE_REF_KEY) || 0);
+
+function captureScanlineImageReferenceHeight() {
+  const h = Math.max(
+    1,
+    Math.round(scanlineCanvas.clientHeight || scanlineCanvas.height || 1)
+  );
+  _scanlineImageReferenceHeight = h;
+  localStorage.setItem(SCANLINE_IMAGE_REF_KEY, String(h));
+}
+
 function setScanlinesImage() {
   const selected = document.querySelector('input[name="scanlines"]:checked');
   if (!selected) return;
@@ -43,24 +56,21 @@ function drawScanlineImage() {
   scanlineCtx.clearRect(0, 0, scanlineCanvas.width, scanlineCanvas.height);
   if (!_scanlineImage) return;
 
-  if (_scanlineFullscreenPresentation.active &&
-      _scanlineFullscreenPresentation.normalDisplayHeight > 0) {
-    const tileH = Math.max(1, Math.round(_scanlineFullscreenPresentation.normalDisplayHeight));
-    for (let y = 0; y < scanlineCanvas.height; y += tileH) {
-      scanlineCtx.drawImage(
-        _scanlineImage,
-        0, 0, _scanlineImage.width, _scanlineImage.height,
-        0, y, scanlineCanvas.width, tileH
-      );
-    }
-    return;
+  // Preserve the physical scanline pitch at the scale where the user chose
+  // this image. Scaling the whole 1080-line PNG to every emulator size creates
+  // beat/alias patterns (2x/4x/5x looked visibly different from 3x/5.4x).
+  if (!(_scanlineImageReferenceHeight > 0)) {
+    captureScanlineImageReferenceHeight();
   }
 
-  scanlineCtx.drawImage(
-    _scanlineImage,
-    0, 0, _scanlineImage.width, _scanlineImage.height,
-    0, 0, scanlineCanvas.width, scanlineCanvas.height
-  );
+  const tileH = Math.max(1, Math.round(_scanlineImageReferenceHeight));
+  for (let y = 0; y < scanlineCanvas.height; y += tileH) {
+    scanlineCtx.drawImage(
+      _scanlineImage,
+      0, 0, _scanlineImage.width, _scanlineImage.height,
+      0, y, scanlineCanvas.width, tileH
+    );
+  }
 }
 
 // If scale changes, we want the overlay to re-stretch as well.
@@ -92,6 +102,7 @@ document.querySelectorAll('input[name="scanlines"]').forEach((b) => {
     localStorage.setItem('vajnesScanlineImage', b.value);
     window._scanlineEffectMode = 'image';
     localStorage.setItem('vajnesScanlineEffectMode','image');
+    captureScanlineImageReferenceHeight();
     setScanlinesImage();
   });
 });
@@ -102,4 +113,7 @@ const savedEffectMode = localStorage.getItem('vajnesScanlineEffectMode');
 window._scanlineEffectMode = savedEffectMode === 'computed'
   ? 'computed'
   : (savedScanlineImage ? 'image' : 'computed');
-if (window._scanlineEffectMode === 'image') setScanlinesImage();
+if (window._scanlineEffectMode === 'image') {
+  if (!(_scanlineImageReferenceHeight > 0)) captureScanlineImageReferenceHeight();
+  setScanlinesImage();
+}
