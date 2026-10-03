@@ -99,3 +99,18 @@ test('fullscreen CSS resize does not regenerate tuned CRT overlays',()=>{
   assert.match(grille,/_scanlineRedraw\?\.\(\)/);
   assert.match(grille,/_resyncScanlineOverlayAfterScale/);
 });
+
+
+test('fullscreen CRT overlays render at display resolution instead of scaling tuned scanlines',()=>{
+  const screen=fs.readFileSync('assets/js/screen/screen.js','utf8');
+  const grille=fs.readFileSync('assets/js/screen/grille.js','utf8');
+  const scanlines=fs.readFileSync('assets/js/screen/scanlines.js','utf8');
+
+  assert.match(screen,/_setCrtFullscreenPresentation\?\.\(\s*true,\s*width,\s*height,\s*canvas\.height/);
+  assert.match(grille,/scanlineCanvas\.width !== w/);
+  assert.match(grille,/scanlineCanvas\.height !== h/);
+  assert.match(grille,/_scanlineEffectMode === 'image'/);
+  assert.match(scanlines,/_scanlineFullscreenPresentation\.normalDisplayHeight/);
+  assert.match(scanlines,/for \(let y = 0; y < scanlineCanvas\.height; y \+= tileH\)/);
+  assert.match(scanlines,/vajnesScanlineEffectMode/);
+});
