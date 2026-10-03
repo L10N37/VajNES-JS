@@ -28,6 +28,19 @@
     slots: Array.from({length:SLOT_COUNT},()=>null)
   };
 
+  // The site contains third-party popunder advertising. A popunder can consume
+  // the same browser user-activation that Google needs for its OAuth popup.
+  // Register this capture handler now, before the ad scripts later in index.html,
+  // and reserve Cloud account clicks exclusively for Google authorization.
+  window.addEventListener('click',event=>{
+    const target=event.target instanceof Element ? event.target.closest('#cloud-account-button') : null;
+    if(!target) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if(model.signedIn) signOut();
+    else signIn();
+  },true);
+
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   })[ch]);
@@ -180,7 +193,10 @@
   function oauthFailure(error) {
     model.authBusy=false;
     model.signedIn=false;
-    model.authError='Google sign-in failed: '+(error?.type || error?.error || 'unknown error');
+    const type=error?.type || error?.error || 'unknown error';
+    model.authError=type==='popup_closed'
+      ? 'Google sign-in popup closed before authorization completed.'
+      : 'Google sign-in failed: '+type;
     render();
     toast(model.authError,5000);
     console.error('[Cloud Saves]',model.authError,error);
@@ -471,7 +487,8 @@
 
     wrap.querySelector('.cloud-save-close').addEventListener('click',close);
     wrap.addEventListener('click',e=>{if(e.target===wrap)close();});
-    accountBtn.addEventListener('click',async()=>run(model.signedIn?signOut:signIn));
+    // Account clicks are handled by the early window capture listener above so
+    // advertising scripts cannot consume the OAuth popup's user activation.
     syncBtn.addEventListener('click',()=>run(syncFromDrive));
     wrap.querySelector('#cloud-quick-save').addEventListener('click',()=>run(()=>saveLocal()));
     wrap.querySelector('#cloud-quick-load').addEventListener('click',()=>run(()=>loadLocal()));
