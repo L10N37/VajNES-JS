@@ -58,6 +58,19 @@ test('application full screen offers fitted and stretched modes without binding 
   assert.match(screen,/window\.innerWidth/);
   assert.match(screen,/window\.innerHeight/);
   assert.doesNotMatch(screen,/ev\.key\s*===?\s*['"]F11['"]/);
-  assert.match(css,/--vajnes-fullscreen-width/);
+  assert.match(screen,/fullscreenShell\.clientWidth/);
+  assert.match(screen,/fullscreenShell\.clientHeight/);
+  assert.match(screen,/style\.setProperty\('width',width\+'px','important'\)/);
+  assert.match(screen,/style\.setProperty\('height',height\+'px','important'\)/);
   assert.match(css,/border:\s*0/);
+});
+
+
+test('maintain-aspect fullscreen computes a fitted rectangle while stretch uses the whole surface',()=>{
+  const screen=fs.readFileSync('assets/js/screen/screen.js','utf8');
+  assert.match(screen,/if \(fullscreenMode === 'aspect'\)/);
+  assert.match(screen,/\(viewportW \/ viewportH\) > pictureAspect/);
+  assert.match(screen,/width = height \* pictureAspect/);
+  assert.match(screen,/height = width \/ pictureAspect/);
+  assert.match(screen,/let width = viewportW;\s*let height = viewportH;/);
 });
