@@ -1596,3 +1596,13 @@ test('mapper 85 VRC7 save-state restores banks mirroring and IRQ state',()=>{
  e.evaluate('vrc7Prg.set([3,4,5]);vrc7Chr.set([1,2,3,4,5,6,7,8]);vrc7Mirror=3;vrc7AudioIndex=0x20;vrc7IrqLatch=0xab;vrc7IrqCounter=0xcd;vrc7IrqPrescaler=123;vrc7IrqEnabled=true;vrc7IrqEnableAfterAck=true;vrc7IrqCycleMode=true;irqAssert.vrc=true;globalThis.__s=vrc7SaveState();vrc7Init();vrc7LoadState(globalThis.__s)');
  assert.deepEqual(e.evaluate('[Array.from(vrc7Prg),Array.from(vrc7Chr),MIRRORING,vrc7AudioIndex,vrc7IrqLatch,vrc7IrqCounter,vrc7IrqPrescaler,vrc7IrqEnabled,vrc7IrqEnableAfterAck,vrc7IrqCycleMode,irqAssert.vrc]'),[[3,4,5],[1,2,3,4,5,6,7,8],'single1',0x20,0xab,0xcd,123,true,true,true,true]);
 });
+
+
+test('mapper 85 VRC7 accepts and banks CHR RAM cartridges',()=>{
+ const e=emulator(rom(85,8,0));
+ assert.equal(e.evaluate('chrIsRAM'),true);
+ e.evaluate('checkWriteOffset(0xa000,3);vrc7ChrWrite(0x0000,0x5a)');
+ assert.equal(e.evaluate('vrc7ChrRead(0x0000)'),0x5a);
+ e.evaluate('checkWriteOffset(0xa000,0)');
+ assert.notEqual(e.evaluate('vrc7ChrRead(0x0000)'),0x5a);
+});
