@@ -287,6 +287,8 @@ function checkReadOffset(address) {
           ? vrc6CpuRead(addr) & 0xFF
         : mapperNumber===34 && mapper34Mode==='nina' && addr<=0x7ffc
           ? prgRam[addr - 0x6000] & 0xFF
+        : vrc24FamilyActive()
+          ? vrc24CpuRead(addr) & 0xFF
         : mapperNumber===68
           ? prgRam[addr - 0x6000] & 0xFF
         : mapperNumber===69
@@ -551,6 +553,7 @@ function checkWriteOffset(address, value) {
       prgRam[addr - 0x6000] = value & 0xFF;
     else if (mapperNumber === 34 && mapper34Mode==='nina' && addr>=0x7ffd) mapper34Write(addr,value);
     else if (mapperNumber === 79) nina79Write(addr, value);
+    else if (vrc24FamilyActive()) vrc24CpuWrite(addr,value);
     else if (mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
     else if (mapperNumber===69) fme7CpuWrite(addr,value);
     else if (mapperNumber===64 || mapperNumber===158) rambo1CpuWrite(addr,value);
@@ -595,6 +598,7 @@ function mapperReadPRG(addr) {
   if (mapperNumber===2) return uxromRead(addr);
   if (mapperNumber===34) return mapper34Read(addr);
   if (mapperNumber===71) return mapper71Read(addr);
+  if (vrc24FamilyActive()) return vrc24CpuRead(addr);
   if (mapperNumber===24 || mapperNumber===26) return vrc6CpuRead(addr);
   if (mapperNumber===68) return mapper68CpuRead(addr);
   if (mapperNumber===69) return fme7CpuRead(addr);
@@ -610,6 +614,7 @@ function mapperWritePRG(addr, value) {
   else if(mapperNumber===2) uxromWrite(addr,value);
   else if(mapperNumber===34) mapper34Write(addr,value);
   else if(mapperNumber===71) mapper71Write(addr,value);
+  else if(vrc24FamilyActive()) vrc24CpuWrite(addr,value);
   else if(mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
   else if(mapperNumber===68) mapper68CpuWrite(addr,value);
   else if(mapperNumber===69) fme7CpuWrite(addr,value);
