@@ -789,8 +789,8 @@ test('archaic DiskDude header does not turn MMC2 mapper 9 into mapper 73',()=>{
 });
 
 test('clean iNES mapper high nibble remains significant',()=>{
- const bytes=rom(73,8,16,0,null);
- assert.throws(()=>emulator(bytes),/Mapper 73 not yet implemented/);
+ const bytes=rom(89,8,16,0,null);
+ assert.throws(()=>emulator(bytes),/Mapper 89 not yet implemented/);
 });
 
 test('ROM compatibility database contains the verified mapper repairs',()=>{
@@ -818,7 +818,7 @@ test('ROM compatibility repair is applied before unsupported-mapper rejection',(
 test('ROM compatibility repair is constrained to the bad reported mapper',()=>{
  const e=createEmulator();
  e.evaluate('crc32Bytes=()=>0x5DBD6099');
- assert.throws(()=>e.load(rom(73,8,16)),/Mapper 73 not yet implemented/);
+ assert.throws(()=>e.load(rom(89,8,16)),/Mapper 89 not yet implemented/);
 });
 
 test('expansion audio detector identifies unambiguous mapper families',()=>{
