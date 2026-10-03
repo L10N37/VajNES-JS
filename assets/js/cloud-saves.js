@@ -28,19 +28,6 @@
     slots: Array.from({length:SLOT_COUNT},()=>null)
   };
 
-  // The site contains third-party popunder advertising. A popunder can consume
-  // the same browser user-activation that Google needs for its OAuth popup.
-  // Register this capture handler now, before the ad scripts later in index.html,
-  // and reserve Cloud account clicks exclusively for Google authorization.
-  window.addEventListener('click',event=>{
-    const target=event.target instanceof Element ? event.target.closest('#cloud-account-button') : null;
-    if(!target) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    if(model.signedIn) signOut();
-    else signIn();
-  },true);
-
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   })[ch]);
@@ -260,6 +247,7 @@
 
   function signIn() {
     requireClientId();
+    if(model.authBusy) return;
     if(!model.googleReady || !model.tokenClient) {
       model.authError='Google sign-in is still loading. Try again in a moment.';
       render();
