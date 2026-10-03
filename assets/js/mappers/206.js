@@ -26,7 +26,7 @@ function mapper206Write(addr, value) {
   addr &= 0xffff;
   value &= 0xff;
 
-  switch (addr & 0xe001) {
+  switch (addr & 0x8001) {
     case 0x8000:
       mapper206Select = value & 7;
       return true;
