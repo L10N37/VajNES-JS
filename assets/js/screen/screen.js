@@ -867,6 +867,39 @@ document.addEventListener('keydown', (ev) => {
   }
 );
 
+// Emulator fullscreen option. This deliberately stretches the picture to the
+// viewport, like a video player's fullscreen control. F11 remains untouched and
+// continues to be the browser's own fullscreen shortcut.
+const fullscreenShell = document.getElementById('emulator-fullscreen-shell');
+const fullscreenOption = document.getElementById('screen-option-fullscreen');
+
+async function toggleEmulatorFullscreen() {
+  if (!fullscreenShell) return;
+  const active = document.fullscreenElement === fullscreenShell ||
+    document.webkitFullscreenElement === fullscreenShell;
+  try {
+    if (active) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } else {
+      if (fullscreenShell.requestFullscreen) await fullscreenShell.requestFullscreen();
+      else if (fullscreenShell.webkitRequestFullscreen) fullscreenShell.webkitRequestFullscreen();
+    }
+  } catch (err) {
+    globalThis.NES_DEBUG_LOGGING && console.warn('[fullscreen] request failed', err);
+  }
+}
+
+if (fullscreenOption) fullscreenOption.addEventListener('click', toggleEmulatorFullscreen);
+
+function restoreScaledPresentationAfterFullscreen() {
+  const active = document.fullscreenElement === fullscreenShell ||
+    document.webkitFullscreenElement === fullscreenShell;
+  if (!active) applyScale();
+}
+document.addEventListener('fullscreenchange', restoreScaledPresentationAfterFullscreen);
+document.addEventListener('webkitfullscreenchange', restoreScaledPresentationAfterFullscreen);
+
 // FPS toggle option (li:nth-child(5))
 const fpsOption = document.getElementById('screen-option-fps');
 if (fpsOption) {
