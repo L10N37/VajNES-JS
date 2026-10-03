@@ -1,6 +1,6 @@
 chrIsRAM = false;
 
-const SUPPORTED_MAPPERS = new Set([0,1,2,3,4,5,7,9,10,11,19,21,22,23,24,25,26,34,64,66,68,69,71,73,79,85,118,119,155,158,206,210]);
+const SUPPORTED_MAPPERS = new Set([0,1,2,3,4,5,7,9,10,11,19,21,22,23,24,25,26,34,64,66,68,69,71,73,78,79,85,118,119,155,158,206,210]);
 function isMapperSupported(id) { return SUPPORTED_MAPPERS.has(id|0); }
 
 // --- General mapper handling at ROM load, mappers folder contains stand-alone mapper implementations ---
@@ -136,6 +136,12 @@ function mapper(nesHeader) {
 
     case 73: {
       vrc3Init();
+      powerOnCPU();
+      break;
+    }
+
+    case 78: {
+      mapper78Init(nesHeader);
       powerOnCPU();
       break;
     }
