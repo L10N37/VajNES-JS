@@ -213,8 +213,6 @@ function loadRom(romBytes, fileName = '') {
     throw new Error(`Unsupported Namco mapper ${incomingMapper}: CHR ROM required`);
   if ([21,22,23,25].includes(incomingMapper) && nesHeader[5]===0)
     throw new Error('Unsupported VRC2/VRC4 board: CHR ROM required');
-  if (incomingMapper===85 && nesHeader[5]===0)
-    throw new Error('Unsupported VRC7 board: CHR ROM required');
   if ((incomingMapper===24 || incomingMapper===26) && nesHeader[5]===0)
     throw new Error('Unsupported VRC6 board: CHR ROM required');
   if (incomingMapper===69 && nesHeader[5]===0)
