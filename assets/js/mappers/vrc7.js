@@ -26,7 +26,8 @@ function vrc7Init(){
   vrc7IrqEnableAfterAck=false;
   vrc7IrqCycleMode=false;
   irqAssert.vrc=false;
-  chrIsRAM=false;
+  // Keep the loader-selected CHR type. VRC7 supports either CHR ROM or
+  // bank-switched CHR RAM.
   vrc7ApplyMirroring();
 }
 
@@ -117,6 +118,16 @@ function vrc7ChrRead(addr){
   return mapperReadBank(CHR_ROM,0x400,vrc7Chr[slot],addr&0x3ff);
 }
 
+function vrc7ChrWrite(addr,value){
+  if(!chrIsRAM)return;
+  addr&=0x1fff;
+  value&=0xff;
+  const slot=addr>>>10;
+  const count=mapperBankCount(CHR_ROM,0x400);
+  const bank=mapperBankIndex(vrc7Chr[slot],count);
+  CHR_ROM[bank*0x400+(addr&0x3ff)]=value;
+}
+
 function vrc7IrqCounterClock(){
   if(vrc7IrqCounter===0xff){
     vrc7IrqCounter=vrc7IrqLatch;
@@ -168,7 +179,6 @@ function vrc7LoadState(bytes){
   vrc7IrqEnableAfterAck=!!(f&2);
   vrc7IrqCycleMode=!!(f&4);
   irqAssert.vrc=!!(f&8);
-  chrIsRAM=false;
   vrc7ApplyMirroring();
   return true;
 }
