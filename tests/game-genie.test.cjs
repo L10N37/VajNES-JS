@@ -31,7 +31,7 @@ test('decodes canonical 8-character compare Game Genie code',()=>{
 
 test('parses Libretro CHT descriptions, codes and multi-code chains',()=>{
   const g=genie();
-  const parsed=g.parseCht([
+  const parsed=JSON.parse(JSON.stringify(g.parseCht([
     'cheats = 2',
     'cheat0_desc = "Infinite Lives"',
     'cheat0_code = "SXIOPO"',
@@ -39,7 +39,7 @@ test('parses Libretro CHT descriptions, codes and multi-code chains',()=>{
     'cheat1_desc = "Two patches"',
     'cheat1_code = "SXIOPO+SLXPLOVS"',
     'cheat1_enable = false'
-  ].join('\n'));
+  ].join('\n'))));
   assert.deepEqual(parsed,[
     {description:'Infinite Lives',code:'SXIOPO'},
     {description:'Two patches',code:'SXIOPO+SLXPLOVS'}
