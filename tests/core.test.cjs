@@ -1295,3 +1295,38 @@ test('Namco mapper save-state restores banks IRQ and internal RAM',()=>{
  assert.deepEqual(e.evaluate('[namcoChr[0],namcoPrg[0],namcoNt[0],namcoIrqCounter,namcoIrqEnable,irqAssert.namco,namcoRam[3],namcoRamAddr,namcoRamAuto]'),
  [9,6,0xe1,0x3456,true,true,0x77,3,true]);
 });
+
+
+test('Game Genie patches mapped PRG reads without modifying ROM bytes',()=>{
+ const bytes=rom(0,2,1);
+ bytes[16+0x11d9]=0xce; // SXIOPO target: CPU $91D9 -> $AD.
+ bytes[16+0x1123]=0xde; // SLXPLOVS target: compare $DE -> $BD.
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('checkReadOffset(0x91d9)'),0xce);
+ e.evaluate("VajNESGenie.addManual('SXIOPO')");
+ assert.equal(e.evaluate('checkReadOffset(0x91d9)'),0xad);
+ assert.equal(e.evaluate('prgRom[0x11d9]'),0xce);
+ e.evaluate("VajNESGenie.addManual('SLXPLOVS')");
+ assert.equal(e.evaluate('checkReadOffset(0x9123)'),0xbd);
+ e.evaluate('prgRom[0x1123]=0xdf');
+ assert.equal(e.evaluate('checkReadOffset(0x9123)'),0xdf);
+ e.evaluate('VajNESGenie.disableAll()');
+ assert.equal(e.evaluate('checkReadOffset(0x91d9)'),0xce);
+});
+
+test('Game Genie patches MMC3 after bank translation',()=>{
+ const bytes=rom(4,8,1);
+ for(let bank=0;bank<16;bank++)bytes.fill(bank,16+bank*0x2000,16+(bank+1)*0x2000);
+ const e=emulator(bytes);
+ e.evaluate("mapper4_write_8000(6);mapper4_write_8001(3);VajNESGenie.addManual('SXIOPO')");
+ // SXIOPO targets $91D9. Mapper 4 R6=3 maps bank 3 at $8000-$9FFF.
+ assert.equal(e.evaluate('checkReadOffset(0x91d9)'),0xad);
+ assert.equal(e.evaluate('FULL_PRG_ROM[3*0x2000+0x11d9]'),3);
+});
+
+test('Game Genie disassembly peek reports the patched byte',()=>{
+ const bytes=rom(0,2,1);bytes[16+0x11d9]=0xce;
+ const e=emulator(bytes);
+ e.evaluate("VajNESGenie.addManual('SXIOPO')");
+ assert.equal(e.evaluate('disasmPeekByte(0x91d9)'),0xad);
+});

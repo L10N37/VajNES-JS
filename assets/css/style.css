@@ -428,3 +428,24 @@ registersText{
   .about-grid span:nth-child(odd){margin-top:5px}
   .accuracy-grid strong{text-align:left;margin-bottom:5px}
 }
+
+
+/* Game Genie */
+#genieButton:disabled{opacity:.45;cursor:default}
+#genieButton.genie-active{font-weight:700;box-shadow:inset 0 0 0 2px #8ab4f8}
+.genie-card{width:min(880px,calc(100vw - 36px))}
+.genie-game-box{display:flex;flex-direction:column;gap:3px;padding:11px 13px;border:1px solid #5f6368;border-radius:9px;background:#22252a}
+.genie-game-box strong{font-size:18px}
+.genie-game-box span{color:#bdc1c6;font-size:13px;overflow-wrap:anywhere}
+.genie-cheat-list{display:flex;flex-direction:column;gap:8px}
+.genie-cheat-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 11px;border:1px solid #464b52;border-radius:8px;background:#202328;cursor:pointer}
+.genie-cheat-row>span{display:flex;flex-direction:column;min-width:0}
+.genie-cheat-row code{margin-top:2px;color:#9fc5ff;font-size:12px;overflow-wrap:anywhere}
+.genie-cheat-row input{width:18px;height:18px}
+.genie-manual-row{cursor:default}
+.genie-small-button,.genie-manual-entry button{padding:7px 10px;border:1px solid #686d75;border-radius:6px;background:#2d3137;color:#fff;cursor:pointer}
+.genie-small-button:hover,.genie-manual-entry button:hover{background:#3a4048}
+.genie-manual-entry{display:flex;gap:8px;flex-wrap:wrap}
+.genie-manual-entry input{flex:1 1 260px;min-width:0;padding:8px 10px;border:1px solid #666;border-radius:6px;background:#24282e;color:#fff;font:14px monospace;text-transform:uppercase}
+.genie-error{min-height:1.4em;margin:8px 0 0;color:#ff9b9b;font-size:13px}
+@media(max-width:620px){.genie-cheat-row{grid-template-columns:auto minmax(0,1fr)}.genie-small-button{grid-column:2;justify-self:start}}

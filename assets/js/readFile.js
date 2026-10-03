@@ -84,6 +84,7 @@ function readFile(input, auto = false) {
     if (typeof NESAudio !== 'undefined' && NESAudio.setExpansion)
       NESAudio.setExpansion(null,false);
     localStorage.removeItem('lastRomData');
+    localStorage.removeItem('lastRomName');
 
     // FileReader loads ROM as binary buffer
     const reader = new FileReader();
@@ -92,6 +93,7 @@ function readFile(input, auto = false) {
     reader.onload = async function () {
       try {
         let romBytes = new Uint8Array(reader.result);
+        let romName = file.name;
 
         if (lowerName.endsWith('.zip')) {
           if (typeof extractNesFromZip!=='function')
@@ -99,11 +101,14 @@ function readFile(input, auto = false) {
           const extracted=await extractNesFromZip(romBytes);
           if(!extracted)return;
           romBytes=extracted.bytes;
+          romName=extracted.name;
         }
 
         // Cache only the successfully extracted/loaded NES ROM, never the ZIP container.
-        if (loadRom(romBytes) === true)
+        if (loadRom(romBytes, romName) === true) {
           localStorage.setItem('lastRomData', bytesToBase64(romBytes));
+          localStorage.setItem('lastRomName', romName || '');
+        }
       } catch (error) {
         console.error(error);
         if(typeof window.alert==='function')window.alert(error.message||String(error));
@@ -125,11 +130,11 @@ function readFile(input, auto = false) {
     }
 
     const romBytes = Uint8Array.from(atob(saved), c => c.charCodeAt(0));
-    loadRom(romBytes);
+    loadRom(romBytes, localStorage.getItem('lastRomName') || '');
   }
 }
 
-function loadRom(romBytes) {
+function loadRom(romBytes, fileName = '') {
 
   // First 16 bytes of ROM contain the iNES header
   const nesHeader = romBytes.subarray(0, 16);
@@ -257,6 +262,11 @@ function loadRom(romBytes) {
   // Compute CHR start offset
   const chrStart = prgStart + prgSize;
 
+  // Game Genie identity: canonical whole-file CRC plus a header-independent
+  // PRG+CHR payload CRC for known alternate-header dumps.
+  const fullRomCrc = crc32Bytes(romBytes);
+  const payloadCrc = crc32Bytes(romBytes.subarray(prgStart, chrStart + chrSize));
+
   // ------------------------------------------------------------
   // Store full ROM for large mappers (MMC3 / Mapper 4)
   // Header and trainer are skipped
@@ -342,6 +352,15 @@ function loadRom(romBytes) {
 
   // Refresh debug tables
   updateDebugTables();
+
+  if (typeof VajNESGenie !== 'undefined' && VajNESGenie.onRomLoaded) {
+    VajNESGenie.onRomLoaded({
+      fullCrc: fullRomCrc,
+      payloadCrc,
+      fileName,
+      mapper: mapperNumber
+    });
+  }
 
   // ------------------------------------------------------------
   // UI: Header info popup

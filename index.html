@@ -64,6 +64,7 @@
       <button class="dropbtn" id="resetButton">Reset</button>
       <button class="dropbtn" id="aboutButton">About</button>
       <button class="dropbtn" id="accuracyButton">Accuracy</button>
+      <button class="dropbtn" id="genieButton" disabled>Genie</button>
       <details class="gamepad-menu">
         <summary class="dropbtn">Controller</summary>
         <div class="gamepad-help">
@@ -210,6 +211,36 @@
       </ul>
 
       <p class="about-note">These figures describe the automated suites currently wired into VajNES CI. They are accuracy evidence, not a claim that every NES ROM or every hardware edge case in existence has been tested.</p>
+    </div>
+  </div>
+
+
+  <div id="genie-modal" class="about-modal" aria-hidden="true">
+    <div class="about-card genie-card" role="dialog" aria-modal="true" aria-labelledby="genie-title">
+      <button id="genie-close" class="about-close" aria-label="Close Game Genie">&times;</button>
+      <h1 id="genie-title">Game Genie</h1>
+      <p class="about-tagline">ROM-aware cheats without modifying the loaded ROM</p>
+
+      <div class="genie-game-box">
+        <strong id="genie-game-title">No ROM loaded</strong>
+        <span id="genie-game-meta">Load a ROM to identify it and view cheats.</span>
+        <span id="genie-status"></span>
+      </div>
+
+      <h2>Available cheats</h2>
+      <p id="genie-empty" class="about-note">No ROM loaded.</p>
+      <div id="genie-cheat-list" class="genie-cheat-list"></div>
+
+      <h2>Manual code</h2>
+      <p class="about-note">Enter a 6- or 8-character NES Game Genie code. Multi-code cheats can be joined with +.</p>
+      <div class="genie-manual-entry">
+        <input id="genie-code-input" type="text" autocomplete="off" spellcheck="false" maxlength="80" placeholder="e.g. SXIOPO">
+        <button id="genie-add" type="button">Add code</button>
+        <button id="genie-disable-all" type="button">Disable all</button>
+      </div>
+      <p id="genie-code-error" class="genie-error" role="alert"></p>
+
+      <p class="about-note">Built-in sets are matched from the Libretro NES Game Genie database by ROM identity. Cheats are applied to CPU ROM reads after mapper translation; ROM bytes are never rewritten.</p>
     </div>
   </div>
 
@@ -426,6 +457,8 @@
 <script src="assets/js/mappers/rambo1.js"></script>
 <script src="assets/js/audio/expansion-audio.js"></script>
 <script src="assets/js/zip-rom.js"></script>
+<script src="assets/js/cheats/game-genie-index.js"></script>
+<script src="assets/js/cheats/game-genie.js"></script>
 
 <script src="assets/js/readFile.js"></script>
 
@@ -496,6 +529,7 @@
   };
   bindModal('about-modal', 'aboutButton', 'about-close');
   bindModal('accuracy-modal', 'accuracyButton', 'accuracy-close');
+  bindModal('genie-modal', 'genieButton', 'genie-close');
 })();
 </script>
 
