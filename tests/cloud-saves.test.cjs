@@ -54,8 +54,15 @@ test('cloud shortcuts are fullscreen-friendly and cloud-only',()=>{
   const index=fs.readFileSync('index.html','utf8');
   assert.match(cloud,/e\.code==='F8'/);
   assert.match(cloud,/e\.code==='F9'/);
-  assert.match(cloud,/model\.signedIn && model\.game/);
+  assert.match(cloud,/if\(model\.game && !e\.repeat\)/);
   assert.match(index,/F8<\/kbd><\/span><span>Cloud Quick Save/);
   assert.match(index,/F9<\/kbd><\/span><span>Cloud Quick Load/);
   assert.match(index,/Cloud users only/);
+});
+
+
+test('cloud script is cache-busted for live deployments',()=>{
+  const index=fs.readFileSync('index.html','utf8');
+  assert.match(index,/cloud-saves\.js\?v=cloud-slots-3/);
+  assert.match(index,/cloud-config\.js\?v=cloud-slots-3/);
 });
