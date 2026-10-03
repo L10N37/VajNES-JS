@@ -1411,3 +1411,44 @@ test('mapper 71 uses CHR RAM and save-state restores banking and mirroring',()=>
  e.evaluate('CHR_ROM[0x123]=0x66;mapper71Bank=4;MIRRORING="single1";globalThis.__s=mapper71SaveState();mapper71Bank=0;MIRRORING="single0";mapper71LoadState(globalThis.__s)');
  assert.deepEqual(e.evaluate('[mapper71Bank,MIRRORING,CHR_ROM[0x123]]'),[4,'single1',0x66]);
 });
+
+
+test('mapper 34 BNROM switches 32K PRG bank with bus conflicts',()=>{
+ const bytes=rom(34,8,0);
+ for(let b=0;b<4;b++)bytes.fill(b,16+b*0x8000,16+(b+1)*0x8000);
+ // Put a permissive bus value at $8000 in bank 0 so selecting bank 3 works.
+ bytes[16]=0xff;
+ bytes[16+8*0x4000-4]=0;bytes[16+8*0x4000-3]=0x80;
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('mapper34Mode'),'bnrom');
+ assert.equal(e.evaluate('checkReadOffset(0x8001)'),0);
+ e.evaluate('checkWriteOffset(0x8000,3)');
+ assert.equal(e.evaluate('checkReadOffset(0x8001)'),3);
+});
+
+test('mapper 34 NINA-001 maps PRG at 7FFD and independent 4K CHR banks',()=>{
+ const bytes=rom(34,4,4);
+ for(let b=0;b<2;b++)bytes.fill(b,16+b*0x8000,16+(b+1)*0x8000);
+ const chrStart=16+4*0x4000;
+ for(let b=0;b<8;b++)bytes.fill(b,chrStart+b*0x1000,chrStart+(b+1)*0x1000);
+ bytes[16+4*0x4000-4]=0;bytes[16+4*0x4000-3]=0x80;
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('mapper34Mode'),'nina');
+ e.evaluate('checkWriteOffset(0x7ffd,1);checkWriteOffset(0x7ffe,6);checkWriteOffset(0x7fff,7)');
+ assert.equal(e.evaluate('checkReadOffset(0x8000)'),1);
+ assert.deepEqual(e.evaluate('[ppuBusRead(0),ppuBusRead(0x1000)]'),[6,7]);
+});
+
+test('mapper 34 NINA-001 keeps 6000-7FFC WRAM while mapper registers occupy 7FFD-7FFF',()=>{
+ const e=emulator(rom(34,4,4));
+ e.evaluate('checkWriteOffset(0x6000,0x55);checkWriteOffset(0x7ffc,0x66)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),checkReadOffset(0x7ffc)]'),[0x55,0x66]);
+ e.evaluate('checkWriteOffset(0x7ffd,1)');
+ assert.equal(e.evaluate('mapper34PrgBank'),1);
+});
+
+test('mapper 34 save-state restores board mode and banks',()=>{
+ const e=emulator(rom(34,4,4));
+ e.evaluate('mapper34PrgBank=1;mapper34Chr0=2;mapper34Chr1=3;globalThis.__s=mapper34SaveState();mapper34PrgBank=0;mapper34Chr0=0;mapper34Chr1=1;mapper34LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[mapper34Mode,mapper34PrgBank,mapper34Chr0,mapper34Chr1]'),['nina',1,2,3]);
+});
