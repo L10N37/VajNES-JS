@@ -35,3 +35,16 @@ test('ROM loader publishes stable CRC-based game identity',()=>{
   assert.match(rf,/payloadCrcHex/);
   assert.match(rf,/vajnes-rom-loaded/);
 });
+
+
+test('cloud save slots expose direct Save and Load controls',()=>{
+  const cloud=fs.readFileSync('assets/js/cloud-saves.js','utf8');
+  const css=fs.readFileSync('assets/css/style.css','utf8');
+  assert.match(cloud,/saveSlotDirect/);
+  assert.match(cloud,/loadSlotDirect/);
+  assert.match(cloud,/cloud-slot-save/);
+  assert.match(cloud,/cloud-slot-load/);
+  assert.match(cloud,/Overwrite Slot \$\{slot\}\?/);
+  assert.match(css,/\.cloud-slot-actions/);
+  assert.match(css,/\.cloud-slot-action/);
+});
