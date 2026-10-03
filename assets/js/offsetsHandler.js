@@ -302,7 +302,7 @@ function checkReadOffset(address) {
         : mapperNumber === 1
           ? mmc1CpuRead(addr) & 0xFF
           : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
-             mapperNumber===11 || mapperNumber===34 || mapperNumber===66 || mapperNumber===71 || mapperNumber===79 ||
+             mapperNumber===11 || mapperNumber===34 || mapperNumber===66 || mapperNumber===71 || mapperNumber===78 || mapperNumber===79 ||
              mapperNumber===64 || mapperNumber===158 || mapperNumber===119 ||
              mapperNumber===206 ||
              (mmc3FamilyActive() && !MMC3.control.prgRamEnabled))
@@ -564,7 +564,7 @@ function checkWriteOffset(address, value) {
     else if (mapperNumber===69) fme7CpuWrite(addr,value);
     else if (mapperNumber===64 || mapperNumber===158) rambo1CpuWrite(addr,value);
     else if(addr>=0x6000 && mapperNumber!==7 && mapperNumber!==3 &&
-      mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==34 && mapperNumber!==66 && mapperNumber!==71 && mapperNumber!==79 &&
+      mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==34 && mapperNumber!==66 && mapperNumber!==71 && mapperNumber!==78 && mapperNumber!==79 &&
       mapperNumber!==206 &&
       ((!mmc3FamilyActive() || (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)) && mapperNumber!==119))
       prgRam[addr - 0x6000] = value & 0xFF;
