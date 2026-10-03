@@ -885,24 +885,67 @@ function emulatorFullscreenActive() {
     document.webkitFullscreenElement === fullscreenShell;
 }
 
+function fullscreenPresentationTargets() {
+  return [systemScreen,grilleScreen,scanlineScreen,canvas,grilleCanvas,scanlineCanvas].filter(Boolean);
+}
+
+function clearFullscreenPresentationStyles() {
+  for (const el of fullscreenPresentationTargets()) {
+    for (const prop of ['left','top','right','bottom','transform','width','height','margin','padding','border']) {
+      el.style.removeProperty(prop);
+    }
+  }
+}
+
 function applyFullscreenPresentation() {
   if (!fullscreenShell || !emulatorFullscreenActive()) return;
 
-  let width = window.innerWidth;
-  let height = window.innerHeight;
+  // Measure the actual Fullscreen API surface rather than the pre-fullscreen
+  // browser viewport. This makes the two modes visibly and deterministically
+  // different in Firefox as well as Chromium.
+  const viewportW = Math.max(1, fullscreenShell.clientWidth || window.innerWidth || screen.width);
+  const viewportH = Math.max(1, fullscreenShell.clientHeight || window.innerHeight || screen.height);
+
+  let width = viewportW;
+  let height = viewportH;
 
   if (fullscreenMode === 'aspect') {
     const pictureAspect = (BASE_W * pixelAspectX) / BASE_H;
-    height = width / pictureAspect;
-    if (height > window.innerHeight) {
-      height = window.innerHeight;
+    if ((viewportW / viewportH) > pictureAspect) {
+      height = viewportH;
       width = height * pictureAspect;
+    } else {
+      width = viewportW;
+      height = width / pictureAspect;
     }
   }
 
+  width = Math.round(width);
+  height = Math.round(height);
   fullscreenShell.dataset.fullscreenMode = fullscreenMode;
-  fullscreenShell.style.setProperty('--vajnes-fullscreen-width', `${Math.round(width)}px`);
-  fullscreenShell.style.setProperty('--vajnes-fullscreen-height', `${Math.round(height)}px`);
+
+  const layerTargets=[systemScreen,grilleScreen,scanlineScreen].filter(Boolean);
+  for(const el of layerTargets){
+    el.style.setProperty('position','fixed','important');
+    el.style.setProperty('left','50%','important');
+    el.style.setProperty('top','50%','important');
+    el.style.setProperty('right','auto','important');
+    el.style.setProperty('bottom','auto','important');
+    el.style.setProperty('transform','translate(-50%, -50%)','important');
+    el.style.setProperty('width',width+'px','important');
+    el.style.setProperty('height',height+'px','important');
+    el.style.setProperty('margin','0','important');
+    el.style.setProperty('padding','0','important');
+    el.style.setProperty('border','0','important');
+  }
+
+  for(const el of [canvas,grilleCanvas,scanlineCanvas].filter(Boolean)){
+    el.style.setProperty('width',width+'px','important');
+    el.style.setProperty('height',height+'px','important');
+    el.style.setProperty('margin','0','important');
+    el.style.setProperty('padding','0','important');
+    el.style.setProperty('border','0','important');
+  }
 }
 
 function setFullscreenModalOpen(open) {
@@ -947,11 +990,8 @@ function fullscreenPresentationChanged() {
   if (emulatorFullscreenActive()) {
     applyFullscreenPresentation();
   } else {
-    if (fullscreenShell) {
-      fullscreenShell.removeAttribute('data-fullscreen-mode');
-      fullscreenShell.style.removeProperty('--vajnes-fullscreen-width');
-      fullscreenShell.style.removeProperty('--vajnes-fullscreen-height');
-    }
+    if (fullscreenShell) fullscreenShell.removeAttribute('data-fullscreen-mode');
+    clearFullscreenPresentationStyles();
     applyScale();
   }
 }
