@@ -114,3 +114,18 @@ test('fullscreen CRT overlays render at display resolution instead of scaling tu
   assert.match(scanlines,/for \(let y = 0; y < scanlineCanvas\.height; y \+= tileH\)/);
   assert.match(scanlines,/vajnesScanlineEffectMode/);
 });
+
+
+test('windowed scale changes keep CRT effects in display pixels',()=>{
+  const screen=fs.readFileSync('assets/js/screen/screen.js','utf8');
+  const grille=fs.readFileSync('assets/js/screen/grille.js','utf8');
+  const scanlines=fs.readFileSync('assets/js/screen/scanlines.js','utf8');
+
+  assert.match(screen,/grilleCanvas\.width = displayW/);
+  assert.match(screen,/scanlineCanvas\.width = displayW/);
+  assert.match(grille,/canvas\.clientWidth \|\| canvas\.width/);
+  assert.match(grille,/canvas\.clientHeight \|\| canvas\.height/);
+  assert.match(scanlines,/vajnesScanlineImageReferenceHeight/);
+  assert.match(scanlines,/captureScanlineImageReferenceHeight/);
+  assert.match(scanlines,/const tileH = Math\.max\(1, Math\.round\(_scanlineImageReferenceHeight\)\)/);
+});
