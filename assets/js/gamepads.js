@@ -40,9 +40,11 @@ const NESGamepads=(()=>{
       return;
     }
 
-    const down=i=>!!pad.buttons[i]?.pressed || pad.buttons[i]?.value>0.5;
-    const lt=down(6); // Standard Gamepad: Left Trigger
-    const rt=down(7); // Standard Gamepad: Right Trigger
+    // Firefox/Linux can report Xbox triggers as pressed at rest with a
+    // midpoint-ish value (~0.49). For analogue triggers, trust value only.
+    const triggerDown=i=>Number(pad.buttons[i]?.value||0)>0.75;
+    const lt=triggerDown(6); // Standard Gamepad: Left Trigger
+    const rt=triggerDown(7); // Standard Gamepad: Right Trigger
 
     // Player 1 only. Fire once on the rising edge so held analogue triggers
     // never spam save/load every animation frame.
