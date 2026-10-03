@@ -206,6 +206,8 @@ function loadRom(romBytes, fileName = '') {
 
   if (incomingMapper===71 && nesHeader[5]!==0)
     throw new Error('Unsupported mapper 71 board: expected CHR RAM');
+  if (incomingMapper===78 && nesHeader[5]===0)
+    throw new Error('Unsupported mapper 78 board: CHR ROM required');
   if (incomingMapper===79 && (nesHeader[5]===0 || ![2,4].includes(nesHeader[4])))
     throw new Error('Unsupported NINA-03/06 board: expected 32/64 KiB PRG and CHR ROM');
 
