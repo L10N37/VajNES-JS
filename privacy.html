@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VajNES Privacy Policy</title>
+  <meta name="description" content="Privacy policy for VajNES browser NES emulator and optional Google Drive cloud saves.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://vajnes.com/privacy.html">
+  <link rel="icon" href="/favicon.ico">
+  <style>
+    :root{color-scheme:dark}
+    body{margin:0;background:#0d0f12;color:#e8eaed;font:16px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    main{max-width:860px;margin:0 auto;padding:48px 24px 72px}
+    h1{font-size:2.2rem;margin:0 0 6px} h2{margin-top:34px;font-size:1.35rem}
+    p,li{color:#cbd0d6} a{color:#8ab4f8} .muted{color:#9aa0a6}
+    .card{background:#171a1f;border:1px solid #343942;border-radius:12px;padding:20px 22px;margin:24px 0}
+    code{background:#252a31;border-radius:4px;padding:2px 5px}
+    nav{margin-bottom:30px} ul{padding-left:24px}
+  </style>
+</head>
+<body>
+<main>
+  <nav><a href="/">← Back to VajNES</a></nav>
+  <h1>VajNES Privacy Policy</h1>
+  <p class="muted">Last updated: 4 October 2026</p>
+
+  <div class="card">
+    <strong>Short version:</strong> VajNES can run locally in your browser without a VajNES account. If you choose Google Drive cloud saves, VajNES requests only the Google permissions needed to identify your account and create/manage VajNES save files. VajNES does not request general access to all files in your Google Drive.
+  </div>
+
+  <h2>Information VajNES uses</h2>
+  <p>VajNES may use browser storage such as localStorage and IndexedDB to remember emulator settings, the most recently loaded ROM in that browser, local save-state slots, selected save slots, and related emulator preferences.</p>
+  <p>If you choose to connect Google Drive, VajNES may receive basic Google account identity information made available by the scopes you approve, such as your Google account identifier, email address and public profile information. This is used for sign-in/account presentation and cloud-save functionality.</p>
+
+  <h2>Google Drive cloud saves</h2>
+  <p>For cloud saves VajNES requests the Google Drive <code>drive.file</code> scope. This permission allows VajNES to create and manage files it creates or files you explicitly use with VajNES; it does not give VajNES unrestricted access to every file in your Drive.</p>
+  <p>When cloud sync is enabled, VajNES may create a <strong>VajNES</strong> folder, a per-game folder identified using the game's name and ROM CRC, and save-state files for the selected slots. Save-state data and related metadata such as slot number and update time are sent directly from your browser to Google Drive using Google APIs.</p>
+  <p>VajNES does not intentionally upload your NES ROM files to Google Drive as part of cloud-save synchronization.</p>
+
+  <h2>Google access tokens and server storage</h2>
+  <p>The current web version performs Google authorization and Drive requests in your browser. Google access tokens are held in browser memory for the active session and are not intentionally stored by VajNES on a separate VajNES server.</p>
+  <p>VajNES does not currently operate a backend service that stores copies of your Google Drive save-state files.</p>
+
+  <h2>Advertising</h2>
+  <p>VajNES may display third-party advertising on the website. Google account information and Google Drive save data used by VajNES cloud saves are not intentionally provided to advertising providers, are not sold, and are not used by VajNES for advertising targeting.</p>
+
+  <h2>How information is used</h2>
+  <ul>
+    <li>To run the emulator and remember your local settings.</li>
+    <li>To identify the currently loaded game for per-game save slots.</li>
+    <li>To save, load and synchronize save-state data when you request it.</li>
+    <li>To provide basic account status when you connect Google Drive.</li>
+    <li>To diagnose faults and improve VajNES when you voluntarily report a problem.</li>
+  </ul>
+
+  <h2>Sharing</h2>
+  <p>VajNES does not sell Google user data. Google user data used for cloud saves is not intentionally transferred to third parties except as necessary to provide the requested Google Drive functionality, comply with law, protect users or the service, or where you explicitly direct the transfer.</p>
+
+  <h2>Your choices and deletion</h2>
+  <p>Cloud saves are optional. You can use VajNES without connecting Google Drive. You can disconnect Google Drive from VajNES, revoke VajNES access from your Google Account permissions, delete VajNES-created files from your Google Drive, and clear browser site data to remove locally stored settings and local save slots.</p>
+
+  <h2>Google API Services User Data Policy</h2>
+  <p>VajNES's use and transfer of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+  <h2>ROMs and game data</h2>
+  <p>VajNES does not provide commercial game ROMs. Users choose their own ROM files. A ROM CRC may be calculated locally to distinguish game revisions and keep save slots separated.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>This policy may be updated when VajNES features or data practices change. The current version will be published at this URL with an updated date.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about privacy or Google Drive cloud saves can be sent to <a href="mailto:vajnes1@gmail.com">vajnes1@gmail.com</a>.</p>
+
+  <p><a href="/terms.html">Terms of Service</a> · <a href="/">VajNES home</a></p>
+</main>
+</body>
+</html>

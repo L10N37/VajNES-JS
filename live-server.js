@@ -49,8 +49,14 @@ http
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
 
-      // === Required for SharedArrayBuffer ===
-      res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+      // Google Identity Services uses an OAuth popup that must retain
+      // window.opener so it can postMessage the result back to VajNES.
+      // COOP "same-origin" severs that relationship and leaves sign-in stuck.
+      res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+
+      // Keep the existing embedder policy for development subresources.
+      // Note: same-origin-allow-popups means this page is not cross-origin
+      // isolated, but VajNES currently does not use SharedArrayBuffer.
       res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
 
       res.writeHead(200);

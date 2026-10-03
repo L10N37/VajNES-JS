@@ -43,6 +43,22 @@
     }
   </style>
 
+  <style>
+    html.vajnes-local-no-ads .ad-slot,
+    html.vajnes-local-no-ads #hilltop-referral-banner {
+      display: none !important;
+    }
+  </style>
+
+  <script>
+  // Keep local OAuth testing isolated from third-party advertising.
+  (() => {
+    const host = window.location.hostname;
+    const local = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    window.VAJNES_ADS_ENABLED = !local;
+    if (local) document.documentElement.classList.add('vajnes-local-no-ads');
+  })();
+  </script>
 </head>
 <body>
   <header>
@@ -62,6 +78,7 @@
       <button class="dropbtn" id="openDisasm">DisAsm</button>
       <button class="dropbtn" id="SRAM">SRAM</button>
       <button class="dropbtn" id="saveState">States</button>
+      <button class="dropbtn" id="cloudButton">Cloud</button>
       <button class="dropbtn" id="resetButton">Reset</button>
       <button class="dropbtn" id="aboutButton">About</button>
       <button class="dropbtn" id="accuracyButton">Accuracy</button>
@@ -81,20 +98,52 @@
   </div>
 </header>
 
+  <script>
+  // Reserve Cloud-account interactions for Google OAuth before any ad script
+  // can consume the browser user-activation needed for Google's popup.
+  (() => {
+    const isCloudAccount = target =>
+      target instanceof Element && !!target.closest('#cloud-account-button');
+
+    // This capture guard is only needed when third-party ads are active.
+    // Local development has no ad scripts, so let the Cloud button's own
+    // click handler call Google directly from the user's gesture.
+    for (const type of ['pointerdown','mousedown','pointerup','mouseup','touchstart','touchend']) {
+      window.addEventListener(type, event => {
+        if (!window.VAJNES_ADS_ENABLED || !isCloudAccount(event.target)) return;
+        event.stopImmediatePropagation();
+      }, true);
+    }
+
+    window.addEventListener('click', event => {
+      if (!window.VAJNES_ADS_ENABLED || !isCloudAccount(event.target)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      const cloud = window.VajNESCloudSaves;
+      if (!cloud) return;
+      if (cloud.connected) cloud.signOut();
+      else cloud.signIn();
+    }, true);
+  })();
+  </script>
+
   <!-- Advertising: kept outside the emulator canvas and controls. -->
   <div class="ad-slot ad-slot-horizontal" aria-label="Advertisement">
     <span class="ad-label">Advertisement</span>
     <div class="ad-frame ad-frame-728x90">
       <script>
-        atOptions = {
-          'key' : '656eb8c0d1489f4ff0f8a54248f42b12',
-          'format' : 'iframe',
-          'height' : 90,
-          'width' : 728,
-          'params' : {}
-        };
+        if (window.VAJNES_ADS_ENABLED) {
+          window.atOptions = {
+            'key' : '656eb8c0d1489f4ff0f8a54248f42b12',
+            'format' : 'iframe',
+            'height' : 90,
+            'width' : 728,
+            'params' : {}
+          };
+          document.write('<scr' + 'ipt src="https://www.highrevenueformat.com/656eb8c0d1489f4ff0f8a54248f42b12/invoke.js"></scr' + 'ipt>');
+        }
       </script>
-      <script src="https://www.highrevenueformat.com/656eb8c0d1489f4ff0f8a54248f42b12/invoke.js"></script>
     </div>
   </div>
 
@@ -102,16 +151,18 @@
     <span class="ad-label">Advertisement</span>
     <div class="hilltop-frame">
       <script>
-      (function(zggn){
-      var d = document,
-          s = d.createElement('script'),
-          l = d.currentScript || d.scripts[d.scripts.length - 1];
-      s.settings = zggn || {};
-      s.src = "//conventionalresponse.com/b-X.VJsJdZGWl/0kYoWmcz/NeVmz9suTZJU/lCkGPwTFcd0HOQDpQD4/OmDxEUtPNwzpQF4yNfD/gj4/NfQ-";
-      s.async = true;
-      s.referrerPolicy = 'no-referrer-when-downgrade';
-      l.parentNode.insertBefore(s, l);
-      })({})
+      if (window.VAJNES_ADS_ENABLED) {
+        (function(zggn){
+        var d = document,
+            s = d.createElement('script'),
+            l = d.currentScript || d.scripts[d.scripts.length - 1];
+        s.settings = zggn || {};
+        s.src = "//conventionalresponse.com/b-X.VJsJdZGWl/0kYoWmcz/NeVmz9suTZJU/lCkGPwTFcd0HOQDpQD4/OmDxEUtPNwzpQF4yNfD/gj4/NfQ-";
+        s.async = true;
+        s.referrerPolicy = 'no-referrer-when-downgrade';
+        l.parentNode.insertBefore(s, l);
+        })({})
+      }
       </script>
     </div>
   </aside>
@@ -120,15 +171,17 @@
     <span class="ad-label">Advertisement</span>
     <div class="ad-frame ad-frame-160x600">
       <script>
-        atOptions = {
-          'key' : '0cdf162c47350c8574f5237c2f50b440',
-          'format' : 'iframe',
-          'height' : 600,
-          'width' : 160,
-          'params' : {}
-        };
+        if (window.VAJNES_ADS_ENABLED) {
+          window.atOptions = {
+            'key' : '0cdf162c47350c8574f5237c2f50b440',
+            'format' : 'iframe',
+            'height' : 600,
+            'width' : 160,
+            'params' : {}
+          };
+          document.write('<scr' + 'ipt src="https://www.highrevenueformat.com/0cdf162c47350c8574f5237c2f50b440/invoke.js"></scr' + 'ipt>');
+        }
       </script>
-      <script src="https://www.highrevenueformat.com/0cdf162c47350c8574f5237c2f50b440/invoke.js"></script>
     </div>
   </aside>
 
@@ -513,6 +566,8 @@
 <script src="assets/js/dma/dmc-dma.js"></script>
 
 <script src="assets/js/save-load.js?v=mapper68-2"></script>
+<script src="assets/js/cloud-config.js"></script>
+<script src="assets/js/cloud-saves.js"></script>
 
 <script src="assets/js/helpers.js"></script>
 <script src="assets/js/interrupts.js"></script>
@@ -584,12 +639,21 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
-<!-- Adsterra monetisation: Popunder + Social Bar. -->
-<script src="https://pl31569660.profitableratecpmnetwork.com/07/ba/dc/07badc7a711fc96980d21b5cd1d752a1.js"></script>
-<script src="https://pl31569661.profitableratecpmnetwork.com/33/4a/ac/334aac86151a2479eb69ef1f09452453.js"></script>
+<!-- Adsterra monetisation: Popunder + Social Bar. Disabled on local development hosts. -->
+<script>
+if (window.VAJNES_ADS_ENABLED) {
+  document.write('<scr' + 'ipt src="https://pl31569660.profitableratecpmnetwork.com/07/ba/dc/07badc7a711fc96980d21b5cd1d752a1.js"></scr' + 'ipt>');
+  document.write('<scr' + 'ipt src="https://pl31569661.profitableratecpmnetwork.com/33/4a/ac/334aac86151a2479eb69ef1f09452453.js"></scr' + 'ipt>');
+}
+</script>
 
 </body>
 <footer>
+  <div style="text-align:center;padding:14px 12px 8px;font:13px sans-serif">
+    <a href="/privacy.html">Privacy Policy</a>
+    <span aria-hidden="true"> · </span>
+    <a href="/terms.html">Terms of Service</a>
+  </div>
   <div id="hilltop-referral-banner" class="hilltop-referral" aria-label="HilltopAds referral">
     <a href="https://hilltopads.com/?ref=406662" target="_blank" rel="noopener sponsored">
       <img src="//static.hilltopads.com/other/banners/pub/make_big_money/728x90.gif?v=1790951284"

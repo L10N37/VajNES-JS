@@ -370,6 +370,25 @@ function loadRom(romBytes, fileName = '') {
     });
   }
 
+  // Stable identity for per-game local/cloud save slots. Payload CRC keeps
+  // regions/revisions separate even when their filenames happen to match.
+  const gameBaseName = String(fileName || 'NES Game')
+    .replace(/\.(nes|zip)$/i, '')
+    .trim() || 'NES Game';
+  const payloadCrcHex = (payloadCrc >>> 0).toString(16).toUpperCase().padStart(8, '0');
+  window.VajNESCurrentGame = Object.freeze({
+    key: payloadCrcHex,
+    name: gameBaseName,
+    fileName: fileName || '',
+    fullCrc: fullRomCrc >>> 0,
+    payloadCrc: payloadCrc >>> 0,
+    payloadCrcHex,
+    mapper: mapperNumber | 0
+  });
+  window.dispatchEvent(new CustomEvent('vajnes-rom-loaded', {
+    detail: window.VajNESCurrentGame
+  }));
+
   // ------------------------------------------------------------
   // UI: Header info popup
   // ------------------------------------------------------------
