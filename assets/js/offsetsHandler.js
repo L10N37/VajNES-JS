@@ -290,7 +290,7 @@ function checkReadOffset(address) {
         : mapperNumber === 1
           ? mmc1CpuRead(addr) & 0xFF
           : (mapperNumber===7 || mapperNumber===3 || mapperNumber===9 ||
-             mapperNumber===11 || mapperNumber===66 || mapperNumber===79 ||
+             mapperNumber===11 || mapperNumber===66 || mapperNumber===71 || mapperNumber===79 ||
              mapperNumber===64 || mapperNumber===158 || mapperNumber===119 ||
              mapperNumber===206 ||
              (mmc3FamilyActive() && !MMC3.control.prgRamEnabled))
@@ -544,7 +544,7 @@ function checkWriteOffset(address, value) {
     else if (mapperNumber===69) fme7CpuWrite(addr,value);
     else if (mapperNumber===64 || mapperNumber===158) rambo1CpuWrite(addr,value);
     else if(addr>=0x6000 && mapperNumber!==7 && mapperNumber!==3 &&
-      mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==66 && mapperNumber!==79 &&
+      mapperNumber!==9 && mapperNumber!==11 && mapperNumber!==66 && mapperNumber!==71 && mapperNumber!==79 &&
       mapperNumber!==206 &&
       ((!mmc3FamilyActive() || (MMC3.control.prgRamEnabled && !MMC3.control.prgRamWriteProtect)) && mapperNumber!==119))
       prgRam[addr - 0x6000] = value & 0xFF;
@@ -582,6 +582,7 @@ function mapperReadPRG(addr) {
   if (mapperNumber===19 || mapperNumber===210) return namcoPrgRead(addr);
   if (mapperNumber===7) return axromRead(addr);
   if (mapperNumber===2) return uxromRead(addr);
+  if (mapperNumber===71) return mapper71Read(addr);
   if (mapperNumber===24 || mapperNumber===26) return vrc6CpuRead(addr);
   if (mapperNumber===69) return fme7CpuRead(addr);
   if (mapperNumber===64 || mapperNumber===158) return rambo1CpuRead(addr);
@@ -594,6 +595,7 @@ function mapperWritePRG(addr, value) {
   else if(mapperNumber===19 || mapperNumber===210) namcoWrite(addr,value);
   else if(mapperNumber===7) axromWrite(addr,value);
   else if(mapperNumber===2) uxromWrite(addr,value);
+  else if(mapperNumber===71) mapper71Write(addr,value);
   else if(mapperNumber===24 || mapperNumber===26) vrc6CpuWrite(addr,value);
   else if(mapperNumber===69) fme7CpuWrite(addr,value);
   else if(mapperNumber===64 || mapperNumber===158) rambo1CpuWrite(addr,value);

@@ -118,6 +118,12 @@ function mapper(nesHeader) {
       break;
     }
 
+    case 71: {
+      mapper71Init(nesHeader);
+      chrIsRAM = true;
+      powerOnCPU();
+      break;
+    }
 
     case 79: {
       nina79Init();

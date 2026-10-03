@@ -1373,3 +1373,41 @@ test('mapper 206 save-state restores selector and bank registers',()=>{
  e.evaluate('mapper206Select=5;mapper206Regs.set([2,4,6,8,10,12,3,4]);mapper206Unbanked32=false;globalThis.__s=mapper206SaveState();mapper206Init(new Uint8Array(16));mapper206LoadState(globalThis.__s)');
  assert.deepEqual(e.evaluate('[mapper206Select,Array.from(mapper206Regs),mapper206Unbanked32]'),[5,[2,4,6,8,10,12,3,4],false]);
 });
+
+
+test('mapper 71 switches 16K PRG only through C000-FFFF and fixes last bank',()=>{
+ const bytes=rom(71,8,0);
+ const e=emulator(bytes);
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xc000)]'),[0,7]);
+ e.evaluate('checkWriteOffset(0x8000,3)');
+ assert.equal(e.evaluate('checkReadOffset(0x8000)'),0);
+ e.evaluate('checkWriteOffset(0xc000,3)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xc000)]'),[3,7]);
+});
+
+test('mapper 71 BF9097 submapper controls one-screen mirroring at 8000-BFFF',()=>{
+ const e=emulator(rom(71,8,0,0,1));
+ assert.equal(e.evaluate('mapper71MirrorControl'),true);
+ e.evaluate('checkWriteOffset(0x9000,0x00)');
+ assert.equal(e.evaluate('MIRRORING'),'single0');
+ e.evaluate('checkWriteOffset(0x9000,0x10)');
+ assert.equal(e.evaluate('MIRRORING'),'single1');
+ // Mirroring writes must not alter the selected PRG bank.
+ assert.equal(e.evaluate('mapper71Bank'),0);
+});
+
+test('mapper 71 standard board keeps header mirroring and has no PRG RAM',()=>{
+ const e=emulator(rom(71,8,0,1));
+ assert.equal(e.evaluate('MIRRORING'),'vertical');
+ e.evaluate('checkWriteOffset(0x9000,0x10)');
+ assert.equal(e.evaluate('MIRRORING'),'vertical');
+ e.evaluate('prgRam[0]=0x55;openBus.CPU=0x33;checkWriteOffset(0x6000,0xaa);openBus.CPU=0x33');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x33,0x55]);
+});
+
+test('mapper 71 uses CHR RAM and save-state restores banking and mirroring',()=>{
+ const e=emulator(rom(71,8,0,0,1));
+ assert.equal(e.evaluate('chrIsRAM'),true);
+ e.evaluate('CHR_ROM[0x123]=0x66;mapper71Bank=4;MIRRORING="single1";globalThis.__s=mapper71SaveState();mapper71Bank=0;MIRRORING="single0";mapper71LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[mapper71Bank,MIRRORING,CHR_ROM[0x123]]'),[4,'single1',0x66]);
+});

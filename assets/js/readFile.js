@@ -179,7 +179,7 @@ function loadRom(romBytes, fileName = '') {
     }
   }
 
-  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,64,66,69,79,118,119,155,158,206,210].includes(incomingMapper))
+  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,64,66,69,71,79,118,119,155,158,206,210].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
 
   // Never show an expansion-audio prompt for a mapper this build cannot run.
@@ -204,6 +204,8 @@ function loadRom(romBytes, fileName = '') {
   if ([9,10,11,66].includes(incomingMapper) && nesHeader[5]===0)
     throw new Error(`Unsupported mapper ${incomingMapper} board: CHR ROM required`);
 
+  if (incomingMapper===71 && nesHeader[5]!==0)
+    throw new Error('Unsupported mapper 71 board: expected CHR RAM');
   if (incomingMapper===79 && (nesHeader[5]===0 || ![2,4].includes(nesHeader[4])))
     throw new Error('Unsupported NINA-03/06 board: expected 32/64 KiB PRG and CHR ROM');
 
