@@ -966,6 +966,7 @@ async function enterEmulatorFullscreen(mode) {
       else if (fullscreenShell.webkitRequestFullscreen) fullscreenShell.webkitRequestFullscreen();
     }
     applyFullscreenPresentation();
+    armFullscreenUiIdleTimer();
   } catch (err) {
     globalThis.NES_DEBUG_LOGGING && console.warn('[fullscreen] request failed', err);
   }
@@ -986,10 +987,58 @@ for (const choice of fullscreenChoices) {
   choice.addEventListener('click', () => enterEmulatorFullscreen(choice.dataset.fullscreenMode));
 }
 
+let fullscreenUiIdleTimer = 0;
+
+function setFullscreenUiIdle(idle) {
+  if (!fullscreenShell) return;
+  const shouldHide = !!idle && emulatorFullscreenActive() && fullscreenMode === 'stretch';
+  fullscreenShell.classList.toggle('fullscreen-ui-idle', shouldHide);
+}
+
+function armFullscreenUiIdleTimer() {
+  if (fullscreenUiIdleTimer) {
+    clearTimeout(fullscreenUiIdleTimer);
+    fullscreenUiIdleTimer = 0;
+  }
+
+  if (!emulatorFullscreenActive() || fullscreenMode !== 'stretch') {
+    setFullscreenUiIdle(false);
+    return;
+  }
+
+  // Any pointer movement reveals the toolbar immediately. If the pointer then
+  // stays still for five seconds, hide it even if it is parked at the top edge.
+  setFullscreenUiIdle(false);
+  fullscreenUiIdleTimer = setTimeout(() => {
+    fullscreenUiIdleTimer = 0;
+    setFullscreenUiIdle(true);
+  }, 5000);
+}
+
+if (fullscreenShell) {
+  fullscreenShell.addEventListener('pointermove', armFullscreenUiIdleTimer, {passive:true});
+  fullscreenShell.addEventListener('pointerdown', armFullscreenUiIdleTimer, {passive:true});
+}
+
+// F11 never enters VajNES Full Screen, but while VajNES Full Screen is active
+// it exits the Fullscreen API presentation as described in the options box.
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'F11' || !emulatorFullscreenActive()) return;
+  ev.preventDefault();
+  if (document.exitFullscreen) document.exitFullscreen();
+  else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+});
+
 function fullscreenPresentationChanged() {
   if (emulatorFullscreenActive()) {
     applyFullscreenPresentation();
+    armFullscreenUiIdleTimer();
   } else {
+    if (fullscreenUiIdleTimer) {
+      clearTimeout(fullscreenUiIdleTimer);
+      fullscreenUiIdleTimer = 0;
+    }
+    setFullscreenUiIdle(false);
     if (fullscreenShell) fullscreenShell.removeAttribute('data-fullscreen-mode');
     clearFullscreenPresentationStyles();
     applyScale();
