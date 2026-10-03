@@ -1499,3 +1499,54 @@ test('mapper 68 exposes WRAM at 6000-7FFF and restores mapper state',()=>{
  e.evaluate('mapper68Chr.set([4,5,6,7]);mapper68Prg=3;mapper68Nt1=2;mapper68Nt2=3;mapper68Mirror=0x11;globalThis.__s=mapper68SaveState();mapper68Init();mapper68LoadState(globalThis.__s)');
  assert.deepEqual(e.evaluate('[Array.from(mapper68Chr),mapper68Prg,mapper68Nt1,mapper68Nt2,mapper68Mirror,MIRRORING]'),[[4,5,6,7],3,2,3,0x11,'horizontal']);
 });
+
+
+test('VRC2/VRC4 family decodes PRG banking on mappers 21 22 23 25',()=>{
+ for(const mapperId of [21,22,23,25]){
+  const bytes=rom(mapperId,8,16);
+  for(let b=0;b<16;b++)bytes.fill(b,16+b*0x2000,16+(b+1)*0x2000);
+  const e=emulator(bytes);
+  e.evaluate('checkWriteOffset(0x8000,3);checkWriteOffset(0xa000,4)');
+  assert.deepEqual(e.evaluate('[checkReadOffset(0x8000),checkReadOffset(0xa000),checkReadOffset(0xe000)]'),[3,4,15]);
+ }
+});
+
+test('VRC2/VRC4 family switches eight 1K CHR banks through nibble registers',()=>{
+ const bytes=rom(23,8,16);
+ const chrStart=16+8*0x4000;
+ for(let b=0;b<128;b++)bytes.fill(b,chrStart+b*0x400,chrStart+(b+1)*0x400);
+ const e=emulator(bytes);
+ // Mapper 23 canonical B000/B001 set low/high nibbles for CHR bank 0.
+ e.evaluate('checkWriteOffset(0xb000,0x0a);checkWriteOffset(0xb001,0x02)');
+ assert.equal(e.evaluate('ppuBusRead(0x0000)'),0x2a);
+});
+
+test('mapper 22 shifts CHR bank numbers right by one and has no WRAM',()=>{
+ const bytes=rom(22,8,16);
+ const chrStart=16+8*0x4000;
+ for(let b=0;b<128;b++)bytes.fill(b,chrStart+b*0x400,chrStart+(b+1)*0x400);
+ const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0xb000,0x06)');
+ assert.equal(e.evaluate('ppuBusRead(0x0000)'),3);
+ e.evaluate('prgRam[0]=0x55;openBus.CPU=0x33;checkWriteOffset(0x6000,0xaa);openBus.CPU=0x33');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x6000),prgRam[0]]'),[0x33,0x55]);
+});
+
+test('VRC4 IRQ latch/control/ack works in cycle mode',()=>{
+ const e=emulator(rom(25,8,16));
+ // Mapper 25 swaps the physical low address lines for canonical F001/F002.
+ e.evaluate('checkWriteOffset(0xf000,0x0e);checkWriteOffset(0xf002,0x0f);checkWriteOffset(0xf001,0x06)');
+ assert.deepEqual(e.evaluate('[vrc24IrqLatch,vrc24IrqCounter,vrc24IrqEnabled,vrc24IrqCycleMode]'),[0xfe,0xfe,true,true]);
+ e.evaluate('vrc24ClockCpu()');
+ assert.equal(e.evaluate('irqAssert.vrc'),false);
+ e.evaluate('vrc24ClockCpu()');
+ assert.equal(e.evaluate('irqAssert.vrc'),true);
+ e.evaluate('checkWriteOffset(0xf003,0)');
+ assert.equal(e.evaluate('irqAssert.vrc'),false);
+});
+
+test('VRC2/VRC4 save-state restores banks mirroring and IRQ state',()=>{
+ const e=emulator(rom(21,8,16));
+ e.evaluate('vrc24Prg.set([3,4]);vrc24Chr.set([1,2,3,4,5,6,7,8]);vrc24RegCmd=2;vrc24SetMirroring(3);vrc24IrqLatch=0xab;vrc24IrqCounter=0xcd;vrc24IrqPrescaler=123;vrc24IrqEnabled=true;vrc24IrqEnableAfterAck=true;vrc24IrqCycleMode=true;irqAssert.vrc=true;globalThis.__s=vrc24SaveState();vrc24Init();vrc24LoadState(globalThis.__s)');
+ assert.deepEqual(e.evaluate('[Array.from(vrc24Prg),Array.from(vrc24Chr),vrc24RegCmd,MIRRORING,vrc24IrqLatch,vrc24IrqCounter,vrc24IrqPrescaler,vrc24IrqEnabled,vrc24IrqEnableAfterAck,vrc24IrqCycleMode,irqAssert.vrc]'),[[3,4],[1,2,3,4,5,6,7,8],2,'single1',0xab,0xcd,123,true,true,true,true]);
+});
