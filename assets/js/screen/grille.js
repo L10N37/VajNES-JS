@@ -294,11 +294,25 @@
 // 7) Resync after scale (redraw overlays + test image if active)
 // ===========================================================================
 (function wireResync() {
+  // CRT effects are rendered into the backing canvases at the user's tuned
+  // scale. Application fullscreen only changes CSS presentation size; it must
+  // not regenerate those effects at a different apparent phase/density.
+  let lastBackingW = canvas?.width || 0;
+  let lastBackingH = canvas?.height || 0;
+
   function resync() {
-    // If your scaling code resized the main canvas, match overlays
+    const backingW = canvas?.width || 0;
+    const backingH = canvas?.height || 0;
+
+    // ResizeObserver also fires for CSS-only fullscreen changes. Ignore those:
+    // stretching/fitting the already-tuned picture and overlays together keeps
+    // scanline image, computed scanline and grille tuning visually identical.
+    if (backingW === lastBackingW && backingH === lastBackingH) return;
+    lastBackingW = backingW;
+    lastBackingH = backingH;
+
     try { window._syncOverlaySizes?.(); } catch {}
 
-    // Redraw grille overlays
     try {
       const val = Array.from(document.getElementsByName('grille-type'))
                        .find(r => r.checked)?.value;
@@ -307,19 +321,21 @@
       else                                window._grilleDraw?.clearGrilleCanvas();
     } catch {}
 
-    // Redraw code-drawn scanlines
+    // Keep the same precedence as normal startup: computed scanlines are drawn
+    // first, then a selected PNG scanline image (if any) is restored on top.
     try { window._scanlineRedraw?.(); } catch {}
-
+    try {
+      if (typeof _resyncScanlineOverlayAfterScale === 'function')
+        _resyncScanlineOverlayAfterScale();
+    } catch {}
   }
 
-  // Observe all relevant canvases for size changes
   try {
     const ro = new ResizeObserver(resync);
     ro.observe(grilleCanvas);
     ro.observe(scanlineCanvas);
     ro.observe(canvas);
   } catch {
-    // Fallback
     window.addEventListener('resize', resync);
   }
 })();
