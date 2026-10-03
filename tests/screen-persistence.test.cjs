@@ -114,3 +114,32 @@ test('fullscreen CRT overlays render at display resolution instead of scaling tu
   assert.match(scanlines,/for \(let y = 0; y < scanlineCanvas\.height; y \+= tileH\)/);
   assert.match(scanlines,/vajnesScanlineEffectMode/);
 });
+
+
+test('windowed scale changes keep CRT effects in display pixels',()=>{
+  const screen=fs.readFileSync('assets/js/screen/screen.js','utf8');
+  const grille=fs.readFileSync('assets/js/screen/grille.js','utf8');
+  const scanlines=fs.readFileSync('assets/js/screen/scanlines.js','utf8');
+
+  assert.match(screen,/grilleCanvas\.width = displayW/);
+  assert.match(screen,/scanlineCanvas\.width = displayW/);
+  assert.match(grille,/canvas\.clientWidth \|\| canvas\.width/);
+  assert.match(grille,/canvas\.clientHeight \|\| canvas\.height/);
+  assert.match(scanlines,/const CRT_REFERENCE_SCALE = 3/);
+  assert.match(scanlines,/rebuildScanlineCanonical3x/);
+  assert.match(scanlines,/BASE_H \* CRT_REFERENCE_SCALE/);
+});
+
+
+test('CRT geometry scales proportionally around the known-good 3x reference',()=>{
+  const grille=fs.readFileSync('assets/js/screen/grille.js','utf8');
+  const scanlines=fs.readFileSync('assets/js/screen/scanlines.js','utf8');
+
+  assert.match(grille,/CRT_TUNING_REFERENCE_SCALE = 3/);
+  assert.match(grille,/current \/ CRT_TUNING_REFERENCE_SCALE/);
+  assert.match(grille,/Math\.round\(baseLineHeight \* k\)/);
+  assert.match(grille,/Math\.round\(baseGap \* k\)/);
+  assert.match(grille,/window\._crtFullscreenActive = !!active/);
+  assert.match(scanlines,/_scanlineCanonical3x/);
+  assert.match(scanlines,/normalDisplayHeight[\s\S]*scanlineCanvas\.height/);
+});

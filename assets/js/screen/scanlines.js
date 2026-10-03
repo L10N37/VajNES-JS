@@ -12,6 +12,25 @@ let _scanlineFullscreenPresentation = {
   normalDisplayHeight: 0
 };
 
+const CRT_REFERENCE_SCALE = 3;
+let _scanlineCanonical3x = null;
+
+function rebuildScanlineCanonical3x() {
+  if (!_scanlineImage) return;
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(BASE_W * CRT_REFERENCE_SCALE * pixelAspectX));
+  c.height = Math.max(1, Math.round(BASE_H * CRT_REFERENCE_SCALE));
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.clearRect(0, 0, c.width, c.height);
+  g.drawImage(
+    _scanlineImage,
+    0, 0, _scanlineImage.width, _scanlineImage.height,
+    0, 0, c.width, c.height
+  );
+  _scanlineCanonical3x = c;
+}
+
 function setScanlinesImage() {
   const selected = document.querySelector('input[name="scanlines"]:checked');
   if (!selected) return;
@@ -30,6 +49,7 @@ function setScanlinesImage() {
   const img = new Image();
   img.onload = () => {
     _scanlineImage = img;
+    rebuildScanlineCanonical3x();
     drawScanlineImage();
   };
   img.src = src;
@@ -43,30 +63,36 @@ function drawScanlineImage() {
   scanlineCtx.clearRect(0, 0, scanlineCanvas.width, scanlineCanvas.height);
   if (!_scanlineImage) return;
 
-  if (_scanlineFullscreenPresentation.active &&
-      _scanlineFullscreenPresentation.normalDisplayHeight > 0) {
-    const tileH = Math.max(1, Math.round(_scanlineFullscreenPresentation.normalDisplayHeight));
-    for (let y = 0; y < scanlineCanvas.height; y += tileH) {
-      scanlineCtx.drawImage(
-        _scanlineImage,
-        0, 0, _scanlineImage.width, _scanlineImage.height,
-        0, y, scanlineCanvas.width, tileH
-      );
-    }
-    return;
-  }
-
-  scanlineCtx.drawImage(
-    _scanlineImage,
-    0, 0, _scanlineImage.width, _scanlineImage.height,
-    0, 0, scanlineCanvas.width, scanlineCanvas.height
+  // First normalize every supplied PNG to the known-good 3x presentation,
+  // then scale that canonical texture proportionally with the emulated picture.
+  // This avoids the bad 1080->480/960/1200 sampling ratios while keeping the
+  // scanline pitch relative to NES pixels (2x=2/3 of 3x, 4x=4/3, etc).
+  if (!_scanlineCanonical3x) rebuildScanlineCanonical3x();
+  const source = _scanlineCanonical3x || _scanlineImage;
+  const tileH = Math.max(
+    1,
+    Math.round(
+      _scanlineFullscreenPresentation.active &&
+      _scanlineFullscreenPresentation.normalDisplayHeight > 0
+        ? _scanlineFullscreenPresentation.normalDisplayHeight
+        : scanlineCanvas.height
+    )
   );
+
+  for (let y = 0; y < scanlineCanvas.height; y += tileH) {
+    scanlineCtx.drawImage(
+      source,
+      0, 0, source.width, source.height,
+      0, y, scanlineCanvas.width, tileH
+    );
+  }
 }
 
 // If scale changes, we want the overlay to re-stretch as well.
 // screen.js calls applyScale(); quick hook to re-draw without window.*.
 function _resyncScanlineOverlayAfterScale() {
   if (window._scanlineEffectMode === 'computed') return;
+  rebuildScanlineCanonical3x();
   drawScanlineImage();
 }
 

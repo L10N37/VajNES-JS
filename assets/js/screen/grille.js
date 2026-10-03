@@ -45,7 +45,10 @@
   function syncOverlaySizes() {
     try {
       if (!grilleCanvas || !scanlineCanvas || !canvas) return;
-      const w = canvas.width, h = canvas.height;
+      // Effects live in display space, not the NES/WebGL backing resolution.
+      // clientWidth/clientHeight already include the selected pixel aspect.
+      const w = Math.max(1, Math.round(canvas.clientWidth || canvas.width));
+      const h = Math.max(1, Math.round(canvas.clientHeight || canvas.height));
       if (grilleCanvas.width !== w || grilleCanvas.height !== h) {
         grilleCanvas.width = w; grilleCanvas.height = h;
       }
@@ -162,6 +165,19 @@
   okBtn   ?.addEventListener('click', () => { if (modal) modal.style.display = 'none'; });
 })();
 
+// Windowed CRT tuning is defined at the known-good 3x presentation. Scaling
+// the emulator scales the CRT geometry proportionally. Fullscreen deliberately
+// keeps the physical pitch established by the windowed presentation.
+const CRT_TUNING_REFERENCE_SCALE = 3;
+window._crtFullscreenActive = false;
+window._crtGeometryScale = function() {
+  if (window._crtFullscreenActive) return 1;
+  const current = Number(scaleFactor);
+  return (isFinite(current) && current > 0)
+    ? current / CRT_TUNING_REFERENCE_SCALE
+    : 1;
+};
+
 // ===========================================================================
 // 5) Grille patterns (drawn on grilleCanvas) — ctx on window to avoid redeclare
 // ===========================================================================
@@ -175,24 +191,30 @@
 
   function drawShadowMask() {
     const g = getG(); if (!g) return;
+    const k = window._crtGeometryScale?.() || 1;
+    const cell = Math.max(2, Math.round(8 * k));
+    const half = Math.max(1, Math.round(4 * k));
     g.clearRect(0,0,grilleCanvas.width,grilleCanvas.height);
     g.fillStyle = 'black'; g.fillRect(0,0,grilleCanvas.width,grilleCanvas.height);
     g.fillStyle = 'rgb(30,30,30)';
-    for (let i=0;i<grilleCanvas.width;i+=8)
-      for (let j=0;j<grilleCanvas.height;j+=8)
-        g.fillRect(i,j,4,4);
+    for (let i=0;i<grilleCanvas.width;i+=cell)
+      for (let j=0;j<grilleCanvas.height;j+=cell)
+        g.fillRect(i,j,half,half);
     g.fillStyle = 'rgb(60,60,60)';
-    for (let i=4;i<grilleCanvas.width;i+=8)
-      for (let j=4;j<grilleCanvas.height;j+=8)
-        g.fillRect(i,j,4,4);
+    for (let i=half;i<grilleCanvas.width;i+=cell)
+      for (let j=half;j<grilleCanvas.height;j+=cell)
+        g.fillRect(i,j,half,half);
   }
 
   function drawApertureGrille() {
     const g = getG(); if (!g) return;
+    const k = window._crtGeometryScale?.() || 1;
+    const period = Math.max(2, Math.round(4 * k));
+    const stripe = Math.max(1, Math.round(2 * k));
     g.clearRect(0,0,grilleCanvas.width,grilleCanvas.height);
     g.fillStyle = 'black'; g.fillRect(0,0,grilleCanvas.width,grilleCanvas.height);
     g.fillStyle = 'white';
-    for (let i=0;i<grilleCanvas.width;i+=4) g.fillRect(i,0,2,grilleCanvas.height);
+    for (let i=0;i<grilleCanvas.width;i+=period) g.fillRect(i,0,stripe,grilleCanvas.height);
   }
 
   const radios = document.getElementsByName('grille-type');
@@ -222,8 +244,11 @@
 (function wireScanlines() {
   function drawScanlines(canvasEl, intensity, opts = {}) {
     const g = canvasEl.getContext('2d');
-    const lineHeight = +opts.lineHeight || 2;
-    const gap        = +opts.gap || 2;
+    const k = window._crtGeometryScale?.() || 1;
+    const baseLineHeight = +opts.lineHeight || 2;
+    const baseGap        = Number.isFinite(+opts.gap) ? +opts.gap : 2;
+    const lineHeight = Math.max(1, Math.round(baseLineHeight * k));
+    const gap        = baseGap <= 0 ? 0 : Math.max(1, Math.round(baseGap * k));
     const color      = opts.color || '#000';
     const offset     = !!opts.offset;
     const alpha = Math.max(0, Math.min(100, intensity)) / 100;
@@ -324,6 +349,7 @@
   // render the user's same scanline/grille settings in physical screen pixels.
   window._setCrtFullscreenPresentation = function(active, displayW, displayH, normalDisplayH) {
     try {
+      window._crtFullscreenActive = !!active;
       if (!grilleCanvas || !scanlineCanvas || !canvas) return;
 
       if (active) {
@@ -335,10 +361,12 @@
         if (scanlineCanvas.height !== h) scanlineCanvas.height = h;
         window._setScanlineFullscreenPresentation?.(true, normalDisplayH);
       } else {
-        if (grilleCanvas.width !== canvas.width) grilleCanvas.width = canvas.width;
-        if (grilleCanvas.height !== canvas.height) grilleCanvas.height = canvas.height;
-        if (scanlineCanvas.width !== canvas.width) scanlineCanvas.width = canvas.width;
-        if (scanlineCanvas.height !== canvas.height) scanlineCanvas.height = canvas.height;
+        const w = Math.max(1, Math.round(canvas.clientWidth || canvas.width));
+        const h = Math.max(1, Math.round(canvas.clientHeight || canvas.height));
+        if (grilleCanvas.width !== w) grilleCanvas.width = w;
+        if (grilleCanvas.height !== h) grilleCanvas.height = h;
+        if (scanlineCanvas.width !== w) scanlineCanvas.width = w;
+        if (scanlineCanvas.height !== h) scanlineCanvas.height = h;
         window._setScanlineFullscreenPresentation?.(false, 0);
       }
 
