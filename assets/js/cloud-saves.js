@@ -594,7 +594,7 @@
     }
   }
 
-  let root,slotGrid,statusText,gameText,googleSignInHost,accountBtn,syncBtn;
+  let root,slotGrid,statusText,gameText,googleSignInHost,accountBtn,syncBtn,quickSaveBtn,quickLoadBtn;
   function buildUi() {
     const wrap=document.createElement('div');
     wrap.id='cloud-save-modal';
@@ -619,7 +619,7 @@
           <button type="button" id="cloud-quick-save">Quick Save</button>
           <button type="button" id="cloud-quick-load">Quick Load</button>
         </div>
-        <div class="cloud-save-hint">Selected slot is remembered per game. Alt+1…9 / Alt+0 selects slots 1…10.</div>
+        <div class="cloud-save-hint">Each slot has direct Save/Load controls. Quick Save/Quick Load use the selected slot. Alt+1…9 / Alt+0 selects slots 1…10.</div>
       </div>`;
     document.body.appendChild(wrap);
     root=wrap;
@@ -629,6 +629,8 @@
     googleSignInHost=wrap.querySelector('#cloud-google-signin');
     accountBtn=wrap.querySelector('#cloud-account-button');
     syncBtn=wrap.querySelector('#cloud-sync-button');
+    quickSaveBtn=wrap.querySelector('#cloud-quick-save');
+    quickLoadBtn=wrap.querySelector('#cloud-quick-load');
 
     wrap.querySelector('.cloud-save-close').addEventListener('click',close);
     wrap.addEventListener('click',e=>{if(e.target===wrap)close();});
@@ -639,8 +641,8 @@
       else signIn();
     });
     syncBtn.addEventListener('click',()=>run(syncFromDrive));
-    wrap.querySelector('#cloud-quick-save').addEventListener('click',()=>run(()=>saveLocal()));
-    wrap.querySelector('#cloud-quick-load').addEventListener('click',()=>run(()=>loadLocal()));
+    quickSaveBtn.addEventListener('click',()=>run(()=>saveLocal()));
+    quickLoadBtn.addEventListener('click',()=>run(()=>loadLocal()));
 
     const btn=document.getElementById('cloudButton');
     btn?.addEventListener('click',open);
@@ -650,6 +652,18 @@
     if(!ts) return 'Empty';
     try { return new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(ts)); }
     catch { return new Date(ts).toLocaleString(); }
+  }
+
+  async function saveSlotDirect(slot) {
+    await setSlot(slot);
+    if(model.slots[slot-1]?.bytes && !window.confirm(`Overwrite Slot ${slot}?`)) return false;
+    await saveLocal(slot);
+    return true;
+  }
+
+  async function loadSlotDirect(slot) {
+    await setSlot(slot);
+    return loadLocal(slot);
   }
 
   function render() {
@@ -678,16 +692,42 @@
       if(!model.signedIn && !model.googleAccountHint) renderGoogleIdentityButton();
     }
     syncBtn.disabled=!model.signedIn || !model.game || model.syncBusy || model.authBusy;
+    if(quickSaveBtn) quickSaveBtn.disabled=!model.game;
+    if(quickLoadBtn) quickLoadBtn.disabled=!model.game || !model.slots[model.slot-1]?.bytes;
     slotGrid.innerHTML='';
     for(let slot=1;slot<=SLOT_COUNT;slot++) {
       const rec=model.slots[slot-1];
-      const b=document.createElement('button');
-      b.type='button';
-      b.className='cloud-slot'+(slot===model.slot?' is-selected':'')+(rec?' has-save':'');
-      b.dataset.slot=String(slot);
-      b.innerHTML=`<span class="cloud-slot-number">Slot ${slot}</span><span class="cloud-slot-time">${esc(fmt(rec?.updatedAt))}</span><span class="cloud-slot-state">${rec ? (rec.dirty?'Local · sync pending':'Local + Drive') : 'Empty'}</span>`;
-      b.addEventListener('click',()=>setSlot(slot));
-      slotGrid.appendChild(b);
+      const row=document.createElement('div');
+      row.className='cloud-slot'+(slot===model.slot?' is-selected':'')+(rec?' has-save':'');
+      row.dataset.slot=String(slot);
+
+      const select=document.createElement('button');
+      select.type='button';
+      select.className='cloud-slot-select';
+      select.setAttribute('aria-label',`Select save slot ${slot}`);
+      select.innerHTML=`<span class="cloud-slot-number">Slot ${slot}</span><span class="cloud-slot-time">${esc(fmt(rec?.updatedAt))}</span><span class="cloud-slot-state">${rec ? (rec.dirty?'Local · sync pending':'Local + Drive') : 'Empty'}</span>`;
+      select.addEventListener('click',()=>run(()=>setSlot(slot)));
+
+      const actions=document.createElement('div');
+      actions.className='cloud-slot-actions';
+
+      const save=document.createElement('button');
+      save.type='button';
+      save.className='cloud-slot-action cloud-slot-save';
+      save.textContent=rec?.bytes?'Overwrite':'Save';
+      save.disabled=!model.game;
+      save.addEventListener('click',()=>run(()=>saveSlotDirect(slot)));
+
+      const load=document.createElement('button');
+      load.type='button';
+      load.className='cloud-slot-action cloud-slot-load';
+      load.textContent='Load';
+      load.disabled=!rec?.bytes;
+      load.addEventListener('click',()=>run(()=>loadSlotDirect(slot)));
+
+      actions.append(save,load);
+      row.append(select,actions);
+      slotGrid.appendChild(row);
     }
   }
 
@@ -719,6 +759,8 @@
     open,close,signIn,signOut,sync:syncFromDrive,
     quickSave:()=>saveLocal(model.slot),
     quickLoad:()=>loadLocal(model.slot),
+    saveSlot:saveSlotDirect,
+    loadSlot:loadSlotDirect,
     selectSlot:setSlot,
     get selectedSlot(){return model.slot;},
     get game(){return model.game;},
