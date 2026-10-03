@@ -179,7 +179,7 @@ function loadRom(romBytes, fileName = '') {
     }
   }
 
-  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,64,66,69,79,118,119,155,158,210].includes(incomingMapper))
+  if (![0,1,2,3,4,5,7,9,10,11,19,24,26,64,66,69,79,118,119,155,158,206,210].includes(incomingMapper))
     throw new Error(`Mapper ${incomingMapper} not yet implemented`);
 
   // Never show an expansion-audio prompt for a mapper this build cannot run.
@@ -215,6 +215,8 @@ function loadRom(romBytes, fileName = '') {
     throw new Error('Unsupported FME-7 board: CHR ROM required');
   if ((incomingMapper===64 || incomingMapper===158) && nesHeader[5]===0)
     throw new Error('Unsupported RAMBO-1 board: CHR ROM required');
+  if (incomingMapper===206 && nesHeader[5]===0)
+    throw new Error('Unsupported mapper 206 board: CHR ROM required');
   if (incomingMapper===118 && nesHeader[5]===0)
     throw new Error('Unsupported TxSROM board: CHR ROM required');
   if (incomingMapper===119 && nesHeader[5]===0)
