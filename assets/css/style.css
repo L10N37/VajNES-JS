@@ -449,3 +449,51 @@ registersText{
 .genie-manual-entry input{flex:1 1 260px;min-width:0;padding:8px 10px;border:1px solid #666;border-radius:6px;background:#24282e;color:#fff;font:14px monospace;text-transform:uppercase}
 .genie-error{min-height:1.4em;margin:8px 0 0;color:#ff9b9b;font-size:13px}
 @media(max-width:620px){.genie-cheat-row{grid-template-columns:auto minmax(0,1fr)}.genie-small-button{grid-column:2;justify-self:start}}
+
+
+/* HilltopAds placements */
+.hilltop-slot-left{
+  position:fixed;
+  top:58px;
+  left:12px;
+  width:312px;
+  min-height:272px;
+  padding:4px 6px 8px;
+  z-index:2;
+  background:rgba(0,0,0,.20);
+  border-radius:4px;
+}
+.hilltop-frame{
+  width:300px;
+  min-height:250px;
+  margin:0 auto;
+  overflow:hidden;
+}
+.hilltop-referral{
+  width:100%;
+  padding:18px 0 24px;
+  text-align:center;
+  background:rgba(0,0,0,.10);
+}
+.hilltop-referral img{
+  display:block;
+  width:728px;
+  max-width:calc(100vw - 24px);
+  height:auto;
+  margin:0 auto;
+}
+@media (min-width:1900px){
+  body>main{
+    padding-left:328px;
+  }
+}
+@media (max-width:1899px){
+  .hilltop-slot-left{
+    display:none;
+  }
+}
+@media (max-width:760px){
+  .hilltop-referral{
+    display:none;
+  }
+}
