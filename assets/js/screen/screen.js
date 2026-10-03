@@ -456,10 +456,14 @@ function applyScale() {
 
   canvas.width = W;
   canvas.height = H;
-  if (grilleCanvas)   { grilleCanvas.width = W;   grilleCanvas.height = H; }
-  if (scanlineCanvas) { scanlineCanvas.width = W; scanlineCanvas.height = H; }
 
   const displayW = Math.round(W * pixelAspectX);
+
+  // CRT overlays are display-space effects. Keep their backing buffers at the
+  // actual displayed pixel dimensions so scale changes never resample the
+  // already-rendered scanline/grille texture.
+  if (grilleCanvas)   { grilleCanvas.width = displayW;   grilleCanvas.height = H; }
+  if (scanlineCanvas) { scanlineCanvas.width = displayW; scanlineCanvas.height = H; }
 
   if (systemScreen) {
     systemScreen.style.width = `${displayW}px`;
