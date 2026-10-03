@@ -4,6 +4,7 @@
 const NESGamepads=(()=>{
   const slots=[null,null],states=[0,0];
   let focused=true,lastStatus='',knownIndices=new Set(),lastAssignmentUi='';
+  let cloudLt=false,cloudRt=false;
 
   function decode(pad){
     const down=i=>!!pad.buttons[i]?.pressed || pad.buttons[i]?.value>0.5;
@@ -25,7 +26,32 @@ const NESGamepads=(()=>{
     if(el){el.textContent=text;lastStatus=text;}
   }
 
-  function clear(){states.fill(0);}
+  function clear(){
+    states.fill(0);
+    cloudLt=false;
+    cloudRt=false;
+  }
+
+  function updateCloudShortcuts(pad){
+    const cloud=window.VajNESCloudSaves;
+    if(!pad || !cloud?.game){
+      cloudLt=false;
+      cloudRt=false;
+      return;
+    }
+
+    const down=i=>!!pad.buttons[i]?.pressed || pad.buttons[i]?.value>0.5;
+    const lt=down(6); // Standard Gamepad: Left Trigger
+    const rt=down(7); // Standard Gamepad: Right Trigger
+
+    // Player 1 only. Fire once on the rising edge so held analogue triggers
+    // never spam save/load every animation frame.
+    if(lt && !cloudLt) Promise.resolve(cloud.quickSave()).catch(()=>{});
+    if(rt && !cloudRt) Promise.resolve(cloud.quickLoad()).catch(()=>{});
+
+    cloudLt=lt;
+    cloudRt=rt;
+  }
 
   function connectedStandardPads(){
     try{
@@ -159,6 +185,8 @@ const NESGamepads=(()=>{
       if(next && !states[i] && typeof NESAudio!=='undefined')NESAudio.unlock();
       states[i]=next;
     }
+
+    updateCloudShortcuts(supported.find(p=>p.index===slots[0]) || null);
 
     renderAssignments(supported);
 
