@@ -619,7 +619,7 @@
           <button type="button" id="cloud-quick-save">Quick Save</button>
           <button type="button" id="cloud-quick-load">Quick Load</button>
         </div>
-        <div class="cloud-save-hint">Each slot has direct Save/Load controls. Quick Save/Quick Load use the selected slot. Alt+1…9 / Alt+0 selects slots 1…10. Cloud users: Shift+S Quick Save · Shift+L Quick Load.</div>
+        <div class="cloud-save-hint">Each slot has direct Save/Load controls. Quick Save/Quick Load use the selected slot. Alt+1…9 / Alt+0 selects slots 1…10. Cloud users: F8 Quick Save · F9 Quick Load.</div>
       </div>`;
     document.body.appendChild(wrap);
     root=wrap;
@@ -769,26 +769,22 @@
 
   window.addEventListener('vajnes-rom-loaded',e=>run(()=>onGame(e.detail)));
 
-  function cloudShortcutKeydown(e) {
-    const editing=e.target?.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(e.target?.tagName||'');
-    if(editing) return;
-
+  document.addEventListener('keydown',e=>{
     if(e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       const n=e.code==='Digit0'?10:
         /^Digit[1-9]$/.test(e.code)?Number(e.code.slice(5)):0;
-      if(n){e.preventDefault();e.stopPropagation();run(()=>setSlot(n));return;}
+      if(n){e.preventDefault();run(()=>setSlot(n));return;}
     }
 
-    // Use ordinary keys instead of browser/OS-reserved function keys so these
-    // remain reliable in both browser and emulator fullscreen modes.
-    if(e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && model.signedIn && model.game && !e.repeat) {
-      if(e.code==='KeyS') {
-        e.preventDefault();e.stopPropagation();
+    // Match the proven F2 shortcut style used by screen.js.
+    if(model.signedIn && model.game && !e.repeat) {
+      if(e.key==='F8') {
+        e.preventDefault();
         run(()=>saveLocal(model.slot));
         return;
       }
-      if(e.code==='KeyL') {
-        e.preventDefault();e.stopPropagation();
+      if(e.key==='F9') {
+        e.preventDefault();
         if(model.slots[model.slot-1]?.bytes) run(()=>loadLocal(model.slot));
         else toast(`Cloud Slot ${model.slot} is empty`);
         return;
@@ -796,9 +792,7 @@
     }
 
     if(e.key==='Escape' && root?.classList.contains('is-open')) close();
-  }
-
-  window.addEventListener('keydown',cloudShortcutKeydown,{capture:true,passive:false});
+  });
 
   document.addEventListener('DOMContentLoaded',()=>{
     buildUi();
