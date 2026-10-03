@@ -1655,3 +1655,61 @@ test('mapper 73 VRC3 save-state restores banking and IRQ state',()=>{
  e.evaluate('vrc3PrgBank=3;vrc3IrqReload=0x4567;vrc3IrqCounter=0x89ab;vrc3IrqAutoEnable=true;vrc3Irq8BitMode=true;vrc3IrqEnabled=true;irqAssert.vrc=true;globalThis.__s=vrc3SaveState();vrc3Init();vrc3LoadState(globalThis.__s)');
  assert.deepEqual(e.evaluate('[vrc3PrgBank,vrc3IrqReload,vrc3IrqCounter,vrc3IrqAutoEnable,vrc3Irq8BitMode,vrc3IrqEnabled,irqAssert.vrc]'),[3,0x4567,0x89ab,true,true,true,true]);
 });
+
+
+test('mapper 78 switches 16K PRG and 8K CHR banks with fixed upper PRG',()=>{
+ const bytes=rom(78,8,16,8,null);
+ for(let b=0;b<8;b++)bytes.fill(b,16+b*0x4000,16+(b+1)*0x4000);
+ const chrStart=16+8*0x4000;
+ for(let b=0;b<16;b++)bytes.fill(0x80+b,chrStart+b*0x2000,chrStart+(b+1)*0x2000);
+ // Make the write address drive all ones so the discrete bus conflict does
+ // not alter the intended latch value.
+ bytes[16]=0xff;
+ const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,0x53)');
+ assert.deepEqual(e.evaluate('[checkReadOffset(0x8001),checkReadOffset(0xc000),cartridgeChrRead(0)]'),[3,7,0x85]);
+});
+
+test('mapper 78 Holy Diver variant uses H/V mirroring',()=>{
+ const bytes=rom(78,8,16,8,null);bytes[16]=0xff;
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('mapper78HolyDiver'),true);
+ e.evaluate('checkWriteOffset(0x8000,0x00)');
+ assert.equal(e.evaluate('MIRRORING'),'horizontal');
+ e.evaluate('checkWriteOffset(0x8000,0x08)');
+ assert.equal(e.evaluate('MIRRORING'),'vertical');
+ assert.equal(e.evaluate('VRAM.length'),0x800);
+});
+
+test('mapper 78 NES 2 submapper 1 uses one-screen mirroring',()=>{
+ const bytes=rom(78,8,16,0,1);bytes[16]=0xff;
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('mapper78HolyDiver'),false);
+ e.evaluate('checkWriteOffset(0x8000,0x00)');
+ assert.equal(e.evaluate('MIRRORING'),'single0');
+ e.evaluate('checkWriteOffset(0x8000,0x08)');
+ assert.equal(e.evaluate('MIRRORING'),'single1');
+});
+
+test('mapper 78 NES 2 submapper 3 selects Holy Diver H/V wiring',()=>{
+ const bytes=rom(78,8,16,0,3);bytes[16]=0xff;
+ const e=emulator(bytes);
+ assert.equal(e.evaluate('mapper78HolyDiver'),true);
+ e.evaluate('checkWriteOffset(0x8000,0x08)');
+ assert.equal(e.evaluate('MIRRORING'),'vertical');
+});
+
+test('mapper 78 applies discrete ROM bus conflicts',()=>{
+ const bytes=rom(78,8,16,8,null);
+ bytes[16]=0x21;
+ const e=emulator(bytes);
+ e.evaluate('checkWriteOffset(0x8000,0xff)');
+ assert.deepEqual(e.evaluate('[mapper78PrgBank,mapper78ChrBank]'),[1,2]);
+});
+
+test('mapper 78 save-state restores banks variant and mirroring',()=>{
+ const bytes=rom(78,8,16,8,null);bytes[16]=0xff;
+ const e=emulator(bytes);
+ e.evaluate("mapper78PrgBank=4;mapper78ChrBank=9;mapper78HolyDiver=true;MIRRORING='vertical';globalThis.__m78=mapper78SaveState();mapper78PrgBank=0;mapper78ChrBank=0;mapper78HolyDiver=false;MIRRORING='horizontal';mapper78LoadState(globalThis.__m78)");
+ assert.deepEqual(e.evaluate('[mapper78PrgBank,mapper78ChrBank,mapper78HolyDiver,MIRRORING]'),[4,9,true,'vertical']);
+});

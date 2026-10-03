@@ -193,6 +193,7 @@ function extraMapperReadPRG(addr) {
     case 10: return mmc24Read(addr);
     case 11: return colorDreamsRead(addr);
     case 66: return gxromRead(addr);
+    case 78: return mapper78Read(addr);
     case 79: return nina79Read(addr);
     default: return null;
   }
@@ -204,6 +205,7 @@ function extraMapperWritePRG(addr, value) {
     case 10: mmc24Write(addr,value); return true;
     case 11: colorDreamsWrite(addr,value); return true;
     case 66: gxromWrite(addr,value); return true;
+    case 78: mapper78Write(addr,value); return true;
     default: return false;
   }
 }
@@ -223,6 +225,7 @@ function cartridgeChrRead(addr) {
     case 19:
     case 210: return namcoChrRead(addr);
     case 66: return gxromChrRead(addr);
+    case 78: return mapper78ChrRead(addr);
     case 79: return nina79ChrRead(addr);
     case 21:
     case 22:

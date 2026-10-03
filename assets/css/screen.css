@@ -463,3 +463,73 @@ canvas {
   background: #2e2e2e; 
   border-color: #888; 
 }
+
+
+/* Application full screen: separate from F11/browser fullscreen.
+   The shell itself is always borderless and black. The JS chooses either a
+   fitted aspect-preserving rectangle or a true 100vw x 100vh stretched image. */
+#emulator-fullscreen-shell:fullscreen,
+#emulator-fullscreen-shell:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #000;
+  overflow: hidden;
+}
+/* Exact picture rectangle is assigned inline by screen.js. This avoids
+   fullscreen viewport/custom-property differences between Firefox and Chromium. */
+#emulator-fullscreen-shell:fullscreen #system-screen-modal,
+#emulator-fullscreen-shell:fullscreen #grille-screen-modal,
+#emulator-fullscreen-shell:fullscreen #scanline-simulation-modal,
+#emulator-fullscreen-shell:-webkit-full-screen #system-screen-modal,
+#emulator-fullscreen-shell:-webkit-full-screen #grille-screen-modal,
+#emulator-fullscreen-shell:-webkit-full-screen #scanline-simulation-modal {
+  position: fixed;
+}
+#emulator-fullscreen-shell:fullscreen #screen-canvas,
+#emulator-fullscreen-shell:fullscreen #grille-canvas,
+#emulator-fullscreen-shell:fullscreen #scanline-canvas,
+#emulator-fullscreen-shell:-webkit-full-screen #screen-canvas,
+#emulator-fullscreen-shell:-webkit-full-screen #grille-canvas,
+#emulator-fullscreen-shell:-webkit-full-screen #scanline-canvas {
+  border: 0;
+}
+
+.fullscreen-modal-content {
+  width: 320px;
+  max-width: calc(100vw - 32px);
+}
+.fullscreen-exit-hint {
+  margin: 8px 0 12px;
+  font-size: 14px;
+  color: #ddd;
+}
+
+/* In stretched application fullscreen the pointer can remain over the screen
+   indefinitely (especially on single-monitor setups). Pointer movement reveals
+   the options bar; inactivity hides it again after the JS five-second timer. */
+#emulator-fullscreen-shell.fullscreen-ui-idle #system-screen-modal .optionsBar {
+  display: none !important;
+}
+
+.fullscreen-choice {
+  display: block;
+  width: 100%;
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #555;
+  border-radius: 6px;
+  background: #222;
+  color: #eee;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fullscreen-choice:hover,
+.fullscreen-choice:focus {
+  background: #2e2e2e;
+  border-color: #888;
+  outline: none;
+}

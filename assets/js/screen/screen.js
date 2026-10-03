@@ -867,6 +867,189 @@ document.addEventListener('keydown', (ev) => {
   }
 );
 
+// Emulator full-screen presentation. F11 remains untouched: that key is still
+// owned by the browser. The on-screen Full Screen item opens two presentation
+// choices: preserve the selected picture aspect, or stretch edge-to-edge.
+const fullscreenShell = document.getElementById('emulator-fullscreen-shell');
+const fullscreenOption = document.getElementById('screen-option-fullscreen');
+const fullscreenModal = document.getElementById('fullscreen-modal');
+const fullscreenClose = document.getElementById('fullscreen-close');
+const fullscreenChoices = fullscreenModal
+  ? fullscreenModal.querySelectorAll('[data-fullscreen-mode]')
+  : [];
+let fullscreenMode = localStorage.getItem('vajnesFullscreenMode') || 'aspect';
+if (fullscreenMode !== 'aspect' && fullscreenMode !== 'stretch') fullscreenMode = 'aspect';
+
+function emulatorFullscreenActive() {
+  return document.fullscreenElement === fullscreenShell ||
+    document.webkitFullscreenElement === fullscreenShell;
+}
+
+function fullscreenPresentationTargets() {
+  return [systemScreen,grilleScreen,scanlineScreen,canvas,grilleCanvas,scanlineCanvas].filter(Boolean);
+}
+
+function clearFullscreenPresentationStyles() {
+  for (const el of fullscreenPresentationTargets()) {
+    for (const prop of ['left','top','right','bottom','transform','width','height','margin','padding','border']) {
+      el.style.removeProperty(prop);
+    }
+  }
+}
+
+function applyFullscreenPresentation() {
+  if (!fullscreenShell || !emulatorFullscreenActive()) return;
+
+  // Measure the actual Fullscreen API surface rather than the pre-fullscreen
+  // browser viewport. This makes the two modes visibly and deterministically
+  // different in Firefox as well as Chromium.
+  const viewportW = Math.max(1, fullscreenShell.clientWidth || window.innerWidth || screen.width);
+  const viewportH = Math.max(1, fullscreenShell.clientHeight || window.innerHeight || screen.height);
+
+  let width = viewportW;
+  let height = viewportH;
+
+  if (fullscreenMode === 'aspect') {
+    const pictureAspect = (BASE_W * pixelAspectX) / BASE_H;
+    if ((viewportW / viewportH) > pictureAspect) {
+      height = viewportH;
+      width = height * pictureAspect;
+    } else {
+      width = viewportW;
+      height = width / pictureAspect;
+    }
+  }
+
+  width = Math.round(width);
+  height = Math.round(height);
+  fullscreenShell.dataset.fullscreenMode = fullscreenMode;
+
+  const layerTargets=[systemScreen,grilleScreen,scanlineScreen].filter(Boolean);
+  for(const el of layerTargets){
+    el.style.setProperty('position','fixed','important');
+    el.style.setProperty('left','50%','important');
+    el.style.setProperty('top','50%','important');
+    el.style.setProperty('right','auto','important');
+    el.style.setProperty('bottom','auto','important');
+    el.style.setProperty('transform','translate(-50%, -50%)','important');
+    el.style.setProperty('width',width+'px','important');
+    el.style.setProperty('height',height+'px','important');
+    el.style.setProperty('margin','0','important');
+    el.style.setProperty('padding','0','important');
+    el.style.setProperty('border','0','important');
+  }
+
+  for(const el of [canvas,grilleCanvas,scanlineCanvas].filter(Boolean)){
+    el.style.setProperty('width',width+'px','important');
+    el.style.setProperty('height',height+'px','important');
+    el.style.setProperty('margin','0','important');
+    el.style.setProperty('padding','0','important');
+    el.style.setProperty('border','0','important');
+  }
+}
+
+function setFullscreenModalOpen(open) {
+  if (!fullscreenModal) return;
+  fullscreenModal.style.display = open ? 'block' : 'none';
+  fullscreenModal.setAttribute('aria-hidden', open ? 'false' : 'true');
+}
+
+async function enterEmulatorFullscreen(mode) {
+  if (!fullscreenShell) return;
+  fullscreenMode = mode === 'stretch' ? 'stretch' : 'aspect';
+  localStorage.setItem('vajnesFullscreenMode', fullscreenMode);
+  setFullscreenModalOpen(false);
+
+  try {
+    if (!emulatorFullscreenActive()) {
+      if (fullscreenShell.requestFullscreen) await fullscreenShell.requestFullscreen();
+      else if (fullscreenShell.webkitRequestFullscreen) fullscreenShell.webkitRequestFullscreen();
+    }
+    applyFullscreenPresentation();
+    armFullscreenUiIdleTimer();
+  } catch (err) {
+    globalThis.NES_DEBUG_LOGGING && console.warn('[fullscreen] request failed', err);
+  }
+}
+
+if (fullscreenOption) {
+  fullscreenOption.addEventListener('click', () => setFullscreenModalOpen(true));
+}
+if (fullscreenClose) {
+  fullscreenClose.addEventListener('click', () => setFullscreenModalOpen(false));
+}
+if (fullscreenModal) {
+  fullscreenModal.addEventListener('click', (ev) => {
+    if (ev.target === fullscreenModal) setFullscreenModalOpen(false);
+  });
+}
+for (const choice of fullscreenChoices) {
+  choice.addEventListener('click', () => enterEmulatorFullscreen(choice.dataset.fullscreenMode));
+}
+
+let fullscreenUiIdleTimer = 0;
+
+function setFullscreenUiIdle(idle) {
+  if (!fullscreenShell) return;
+  const shouldHide = !!idle && emulatorFullscreenActive() && fullscreenMode === 'stretch';
+  fullscreenShell.classList.toggle('fullscreen-ui-idle', shouldHide);
+}
+
+function armFullscreenUiIdleTimer() {
+  if (fullscreenUiIdleTimer) {
+    clearTimeout(fullscreenUiIdleTimer);
+    fullscreenUiIdleTimer = 0;
+  }
+
+  if (!emulatorFullscreenActive() || fullscreenMode !== 'stretch') {
+    setFullscreenUiIdle(false);
+    return;
+  }
+
+  // Any pointer movement reveals the toolbar immediately. If the pointer then
+  // stays still for five seconds, hide it even if it is parked at the top edge.
+  setFullscreenUiIdle(false);
+  fullscreenUiIdleTimer = setTimeout(() => {
+    fullscreenUiIdleTimer = 0;
+    setFullscreenUiIdle(true);
+  }, 5000);
+}
+
+if (fullscreenShell) {
+  fullscreenShell.addEventListener('pointermove', armFullscreenUiIdleTimer, {passive:true});
+  fullscreenShell.addEventListener('pointerdown', armFullscreenUiIdleTimer, {passive:true});
+}
+
+// F11 never enters VajNES Full Screen, but while VajNES Full Screen is active
+// it exits the Fullscreen API presentation as described in the options box.
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'F11' || !emulatorFullscreenActive()) return;
+  ev.preventDefault();
+  if (document.exitFullscreen) document.exitFullscreen();
+  else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+});
+
+function fullscreenPresentationChanged() {
+  if (emulatorFullscreenActive()) {
+    applyFullscreenPresentation();
+    armFullscreenUiIdleTimer();
+  } else {
+    if (fullscreenUiIdleTimer) {
+      clearTimeout(fullscreenUiIdleTimer);
+      fullscreenUiIdleTimer = 0;
+    }
+    setFullscreenUiIdle(false);
+    if (fullscreenShell) fullscreenShell.removeAttribute('data-fullscreen-mode');
+    clearFullscreenPresentationStyles();
+    applyScale();
+  }
+}
+document.addEventListener('fullscreenchange', fullscreenPresentationChanged);
+document.addEventListener('webkitfullscreenchange', fullscreenPresentationChanged);
+window.addEventListener('resize', () => {
+  if (emulatorFullscreenActive()) applyFullscreenPresentation();
+});
+
 // FPS toggle option (li:nth-child(5))
 const fpsOption = document.getElementById('screen-option-fps');
 if (fpsOption) {

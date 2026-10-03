@@ -139,7 +139,7 @@
       <div class="about-grid">
         <span><kbd>R</kbd></span><span>Run / Pause the loaded ROM</span>
         <span><kbd>F2</kbd></span><span>Open screen-size / scale settings</span>
-        <span><kbd>F11</kbd></span><span>Recommended browser fullscreen shortcut</span>
+        <span><kbd>F11</kbd></span><span>Browser fullscreen only — emulator Fullscreen is in the screen menu</span>
         <span><kbd>~</kbd></span><span>Single-step / debugging mode</span>
         <span><kbd>X</kbd> / <kbd>Z</kbd></span><span>NES A / B</span>
         <span><kbd>Enter</kbd></span><span>Start</span>
@@ -148,7 +148,7 @@
       </div>
 
       <h2>Supported mappers</h2>
-      <p class="mapper-list">0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 5 MMC5 · 7 AxROM · 9 MMC2 · 10 MMC4 · 11 Color Dreams · 19 Namco 163 · 21/22/23/25 Konami VRC2/VRC4 · 24/26 Konami VRC6 · 34 BNROM/NINA-001 · 64/158 Tengen RAMBO-1 · 66 GxROM · 68 Sunsoft-4 · 69 Sunsoft FME-7/5B · 71 Camerica/Codemasters · 73 Konami VRC3 · 79 NINA-03/06 · 85 Konami VRC7 · 118 TxSROM · 119 TQROM · 155 MMC1 variant · 206 Namco 108/MIMIC-1 · 210 Namco 175/340</p>
+      <p class="mapper-list">0 NROM · 1 MMC1 · 2 UxROM · 3 CNROM · 4 MMC3 · 5 MMC5 · 7 AxROM · 9 MMC2 · 10 MMC4 · 11 Color Dreams · 19 Namco 163 · 21/22/23/25 Konami VRC2/VRC4 · 24/26 Konami VRC6 · 34 BNROM/NINA-001 · 64/158 Tengen RAMBO-1 · 66 GxROM · 68 Sunsoft-4 · 69 Sunsoft FME-7/5B · 71 Camerica/Codemasters · 73 Konami VRC3 · 78 Irem 74HC161/Jaleco JF-16 · 79 NINA-03/06 · 85 Konami VRC7 · 118 TxSROM · 119 TQROM · 155 MMC1 variant · 206 Namco 108/MIMIC-1 · 210 Namco 175/340</p>
       <p class="about-note">Mapper support is actively expanding. Passing mapper unit tests does not yet guarantee every commercial game on that mapper is compatible.</p>
 
       <h2>Bug reports</h2>
@@ -325,6 +325,8 @@
   <section class="instruction-step"></section>
 </main>
 
+  <!-- Emulator presentation shell. Only this shell enters application fullscreen. -->
+  <div id="emulator-fullscreen-shell">
   <!-- the 256 * 240 NTSC screen modal, size set in js file (PAL is 256 * 288) -->
     <div id="system-screen-modal" class="screenModal">
       <canvas id="screen-canvas"></canvas>
@@ -335,6 +337,7 @@
           <li id="screen-option-palette">Palette</li>
           <li id="screen-option-pixel">Pixel</li>
           <li id="screen-option-fps">FPS</li>
+          <li id="screen-option-fullscreen">Full Screen</li>
           <li id="screen-option-exit">Exit</li>
         </ul>
       </div>
@@ -352,6 +355,7 @@
 
 <!-- Solid black underlay to block main page -->
 <div id="black-screen-modal" class="blackScreenModal"></div>
+</div>
 
 <!-- Scanline options -->
 <div class="scanlinesModal">
@@ -424,6 +428,18 @@
   </div>
 </div>
 
+<!-- Full-screen presentation options. F11 remains browser fullscreen. -->
+<div id="fullscreen-modal" class="modal" aria-hidden="true">
+  <div class="modal-content fullscreen-modal-content" role="dialog" aria-modal="true" aria-labelledby="fullscreen-title">
+    <span id="fullscreen-close" class="closeModal" aria-label="Close Full Screen options">&times;</span>
+    <h2 id="fullscreen-title">Full Screen</h2>
+    <p>Choose how the NES picture fills the display.</p>
+    <p class="fullscreen-exit-hint"><strong>Press F11 to exit Full Screen.</strong></p>
+    <button type="button" class="fullscreen-choice" data-fullscreen-mode="aspect">Maintain aspect ratio</button>
+    <button type="button" class="fullscreen-choice" data-fullscreen-mode="stretch">Full screen stretched</button>
+  </div>
+</div>
+
 <!-- Scale options modal (mouse-accessible, F2 shortcut) -->
 <div id="scale-modal" class="modal">
   <div class="modal-content">
@@ -454,6 +470,7 @@
 <script src="assets/js/mappers/210.js"></script>
 <script src="assets/js/mappers/vrc2-vrc4.js"></script>
 <script src="assets/js/mappers/vrc3.js"></script>
+<script src="assets/js/mappers/78.js"></script>
 <script src="assets/js/mappers/vrc6.js"></script>
 <script src="assets/js/mappers/vrc7.js"></script>
 <script src="assets/js/mappers/fme7.js"></script>
