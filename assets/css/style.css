@@ -434,7 +434,7 @@ registersText{
 #genieButton:disabled{opacity:.45;cursor:default}
 #genieButton.genie-active{font-weight:700;box-shadow:inset 0 0 0 2px #8ab4f8}
 .genie-card{width:min(880px,calc(100vw - 36px));overflow:hidden;isolation:isolate}
-.genie-card::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:linear-gradient(rgba(23,25,29,.92),rgba(23,25,29,.92)),url("https://www.nesworld.com/pics/gg10b.jpg");background-repeat:no-repeat;background-position:center;background-size:cover;opacity:.22}
+.genie-card::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background-image:linear-gradient(rgba(23,25,29,.92),rgba(23,25,29,.92)),url("../images/game-genie-bg.jpg");background-repeat:no-repeat;background-position:center;background-size:cover;opacity:.22}
 .genie-game-box{display:flex;flex-direction:column;gap:3px;padding:11px 13px;border:1px solid #5f6368;border-radius:9px;background:rgba(34,37,42,.86)}
 .genie-game-box strong{font-size:18px}
 .genie-game-box span{color:#bdc1c6;font-size:13px;overflow-wrap:anywhere}
